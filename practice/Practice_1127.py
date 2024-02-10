@@ -10,11 +10,10 @@ import programs.fTurnInspection as t  # とりあえずの関数集
 import programs.fPeakLineInspection as p  # とりあえずの関数集
 import programs.fTurnInspection as fTurn
 import programs.fGeneric as f
-import statistics
 
 oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
-jp_time = datetime.datetime(2023, 12, 23, 5, 5, 6)
+jp_time = datetime.datetime(2023, 11, 10, 10, 5, 6)
 euro_time_datetime = jp_time - datetime.timedelta(hours=9)
 euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
 param = {"granularity": "M5", "count": 200, "to": euro_time_datetime_iso}  # 最低５０行
@@ -23,9 +22,9 @@ df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 2
 df = df["data"]
 df.to_csv(tk.folder_path + 'TEST.csv', index=False, encoding="utf-8")  # 直近保存用
 df_r = df.sort_index(ascending=False)
-# print(df_r.head(5))
-# print(df_r.tail(5))
-# print("↓↓")
+print(df_r.head(5))
+print(df_r.tail(5))
+print("↓↓")
 ### ↑これより上は消さない
 
 def inspection(df_r):
@@ -122,8 +121,25 @@ def inspection(df_r):
     print(tilt)
 
 
+def inspection_block(df_r):
+    """
+
+    :param df_r:
+    :return:
+    """
+
+    df_r = df_r[:30]
+    print(df_r.head(1))
+    print(df_r.tail(1))
+    # 調査幅を取得する（最高値最低値の２０分の１？）
+    highest = df_r["high"].max()
+    lowest = df_r["low"].min()
+    range = (highest - lowest)/20
+    print(highest,lowest, range)
+
+
 def block_inspection_main(df_r):
-    print("BlockInspection")
+    print("TurnInspection")
     df_r_part = df_r[:140]
     peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
@@ -131,6 +147,7 @@ def block_inspection_main(df_r):
     while len(peaks)>3:
         temp = block_inspection_each(peaks)
         peaks = temp['next_peaks']
+
 
 
 def block_inspection_each(peaks):
@@ -152,26 +169,25 @@ def block_inspection_each(peaks):
         if i == 0:
             continue
 
-        # ###ループで必ず実行するもの
-        # peakとpeak_oldestどちらが大きいかを確認する(範囲の上限と下限を設定する）
+        # peakとpeak_oldestどちらが大きいかを確認する
         if item['peak'] > item['peak_oldest']:
             high = item['peak']
             low = item['peak_oldest']
         else:
             high = item['peak_oldest']
             low = item['peak']
-        # peakのサイズ感を取得しておく
-
+        # print(" ", item, base_price)
 
         # ベースがピーク範囲にあるか
         if low < base_price < high:
-            # 範囲内に存在する場合
+            # 範囲内の場合
+            # print(" 　〇")
             in_range_count += 1  # カウンター
-            rest = 0  # 範囲外カウントのリセット（N回まで範囲外でも許容するカウンター）
-            end_peak = item  # 直近から昔に向かってサーチしているので、Endは逆を言えばレンジが始まった時のPeak情報ともいえる
-            end_index = i  # Peakが始まった時のインデックス
+            rest = 0  # リセット
+            end_peak = item  # 直近から昔に向かってサーチしているので、Endは逆を言えばレンジが始まった時間ともいえる
+            end_index = i
         else:
-            # 範囲内に存在しない場合（範囲外）
+            # 範囲外の場合
             if rest <= rest_max:
                 # 4連続以内の範囲外であれば、次のループへ
                 rest += 1
@@ -200,191 +216,9 @@ def block_inspection_each(peaks):
         "oldest_time": end_peak['time_oldest'],
         "oldest_price": end_peak["peak_oldest"]
     }
-    print(" ", base_price, "," , informations['latest_time'],
-          "(", informations['latest_price'], ")-", informations['oldest_time'], "(",
-          informations['oldest_price'], ")", informations['peaks_num'],
-          )
+    print(" ", base_price, "," , informations['latest_time'], "(", informations['latest_price'], ")-", informations['oldest_time'], "(",
+          informations['oldest_price'], ")", informations['peaks_num'])
     return informations
-
-
-def add_stdev(peaks):
-    """
-    引数として与えられたPeaksに対して、偏差値を付与する
-    :return:
-    """
-    # Gapのみを配列に置き換え（いい方法他にある？）
-    targets = []
-    for i in range(len(peaks)):
-        targets.append(peaks[i]['gap'])
-    # 平均と標準偏差を算出
-    ave = statistics.mean(targets)
-    stdev = statistics.stdev(targets)
-    # 各偏差値を算出し、Peaksに追加しておく
-    for i, item in enumerate(targets):
-        peaks[i]["stdev"] = round((targets[i]-ave)/stdev*10+50, 2)
-
-    return peaks
-
-
-def turn_inspection_main(df_r):
-    print("TurnInspectionMAIN")
-    df_r_part = df_r[:140]  # 検証に必要な分だけ抜き取る
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
-    peaks = peaks_info['all_peaks']
-    # f.print_arr(peaks[0:10])
-
-    # （１）Peakの偏差値を求める
-    peaks = add_stdev(peaks)  # 偏差値を付与して、Peaksを上書きする
-    print(" ①偏差値調査")
-    f.print_arr(peaks[0:15])
-
-    #  ##直近と１つ前、２個前の３個で確認する
-    # 直近の長さが１（１足分）の場合は折り返し直後。この場合は２個目と３個目を確認する
-    # 直近の長さが２以上の場合は、折り返し後少し経過。この場合は、直近と２個目を確認する
-    if peaks[0]['count'] <= 1:
-        # こっちは３段階での調査をしても良い？（Current）
-        print("  直近短い", peaks[0]['count'], peaks[0])
-        later = peaks[1]
-        mid = peaks[2]
-        older = peaks[3]
-        peaks = peaks[1:].copy()
-    else:
-        print("  直近長い", peaks[0]['count'], peaks[0])
-        later = peaks[0]
-        mid = peaks[1]
-        older = peaks[2]
-        peaks = peaks[0:].copy()
-    print("  直３ later:", later['time'], "mid", mid['time'], "older",older['time'])
-
-    # Olderとlaterを確認する
-    # 偏差値バージョン
-    margin = 1  # under
-    if older['stdev'] - margin > mid['stdev'] and mid['stdev'] - margin > later['stdev']:
-        print("  両フラッグ形状", older['stdev'], mid['stdev'], later['stdev'])
-    elif mid['stdev']-1 <= later['stdev'] <= mid['stdev']+1 and later['stdev']-1 <= mid['stdev'] <= later['stdev']+1:
-        if older['stdev'] >= mid['stdev']:
-            print("  片フラッグ形状", older['stdev'], mid['stdev'], later['stdev'])
-        else:
-            print("  片フラッグ形状未遂", older['stdev'], mid['stdev'], later['stdev'])
-    else:
-        print(" 特徴無し", older['stdev'], mid['stdev'], later['stdev'])
-
-    # UpperLower
-    turn_upper_lower(df_r_part, peaks)
-
-
-def turn_upper_lower(df_r, peaks):
-    """
-    検証対象のデータフレームとピーク集を受け取る。
-    メインとしては指定の範囲の中で、動く最大値最小値の候補を算出する
-    :param df_r:
-    :return:
-    """
-    print("upper_lower Inspection")
-    now_time = df_r.iloc[0]['time_jp']
-
-    # （１）各区分での大小の値を求める
-    # 2時間以内の最大値最小値を求める
-    mid_range = turn_upper_lower_sub(df_r, peaks, 2)
-    print("2hour")
-    print(mid_range)
-    # 5時間以内の最大値最小値を求める
-    wide_range = turn_upper_lower_sub(df_r, peaks, 5)
-    print("5hour")
-    print(wide_range)
-
-    # (2)各区分を統合していく
-    # 上の値を模索する
-    arrow_gap = 0.1  # 10pipsを許容範囲とする
-    if wide_range['high'] - arrow_gap < mid_range['high'] < wide_range['high'] + arrow_gap:
-        # MidとWideがほぼ同値　（wideの方が広いほうにはないはず。⇒< wide_range['high'] + arrow_gap不要）
-        upper_confidence = 100  #
-    else:
-        upper_confidence = 0
-
-    # 下の値を模索する
-    if wide_range['low'] - arrow_gap < mid_range['low'] < wide_range['low'] + arrow_gap:
-        # MidとWideがほぼ同値　（wideの方が広いほうにはないはず。⇒< wide_range['high'] + arrow_gap不要）
-        lower_confidence = 100
-    else:
-        lower_confidence = 0
-
-    # (3)直近が最大や最小の場合
-    # 最大値更新中の場合
-    if f.seek_time_gap_seconds(wide_range['high_time'], now_time)/60 < 10:  #10分以内の発生の場合
-        high_breaking = 1
-    else:
-        high_breaking = 0
-    # 最小値更新中の場合
-    if f.seek_time_gap_seconds(wide_range['low_time'], now_time)/60 < 10:  #10分以内の発生の場合
-        low_breaking = 1
-    else:
-        low_breaking = 0
-
-
-
-def turn_upper_lower_sub(df_r, peaks, hour):
-    """
-    データフレームとピークス、データフレームに対する足数の指定用の「時間」受け取る
-    その足数の指定内で、最大値最小値を求める
-    :param df_r:
-    :param peaks:
-    :return:
-    """
-    print("  upper_lower SUB")
-    #  何時間の情報を範囲にするか　1時間当たり12足分。５時間は６０足分、２時間は２４足分
-    feet = hour * 12
-    target_df = df_r[:feet]
-
-    # シンプルな最大値最小値を求める
-    high = target_df["high"].max()
-    high_index = target_df["high"].idxmax()
-    low = target_df["low"].min()
-    low_index = target_df["low"].idxmin()
-    inner_high = target_df["inner_high"].max()
-    inner_low = target_df["inner_low"].min()
-
-    # 大きなピークを持っているかを確認する(hour以内のpeaksに、偏差値７０以上があるかどうか)
-    now_time = df_r.iloc[0]['time_jp']
-    for i, item in enumerate(peaks):
-        if f.seek_time_gap_seconds(now_time, item['time'])/3600 > hour:
-            break  # Out
-        else:
-            # 規定時間以内のPeaksの各アイテムに対する調査
-            last_peak = item
-            last_i = i
-            if item['stdev'] > 80:
-                print("偏差値大が存在", item['stdev'], item['time'])
-    peaks = peaks[:i]  # 規定時間以内のピークス
-
-    # print("test")
-    # print(high_index)
-    # print(target_df)
-    return {
-        "high": high,
-        "low": low,
-        "inner_high": inner_high,
-        "inner_low": inner_low,
-        "high_time": target_df.loc[high_index]['time_jp'],  # index指定はloc
-        "low_time": target_df.loc[low_index]['time_jp']
-    }
-
-
-
-
-def turn_inspection_cal_retio(later, older):
-    """
-    100以上の値は、戻りすぎ。
-    100-60は結構戻ってるがこれから戻る？　
-    60以下の値が、適正。
-    :param later:
-    :param older:
-    :return:
-    """
-    print(later)
-    print(older)
-    print(later['gap'], older['gap'])
-    return (later['gap'] / older['gap']) * 100
 
 
 def turn_inspection_sub(latest, second):
@@ -414,15 +248,11 @@ def turn_inspection_sub(latest, second):
         print(" 突き抜け中")
 
 
-# res = block_inspection_main(df_r[0:60])
-# turn_inspection_main(df_r[0:60])
 
-# print(df_r.head(5))
-# print(df_r.tail(5))
-# ans = p.peaks_collect_main(df_r)
-# # f.print_json(ans)
-# f.print_arr(ans['all_peaks'])
-# print(t.turn_each_inspection_skip_del(df_r))
+res = block_inspection_main(df_r[0:60])
+# turn_inspection(df_r[0:20])
+
+# print(fTurn.turn_each_inspection(df_r))
 
 
 

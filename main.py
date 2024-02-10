@@ -5,12 +5,12 @@ import sys
 import pandas as pd
 
 # 自作ファイルインポート
-import programs.tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
-import programs.classOanda as classOanda
-import programs.classPosition as classPosition  # とりあえずの関数集
-import programs.fTurnInspection as t  # とりあえずの関数集
-import programs.fGeneric as f
-import programs.fPeakLineInspection as p
+import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
+import classOanda as classOanda
+import classPosition as classPosition  # とりあえずの関数集
+import fTurnInspection as t  # とりあえずの関数集
+import fGeneric as f
+import fPeakLineInspection as p
 
 
 def order_line_send(class_order_arr, add_info):

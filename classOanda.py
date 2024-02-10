@@ -15,7 +15,7 @@ from oandapyV20.endpoints.pricing import PricingInfo
 from oandapyV20.endpoints.trades import TradeCRCDO, TradeDetails, TradeClose, OpenTrades
 import oandapyV20.endpoints.transactions as trans
 
-import programs.tokens as tk  # エラーをLINEするため。。
+import tokens as tk  # エラーをLINEするため。。
 
 
 class Oanda:

@@ -1,11 +1,8 @@
 import datetime  # 日付関係
 import json
-import pandas as pd  # add_peaks
 import numpy as np
-import programs.tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
-import programs.classOanda as classOanda
-import programs.fTurnInspection as fTurn
-import programs.fGeneric as f
+import fTurnInspection as fTurn
+import fGeneric as f
 
 
 #　ピーク一覧作成&分割
@@ -319,7 +316,7 @@ def calChangeFromPeaks(same_peaks_group):
     gap_min = round(abs(ans_dic['peak'] - target_peak), 3)
     price_min = ans_dic['peak']
     time_min = ans_dic['time']
-    gap_time = classOanda.str_to_time(target_time) - classOanda.str_to_time(time_min)
+    gap_time = f.str_to_time(target_time) - f.str_to_time(time_min)
     memo_mini_gap = f.delYear(target_time) + "-" + f.delYear(time_min) + \
                     "[" + str(target_peak) + "-" + str(price_min) + "]" + \
                     "方向" + str(same_peaks_group[0]['direction']) + " GAP" + str(gap_min) + " TimeGap" + str(gap_time)

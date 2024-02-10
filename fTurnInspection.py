@@ -1,7 +1,7 @@
 import pandas as pd  # add_peaks
-import programs.tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
-import programs.classOanda as classOanda
-import programs.fGeneric as f
+import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
+import classOanda as classOanda
+import fGeneric as f
 
 
 def turn_each_support(data_df, direction, ans_info):

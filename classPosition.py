@@ -1,9 +1,9 @@
 import time
 import pandas as pd
 import datetime
-import programs.tokens as tk
-import programs.classOanda as oanda_class
-import programs.fGeneric as f
+import tokens as tk
+import classOanda as oanda_class
+import fGeneric as f
 
 
 class order_information:

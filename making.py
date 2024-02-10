@@ -1,8 +1,8 @@
-import programs.fTurnInspection as f  # とりあえずの関数集
-import programs.tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
-import programs.classOanda as oanda_class
-import programs.fPeakLineInspection as p  # とりあえずの関数集
-import programs.fGeneric as f
+import fTurnInspection as t  # とりあえずの関数集
+import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
+import classOanda as oanda_class
+import fPeakLineInspection as p  # とりあえずの関数集
+import fGeneric as f
 import statistics
 
 oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
