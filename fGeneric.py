@@ -20,6 +20,18 @@ def str_to_time(str_time):
     return time_dt
 
 
+def str_to_time_hms(str_time):
+    """
+    時刻（文字列：2023/5/24  21:55:00　形式）をDateTimeに変換する。
+    基本的には表示用。時刻だけにする。
+    :param str_time:
+    :return:
+    """
+    time_str = str_time[11:13] + ":" + str_time[14:16] + ":" + str_time[17:19]
+
+    return time_str
+
+
 def seek_time_gap_seconds(time1, time2):
     """
     time1 と　time2の時間差を求める（time1とtime2の大小はこの関数で確認する）

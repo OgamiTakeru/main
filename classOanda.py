@@ -227,8 +227,6 @@ class Oanda:
         start_time = datetime.datetime.now().replace(microsecond=0)  # エラー頻発の為、ログ
         try:
             # 初期値を入れておく
-            tp_range = 0
-            lc_range = 0
             plan['ask_bid'] = plan['direction']  # その場しのぎ。。
 
             data = {  # オーダーのテンプレート！（一応書いておく）
@@ -361,8 +359,9 @@ class Oanda:
                 # たまに変わるため注意。23年１月現在、利確ロスカ注文はtype = STOP_LOSS TAKE_PROFIT
                 # 新規ポジション取得は、順張り逆張り問わず、MARKET_IF_TOUCHED
                 if row['type'] == 'MARKET_IF_TOUCHED' or row['type'] == 'STOP' or row['type'] == 'LIMIT':
-                    # tpyeがMARKET_IF_TOUCHEDの場合（いわゆるポジションを取るための注文）
-                    cancel_res = self.OrderCancel_exe(row["id"])  # 【関数】単品をクローズする
+                    pass
+                    # typeがMARKET_IF_TOUCHEDの場合（いわゆるポジションを取るための注文）
+                    # cancel_res = self.OrderCancel_exe(row["id"])  # 【関数】単品をクローズする
                     # close_df = pd.concat([close_df , res_df])#新決済情報を縦結合
                 else:  # LIMIT注文、STOP注文の場合（ここでいうLIMITは利確、STOPはロスカ トレールもこっち
                     pass
@@ -376,7 +375,7 @@ class Oanda:
         :return:
         """
         open_df_dic = self.OrdersPending_exe()
-        close_df = None
+        # close_df = None
         count = 0
         if open_df_dic['error'] == -1:
             print("Error")

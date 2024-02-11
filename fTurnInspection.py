@@ -6,6 +6,7 @@ import fGeneric as f
 
 def turn_each_support(data_df, direction, ans_info):
     """
+    形状の詳細を判定する。ここでは不要。
     ここでのデータは、０行目が最新データ
     :param data_df:
     :param direction:
@@ -168,7 +169,7 @@ def turn_each_inspection(data_df_origin):
 
         # ■　一旦格納する
         # 表示等で利用する用（機能としては使わない
-        memo_time = classOanda.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + classOanda.str_to_time_hms(
+        memo_time = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
             ans_df.iloc[0]["time_jp"])
         # 返却用(Simple データを持たない表示用)
         ans_dic = {
@@ -334,7 +335,7 @@ def turn_each_inspection_skip(data_df_origin):
 
     # ■　一旦格納する
     # 表示等で利用する用（機能としては使わない
-    memo_time = classOanda.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + classOanda.str_to_time_hms(
+    memo_time = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
         ans_df.iloc[0]["time_jp"])
     # 返却用(Simple データを持たない表示用)
     ans_dic = {
@@ -370,85 +371,85 @@ def turn_each_inspection_skip(data_df_origin):
     return {"ans_dic": ans_dic, "ans_dic_simple": ans_dic_simple}
 
 
-def turn_each_inspection_skip_sub(df_r):
-    """
-    最低でも５０行程度渡さないとエラー発生。
-    渡された範囲で、何連続で同方向に進んでいるかを検証する（ただし、skipありは、２つのみの戻りはスキップして検討する）
-    :param df_r: 直近が上側（日付降順/リバース）のデータを利用
-    :return: Dict形式のデータを返伽
-    """
-    if len(df_r) == 0:
-        return 0
-    for i in range(5):  # とりあえず５回分。。本当は再帰とかがベストだと思う
-        if i == 0:  # 初回は実行。一番根本となるデータを取得する
-            ans_current = turn_each_inspection(df_r)  # 再起用に０渡しておく。。
-            next_from = ans_current['count'] - 1
-        else:
-            next_from = 0  # NextFromのリセット
-        # 次の調査対象（ここの長さは一つの判断材料）時系列的には古い
-        ans_next_jd = turn_each_inspection(df_r[next_from:])  # 再起用に０渡しておく。。
-        next_from = next_from + ans_next_jd['count'] - 1
-
-        ans_next_next_jd = turn_each_inspection(df_r[next_from:])  # 再起用に０渡しておく。。
-        next_from = next_from + ans_next_next_jd['count'] - 1
-
-        # 判定(次回の幅が２足分、次々回の方向が現在と同一、次々回のスタート(old)価格が現在のスタート(old)価格より高い)
-        merge = 0
-        # print("条件", ans_next_jd['count'], ans_next_next_jd['direction'], ans_current['direction'])
-
-        # 各数字を計算しておく
-        triple_gap = abs(ans_current['latest_iamge_price'] - ans_next_next_jd['oldest_image_price'])
-        next_gap = abs(ans_next_jd['latest_peak_price'] - ans_next_jd['oldest_peak_price'])
-
-        if ans_next_jd['count'] <= 2 and ans_next_next_jd['direction'] == ans_current['direction'] and \
-                next_gap < 0.02 and \
-                    next_gap / triple_gap < 0.1:
-            if ans_current['direction'] == 1:  # 上向きの場合
-                if ans_current['oldest_image_price'] > ans_next_next_jd['data'].iloc[-1]["inner_low"]:  # 価格が昔(調査的には次々回のスタート価格)より上昇、
-                    # print("上向き")
-                    # print(ans_next_next_jd)
-                    # print(ans_current['oldest_image_price'], ans_next_next_jd['data'].iloc[-1]["inner_low"])
-                    if ans_current['latest_image_price'] > ans_next_next_jd['data'].iloc[0]["inner_high"]:  # 直近価格を超えるような乱高下でもNG
-                        # print(ans_current['latest_image_price'], ans_next_next_jd['data'].iloc[0]["inner_high"])
-                        merge = 1
-            else:  # 下向きの場合
-                if ans_current['oldest_image_price'] < ans_next_next_jd['data'].iloc[-1]["inner_high"]:  # 価格が昔(調査的には次々回のスタート価格)より下落
-                    # print("上向き")
-                    # print(ans_next_next_jd)
-                    # print(ans_current['oldest_image_price'], ans_next_next_jd['data'].iloc[-1]["inner_low"])
-                    if ans_current['latest_image_price'] < ans_next_next_jd['data'].iloc[0]["inner_low"]:  # 直近価格を超えるような乱高下でもNG
-                        # print(ans_current['latest_image_price'], ans_next_next_jd['data'].iloc[0]["inner_low"])
-                        merge = 1
-        # ここからマージ処理
-        if merge == 1:  # 現在(currentと次々回調査分(時系列的には過去）は結合して考える（一つ戻りが間にあるだけ）
-            # データフレームの結合（一番もとになるans_currentを更新していく）,情報の更新（Oldの部分を更新していく）
-            ans_current['data'] = pd.concat([ans_current['data'], ans_next_jd['data']])  # １行ラップするけど
-            ans_current['data'] = pd.concat([ans_current['data'], ans_next_next_jd['data']])  # １行ラップするけど
-            ans_current['count'] = len(ans_current['data']) - 2  # 2は調整。。これは大まかな数字
-            ans_current['oldest_image_price'] = ans_next_next_jd['oldest_image_price']
-            ans_current['oldest_time_jp'] = ans_next_next_jd['oldest_time_jp']
-            ans_current['oldest_peak_price'] = ans_next_next_jd['oldest_peak_price']
-            ans_current['data_remain'] = df_r[next_from:]  # 残りのデータ
-            # gapの計算
-            gap = round(abs(ans_current['latest_image_price'] - ans_current['oldest_image_price']), 3)
-            if gap == 0:
-                gap = 0.001
-            else:
-                gap = gap
-            ans_current['gap'] = gap
-            # 備忘録用のメモを作っておく
-            ans_df = ans_current['data']
-            memo_time = classOanda.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + classOanda.str_to_time_hms(
-                        ans_df.iloc[0]["time_jp"])
-            ans_current['memo_time'] = memo_time
-            # 次のループに向け、dr_fを更新
-            df_r = df_r[next_from :]  # 残りのデータ
-            # print("次回調査対象",df_r.head(5))
-        else:
-            # print(" 終了")
-            break
-
-    return ans_current
+# def turn_each_inspection_skip_sub(df_r):
+#     """
+#     最低でも５０行程度渡さないとエラー発生。
+#     渡された範囲で、何連続で同方向に進んでいるかを検証する（ただし、skipありは、２つのみの戻りはスキップして検討する）
+#     :param df_r: 直近が上側（日付降順/リバース）のデータを利用
+#     :return: Dict形式のデータを返伽
+#     """
+#     if len(df_r) == 0:
+#         return 0
+#     for i in range(5):  # とりあえず５回分。。本当は再帰とかがベストだと思う
+#         if i == 0:  # 初回は実行。一番根本となるデータを取得する
+#             ans_current = turn_each_inspection(df_r)  # 再起用に０渡しておく。。
+#             next_from = ans_current['count'] - 1
+#         else:
+#             next_from = 0  # NextFromのリセット
+#         # 次の調査対象（ここの長さは一つの判断材料）時系列的には古い
+#         ans_next_jd = turn_each_inspection(df_r[next_from:])  # 再起用に０渡しておく。。
+#         next_from = next_from + ans_next_jd['count'] - 1
+#
+#         ans_next_next_jd = turn_each_inspection(df_r[next_from:])  # 再起用に０渡しておく。。
+#         next_from = next_from + ans_next_next_jd['count'] - 1
+#
+#         # 判定(次回の幅が２足分、次々回の方向が現在と同一、次々回のスタート(old)価格が現在のスタート(old)価格より高い)
+#         merge = 0
+#         # print("条件", ans_next_jd['count'], ans_next_next_jd['direction'], ans_current['direction'])
+#
+#         # 各数字を計算しておく
+#         triple_gap = abs(ans_current['latest_iamge_price'] - ans_next_next_jd['oldest_image_price'])
+#         next_gap = abs(ans_next_jd['latest_peak_price'] - ans_next_jd['oldest_peak_price'])
+#
+#         if ans_next_jd['count'] <= 2 and ans_next_next_jd['direction'] == ans_current['direction'] and \
+#                 next_gap < 0.02 and \
+#                     next_gap / triple_gap < 0.1:
+#             if ans_current['direction'] == 1:  # 上向きの場合
+#                 if ans_current['oldest_image_price'] > ans_next_next_jd['data'].iloc[-1]["inner_low"]:  # 価格が昔(調査的には次々回のスタート価格)より上昇、
+#                     # print("上向き")
+#                     # print(ans_next_next_jd)
+#                     # print(ans_current['oldest_image_price'], ans_next_next_jd['data'].iloc[-1]["inner_low"])
+#                     if ans_current['latest_image_price'] > ans_next_next_jd['data'].iloc[0]["inner_high"]:  # 直近価格を超えるような乱高下でもNG
+#                         # print(ans_current['latest_image_price'], ans_next_next_jd['data'].iloc[0]["inner_high"])
+#                         merge = 1
+#             else:  # 下向きの場合
+#                 if ans_current['oldest_image_price'] < ans_next_next_jd['data'].iloc[-1]["inner_high"]:  # 価格が昔(調査的には次々回のスタート価格)より下落
+#                     # print("上向き")
+#                     # print(ans_next_next_jd)
+#                     # print(ans_current['oldest_image_price'], ans_next_next_jd['data'].iloc[-1]["inner_low"])
+#                     if ans_current['latest_image_price'] < ans_next_next_jd['data'].iloc[0]["inner_low"]:  # 直近価格を超えるような乱高下でもNG
+#                         # print(ans_current['latest_image_price'], ans_next_next_jd['data'].iloc[0]["inner_low"])
+#                         merge = 1
+#         # ここからマージ処理
+#         if merge == 1:  # 現在(currentと次々回調査分(時系列的には過去）は結合して考える（一つ戻りが間にあるだけ）
+#             # データフレームの結合（一番もとになるans_currentを更新していく）,情報の更新（Oldの部分を更新していく）
+#             ans_current['data'] = pd.concat([ans_current['data'], ans_next_jd['data']])  # １行ラップするけど
+#             ans_current['data'] = pd.concat([ans_current['data'], ans_next_next_jd['data']])  # １行ラップするけど
+#             ans_current['count'] = len(ans_current['data']) - 2  # 2は調整。。これは大まかな数字
+#             ans_current['oldest_image_price'] = ans_next_next_jd['oldest_image_price']
+#             ans_current['oldest_time_jp'] = ans_next_next_jd['oldest_time_jp']
+#             ans_current['oldest_peak_price'] = ans_next_next_jd['oldest_peak_price']
+#             ans_current['data_remain'] = df_r[next_from:]  # 残りのデータ
+#             # gapの計算
+#             gap = round(abs(ans_current['latest_image_price'] - ans_current['oldest_image_price']), 3)
+#             if gap == 0:
+#                 gap = 0.001
+#             else:
+#                 gap = gap
+#             ans_current['gap'] = gap
+#             # 備忘録用のメモを作っておく
+#             ans_df = ans_current['data']
+#             memo_time = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
+#                         ans_df.iloc[0]["time_jp"])
+#             ans_current['memo_time'] = memo_time
+#             # 次のループに向け、dr_fを更新
+#             df_r = df_r[next_from :]  # 残りのデータ
+#             # print("次回調査対象",df_r.head(5))
+#         else:
+#             # print(" 終了")
+#             break
+#
+#     return ans_current
 
 
 def turn_merge_inspection(figure_condition):
@@ -479,13 +480,11 @@ def turn_merge_inspection(figure_condition):
     # 表示用がメインの情報まとめ
     # print("  ", oldest_ans['oldest_time_jp'], latest_ans['latest_time_jp'], oldest_ans['oldest_price'],"@fig_ins")
     # print("  ", oldest_ans_normal['oldest_time_jp'], latest_ans['latest_time_jp'], oldest_ans_normal['oldest_price'], "@fig_ins")
-    memo_time = classOanda.str_to_time_hms(oldest_ans['oldest_time_jp']) + "_" + \
-                classOanda.str_to_time_hms(oldest_ans['latest_time_jp']) + "_" + \
-                classOanda.str_to_time_hms(latest_ans['latest_time_jp'])
+    memo_time = f.str_to_time_hms(oldest_ans['oldest_time_jp']) + "_" + \
+                f.str_to_time_hms(oldest_ans['latest_time_jp']) + "_" + \
+                f.str_to_time_hms(latest_ans['latest_time_jp'])
     memo_price = "(" + str(oldest_ans['oldest_price']) + "_" + str(oldest_ans['latest_image_price']) + \
                  "_" + str(latest_ans['latest_price']) + "," + str(oldest_ans['direction'])
-    # memo_time = memo_time + classOanda.str_to_time_hms(oldest_ans_normal['oldest_time_jp']) + "_" + \
-    #             classOanda.str_to_time_hms(latest_ans['latest_time_jp'])
     memo_all = memo_time + memo_price
 
     # 初期値があった方がいいもの（エラー対策）

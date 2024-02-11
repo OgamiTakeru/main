@@ -20,7 +20,7 @@ def analysis_part(df_r):
     # prac.turn_inspection_main(df_r)
 
 
-# 確認パート
+# 検証パート
 def confirm_part(df_r, ana_ans):
     print("★★確認パート")
     # 検証パートは古いのから順に並び替える（古いのが↑、新しいのが↓）
@@ -165,9 +165,9 @@ def check_main(df_r):
     print(analysis_part_df.head(2))
     print(analysis_part_df.tail(2))
 
-    # 検証パート　todo
+    # 解析パート　todo
     ana_ans = analysis_part(analysis_part_df)  # ana_ans={"ans": bool(結果照合要否必須）, "price": }
-    # 結果照合パート todo
+    # 検証パート todo
     if ana_ans['ans']:  # ポジション判定ある場合のみ
         # 検証と結果の関係性の確認　todo
         conf_ans = confirm_part(res_part_df, ana_ans)
@@ -191,7 +191,7 @@ def main():
     # count = need_analysis_num + 1  # need_analysis_num + 1  # 取得する行数。単発実行の場合はこの数で調整⇒ need_analysis_num + 1
     times = 1# Count(最大5000件）を何セット取るか
     # ■■取得時間の指定
-    now_time =True  # 現在時刻実行するかどうか False True
+    now_time = True  # 現在時刻実行するかどうか False True
     target_time = datetime.datetime(2023, 12, 29, 16, 50, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
     gr = "M5"
     # ■■方法の指定
@@ -203,7 +203,7 @@ def main():
         # 直近の時間で検証
         df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": gr, "count": count}, times)
     else:
-        # jp_timeは解析のみはダイレクト、解析＋検証の場合は検証の時間を考慮(検証分を後だしした時刻)して解析を取得する。
+        # jp_timeは解析のみは指定時刻のまま、解析＋検証の場合は指定時間を解析時刻となるようにする（検証分を考慮）。
         jp_time = target_time if inspection_only else target_time + datetime.timedelta(minutes=(res_part_low+1)*5)
         euro_time_datetime = jp_time - datetime.timedelta(hours=9)
         euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
@@ -212,20 +212,20 @@ def main():
         # df = oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間指定
     # データの成型と表示
     df = df["data"]  # data部のみを取得
-    df.to_csv(tk.folder_path + 'analisysTEST.csv', index=False, encoding="utf-8")  # 直近保存用
+    df.to_csv(tk.folder_path + 'main_analysis.csv', index=False, encoding="utf-8")  # 直近保存用
     df_r = df.sort_index(ascending=False)  # 逆順に並び替え（直近が上側に来るように）
     print("全", len(df_r), "行")
     print(df_r.head(2))
     print(df_r.tail(2))
 
-    # （2）単発調査用！！　直近N行で検証パートのテストの実を行う場合はここでTrue
+    # （2）【解析パートを一回のみ実施する場合】　直近N行で検証パートのテストのみを行う場合はここでTrue
     if inspection_only:
         print("Do Only Inspection　↓解析パート用データ↓")
         print(df_r.head(2))
         analysis_part(df_r[:analysis_part_low])  # 取得したデータ（直近上位順）をそのまま渡す。検証に必要なのは現在200行
         exit()
 
-    # （3）連続検証データを渡していく（ループ　or 単発）
+    # （3）【解析＋検証をセットで行う】連続で実施していく。
     all_ans = []
     print("ループ処理")
     for i in range(len(df_r)):
@@ -234,7 +234,7 @@ def main():
             ans = check_main(df_r[i: i+need_analysis_num])  # ★チェック関数呼び出し
             all_ans.append(ans)
         else:
-            print("　終了",i + need_analysis_num, "<=", len(df_r))
+            print("　終了", i + need_analysis_num, "<=", len(df_r))
             break  # 検証用の行数が確保できない場合は終了
 
     # （４）結果のまとめ
