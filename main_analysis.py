@@ -15,7 +15,8 @@ gl_start_time = datetime.datetime.now()
 # 解析パート
 def analysis_part(df_r):
     print("★★解析パート")
-    return mk.turn1Rule(df_r)
+    # return mk.turn1Rule(df_r)
+    return mk.turn2Rule(df_r)
     # return mk.now_position(df_r)
     # prac.turn_inspection_main(df_r)
 
@@ -168,9 +169,9 @@ def check_main(df_r):
     # 解析パート　todo
     ana_ans = analysis_part(analysis_part_df)  # ana_ans={"ans": bool(結果照合要否必須）, "price": }
     # 検証パート todo
-    if ana_ans['ans']:  # ポジション判定ある場合のみ
+    if ana_ans['take_position']:  # ポジション判定ある場合のみ
         # 検証と結果の関係性の確認　todo
-        conf_ans = confirm_part(res_part_df, ana_ans)
+        conf_ans = confirm_part(res_part_df, ana_ans)  # 対象のDataFrame,ポジション取得価格/時刻等,ロスカ/利確幅が必要
         # 検証結果と確認結果の結合
         ana_ans = dict(**ana_ans, **conf_ans)
     return ana_ans
@@ -188,14 +189,14 @@ def main():
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
     count = 4000
+    gr = "M5"  # 取得する足の単位
     # count = need_analysis_num + 1  # need_analysis_num + 1  # 取得する行数。単発実行の場合はこの数で調整⇒ need_analysis_num + 1
     times = 1# Count(最大5000件）を何セット取るか
     # ■■取得時間の指定
-    now_time = True  # 現在時刻実行するかどうか False True
-    target_time = datetime.datetime(2023, 12, 29, 16, 50, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
-    gr = "M5"
+    now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
+    target_time = datetime.datetime(2024, 2, 12, 12, 55, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
     # ■■方法の指定
-    inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+    inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
     # (１)情報の取得
     print('###')

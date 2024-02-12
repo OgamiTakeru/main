@@ -172,7 +172,7 @@ def turn1Rule(df_r):
 
     # ■情報の統合
     if f_count and f_return and f_size:
-        ans = True
+        take_position = True
         margin = 0.0
     #     # ■３０分足の確認
     #     jp_time = f.str_to_time(df_r_part.iloc[0]['time_jp'])
@@ -226,11 +226,11 @@ def turn1Rule(df_r):
     #         long_predicted_direction = expect_direction
     #         margin = peak_l['gap']
     else:
-        ans = False
+        take_position = False
         margin = 0
 
     return {
-        "ans": ans,
+        "take_position": take_position,
         "s_time": df_r_part.iloc[0]['time_jp'],
         "trigger_price": df_r_part.iloc[0]['close'] + (expect_direction * margin),
         "lc_range": f.cal_at_least(0.050, peak_o['gap']/4),
@@ -258,55 +258,69 @@ def turn2Rule(df_r):
     print("PEAKS↑")
 
     # 必要なピークを出す
-    peak_l = peaks[0]  # 最新のピーク  これは２＝折り返し直後　の関数になる
-    peak_m = peaks[1]  # いわゆる戻し部分
-    peak_o = peaks[2]  # 基準(プリフロップ）
+    peak_l = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    peak_m = peaks[1]  # 注目するポイント（ターンと呼ぶ）
+    peak_o = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
     peaks_times = "Old:" + f.delYear(peak_o['time_old']) + "-" + f.delYear(peak_o['time']) + "_" + \
                   "Mid:" + f.delYear(peak_m['time_old']) + "-" + f.delYear(peak_m['time']) + "_" + \
                   "Latest" + f.delYear(peak_l['time_old']) + "-" + f.delYear(peak_l['time'])
     print("対象")
-    print(peak_o)
-    print(peak_m)
-    print(peak_l)
+    print("直近", peak_l)
+    print("ターン", peak_m)
+    print("古い", peak_o)
 
-    # 条件ごとにフラグを立てていく
-    # ①偏差値の条件
-    if peak_o['stdev'] > 55:
+
+    # (1)リバーとターンで比較を実施する
+    # ①偏差値の条件 (＠ターン）
+    if peak_m['stdev'] > 55:
         f_size = True
-        print("  偏差値達成", peak_o['stdev'])
     else:
         f_size = False
-        print("  偏差値未達", peak_o['stdev'])
-
-    # ②カウントの条件
-    if peak_l['count'] == 2 and peak_o['count'] >= 7:
+    print("  偏差値:", f_size, " ", peak_o['stdev'])
+    # ②カウントの条件（＠ターンとリバー）
+    if peak_l['count'] == 2 and peak_m['count'] >= 7:
         f_count = True
-        print("  カウント達成")
     else:
         f_count = False
-        print(" カウント未達")
-
-    # ③戻り割合の条件
-    if peak_m['gap'] / peak_o['gap'] < 0.5:
+    print("  カウント:", f_count, " 直近", peak_l['count'], "ターン", peak_m['count'], "←直近2以下,ターン7以上でTrue")
+    # ③戻り割合の条件（＠ターンとリバー）
+    if peak_l['gap'] / peak_m['gap'] < 0.5:  # 0.5の場合、半分以上戻っていたら戻りすぎ（False）。微戻り(半分以下)ならOK！
         f_return = True
-        print("  割合達成", peak_l['gap'], peak_o['gap'], round(peak_l['gap'] / peak_o['gap'], 1))
     else:
         f_return = False
-        print("  割合未達", peak_l['gap'], peak_o['gap'], round(peak_l['gap'] / peak_o['gap'], 1))
-
-
+    print("  割合達成:", f_return, " ", peak_l['gap'], peak_m['gap'], round(peak_l['gap'] / peak_m['gap'], 1))
+    # [最後]　各条件を考慮し、ポジションを持つかどうかを検討する
     if f_count and f_return and f_size:
-        ans = True
+        take_position = True
     else:
-        ans = False
+        take_position = False
+
+    # (2) プリフロップ部の検証を行う⇒レンジ中なのかとかを確認できれば。。。
+    # ①ターンとプリフロップ３について、サイズの関係性取得する(同程度のgapの場合、レンジ？）
+    small_ratio = 0.8
+    big_ratio = 1.2
+    if peak_o['stdev'] * small_ratio <= peak_m['stdev'] <= peak_o['stdev'] * big_ratio:
+        # 同レベルのサイズ感の場合
+        f_range_flag = True
+        f_range_flag_comment = "同等"
+    elif peak_m['stdev'] > peak_o['stdev'] * big_ratio:
+        # 直近（ターン）が大きくなっている場合⇒動きが激しくなった瞬間？
+        f_range_flag = False
+        f_range_flag_comment = "大きくなる変動あ直後"
+    elif peak_m['stdev'] < peak_o['stdev'] * small_ratio:
+        # 直近（ターン）が大きくなっている場合⇒動きが少なくなった瞬間？
+        f_range_flag = False
+        f_range_flag_comment = "小さくなる変動直後"
+    print("  レンジ:", f_range_flag, " ", peak_m['stdev'], "範囲", peak_o['stdev'], "[", round(peak_o['stdev'] * small_ratio, 2), round(peak_o['stdev'] * big_ratio, 2), "]")
+    print("        ", f_range_flag_comment)
 
     return {
-        "ans": ans,
-        "s_time": df_r_part.iloc[0]['time_jp'],
-        "trigger_price": peak_l['peak'],
-        "lc_range": peak_o['gap']/4,
-        "tp_range": 0.05,
-        "expect_direction": peak_o['direction'],
+        "take_position": take_position,  # ポジション取得指示あり
+        "s_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
+        "trigger_price": peak_l['peak'],  # 直近の価格（ポジションの取得有無は無関係）
+        "lc_range": peak_o['gap']/4,  # ロスカットレンジ（ポジションの取得有無は無関係）
+        "tp_range": 0.05,  # 利確レンジ（ポジションの取得有無は無関係）
+        "expect_direction": peak_o['direction'],  # ターン部分の方向
         # 以下参考項目
         "stdev": peak_o['stdev'],
         "o_count": peak_o['count'],

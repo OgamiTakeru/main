@@ -528,264 +528,264 @@ def turn_merge_inspection(figure_condition):
     }
 
 
-def turn2_cal(inspection_condition):
-    # 直近のデータの確認　LatestとOldestの関係性を検証する
-    turn_ans_dic = turn_merge_inspection(inspection_condition)  # ★★引数順注意。ポジ用の価格情報取得（０は取得無し）
-    oldest_ans = turn_ans_dic['oldest_ans']
-    latest_ans = turn_ans_dic['latest_ans']
-    turn_ans = turn_ans_dic['turn_ans']
-    return_ratio = turn_ans_dic['return_ratio']
-    memo_all = turn_ans_dic['memo_all']
-
-    # 結果をもとに、価格を決定していく
-    oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)  # ★environmentl現在価格の取得
-    now_price = oa.NowPrice_exe("USD_JPY")['data']['mid']  # ★現在価格の取得
-    # print("  nowPrice", now_price)
-
-    # 注文情報を算出する
-    main = {}  # 初期値を入れておく
-    junc = {}  # 初期値を入れておく
-    if turn_ans != 0:
-        # ★注文（基準情報の収集）
-        # （1）逆思想(range)の値の計算　 230918　レンジがメインにする
-        # ① 方向の設定　
-        range_d = latest_ans['direction']  # 方向（Tpとmarginの方向。LCの場合は*-1が必要）
-
-        # ②marginの検討
-        margin2 = 0  # MARKETのため
-
-        # ③ base price(システム利用値) & target price(参考値=システム不使用)の調整
-        base_price2 = latest_ans['latest_price']
-        target_price2 = latest_ans['latest_price']  # 計算用に直近の価格を取得しておく
-
-        # ④　LC_rangeの検討
-        cal_lc = abs(latest_ans['latest_image_price'] - latest_ans['oldest_image_price'])  # ピークまで戻ったらLC
-        lc_range2_abs = cal_lc + 0.03
-        lc_range2_abs = f.cal_at_least(0.05, lc_range2_abs)  # ちょっと狭すぎる場合は、、、最低でも2pips取る。
-        print(" LC検討", latest_ans['latest_image_price'], latest_ans['oldest_image_price'], abs(latest_ans['latest_image_price'] - latest_ans['oldest_image_price']))
-        print(lc_range2_abs)
-
-        # ⑤ TP_rangeの検討
-        cal_tp = abs(latest_ans['latest_image_price'] - oldest_ans['oldest_image_price'])
-        tp_range2_abs = cal_tp * 1.5
-        tp_range2_abs = f.cal_at_most(0.10, tp_range2_abs)  # ちょっと狭すぎる場合は、、、最低でも2pips取る。
-
-        # ⑥カスケードクローズの１区画分の計算
-        cascade_unit = oldest_ans['gap']
-
-        # ⑥　格納
-        junc = {
-            "name": "レンジ",
-            "base_price": base_price2,
-            "target_price": target_price2,  # 基本渡した先では使わない
-            "margin": 0,  # BasePriceに足せばいい数字（方向もあっている）
-            "direction": range_d,
-            "type": "MARKET",
-            "lc_range": round(lc_range2_abs * range_d * -1, 3),
-            "tp_range": round(tp_range2_abs * range_d, 3),
-            "units": 10,
-            "trigger": "ターン",
-            "memo": memo_all,
-            "data": turn_ans_dic,
-            "cascade_unit": cascade_unit
-        }
-
-        # （2）順思想の値の計算
-        # ① 方向の設定
-        trend_d = latest_ans['direction'] * -1
-        # ②　margin
-        margin_abs = 0.015
-
-        # ③ base price(システム利用値) & target price(参考値=システム不使用)の調整
-        base_price = junc['base_price'] + junc['lc_range']  # BaseはレンジのLC価格。
-        target_price = round(base_price + margin_abs * trend_d, 3)  # target_priceを念のために取得しておく
-        print(base_price, margin_abs)
-
-        # ④　LC_rangeの検討
-        lc_range_abs = round((oldest_ans['latest_image_price'] - oldest_ans['oldest_image_price']) / 2, 3)
-
-        # ⑤ TP_rangeの検討
-        tp_range_abs = 0.050
-
-        # ⑥カスケードクローズの１区画分の計算
-        cascade_unit = oldest_ans['gap']
-
-        # ⑥ 格納
-        main = {  # 順思想（この以下の過程で、LCやMarginに方向を持たせる）（oldest方向同方向へのオーダー）今３００００の方
-            "name": "順思想",
-            "base_price": base_price,
-            "target_price": target_price,  # 基本渡した先では使わない
-            "margin": round(margin_abs * trend_d, 3),  # BasePriceに足せばいい数字（方向もあっている）
-            "direction": trend_d,
-            "type": "STOP",
-            "lc_range": round(lc_range_abs * trend_d * -1, 3),
-            "tp_range": round(tp_range_abs * trend_d, 3),
-            "units": 10,
-            "trigger": "ターン",
-            "cascade_unit": cascade_unit,
-            "memo": memo_all,
-            'data': turn_ans_dic
-        }
-
-
-    # (３)返却用データの作成
-    ans_dic = {
-        "turn_ans": turn_ans,  # 結果として、ターン認定されるかどうか
-        "latest_ans": latest_ans,  # oldest部分の情報
-        "oldest_ans": oldest_ans,  # latest部分の詳細
-        "return_ratio": return_ratio,
-        "memo_all": memo_all,
-        "to_half_percent": round(50 - return_ratio),
-        "order_dic": {
-            "main": main,
-            "junc": junc,
-        }
-    }
-
-    # Return
-    return ans_dic
-
-
-def turnNotReached(ins_condition):
-    # 最初の１行は無視する（現在の行の為）
-    data_r_all = ins_condition['data_r']
-    ignore = ins_condition['turn_2']['ignore']
-    data_r = data_r_all[ignore:]  # 最初の１行は無視
-
-    # 下らないエラー対策
-    if data_r.iloc[2]['body'] == 0:
-        oldest_body_temp = 0.0001
-    else:
-        oldest_body_temp = data_r.iloc[2]['body']
-
-    if data_r.iloc[1]['body'] == 0:
-        middle_body_temp = 0.0001
-    else:
-        middle_body_temp = data_r.iloc[1]['body']
-
-    if data_r.iloc[0]['body'] == 0:
-        latest_body_temp = 0.0001
-    else:
-        latest_body_temp = data_r.iloc[0]['body']
-
-    # gapサイズを求める（小さい最場合は無効にするため）
-    gap = round(data_r.iloc[2]['body_abs'] + data_r.iloc[1]['body_abs'], 3)
-
-    oldest = round(oldest_body_temp, 1)
-    oldest_d = round(oldest_body_temp / abs(oldest_body_temp), 0)
-    middle = round(middle_body_temp, 1)
-    middle_d = round(middle_body_temp / abs(middle_body_temp), 0)
-    latest = round(latest_body_temp, 1)
-    latest_d = round(latest_body_temp / abs(latest_body_temp), 0)
-    older_line = 0.01
-    later_line = 0.006
-    if middle == 0:
-        middle = 0.0001
-
-    # print(oldest, oldest_d, middle, middle_d, latest, latest_d)
-    # 三つの方向が形式にあっているか（↑↑↓か、↓↓↑）を確認
-    if (oldest_d == middle_d) and oldest_d != latest_d:
-        d = 1
-    else:
-        d = 0
-
-    if abs(oldest) > older_line and abs(middle) > older_line and abs(latest) < abs(middle):  # どっちも5pips以上で同方向
-        p = 1
-    else:
-        p = 0
-
-    if 0.2 <= oldest / middle <= 3.5:
-        r = 1
-    else:
-        r = 0
-
-    # 方向によるマージン等の修正に利用する
-    if oldest_d == 1:  # old部分が上昇方向の場合
-        margin = 1
-    else:
-        margin = -1
-
-    if d == 1 and p == 1 and r == 1:
-        if gap <= 0.08:
-            res_memo = "Trun未遂形状〇サイズ×"
-            print(" Trun未遂形状　ただしGap小 gap= ", gap)
-            latest3_figure = 0
-            order = {
-                "base_price": 0,
-                "direction": 0,
-                "margin": 0.008 * oldest_d,
-                "units": 20,
-                "lc": 0.035,
-                "tp": 0.075,
-                "max_lc_range": 0.05,
-                "trigger": "ターン未遂",
-                "memo": " "
-            }
-        else:
-            # print("   完全 dpr⇒", d, p, r)
-            res_memo = "【Trun未遂達成】"
-            latest3_figure = 1
-            order = {
-                "name": "ターン未遂",
-                "base_price": data_r.iloc[0]['open'],
-                "target_price": 0,
-                "margin": round(0.008 * oldest_d, 3),  # 方向をもつ
-                "direction": oldest_d,
-                "type": "STOP",
-                "units": 20,
-                "lc_range": round(0.035 * oldest_d * -1, 3),
-                "tp_range": round(0.075 * oldest_d, 3),
-                "max_lc_range": 0.05,
-                "trigger": "ターン未遂",
-                "memo": " "
-            }
-    else:
-        res_memo = "【Trun未遂未達】"
-        latest3_figure = 0
-        order = {
-            "base_price": 0,
-            "direction": 0,
-            "margin": 0.008 * oldest_d,
-            "units": 200
-        }
-        # print("   未達成 dpr⇒", d, p, r)
-    memo0 = "Oldest" + str(data_r.iloc[2]['time_jp']) + "," + str(data_r.iloc[0]['time_jp'])
-    memo1 = " ,Dir:" + str(oldest_d) + str(middle_d) + str(latest_d)
-    memo2 = " ,Body:" + str(oldest) + str(middle) + str(latest)
-    memo3 = " ,body率" + str(round(oldest / middle, 1))
-    memo4 = ", Price:" + str(order['base_price'])
-    memo5 = "結果dir,Bod,ratio:" + str(d) + str(p) + str(r)
-    memo_all = "  " + res_memo + memo4 + memo1 + memo2 + memo3 + memo5
-    print(memo_all)
-
-    return {"result": latest3_figure, "order_dic": order, "memo": memo_all}
+# def turn2_cal(inspection_condition):
+#     # 直近のデータの確認　LatestとOldestの関係性を検証する
+#     turn_ans_dic = turn_merge_inspection(inspection_condition)  # ★★引数順注意。ポジ用の価格情報取得（０は取得無し）
+#     oldest_ans = turn_ans_dic['oldest_ans']
+#     latest_ans = turn_ans_dic['latest_ans']
+#     turn_ans = turn_ans_dic['turn_ans']
+#     return_ratio = turn_ans_dic['return_ratio']
+#     memo_all = turn_ans_dic['memo_all']
+#
+#     # 結果をもとに、価格を決定していく
+#     oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)  # ★environmentl現在価格の取得
+#     now_price = oa.NowPrice_exe("USD_JPY")['data']['mid']  # ★現在価格の取得
+#     # print("  nowPrice", now_price)
+#
+#     # 注文情報を算出する
+#     main = {}  # 初期値を入れておく
+#     junc = {}  # 初期値を入れておく
+#     if turn_ans != 0:
+#         # ★注文（基準情報の収集）
+#         # （1）逆思想(range)の値の計算　 230918　レンジがメインにする
+#         # ① 方向の設定　
+#         range_d = latest_ans['direction']  # 方向（Tpとmarginの方向。LCの場合は*-1が必要）
+#
+#         # ②marginの検討
+#         margin2 = 0  # MARKETのため
+#
+#         # ③ base price(システム利用値) & target price(参考値=システム不使用)の調整
+#         base_price2 = latest_ans['latest_price']
+#         target_price2 = latest_ans['latest_price']  # 計算用に直近の価格を取得しておく
+#
+#         # ④　LC_rangeの検討
+#         cal_lc = abs(latest_ans['latest_image_price'] - latest_ans['oldest_image_price'])  # ピークまで戻ったらLC
+#         lc_range2_abs = cal_lc + 0.03
+#         lc_range2_abs = f.cal_at_least(0.05, lc_range2_abs)  # ちょっと狭すぎる場合は、、、最低でも2pips取る。
+#         print(" LC検討", latest_ans['latest_image_price'], latest_ans['oldest_image_price'], abs(latest_ans['latest_image_price'] - latest_ans['oldest_image_price']))
+#         print(lc_range2_abs)
+#
+#         # ⑤ TP_rangeの検討
+#         cal_tp = abs(latest_ans['latest_image_price'] - oldest_ans['oldest_image_price'])
+#         tp_range2_abs = cal_tp * 1.5
+#         tp_range2_abs = f.cal_at_most(0.10, tp_range2_abs)  # ちょっと狭すぎる場合は、、、最低でも2pips取る。
+#
+#         # ⑥カスケードクローズの１区画分の計算
+#         cascade_unit = oldest_ans['gap']
+#
+#         # ⑥　格納
+#         junc = {
+#             "name": "レンジ",
+#             "base_price": base_price2,
+#             "target_price": target_price2,  # 基本渡した先では使わない
+#             "margin": 0,  # BasePriceに足せばいい数字（方向もあっている）
+#             "direction": range_d,
+#             "type": "MARKET",
+#             "lc_range": round(lc_range2_abs * range_d * -1, 3),
+#             "tp_range": round(tp_range2_abs * range_d, 3),
+#             "units": 10,
+#             "trigger": "ターン",
+#             "memo": memo_all,
+#             "data": turn_ans_dic,
+#             "cascade_unit": cascade_unit
+#         }
+#
+#         # （2）順思想の値の計算
+#         # ① 方向の設定
+#         trend_d = latest_ans['direction'] * -1
+#         # ②　margin
+#         margin_abs = 0.015
+#
+#         # ③ base price(システム利用値) & target price(参考値=システム不使用)の調整
+#         base_price = junc['base_price'] + junc['lc_range']  # BaseはレンジのLC価格。
+#         target_price = round(base_price + margin_abs * trend_d, 3)  # target_priceを念のために取得しておく
+#         print(base_price, margin_abs)
+#
+#         # ④　LC_rangeの検討
+#         lc_range_abs = round((oldest_ans['latest_image_price'] - oldest_ans['oldest_image_price']) / 2, 3)
+#
+#         # ⑤ TP_rangeの検討
+#         tp_range_abs = 0.050
+#
+#         # ⑥カスケードクローズの１区画分の計算
+#         cascade_unit = oldest_ans['gap']
+#
+#         # ⑥ 格納
+#         main = {  # 順思想（この以下の過程で、LCやMarginに方向を持たせる）（oldest方向同方向へのオーダー）今３００００の方
+#             "name": "順思想",
+#             "base_price": base_price,
+#             "target_price": target_price,  # 基本渡した先では使わない
+#             "margin": round(margin_abs * trend_d, 3),  # BasePriceに足せばいい数字（方向もあっている）
+#             "direction": trend_d,
+#             "type": "STOP",
+#             "lc_range": round(lc_range_abs * trend_d * -1, 3),
+#             "tp_range": round(tp_range_abs * trend_d, 3),
+#             "units": 10,
+#             "trigger": "ターン",
+#             "cascade_unit": cascade_unit,
+#             "memo": memo_all,
+#             'data': turn_ans_dic
+#         }
+#
+#
+#     # (３)返却用データの作成
+#     ans_dic = {
+#         "turn_ans": turn_ans,  # 結果として、ターン認定されるかどうか
+#         "latest_ans": latest_ans,  # oldest部分の情報
+#         "oldest_ans": oldest_ans,  # latest部分の詳細
+#         "return_ratio": return_ratio,
+#         "memo_all": memo_all,
+#         "to_half_percent": round(50 - return_ratio),
+#         "order_dic": {
+#             "main": main,
+#             "junc": junc,
+#         }
+#     }
+#
+#     # Return
+#     return ans_dic
 
 
-def inspection_candle(ins_condition):
-    """
-    オーダーを発行するかどうかの判断。オーダーを発行する場合、オーダーの情報も返却する
-    inspection_condition:探索条件を辞書形式（ignore:無視する直近足数,latest_n:直近とみなす足数)
-    """
-    #条件（引数）の取得
-    data_r = ins_condition['data_r']
+# def turnNotReached(ins_condition):
+#     # 最初の１行は無視する（現在の行の為）
+#     data_r_all = ins_condition['data_r']
+#     ignore = ins_condition['turn_2']['ignore']
+#     data_r = data_r_all[ignore:]  # 最初の１行は無視
+#
+#     # 下らないエラー対策
+#     if data_r.iloc[2]['body'] == 0:
+#         oldest_body_temp = 0.0001
+#     else:
+#         oldest_body_temp = data_r.iloc[2]['body']
+#
+#     if data_r.iloc[1]['body'] == 0:
+#         middle_body_temp = 0.0001
+#     else:
+#         middle_body_temp = data_r.iloc[1]['body']
+#
+#     if data_r.iloc[0]['body'] == 0:
+#         latest_body_temp = 0.0001
+#     else:
+#         latest_body_temp = data_r.iloc[0]['body']
+#
+#     # gapサイズを求める（小さい最場合は無効にするため）
+#     gap = round(data_r.iloc[2]['body_abs'] + data_r.iloc[1]['body_abs'], 3)
+#
+#     oldest = round(oldest_body_temp, 1)
+#     oldest_d = round(oldest_body_temp / abs(oldest_body_temp), 0)
+#     middle = round(middle_body_temp, 1)
+#     middle_d = round(middle_body_temp / abs(middle_body_temp), 0)
+#     latest = round(latest_body_temp, 1)
+#     latest_d = round(latest_body_temp / abs(latest_body_temp), 0)
+#     older_line = 0.01
+#     later_line = 0.006
+#     if middle == 0:
+#         middle = 0.0001
+#
+#     # print(oldest, oldest_d, middle, middle_d, latest, latest_d)
+#     # 三つの方向が形式にあっているか（↑↑↓か、↓↓↑）を確認
+#     if (oldest_d == middle_d) and oldest_d != latest_d:
+#         d = 1
+#     else:
+#         d = 0
+#
+#     if abs(oldest) > older_line and abs(middle) > older_line and abs(latest) < abs(middle):  # どっちも5pips以上で同方向
+#         p = 1
+#     else:
+#         p = 0
+#
+#     if 0.2 <= oldest / middle <= 3.5:
+#         r = 1
+#     else:
+#         r = 0
+#
+#     # 方向によるマージン等の修正に利用する
+#     if oldest_d == 1:  # old部分が上昇方向の場合
+#         margin = 1
+#     else:
+#         margin = -1
+#
+#     if d == 1 and p == 1 and r == 1:
+#         if gap <= 0.08:
+#             res_memo = "Trun未遂形状〇サイズ×"
+#             print(" Trun未遂形状　ただしGap小 gap= ", gap)
+#             latest3_figure = 0
+#             order = {
+#                 "base_price": 0,
+#                 "direction": 0,
+#                 "margin": 0.008 * oldest_d,
+#                 "units": 20,
+#                 "lc": 0.035,
+#                 "tp": 0.075,
+#                 "max_lc_range": 0.05,
+#                 "trigger": "ターン未遂",
+#                 "memo": " "
+#             }
+#         else:
+#             # print("   完全 dpr⇒", d, p, r)
+#             res_memo = "【Trun未遂達成】"
+#             latest3_figure = 1
+#             order = {
+#                 "name": "ターン未遂",
+#                 "base_price": data_r.iloc[0]['open'],
+#                 "target_price": 0,
+#                 "margin": round(0.008 * oldest_d, 3),  # 方向をもつ
+#                 "direction": oldest_d,
+#                 "type": "STOP",
+#                 "units": 20,
+#                 "lc_range": round(0.035 * oldest_d * -1, 3),
+#                 "tp_range": round(0.075 * oldest_d, 3),
+#                 "max_lc_range": 0.05,
+#                 "trigger": "ターン未遂",
+#                 "memo": " "
+#             }
+#     else:
+#         res_memo = "【Trun未遂未達】"
+#         latest3_figure = 0
+#         order = {
+#             "base_price": 0,
+#             "direction": 0,
+#             "margin": 0.008 * oldest_d,
+#             "units": 200
+#         }
+#         # print("   未達成 dpr⇒", d, p, r)
+#     memo0 = "Oldest" + str(data_r.iloc[2]['time_jp']) + "," + str(data_r.iloc[0]['time_jp'])
+#     memo1 = " ,Dir:" + str(oldest_d) + str(middle_d) + str(latest_d)
+#     memo2 = " ,Body:" + str(oldest) + str(middle) + str(latest)
+#     memo3 = " ,body率" + str(round(oldest / middle, 1))
+#     memo4 = ", Price:" + str(order['base_price'])
+#     memo5 = "結果dir,Bod,ratio:" + str(d) + str(p) + str(r)
+#     memo_all = "  " + res_memo + memo4 + memo1 + memo2 + memo3 + memo5
+#     print(memo_all)
+#
+#     return {"result": latest3_figure, "order_dic": order, "memo": memo_all}
 
-    # ■直近ターンの形状（２戻し）の解析
-    turn2_ans = turn2_cal(ins_condition['turn_2'])
 
-    # ■ターン未遂の判定
-    turnNotReached_ans = turnNotReached(ins_condition)
-
-    # ■■■■上記内容から、Positionの取得可否を判断する■■■■
-    if turn2_ans['turn_ans'] == 1:  # 条件を満たす(購入許可タイミング）
-        ans = 1
-    else:
-        ans = 0
-
-    return {"judgment": ans,  # judeentは必須（planで利用する。とりあえず
-            "turn2_ans": turn2_ans,
-            "latest3_figure_result": turnNotReached_ans,
-            }
-
+# def inspection_candle(ins_condition):
+#     """
+#     オーダーを発行するかどうかの判断。オーダーを発行する場合、オーダーの情報も返却する
+#     inspection_condition:探索条件を辞書形式（ignore:無視する直近足数,latest_n:直近とみなす足数)
+#     """
+#     #条件（引数）の取得
+#     data_r = ins_condition['data_r']
+#
+#     # ■直近ターンの形状（２戻し）の解析
+#     turn2_ans = turn2_cal(ins_condition['turn_2'])
+#
+#     # ■ターン未遂の判定
+#     turnNotReached_ans = turnNotReached(ins_condition)
+#
+#     # ■■■■上記内容から、Positionの取得可否を判断する■■■■
+#     if turn2_ans['turn_ans'] == 1:  # 条件を満たす(購入許可タイミング）
+#         ans = 1
+#     else:
+#         ans = 0
+#
+#     return {"judgment": ans,  # judeentは必須（planで利用する。とりあえず
+#             "turn2_ans": turn2_ans,
+#             "latest3_figure_result": turnNotReached_ans,
+#             }
+#
 
 
 
