@@ -150,7 +150,7 @@ class order_information:
             return 0  # Lifeが既にない場合は、実行無し
 
         self.life_set(False)  # まずはクローズ状態にする　（エラー時の反復を防ぐため。ただし毎回保存される？？）
-        order_res_dic = self.oa.OrderDetails_exe(self.order['id'])  # トレード情報の取得
+        order_res_dic = self.oa.Ordertypes_exe(self.order['id'])  # トレード情報の取得
         if order_res_dic['error'] == 1:
             print("    CloseOrderError@close_order")
             return 0

@@ -27,6 +27,96 @@ def add_stdev(peaks):
     return peaks
 
 
+def size_compare(target, partner, min_range, max_range):
+    """
+    二つの数字のサイズ感を求める。
+    (例）10, 9, 0.8, 1.2 が引数で来た場合、10の0.8倍＜9＜10の1.1倍　を満たしているかどうかを判定。
+    :param partner: 比較元の数値（「現在に近いほう」が渡されるべき。どう変わったか、を結果として返却するため）
+    :param target: 比較対象の数値
+    :param min_range: 最小の比率
+    :param max_range: 最大の比率
+    :return: {flag: 同等かどうか, comment:コメント}
+    """
+    if target * min_range <= partner <= target * max_range:
+        # 同レベルのサイズ感の場合
+        same_size = True
+        size_compare = 0
+        size_compare_comment = "同等"
+    elif partner > target * max_range:
+        # 直近を誤差内の最大値で考えても、partner(過去)より小さい ⇒ 動きが少なくなった瞬間？
+        same_size = False
+        size_compare = -1
+        size_compare_comment = "小さくなる変動直後"
+    elif partner < target * min_range:
+        # 直近を誤差内の最小値で考えても、partner（過去）より大きい ⇒ 動きが激しくなった瞬間？
+        same_size = False
+        size_compare = 1
+        size_compare_comment = "大きくなる変動直後"
+    else:
+        # 謎の場合
+        same_size = False
+        size_compare = 0
+        size_compare_comment = "謎"
+    # 表示用
+    print("      ", same_size, size_compare_comment, " ", target,
+          "範囲", partner, "[", round(target * min_range, 2), round(target * max_range, 2), "]", round(target / partner, 3))
+        
+    # 【判定を上書き】大きいほうを基準に考える（２と４が与えられた場合、２に係数をかける基準だと範囲が狭い。４に係数をかける ⇒　targetに大きい数を入れる）
+    if partner > target:
+        change = 1  # 入れ替えたか(入れ替えると大小関係が逆になる）
+        target1 = partner
+        partner1 = target
+    else:
+        change = 0
+        target1 = target
+        partner1 = partner
+
+    if target1 * min_range <= partner1 <= target1 * max_range:
+        # 同レベルのサイズ感の場合
+        same_size = True
+        size_compare = 0
+        size_compare_comment = "同等"
+    elif partner1 > target1 * max_range:
+        # 直近を誤差内の最大値で考えても、partner(過去)より小さい ⇒ 動きが少なくなった瞬間？
+        if change == 1:
+            same_size = False
+            size_compare = 1
+            size_compare_comment = "大きくなる変動直後"
+        else:
+            same_size = False
+            size_compare = -1
+            size_compare_comment = "小さくなる変動直後"
+    elif partner1 < target1 * min_range:
+        # 直近を誤差内の最小値で考えても、partner（過去）より大きい ⇒ 動きが激しくなった瞬間？
+        if change == 1:
+            same_size = False
+            size_compare = -1
+            size_compare_comment = "小さくなる変動直後"
+        else:
+            same_size = False
+            size_compare = 1
+            size_compare_comment = "大きくなる変動直後"
+    else:
+        # 謎の場合
+        same_size = False
+        size_compare = 0
+        size_compare_comment = "謎"
+    # 表示用
+    print("      ", same_size, size_compare_comment, " ", target1,
+          "範囲", partner1, "[", round(target1 * min_range, 2), round(target1 * max_range, 2), "]", round(target1 / partner, 3))
+
+    return {
+        "same_size": same_size,  # 同等の場合のみTrue
+        "size_compare": size_compare,  # 判定結果として、大きくなった＝１、同等＝０、小さくなった＝ー１
+        "size_compare_ratio": round(target / partner, 3),  # 具体的に何倍だったか
+        "size_compare_comment": size_compare_comment,
+        "min": round(target * min_range, 2),
+        "max": round(target * max_range, 2),
+        "partner": partner,
+        "target": target,
+    }
+
+
 def turn3Rule(df_r):
     """
     １、大きな変動のピーク①を確認
@@ -258,73 +348,120 @@ def turn2Rule(df_r):
     print("PEAKS↑")
 
     # 必要なピークを出す
-    peak_l = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-    peak_m = peaks[1]  # 注目するポイント（ターンと呼ぶ）
-    peak_o = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-    peaks_times = "Old:" + f.delYear(peak_o['time_old']) + "-" + f.delYear(peak_o['time']) + "_" + \
-                  "Mid:" + f.delYear(peak_m['time_old']) + "-" + f.delYear(peak_m['time']) + "_" + \
-                  "Latest" + f.delYear(peak_l['time_old']) + "-" + f.delYear(peak_l['time'])
+    peak_river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    peak_turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
+    peak_flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
+    peak_flop2 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
+    peaks_times = "Old:" + f.delYear(peak_flop3['time_old']) + "-" + f.delYear(peak_flop3['time']) + "_" + \
+                  "Mid:" + f.delYear(peak_turn['time_old']) + "-" + f.delYear(peak_turn['time']) + "_" + \
+                  "Latest" + f.delYear(peak_river['time_old']) + "-" + f.delYear(peak_river['time'])
     print("対象")
-    print("直近", peak_l)
-    print("ターン", peak_m)
-    print("古い", peak_o)
-
+    print("直近", peak_river)
+    print("ターン", peak_turn)
+    print("古い3", peak_flop3)
+    print("古い2", peak_flop2)
 
     # (1)リバーとターンで比較を実施する
     # ①偏差値の条件 (＠ターン）
-    if peak_m['stdev'] > 55:
+    if peak_turn['stdev'] > 55:
         f_size = True
     else:
         f_size = False
-    print("  偏差値:", f_size, " ", peak_o['stdev'])
+    print("  偏差値:", f_size, " ", peak_flop3['stdev'])
     # ②カウントの条件（＠ターンとリバー）
-    if peak_l['count'] == 2 and peak_m['count'] >= 7:
+    if peak_river['count'] == 2 and peak_turn['count'] >= 7:
         f_count = True
     else:
         f_count = False
-    print("  カウント:", f_count, " 直近", peak_l['count'], "ターン", peak_m['count'], "←直近2以下,ターン7以上でTrue")
+    print("  カウント:", f_count, " 直近", peak_river['count'], "ターン", peak_turn['count'], "←直近2以下,ターン7以上でTrue")
     # ③戻り割合の条件（＠ターンとリバー）
-    if peak_l['gap'] / peak_m['gap'] < 0.5:  # 0.5の場合、半分以上戻っていたら戻りすぎ（False）。微戻り(半分以下)ならOK！
+    if peak_river['gap'] / peak_turn['gap'] < 0.5:  # 0.5の場合、半分以上戻っていたら戻りすぎ（False）。微戻り(半分以下)ならOK！
         f_return = True
     else:
         f_return = False
-    print("  割合達成:", f_return, " ", peak_l['gap'], peak_m['gap'], round(peak_l['gap'] / peak_m['gap'], 1))
+    print("  割合達成:", f_return, round(peak_river['gap'] / peak_turn['gap'], 1), " ", peak_river['gap'], peak_turn['gap'])
     # [最後]　各条件を考慮し、ポジションを持つかどうかを検討する
     if f_count and f_return and f_size:
-        take_position = True
+        take_position = False
     else:
         take_position = False
 
-    # (2) プリフロップ部の検証を行う⇒レンジ中なのかとかを確認できれば。。。
-    # ①ターンとプリフロップ３について、サイズの関係性取得する(同程度のgapの場合、レンジ？）
-    small_ratio = 0.8
-    big_ratio = 1.2
-    if peak_o['stdev'] * small_ratio <= peak_m['stdev'] <= peak_o['stdev'] * big_ratio:
-        # 同レベルのサイズ感の場合
-        f_range_flag = True
-        f_range_flag_comment = "同等"
-    elif peak_m['stdev'] > peak_o['stdev'] * big_ratio:
-        # 直近（ターン）が大きくなっている場合⇒動きが激しくなった瞬間？
-        f_range_flag = False
-        f_range_flag_comment = "大きくなる変動あ直後"
-    elif peak_m['stdev'] < peak_o['stdev'] * small_ratio:
-        # 直近（ターン）が大きくなっている場合⇒動きが少なくなった瞬間？
-        f_range_flag = False
-        f_range_flag_comment = "小さくなる変動直後"
-    print("  レンジ:", f_range_flag, " ", peak_m['stdev'], "範囲", peak_o['stdev'], "[", round(peak_o['stdev'] * small_ratio, 2), round(peak_o['stdev'] * big_ratio, 2), "]")
-    print("        ", f_range_flag_comment)
+    # (2) フロップ部の検証を行う⇒レンジ中なのかとかを確認できれば。。。
+    col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
+    # ①ターンとフロップ３について、サイズの関係性取得する(同程度のgapの場合、レンジ？）
+    print("  レンジ(フロップ３⇒ターン)")
+    size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.83, 1.18)
+    turn_flop3_f = size_ans['same_size']
+    turn_flop3_type = size_ans['size_compare']
+    # ②フロップ３とフロップ２について、サイズの関係性を取得する
+    print("  レンジ(フロップ２⇒フロップ3)")
+    size_ans = size_compare(peak_flop3[col], peak_flop2[col], 0.85, 1.15)
+    flop3_flop2_f = size_ans['same_size']
+    flop3_flop2_ratio = size_ans['size_compare_ratio']
+    flop3_flop2_type = size_ans['size_compare']
+    # ③ ターンとフロップ2について、サイズの関係性を取得する（フロップ３を挟む両サイドを意味する）
+    #    フロップ２⇒フロップ３が小、フロップ３⇒ターンが大の場合、下げ方向強めの可能性。フロップ２とターンを比較する
+    print("  レンジ(フロップ２⇒ターン)")
+    size_ans = size_compare(peak_turn[col], peak_flop2[col], 0.5, 2)
+    turn_flop2_f = size_ans['same_size']
+    turn_flop2_type = size_ans['size_compare']
+    # <結果>
+    #
+    #  カクカクの条件
+    #     フロップ3↓   /\←リバー
+    #           /\  /←ターン
+    #  　　   　/  \/
+    #       　/←フロップ2
+    #  ① フロップ２とターン　＞　フロップ３　(0.7倍くらいが目安？）　
+    #  ② フロップ２とターンのサイズ比は不問
+    #  ③ フロップ２とターンの偏差値は45程度は必要（小さすぎると微妙）　
+    #  ④ フロップ３のサイズもある程度必要（２個以上、編偏差値４０以上）
+    #  これらを満たしたとき、カクカクとみなす
+    if turn_flop3_type == 1 and flop3_flop2_type == -1 and turn_flop2_type == 0:
+        if peak_flop2['direction'] == 1:
+            print("  カクカク上がり発生中？")
+        else:
+            print("  カクカク下がり発生中？")
+    elif turn_flop3_type == -1 and flop3_flop2_type == 1 and turn_flop2_type == 0:
+        if peak_flop2['direction'] == 1:
+            print("  カクカク上がり発生中？")
+        else:
+            print("  カクカク下がり発生中？")
+    else:
+        print(" ", turn_flop3_type, flop3_flop2_type, turn_flop2_type)
+
+    # ダブルトップの条件
+    #  フロップ3↓
+    #        /\  /\ ←リバー
+    #       /  \/ ←ターン
+    #      /
+    #     ↑フロップ2
+    #  ①フロップ３とターンが同値レベル
+    #  ②フロップ３とターン2よりも小さい（0.8くらい）
+    #  ③フロップ３は偏差値４０（４ピップス程度）は欲しい。
+    if turn_flop3_type == 0 and flop3_flop2_ratio < 0.8:
+        # ダブルトップ系（出来れば偏差値50くらいも条件に入れたいけれど）。turn_flop3==0でもいいかも？トリプルトップっぽくなる
+        take_position = True
+        if peak_flop3['direction'] == -1:
+            print("  ダブルトップ", turn_flop3_type, flop3_flop2_ratio)
+        else:
+            print("  ダブルボトム", turn_flop3_type, flop3_flop2_ratio)
+
+    else:
+        print(" ダブル系ならず", turn_flop3_type, flop3_flop2_ratio)
 
     return {
+        # ポジション検証に必要な要素
         "take_position": take_position,  # ポジション取得指示あり
         "s_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
-        "trigger_price": peak_l['peak'],  # 直近の価格（ポジションの取得有無は無関係）
-        "lc_range": peak_o['gap']/4,  # ロスカットレンジ（ポジションの取得有無は無関係）
+        "trigger_price": df_r_part.iloc[0]['open'],  # 直近の価格（ポジションの取得有無は無関係） 直近の足のOpenが事実上の最新価格
+        "lc_range": peak_flop3['gap']/4,  # ロスカットレンジ（ポジションの取得有無は無関係）
         "tp_range": 0.05,  # 利確レンジ（ポジションの取得有無は無関係）
-        "expect_direction": peak_o['direction'],  # ターン部分の方向
+        "expect_direction": peak_turn['direction'],  # ターン部分の方向
         # 以下参考項目
-        "stdev": peak_o['stdev'],
-        "o_count": peak_o['count'],
-        "reterun_ratio": round(peak_l['gap'] / peak_o['gap'],1)
+        "turn_gap": peak_turn['gap'],
+        "turn_count": peak_turn['count'],
+        "river_count": peak_river['count']
     }
 
 

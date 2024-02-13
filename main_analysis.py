@@ -188,15 +188,14 @@ def main():
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
-    count = 4000
+    count = 220
     gr = "M5"  # 取得する足の単位
-    # count = need_analysis_num + 1  # need_analysis_num + 1  # 取得する行数。単発実行の場合はこの数で調整⇒ need_analysis_num + 1
     times = 1# Count(最大5000件）を何セット取るか
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 2, 12, 12, 55, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
+    target_time = datetime.datetime(2024, 2, 13, 14, 0, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
     # ■■方法の指定
-    inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+    inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
     # (１)情報の取得
     print('###')
@@ -241,12 +240,12 @@ def main():
     # （４）結果のまとめ
     print("結果")
     ans_df = pd.DataFrame(all_ans)
-    ans_df.to_csv(tk.folder_path + 'inspection.csv', index=False, encoding="utf-8")  # 直近保存用
+    ans_df.to_csv(tk.folder_path + 'main_analysis_ans.csv', index=False, encoding="utf-8")  # 直近保存用
 
     # 結果の簡易表示用
     print("★★★RESULT★★★")
     fin_time = datetime.datetime.now()
-    fd_forview = ans_df[ans_df["ans"] == True]  # 取引有のみを抽出
+    fd_forview = ans_df[ans_df["take_position"] == True]  # 取引有のみを抽出
     if len(fd_forview) == 0:
         return 0
     print("startTime", gl_start_time)

@@ -272,7 +272,10 @@ def turn_each_inspection_skip(data_df_origin):
     counter = 0
     skip_num = 1
     for i in range(len(data_df)-1):
+        # i+1が変化前（時系列的に前）。 i+1 ⇒ i への傾きを確認する
         tilt = data_df.iloc[i]['middle_price'] - data_df.iloc[i+1]['middle_price']
+        # print("TILT検証", data_df.iloc[i]['middle_price'], data_df.iloc[i+1]['middle_price'], data_df.iloc[i]['time_jp'], data_df.iloc[i+1]['time_jp'])
+        # print("  ⇒", tilt)
         if tilt == 0:
             tilt = 0.001
         tilt_direction = round(tilt / abs(tilt), 0)  # 方向のみ（念のためラウンドしておく）
@@ -287,13 +290,21 @@ def turn_each_inspection_skip(data_df_origin):
         else:
             # ■SKIPを考慮したうえで、skipしても成立するか確認する。
             if i + 1 + skip_num >= len(data_df):
-                # 超えてしまう場合はスキップ
+                # データフレームの数を超えてしまう場合はスキップ（データなしエラーになるため）
                 break
             else:
-                tilt_cal = data_df.iloc[i]['middle_price'] - data_df.iloc[i + 1 + skip_num]['middle_price']
+                # [i]が方向転換のカギになっている為、[i]を飛ばして、[i-1]と[i+skip]で成立するかを確認。
+                # ただしその場合、ターンに食い込む可能性あるため、
+                # ここまでの傾きと、[i+skip]と[i+skip+1]の傾きが一致していればスキップ成立（１個１個で折り返す場合は、、、これでもダメかも)
+                # ①SKIPでの傾き
+                tilt_cal = data_df.iloc[i-1]['middle_price'] - data_df.iloc[i + skip_num]['middle_price']
                 tilt_direction_skip = round(tilt_cal / abs(tilt_cal), 0) if tilt_cal != 0 else 0.001  # 傾きが継続判断基準
-                if tilt_direction_skip == base_direction:
+                # ②SKIP後の傾き（従来の傾きと同一でないといけない部分）
+                tilt_cal_future = data_df.iloc[i + skip_num]['middle_price'] - data_df.iloc[i + skip_num + 1]['middle_price']
+                tilt_direction_future = round(tilt_cal_future / abs(tilt_cal_future), 0) if tilt_cal_future != 0 else 0.001  # 傾きが継続判断基準
+                if tilt_direction_skip == base_direction and base_direction == tilt_direction_future:
                     # 規定数抜いてもなお、同方向の場合
+                    print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
                     counter = counter + skip_num
                 else:
                     break
