@@ -430,32 +430,41 @@ def turn2Rule(df_r):
     else:
         print(" ", turn_flop3_type, flop3_flop2_type, turn_flop2_type)
 
-    # ダブルトップの条件
+    # ★ダブルトップについて
     #  フロップ3↓
     #        /\  /\ ←リバー
     #       /  \/ ←ターン
     #      /
     #     ↑フロップ2
-    #  ①フロップ３とターンが同値レベル
+    #  ＜成立条件＞
+    #  ①フロップ３とターンが同値レベル(カウント数は不要かもしれない。あったとしても、２個でも有効なダブルトップがあった 2/13 03:05:00）
     #  ②フロップ３とターン2よりも小さい（0.8くらい）
     #  ③フロップ３は偏差値４０（４ピップス程度）は欲しい。
+    #  ＜ポジション検討＞
+    #  ①Directionはターンの方向とする。（正の場合、ダブルトップ突破方向）
+    #  ②リバーの長さがMarginとなる。（marginは正の値のみ。渡した先でDirectionを考慮する）
+    #
+
     if turn_flop3_type == 0 and flop3_flop2_ratio < 0.8:
         # ダブルトップ系（出来れば偏差値50くらいも条件に入れたいけれど）。turn_flop3==0でもいいかも？トリプルトップっぽくなる
         take_position = True
+        position_margin = 0  # peak_river['gap']
         if peak_flop3['direction'] == -1:
             print("  ダブルトップ", turn_flop3_type, flop3_flop2_ratio)
         else:
             print("  ダブルボトム", turn_flop3_type, flop3_flop2_ratio)
-
     else:
+        take_position = False
+        position_margin = 0
         print(" ダブル系ならず", turn_flop3_type, flop3_flop2_ratio)
 
     return {
         # ポジション検証に必要な要素
         "take_position": take_position,  # ポジション取得指示あり
-        "s_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
-        "trigger_price": df_r_part.iloc[0]['open'],  # 直近の価格（ポジションの取得有無は無関係） 直近の足のOpenが事実上の最新価格
-        "lc_range": peak_flop3['gap']/4,  # ロスカットレンジ（ポジションの取得有無は無関係）
+        "decision_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
+        "decision_price": df_r_part.iloc[0]['open'],  # ポジションフラグ成立時の価格（先頭[0]列のOpen価格）
+        "position_margin": position_margin,  #
+        "lc_range": 0.05,  # ロスカットレンジ（ポジションの取得有無は無関係）
         "tp_range": 0.05,  # 利確レンジ（ポジションの取得有無は無関係）
         "expect_direction": peak_turn['direction'],  # ターン部分の方向
         # 以下参考項目
