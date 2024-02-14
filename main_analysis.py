@@ -73,7 +73,7 @@ def confirm_part(df_r, ana_ans):
     for i, item in df.iterrows():
         if position:
             # ■　ポジションがある場合の処理
-            # ①共通　スタートよりも最高値が高い場合、それはプラス域。逆にマイナス域分も求めておく
+            # ①共通　スタートよりも最高値が高い場合、それはアッパー域。逆にロア域分（プラス域、マイナス域には最後に変換）
             upper = item['high'] - position_price if position_price < item['high'] else 0
             lower = position_price - item['low'] if position_price > item['low'] else 0
             end_time_of_inspection = item['time_jp']  # 最後に検証した時刻を、検証終了時刻として保管（ループを全て行う場合）
@@ -84,18 +84,20 @@ def confirm_part(df_r, ana_ans):
                 # ②-1 利確orロスカが既に入っている場合は、ループは最後まで回し、全期間での最大最小を求める（24/2/14まではBreakしていた）
                 if upper > max_upper:
                     # 全期間でも取得する
+                    max_upper = upper  # 最大値入れ替え
                     max_upper_all_time = upper
                     max_upper_time_all_time = item['time_jp']
                     max_upper_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
                 if lower > max_lower:
                     # 全期間でも取得する
+                    max_lower = lower  # 最小値入れ替え
                     max_lower_all_time = lower
                     max_lower_time_all_time = item['time_jp']
                     max_lower_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
             else:
                 # ②-2 利確またはロスカが既に入っている場合
                 if upper > max_upper:
-                    max_upper = upper
+                    max_upper = upper # 最大値入れ替え
                     max_upper_time = item['time_jp']
                     max_upper_past_sec = f.seek_time_gap_seconds(item['time_jp'], start_time)
                     # 全期間でも取得する
@@ -103,7 +105,7 @@ def confirm_part(df_r, ana_ans):
                     max_upper_time_all_time = item['time_jp']
                     max_upper_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
                 if lower > max_lower:
-                    max_lower = lower
+                    max_lower = lower  # 最小値入れ替え
                     max_lower_time = item['time_jp']
                     max_lower_past_sec = f.seek_time_gap_seconds(item['time_jp'], start_time)
                     # 全期間でも取得する
@@ -164,7 +166,7 @@ def confirm_part(df_r, ana_ans):
         max_plus_time_all_time = max_lower_time_all_time
         max_plus_past_sec_all_time = max_lower_past_sec_all_time
 
-    print("買い方向", expect_direction, "最大プラス",max_plus, max_plus_time,  "最大マイナス", max_minus, max_minus_time)
+    print("買い方向", expect_direction, "最大プラス", max_plus, max_plus_time,  "最大マイナス", max_minus, max_minus_time)
 
     return {
         "position": position,
@@ -251,7 +253,7 @@ def main():
     times = 1# Count(最大5000件）を何セット取るか
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 2, 13, 14, 0, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
+    target_time = datetime.datetime(2024, 2, 14, 18, 45, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
     # ■■方法の指定
     inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
