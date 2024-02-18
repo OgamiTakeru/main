@@ -445,14 +445,20 @@ def turn2Rule(df_r):
     #  ②リバーの長さがMarginとなる。（marginは正の値のみ。渡した先でDirectionを考慮する）
     #
 
-    if turn_flop3_type == 0 and flop3_flop2_ratio < 0.8:
+    if turn_flop3_type == 0 and flop3_flop2_ratio < 0.5 and peak_turn['gap'] >= 0.03:
         # ダブルトップ系（出来れば偏差値50くらいも条件に入れたいけれど）。turn_flop3==0でもいいかも？トリプルトップっぽくなる
-        take_position = True
-        position_margin = 0  # peak_river['gap']
+        # flop3_flop2_ratioはフロップ２が長いのが基本（フロップ3がフロップ２の5割り以内）　また、
+        position_margin = peak_turn['gap']  # peak_river['gap']*2# + 0.01
         if peak_flop3['direction'] == -1:
             print("  ダブルトップ", turn_flop3_type, flop3_flop2_ratio)
         else:
             print("  ダブルボトム", turn_flop3_type, flop3_flop2_ratio)
+        # リバーが短くする場合
+        if peak_river['count'] >= 3:
+            take_position = False
+        else:
+            take_position = True
+
     else:
         take_position = False
         position_margin = 0
@@ -464,8 +470,8 @@ def turn2Rule(df_r):
         "decision_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
         "decision_price": df_r_part.iloc[0]['open'],  # ポジションフラグ成立時の価格（先頭[0]列のOpen価格）
         "position_margin": position_margin,  #
-        "lc_range": 0.05,  # ロスカットレンジ（ポジションの取得有無は無関係）
-        "tp_range": 0.05,  # 利確レンジ（ポジションの取得有無は無関係）
+        "lc_range": 0.08,  # ロスカットレンジ（ポジションの取得有無は無関係）
+        "tp_range": 0.08,  # 利確レンジ（ポジションの取得有無は無関係）
         "expect_direction": peak_turn['direction'],  # ターン部分の方向
         # 以下参考項目
         "turn_gap": peak_turn['gap'],

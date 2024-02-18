@@ -28,7 +28,7 @@ def main():
     times = 1# Count(最大5000件）を何セット取るか
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 2, 13, 16, 50, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
+    target_time = datetime.datetime(2024, 2, 15, 16, 5, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
     # ■■方法の指定
     inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
@@ -54,7 +54,7 @@ def main():
     print(df_r.tail(2))
 
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
-    peaks_info =t.turn_each_inspection_skip(df_r_part)
+    peaks_info =t.turn_each_inspection(df_r_part)
     print(peaks_info)
 
 # Mainスタート

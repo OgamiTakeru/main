@@ -10,6 +10,10 @@ import fGeneric as f
 oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 print(oa.NowPrice_exe("USD_JPY"))
 gl_start_time = datetime.datetime.now()
+gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
+gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
+            str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + "_" + str(gl_now.second).zfill(2)
+
 
 
 # 解析パート
@@ -30,21 +34,19 @@ def confirm_part(df_r, ana_ans):
     print("検証開始価格", df.iloc[0]['open'])
 
     # ★設定　基本的に解析パートから持ってくる。 (150スタート、方向1の場合、DFを巡回して150以上どのくらい行くか)
-    target_price = ana_ans['decision_price'] + (ana_ans['position_margin'] * ana_ans['expect_direction'])  # マージンを考慮
+    position_target_price = ana_ans['decision_price'] + (ana_ans['position_margin'] * ana_ans['expect_direction'])  # マージンを考慮
     start_time = df.iloc[0]['time_jp']  # ポジション取得決心時間（正確には、５分後）
     expect_direction = ana_ans['expect_direction']  # 進むと予想した方向(1の場合high方向がプラス。
     lc_r = ana_ans['lc_range']  # ロスカの幅（正の値）
     tp_r = ana_ans['tp_range']  # 利確の幅（正の値）
 
     # 即時のポジションかを判定する
-    if df.iloc[0]['open'] - 0.01 < target_price < df.iloc[0]['open'] + 0.01:  # 多少の誤差（0.01)は即時ポジション。マージンがない場合は基本即時となる。
-        print(" 即時ポジション", target_price, expect_direction)
-        position_price = target_price
+    if df.iloc[0]['open'] - 0.008 < position_target_price < df.iloc[0]['open'] + 0.008:  # 多少の誤差（0.01)は即時ポジション。マージンがない場合は基本即時となる。
+        print(" 即時ポジション", position_target_price, expect_direction)
         position_time = df.iloc[0]['time_jp']
         position = True
     else:
-        print(" ポジション取得待ち", target_price, expect_direction)
-        position_price = 0  # 念のため。。
+        print(" ポジション取得待ち", position_target_price, expect_direction)
         position_time = 0
         position = False
 
@@ -74,24 +76,23 @@ def confirm_part(df_r, ana_ans):
         if position:
             # ■　ポジションがある場合の処理
             # ①共通　スタートよりも最高値が高い場合、それはアッパー域。逆にロア域分（プラス域、マイナス域には最後に変換）
-            upper = item['high'] - position_price if position_price < item['high'] else 0
-            lower = position_price - item['low'] if position_price > item['low'] else 0
+            upper = item['high'] - position_target_price if position_target_price < item['high'] else 0
+            lower = position_target_price - item['low'] if position_target_price > item['low'] else 0
             end_time_of_inspection = item['time_jp']  # 最後に検証した時刻を、検証終了時刻として保管（ループを全て行う場合）
 
             # ②最大値や最小値を求めていく
             if lc_out or tp_out:
                 # 一回ポジション取得⇒LCかTPありの状態（既にポジションが解消されているような状態）
+                # 注意！position変数は、集計に利用するため、一度TrueにしたらFalseにはしないようにする
                 # ②-1 利確orロスカが既に入っている場合は、ループは最後まで回し、全期間での最大最小を求める（24/2/14まではBreakしていた）
-                if upper > max_upper:
+                if upper > max_upper_all_time:
                     # 全期間でも取得する
-                    max_upper = upper  # 最大値入れ替え
-                    max_upper_all_time = upper
+                    max_upper_all_time = upper  # 最大値入れ替え
                     max_upper_time_all_time = item['time_jp']
                     max_upper_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                if lower > max_lower:
+                if lower > max_lower_all_time:
                     # 全期間でも取得する
-                    max_lower = lower  # 最小値入れ替え
-                    max_lower_all_time = lower
+                    max_lower_all_time = lower  # 最小値入れ替え
                     max_lower_time_all_time = item['time_jp']
                     max_lower_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
             else:
@@ -131,10 +132,9 @@ def confirm_part(df_r, ana_ans):
                         tp_res = tp_r
         else:
             # ■ポジションがない場合の動き(ポジションを取得する）
-            if item['low'] < target_price < item['high']:
-                position = True
-                position_price = target_price
-                print(" 　取得★", item['time_jp'], position_price)
+            if item['low'] < position_target_price < item['high']:
+                position = True  # 集計に利用するため、一度TrueにしたらFalseにはしないようにする
+                print(" 　取得★", item['time_jp'], position_target_price)
 
     # 情報整理＠ループ終了後（directionに対してLow値をHigh値が、金額的にプラスかマイナスかを変更する）
     if expect_direction == 1:  # 買い方向を想定した場合
@@ -170,6 +170,7 @@ def confirm_part(df_r, ana_ans):
 
     return {
         "position": position,
+        "position_price": position_target_price,
         "position_time": position_time,
         "end_time_of_inspection": end_time_of_inspection,
         "max_plus": max_plus,
@@ -211,12 +212,10 @@ def check_main(df_r):
     # <検証データ>
     # 2024/1/1 1:35:00
     # 2024/1/1 1:30:00  ←解析トとラップしている行。この行が出来た瞬間（Open）以降は、検証パートの出番。
-    #
     # <解析データ＞
     # 2024/1/1 1:30:00   ←この行は通常解析では使わない。2行目の1:25:00が確約した瞬間を取りたいため、足が出来た瞬間を狙うため（Openの瞬間）
     # 2024/1/1 1:25:00   ←事実上の解析開始対象
     # 2024/1/1 1:20:00
-    #
     res_part_df = df_r[: res_part_low + 1]  # 終わりは１行ラップさせる
     analysis_part_df = df_r[res_part_low: res_part_low + analysis_part_low]
     print("　結果照合パート用データ")
@@ -248,12 +247,12 @@ def main():
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
-    count = 216
+    count = 5000
+    times = 5  # Count(最大5000件）を何セット取るか
     gr = "M5"  # 取得する足の単位
-    times = 1# Count(最大5000件）を何セット取るか
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 2, 14, 18, 45, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
+    target_time = datetime.datetime(2024, 2, 15, 14, 45, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
     # ■■方法の指定
     inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
@@ -300,7 +299,12 @@ def main():
     # （４）結果のまとめ
     print("結果")
     ans_df = pd.DataFrame(all_ans)
-    ans_df.to_csv(tk.folder_path + 'main_analysis_ans.csv', index=False, encoding="utf-8")  # 直近保存用
+    try:
+        ans_df.to_csv(tk.folder_path + 'main_analysis_ans.csv', index=False, encoding="utf-8")
+        ans_df.to_csv(tk.folder_path + gl_now_str + 'main_analysis_ans.csv', index=False, encoding="utf-8")
+    except:
+        ans_df.to_csv(tk.folder_path + gl_now_str + 'main_analysis_ans.csv', index=False, encoding="utf-8")
+
 
     # 結果の簡易表示用
     print("★★★RESULT★★★")
@@ -316,7 +320,8 @@ def main():
     print("realPlus", fd_forview['tp_res'].sum())
     print("realMinus", fd_forview['lc_res'].sum())
     # 回数
-    print("TotalTimes", len(fd_forview))
+    print("TotalTakePositionFlag", len(fd_forview))
+    print("TotalTakePosition", len(fd_forview[fd_forview["position"] == True]))
     print("tpTimes", len(fd_forview[fd_forview["tp"] == True]))
     print("lcTimes", len(fd_forview[fd_forview["lc"] == True]))
 
