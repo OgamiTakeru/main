@@ -197,8 +197,8 @@ def turn_each_inspection(data_df_origin):
         ans_dic_simple = ans_dic_simple.pop('data_remain')
 
         # ■　形状を判定する（テスト）
-        type_info_dic = turn_each_support(ans_df, base_direction, ans_dic)  # 対象のデータフレームと、方向を渡す
-        ans_dic["support_info"] = type_info_dic  # あくまでメイン解析の要素の一つとして渡す
+        # type_info_dic = turn_each_support(ans_df, base_direction, ans_dic)  # 対象のデータフレームと、方向を渡す
+        # ans_dic["support_info"] = type_info_dic  # あくまでメイン解析の要素の一つとして渡す
     else:  # データがEmptyの場合
         # 返却用
         ans_dic = {
@@ -304,7 +304,7 @@ def turn_each_inspection_skip(data_df_origin):
                 tilt_direction_future = round(tilt_cal_future / abs(tilt_cal_future), 0) if tilt_cal_future != 0 else 0.001  # 傾きが継続判断基準
                 if tilt_direction_skip == base_direction and base_direction == tilt_direction_future:
                     # 規定数抜いてもなお、同方向の場合
-                    print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
+                    # print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
                     counter = counter + skip_num
                 else:
                     break
@@ -375,8 +375,8 @@ def turn_each_inspection_skip(data_df_origin):
     ans_dic_simple.pop('data_remain')
 
     # ■　形状を判定する（テスト）
-    type_info_dic = turn_each_support(ans_df, base_direction, ans_dic)  # 対象のデータフレームと、方向を渡す
-    ans_dic["support_info"] = type_info_dic  # あくまでメイン解析の要素の一つとして渡す
+    # type_info_dic = turn_each_support(ans_df, base_direction, ans_dic)  # 対象のデータフレームと、方向を渡す
+    # ans_dic["support_info"] = type_info_dic  # あくまでメイン解析の要素の一つとして渡す
 
     # ■　形状からターゲットラインを求める。
     return {"ans_dic": ans_dic, "ans_dic_simple": ans_dic_simple}
