@@ -33,7 +33,7 @@ def confirm_part(df_r, ana_ans):
     # print("検証開始価格", df.iloc[0]['open'])
 
     # ★設定　基本的に解析パートから持ってくる。 (150スタート、方向1の場合、DFを巡回して150以上どのくらい行くか)
-    position_target_price = ana_ans['decision_price'] + (ana_ans['position_margin'] * ana_ans['expect_direction'])  # マージンを考慮
+    position_target_price = ana_ans['decision_price'] + ana_ans['position_margin']  # マージンを考慮
     start_time = df.iloc[0]['time_jp']  # ポジション取得決心時間（正確には、５分後）
     expect_direction = ana_ans['expect_direction']  # 進むと予想した方向(1の場合high方向がプラス。
     lc_r = ana_ans['lc_range']  # ロスカの幅（正の値）
@@ -248,11 +248,11 @@ def main(params, params_i):
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
     count = 5000
-    times = 3  # Count(最大5000件）を何セット取るか
+    times = 4  # Count(最大5000件）を何セット取るか
     gr = "M5"  # 取得する足の単位
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 2, 15, 14, 45, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
+    target_time = datetime.datetime(2024, 2, 26, 12, 20, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
     # ■■方法の指定
     inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
@@ -273,9 +273,9 @@ def main(params, params_i):
     df = df["data"]  # data部のみを取得
     df.to_csv(tk.folder_path + 'main_analysis.csv', index=False, encoding="utf-8")  # 直近保存用
     df_r = df.sort_index(ascending=False)  # 逆順に並び替え（直近が上側に来るように）
-    print("全", len(df_r), "行")
-    print(df_r.head(2))
-    print(df_r.tail(2))
+    # print("全", len(df_r), "行")
+    # print(df_r.head(2))
+    # print(df_r.tail(2))
 
     # （2）【解析パートを一回のみ実施する場合】　直近N行で検証パートのテストのみを行う場合はここでTrue
     if inspection_only:
@@ -302,9 +302,10 @@ def main(params, params_i):
     print("結果")
     ans_df = pd.DataFrame(all_ans)
     try:
-        ans_df.to_csv(tk.folder_path + 'main_analysis_ans_multi_latest.csv', index=False, encoding="utf-8")
         ans_df.to_csv(tk.folder_path + gl_now_str + 'main_analysis_ans_multi.csv', index=False, encoding="utf-8")
+        ans_df.to_csv(tk.folder_path + 'main_analysis_ans_multi_latest.csv', index=False, encoding="utf-8")
     except:
+        print("書き込みエラーあり")
         pass
 
 
@@ -358,20 +359,16 @@ def main(params, params_i):
 
 # Mainスタート
 multi_answers = []  # 結果一覧を取得
-params_arr = [
-    # {"f": ">", "turn_gap": 0.03, "position_margin": 0.05, "margin_type": "river"},
-    # {"f": ">", "turn_gap": 0.08, "position_margin": 0.05, "margin_type": "turn"},
+params_arr = [  # t_type は順張りか逆張りか
+    {"f32_min": 0, "f32_max": 0.6, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": 1},
+    {"f32_min": 0, "f32_max": 0.6, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": -1, "dir": 1},
+    {"f32_min": 0, "f32_max": 0.6, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": -1, "dir": -1},
+    {"f32_min": 0, "f32_max": 0.6, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": -1},
+    {"f32_min": 0.6, "f32_max": 1, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": 1},
+    {"f32_min": 0.6, "f32_max": 1, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": -1, "dir": 1},
+    {"f32_min": 0.6, "f32_max": 1, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": -1, "dir": -1},
+    {"f32_min": 0.6, "f32_max": 1, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": -1},
 
-    {"f": "<", "turn_gap": 0.04, "position_margin": 0, "margin_type": "both"},
-    {"f": "<", "turn_gap": 0.04, "position_margin": 0.01, "margin_type": "both"},
-    {"f": "<", "turn_gap": 0.04, "position_margin": 0.03, "margin_type": "both"},
-    # {"f": "<", "turn_gap": 0.04, "position_margin": 0, "margin_type": "turn"},
-    # {"f": "<", "turn_gap": 0.06, "position_margin": 0, "margin_type": "turn"},
-    # {"f": "<", "turn_gap": 0.08, "position_margin": 0, "margin_type": "turn"},
-
-    {"f": "<", "turn_gap": 0.04, "position_margin": 0, "margin_type": "river"},
-    {"f": "<", "turn_gap": 0.06, "position_margin": 0, "margin_type": "river"},
-    {"f": "<", "turn_gap": 0.08, "position_margin": 0, "margin_type": "river"}
 ]
 
 for i in range(len(params_arr)):

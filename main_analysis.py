@@ -1,6 +1,5 @@
 import pandas as pd
 import datetime
-import fTurnInspection as f  # とりあえずの関数集
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
 import making as mk
@@ -20,8 +19,8 @@ gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
 def analysis_part(df_r):
     print("★★解析パート")
     # return mk.turn1Rule(df_r)
-    # return mk.doublePeak(df_r)
-    return mk.stairsPeak(df_r)
+    return mk.doublePeak(df_r)
+    # return mk.stairsPeak(df_r)
     # return mk.now_position(df_r)
     # prac.turn_inspection_main(df_r)
 
@@ -248,12 +247,12 @@ def main():
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
-    count = 1000
+    count = 215
     times = 1  # Count(最大5000件）を何セット取るか
     gr = "M5"  # 取得する足の単位
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 2, 15, 14, 45, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
+    target_time = datetime.datetime(2024, 2, 26, 12, 20, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
     # ■■方法の指定
     inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
@@ -301,9 +300,10 @@ def main():
     print("結果")
     ans_df = pd.DataFrame(all_ans)
     try:
-        ans_df.to_csv(tk.folder_path + 'main_analysis_ans_latest.csv', index=False, encoding="utf-8")
         ans_df.to_csv(tk.folder_path + gl_now_str + 'main_analysis_ans.csv', index=False, encoding="utf-8")
+        ans_df.to_csv(tk.folder_path + 'main_analysis_ans_latest.csv', index=False, encoding="utf-8")
     except:
+        print("書き込みエラーあり")
         pass
 
 
@@ -328,5 +328,6 @@ def main():
 
 # Mainスタート
 main()
+tk.line_send("FIN")
 
 

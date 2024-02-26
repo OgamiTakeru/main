@@ -109,10 +109,11 @@ def size_compare(target, partner, min_range, max_range):
         "same_size": same_size,  # 同等の場合のみTrue
         "size_compare": size_compare,  # 判定結果として、大きくなった＝１、同等＝０、小さくなった＝ー１
         "size_compare_ratio": round(target / partner, 3),  # 具体的に何倍だったか
-        "size_compare_ratio_rev": round(partner / target, 3),  # 具体的に何倍だったか
+        "size_compare_ratio_r": round(partner / target, 3),  # 具体的に何倍だったか
         "size_compare_comment": size_compare_comment,
         "min": round(target * min_range, 2),
         "max": round(target * max_range, 2),
+        "gap": abs(target - partner),
         "partner": partner,
         "target": target,
     }
@@ -366,9 +367,12 @@ def doublePeak(df_r):
     col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
     # ①ターンとフロップ３について、サイズの関係性取得する(同程度のgapの場合、レンジ？）
     print("  レンジ(フロップ３⇒ターン)")
-    size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.83, 1.18)
+    size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.7, 1.42)
     turn_flop3_f = size_ans['same_size']
     turn_flop3_type = size_ans['size_compare']
+    turn_flop3_gap = size_ans['gap']
+    turn_flop3_ratio = size_ans['size_compare_ratio']
+    turn_flop3_ratio_r = size_ans['size_compare_ratio_r']
     # ②フロップ３とフロップ２について、サイズの関係性を取得する
     print("  レンジ(フロップ２⇒フロップ3)")
     size_ans = size_compare(peak_flop3[col], peak_flop2[col], 0.85, 1.15)
@@ -390,6 +394,8 @@ def doublePeak(df_r):
     #     ↑フロップ2
     #  ＜成立条件＞
     #  ①フロップ３とターンが同値レベル(カウント数は不要かもしれない。あったとしても、２個でも有効なダブルトップがあった 2/13 03:05:00）
+    #    ただし、フロップ３とターンの差分（gap）は0.008以内としたい。指定の範囲以内でも1pipsずれていると、見た目は結構ずれている。。
+    #    その代わり、割合を少し広めにとる。
     #  ②フロップ３とターン2よりも小さい（0.8くらい）
     #  ③フロップ３は偏差値４０（４ピップス程度）は欲しい。
     #  ＜ポジション検討＞
@@ -397,39 +403,54 @@ def doublePeak(df_r):
     #  ②リバーの長さがMarginとなる。（marginは正の値のみ。渡した先でDirectionを考慮する）
     #
 
-    if turn_flop3_type == 0 and flop3_flop2_ratio < 0.8 and peak_turn['gap'] >= 0.03:
-        # ダブルトップ系（出来れば偏差値50くらいも条件に入れたいけれど）。turn_flop3==0でもいいかも？トリプルトップっぽくなる
-        # flop3_flop2_ratioはフロップ２が長いのが基本（フロップ3がフロップ２の5割り以内）　また、
-        position_margin = peak_river['gap'] + peak_turn['gap']  # peak_turn['gap']  # peak_river['gap']*2# + 0.01
-        if peak_flop3['direction'] == -1:
-            print("  ダブルトップ", turn_flop3_type, flop3_flop2_ratio)
+    # 初期値の設定
+    take_position_flag = False
+    # 判定部分
+    if turn_flop3_type == 0 and turn_flop3_gap <= 0.008:
+        # V字部分が、ほぼ同一の高さ(比率だけではなく、Gap値でも判断）
+        if 0.1 >= peak_turn['gap'] >= 0.01:
+            # ターン部分の高さが、市営の範囲内
+            if flop3_flop2_ratio < 0.6 or flop3_flop2_ratio > 1.5:
+                # flop3とflop2のサイズ（ダブルトップへの入り方）についての条件
+                # ダブルピーク確定
+                if peak_flop3['direction'] == -1:
+                    print("  ダブルトップ")
+                else:
+                    print("  ダブルボトム")
+                # リバーの長さ（
+                if peak_river['count'] >= 3:
+                    take_position_flag = False
+                else:
+                    take_position_flag = True
+            else:
+                print("  ダブルトップ導入部未遂")
         else:
-            print("  ダブルボトム", turn_flop3_type, flop3_flop2_ratio)
-        # リバーが短くする場合
-        if peak_river['count'] >= 5:
-            take_position_flag = False
-        else:
-            take_position_flag = True
-
+            print("  ターンの高さ範囲外")
     else:
-        take_position_flag = False
-        position_margin = 0
-        print(" ダブル系ならず", turn_flop3_type, flop3_flop2_ratio)
+        print("   ターンVならず")
+    print("    turn_flop3:", turn_flop3_type, round(turn_flop3_gap, 4), "flop3_flop2_ratio:", flop3_flop2_ratio,
+          "turn_gap:", peak_turn['gap'])
 
     return {
         # ポジション検証に必要な要素
         "take_position_flag": take_position_flag,  # ポジション取得指示あり
         "decision_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
         "decision_price": df_r_part.iloc[0]['open'],  # ポジションフラグ成立時の価格（先頭[0]列のOpen価格）
-        "position_margin": position_margin,  #
-        "lc_range": 0.04,  # ロスカットレンジ（ポジションの取得有無は無関係）
-        "tp_range": 0.06,  # 利確レンジ（ポジションの取得有無は無関係）
-        "expect_direction": peak_turn['direction'],  # ターン部分の方向
+        "position_margin": peak_river['gap'] * -1,  # position_margin,  #
+        "lc_range": peak_turn['gap'], # 0.04,  # ロスカットレンジ（ポジションの取得有無は無関係）
+        "tp_range": peak_turn['gap'], #0.06,  # 利確レンジ（ポジションの取得有無は無関係）
+        "expect_direction": peak_turn['direction'] * -1,  # ターン部分の方向
         # 以下参考項目
         "turn_gap": peak_turn['gap'],
         "turn_count": peak_turn['count'],
+        "river_gap": peak_river['gap'],
         "river_count": peak_river['count'],
-        "flop3_flop2_ratio": flop3_flop2_ratio,
+        "flop3_gap": peak_flop3['gap'],
+        "flop3_count": peak_flop3['count'],
+        "flop2_gap": peak_flop2['gap'],
+        "flop2_count": peak_flop2['count'],
+        "turn_flop3_ratio": turn_flop3_ratio,
+        "flop3_flop2_ratio": flop3_flop2_ratio
     }
 
 
@@ -438,24 +459,38 @@ def doublePeak_multi(df_r, params):
     １、
     :return:
     """
+    # print("ダブルピーク判定")
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
     peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
+    # f.print_arr(peaks)
+    # print("PEAKS↑")
 
     # 必要なピークを出す
     peak_river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     peak_turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
     peak_flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
     peak_flop2 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
+    # peaks_times = "Old:" + f.delYear(peak_flop3['time_old']) + "-" + f.delYear(peak_flop3['time']) + "_" + \
+    #               "Mid:" + f.delYear(peak_turn['time_old']) + "-" + f.delYear(peak_turn['time']) + "_" + \
+    #               "Latest" + f.delYear(peak_river['time_old']) + "-" + f.delYear(peak_river['time'])
+    # print("対象")
+    # print("直近", peak_river)
+    # print("ターン", peak_turn)
+    # print("古い3", peak_flop3)
+    # print("古い2", peak_flop2)
 
-    # (2) フロップ部の検証を行う⇒レンジ中なのかとかを確認できれば。。。
+    # (1) フロップ部の検証を行う⇒レンジ中なのかとかを確認できれば。。。
     col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
     # ①ターンとフロップ３について、サイズの関係性取得する(同程度のgapの場合、レンジ？）
     # print("  レンジ(フロップ３⇒ターン)")
-    size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.83, 1.18)
+    size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.7, 1.42)
     turn_flop3_f = size_ans['same_size']
     turn_flop3_type = size_ans['size_compare']
+    turn_flop3_gap = size_ans['gap']
+    turn_flop3_ratio = size_ans['size_compare_ratio']
+    turn_flop3_ratio_r = size_ans['size_compare_ratio_r']
     # ②フロップ３とフロップ２について、サイズの関係性を取得する
     # print("  レンジ(フロップ２⇒フロップ3)")
     size_ans = size_compare(peak_flop3[col], peak_flop2[col], 0.85, 1.15)
@@ -484,51 +519,48 @@ def doublePeak_multi(df_r, params):
     #  ②リバーの長さがMarginとなる。（marginは正の値のみ。渡した先でDirectionを考慮する）
 
     # position_marginを計算しておく
+    expected_direction = peak_turn['direction'] * params['dir']
     if params["margin_type"] == "turn":
-        position_margin = peak_turn['gap'] + params['position_margin']
+        position_margin = (peak_turn['gap'] + params['margin']) * params['t_type'] * expected_direction
     elif params['margin_type'] == "river":
-        position_margin = peak_river['gap'] + params['position_margin']
+        position_margin = (peak_river['gap'] + params['pmargin']) * params['t_type'] * expected_direction
+    elif params['margin_type'] == "both":
+        position_margin = (peak_turn['gap'] + peak_river['gap'] + params['position_margin']) * params['t_type'] * expected_direction
     else:
-        position_margin = peak_turn['gap'] + peak_river['gap'] + params['position_margin']
+        position_margin = params['margin'] * params['t_type'] * expected_direction
     take_position_flag = False
 
-    # 本番のループ
-    if params['f'] == ">":
-        if turn_flop3_type == 0 and flop3_flop2_ratio < 0.5 and peak_turn['gap'] >= params['turn_gap']:
-            # ダブルトップ系（出来れば偏差値50くらいも条件に入れたいけれど）。turn_flop3==0でもいいかも？トリプルトップっぽくなる
-            # flop3_flop2_ratioはフロップ２が長いのが基本（フロップ3がフロップ２の5割り以内）　また、
-            # position_margin = peak_turn['gap']  # peak_river['gap']*2# + 0.01
-            if peak_flop3['direction'] == -1:
-                print("  ダブルトップ", turn_flop3_type, flop3_flop2_ratio)
+    # 初期値の設定
+    take_position_flag = False
+    # 判定部分
+    if turn_flop3_type == 0 and turn_flop3_gap <= 0.008:
+        # V字部分が、ほぼ同一の高さ
+        if 0.1 >= peak_turn['gap'] >= params['turn_gap']:
+            # ターン部分の高さが、市営の範囲内
+            if params['f32_min'] < flop3_flop2_ratio < params['f32_max']:
+                # flop3とflop2のサイズ（ダブルトップへの入り方）についての条件
+                # ダブルピーク確定
+                if peak_flop3['direction'] == -1:
+                    print("  ダブルトップ")
+                else:
+                    print("  ダブルボトム")
+                # リバーの長さ（
+                if peak_river['count'] >= 3:
+                    take_position_flag = False
+                else:
+                    take_position_flag = True
             else:
-                print("  ダブルボトム", turn_flop3_type, flop3_flop2_ratio)
-            # リバーが短くする場合
-            if peak_river['count'] == 3:  # <= 3:
-                take_position_flag = True
-            else:
-                take_position_flag = False
+                pass
+                # print("  ダブルトップ導入部未遂")
         else:
-            take_position_flag = False
-            # position_margin = 0
-            # print(" ダブル系ならず", turn_flop3_type, flop3_flop2_ratio)
+            pass
+            # print("  ターンの高さ範囲外")
     else:
-        if turn_flop3_type == 0 and flop3_flop2_ratio < 0.5 and peak_turn['gap'] <= params['turn_gap']:
-            # ダブルトップ系（出来れば偏差値50くらいも条件に入れたいけれど）。turn_flop3==0でもいいかも？トリプルトップっぽくなる
-            # flop3_flop2_ratioはフロップ２が長いのが基本（フロップ3がフロップ２の5割り以内）　また、
-            # position_margin = peak_turn['gap']  # peak_river['gap']*2# + 0.01
-            if peak_flop3['direction'] == -1:
-                print("  ダブルトップ", turn_flop3_type, flop3_flop2_ratio)
-            else:
-                print("  ダブルボトム", turn_flop3_type, flop3_flop2_ratio)
-            # リバーが短くする場合
-            if peak_river['count'] >= 3:
-                take_position_flag = False
-            else:
-                take_position_flag = True
-        else:
-            take_position_flag = False
-            # position_margin = 0
-            # print(" ダブル系ならず", turn_flop3_type, flop3_flop2_ratio)
+        pass
+        # print("   ターンVならず")
+    # print("    turn_flop3:", turn_flop3_type, round(turn_flop3_gap, 4), "flop3_flop2_ratio:", flop3_flop2_ratio,
+    #       "turn_gap:", peak_turn['gap'])
+    # print("   triggerPrice:", df_r_part.iloc[0]['open'], position_margin ,df_r_part.iloc[0]['open'] + position_margin)
 
     return {
         # ポジション検証に必要な要素
@@ -536,8 +568,8 @@ def doublePeak_multi(df_r, params):
         "decision_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
         "decision_price": df_r_part.iloc[0]['open'],  # ポジションフラグ成立時の価格（先頭[0]列のOpen価格）
         "position_margin": position_margin,  #
-        "lc_range": 0.08,  # ロスカットレンジ（ポジションの取得有無は無関係）
-        "tp_range": 0.08,  # 利確レンジ（ポジションの取得有無は無関係）
+        "lc_range": 0.038,  # ロスカットレンジ（ポジションの取得有無は無関係）
+        "tp_range": 0.038,  # 利確レンジ（ポジションの取得有無は無関係）
         "expect_direction": peak_turn['direction'],  # ターン部分の方向
         # 以下参考項目
         "turn_gap": peak_turn['gap'],
@@ -595,9 +627,9 @@ def stairsPeak(df_r):
     turn_flop2_type = size_ans['size_compare']
 
     #  ★カクカクの条件
-    #     フロップ3↓   /\←リバー    \
-    #           /\  /←ターン       \  /\
-    #  　　   　/  \/               \/  \
+    #     フロップ3↓   /\←リバー    \                /\
+    #           /\  /←ターン       \  /\             \ ↓ターン
+    #  　　   　/  \/               \/  \ターン        \/\
     #       　/←フロップ2                 \/
     #  ① フロップ２とターン　＞　フロップ３　(0.7倍くらいが目安？）　
     #  ② フロップ２とターンのサイズ比は不問(結果的には関係するかも）
@@ -605,19 +637,45 @@ def stairsPeak(df_r):
     #  ④ フロップ２とターンの偏差値は45程度は必要（小さすぎると微妙）
     #  これらを満たしたとき、カクカクとみなす
 
-    take_position_flag = False
-    if peak_turn['direction'] == 1:
-        # ターンが上向き（上昇）
-        if turn_flop3_ratio > 1.5 and flop3_flop2_ratio < 0.5 and peak_turn['gap'] >= 0.05:
-            # ターンがフロップ3のN倍以上（大きくなる）、フロップ３がフロップ２の0.N倍以内(小さくなる）
-            take_position_flag = True
+    if turn_flop3_ratio > 1.2 and flop3_flop2_ratio < 0.8 and peak_turn['gap'] >= 0.05:
+        # ターンがフロップ3のN倍以上（大きくなる）、フロップ３がフロップ２の0.N倍以内(小さくなる）
+        #    \   ↓ フロップ3
+        #     \  /\
+        #      \/  \←ターン
+        #           \/　←リバー
+        take_position_flag = True
+        expect_direction = peak_turn['direction']
+        if peak_turn['direction'] == 1:
+            # ターンが上向き（上昇）
+            print("  カクカク上昇")
+        else:
+            # ターンが下向き（下降）
+            print("  カクカク下降")
+    elif turn_flop3_ratio < 0.8 and flop3_flop2_ratio > 1.2 and peak_flop3['gap'] >= 0.05:
+        # ターンがフロップ3の0.N倍以内（小さくなる）、フロップ３がフロップ２のN倍以上(大きくなる）
+        #
+        #      /\←フロップ3
+        #        \ ↓ターン
+        #         \/\ ←リバー
+        take_position_flag = True
+        expect_direction = peak_turn['direction'] * -1
+        if peak_turn['direction'] == 1:
+            # ターンが下向き（下降）
+            print("  カクカク下降")
+        else:
+            # ターンが上向き（上昇）
             print("  カクカク上昇")
     else:
-        # ターンが下向き（下降）
-        if turn_flop3_ratio > 1.5 and flop3_flop2_ratio < 0.5 and peak_turn['gap'] >= 0.05:
-            # ターンがフロップ3のN倍以上（大きくなる）、フロップ３がフロップ２の0.N倍以内(小さくなる）
-            take_position_flag = True
-            print("  カクカク下降")
+        take_position_flag = False
+        expect_direction = peak_turn['direction']
+        print(" カクカク不成立", turn_flop3_ratio, ", ", flop3_flop2_ratio, ", ", peak_turn['gap'], ">=0.05")
+
+    # リバーのタイミングを調整
+    if peak_river['count'] != 2 and peak_river['count'] != 3:
+        if take_position_flag:
+            print(" リバー数でのポジション解除")
+        take_position_flag = False
+
 
 
     return {
@@ -625,10 +683,10 @@ def stairsPeak(df_r):
         "take_position_flag": take_position_flag,  # ポジション取得指示あり
         "decision_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
         "decision_price": df_r_part.iloc[0]['open'],  # ポジションフラグ成立時の価格（先頭[0]列のOpen価格）
-        "position_margin": 0,  #
-        "lc_range": 0.04,  # ロスカットレンジ（ポジションの取得有無は無関係）
-        "tp_range": 0.06,  # 利確レンジ（ポジションの取得有無は無関係）
-        "expect_direction": peak_turn['direction'],  # ターン部分の方向
+        "position_margin": 0.04,  #peak_turn['gap'],  #
+        "lc_range": 0.05,  # ロスカットレンジ（ポジションの取得有無は無関係）
+        "tp_range": 0.05,  # 利確レンジ（ポジションの取得有無は無関係）
+        "expect_direction": expect_direction,  # ターン部分の方向
         # 以下参考項目
         "turn_gap": peak_turn['gap'],
         "turn_count": peak_turn['count'],
