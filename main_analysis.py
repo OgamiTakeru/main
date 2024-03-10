@@ -46,10 +46,9 @@ def confirm_part(df_r, ana_ans):
     # 検証パートは古いのから順に並び替える（古いのが↑、新しいのが↓）
     df = df_r.sort_index(ascending=True)  # 正順に並び替え（古い時刻から新しい時刻に向けて１行筒検証する）
     df = df[:10]
-    print("検証開始価格", df.iloc[0]['open'])
 
     # ★設定　基本的に解析パートから持ってくる。 (150スタート、方向1の場合、DFを巡回して150以上どのくらい行くか)
-    position_target_price = ana_ans['decision_price'] + (ana_ans['position_margin'] * ana_ans['expect_direction'])  # マージンを考慮
+    position_target_price = ana_ans['target_price']  # マージンを考慮
     start_time = df.iloc[0]['time_jp']  # ポジション取得決心時間（正確には、５分後）
     expect_direction = ana_ans['expect_direction']  # 進むと予想した方向(1の場合high方向がプラス。
     lc_r = ana_ans['lc_range']  # ロスカの幅（正の値）
@@ -181,7 +180,7 @@ def confirm_part(df_r, ana_ans):
         max_plus_time_all_time = max_lower_time_all_time
         max_plus_past_sec_all_time = max_lower_past_sec_all_time
 
-    print("買い方向", expect_direction, "最大プラス", max_plus, max_plus_time,  "最大マイナス", max_minus, max_minus_time)
+    print("   買い方向", expect_direction, "最大プラス", max_plus, max_plus_time,  "最大マイナス", max_minus, max_minus_time)
 
     return {
         "position": position,
@@ -267,9 +266,9 @@ def main():
     gr = "M5"  # 取得する足の単位
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 3, 8, 19, 10, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
+    target_time = datetime.datetime(2024, 3, 8, 19, 5, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
     # ■■方法の指定
-    inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+    inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
     # (１)情報の取得
     print('###')

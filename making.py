@@ -355,7 +355,7 @@ def beforeDoublePeak(df_r):
     """
     print("直前　ダブルピーク判定")
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
-    peaks_info = p.peaks_collect_main(df_r_part, 4)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+    peaks_info = p.peaks_collect_main(df_r_part, 3)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
     f.print_arr(peaks)
@@ -393,7 +393,10 @@ def beforeDoublePeak(df_r):
     turn_flop3_ratio_r = size_ans['size_compare_ratio_r']
     print("リバーのターン割合", river_turn_ratio, river_turn_type, "ターンのフロップに対する割合", turn_flop3_ratio, turn_flop3_type)
 
-    if river_turn_ratio < 0.61 and turn_flop3_ratio < 0.3:
+    # 判定部
+    take_position_flag = False
+    if river_turn_ratio < 0.61 and turn_flop3_ratio < 0.3 and peak_river['count'] == 2:  # 戻り数　river['count']は要変更
+        take_position_flag = True
         print("  Beforeダブルトップ成立", river_turn_ratio, turn_flop3_ratio)
         if river_turn_gap >= 0.05:  # 5pips程度の戻りの有用があれば
             print("      ポジションしたい(ダブルトップ候補までの距離）", river_turn_gap)
@@ -401,6 +404,28 @@ def beforeDoublePeak(df_r):
             print("      ポジションはする猶予無し（ダブルトップ候補までの距離）", river_turn_gap)
     else:
         print(" 　不成立",  river_turn_ratio, turn_flop3_ratio)
+
+    # target_priceを求める（そのが各変数を算出）
+    position_margin = 0.01
+    stop_or_limit = 1  # # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
+    decision_price = df_r_part.iloc[0]['open']  # 計算用（リターンでも同じものを返却する）
+    expected_direction = peak_river['direction']
+    target_price = decision_price + (position_margin * expected_direction * stop_or_limit)
+    print(" POSITION情報　決心価格", decision_price, "マージン", position_margin, "targetprice", target_price, "Ex方向", expected_direction)
+    print("  ", peak_turn['gap']-peak_river['gap'])
+    return {
+        # ポジション検証に必要な要素
+        "take_position_flag": take_position_flag,  # ポジション取得指示あり
+        "decision_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
+        "decision_price": df_r_part.iloc[0]['open'],  # ポジションフラグ成立時の価格（先頭[0]列のOpen価格）
+        "position_margin": position_margin,  # position_margin (+値は猶予大）
+        "stop_or_limit": stop_or_limit,
+        "target_price": target_price,
+        "lc_range": peak_turn['gap']-peak_river['gap'], # 0.04,  # ロスカットレンジ（ポジションの取得有無は無関係）
+        "tp_range": peak_turn['gap']-peak_river['gap'], #0.06,  # 利確レンジ（ポジションの取得有無は無関係）
+        "expect_direction": expected_direction,
+        # 以下参考項目
+    }
 
 
 def boxSearch(df_r):
@@ -453,8 +478,6 @@ def boxSearch(df_r):
     print("もっとも古いデータ", df_r.iloc[-1]['time_jp'], df_r.iloc[0]['time_jp'])
     print(grid_ans_ratio)
     print("現在の価格がどのグリッドか",contain_grid_now, grid_ans_ratio[contain_grid_now],now_price, round(grid_range, 3))
-
-
 
 
 def doublePeak(df_r):
@@ -553,39 +576,51 @@ def doublePeak(df_r):
                 else:
                     take_position_flag = True
             else:
-                print("  ターンの高さ範囲外")
+                print("  ダブルトップ不成立：ターンの高さ範囲外")
         else:
-            print("   ターンVならず")
+            print("   ダブルトップ不成立：ターンVならず")
     else:
-        print("   Riverの戻り率対象外")
+        print("   ダブルトップ不成立：Riverの戻り率対象外")
     print("    turn_flop3:", turn_flop3_type, round(turn_flop3_gap, 4), "turn_gap:", peak_turn['gap'])
 
-    # (2)ダブルトップの前の情報
-    if flop3_flop2_ratio < 0.6 or flop3_flop2_ratio > 1.5:
-        # flop3とflop2のサイズ（ダブルトップへの入り方）についての条件
-        # ダブルピーク確定
-        if peak_flop3['direction'] == -1:
-            print("  ダブルトップ")
+    # (2)ダブルトップの前の情報　（ダブルトップ成立時に判定。ダブルトップ成立でも、事前条件が悪ければみなさない）
+    if take_position_flag:
+        if flop3_flop2_ratio < 0.6 or flop3_flop2_ratio > 1.5:
+            # flop3とflop2のサイズ（ダブルトップへの入り方）についての条件
+            # ダブルピーク確定
+            if peak_flop3['direction'] == -1:
+                print("  ダブルトップ")
+            else:
+                print("  ダブルボトム")
+            # リバーの長さ（
+            if peak_river['count'] >= 3:
+                take_position_flag = False
+            else:
+                take_position_flag = True
         else:
-            print("  ダブルボトム")
-        # リバーの長さ（
-        if peak_river['count'] >= 3:
-            take_position_flag = False
-        else:
-            take_position_flag = True
-    else:
-        print("  ダブルトップ導入部未遂")
-    print("    flop3_flop2:", flop3_flop2_ratio)
+            print("  ダブルトップ導入部未遂")
+        print("    flop3_flop2:", flop3_flop2_ratio)
+
+    # 返却値の整理整頓　(ターゲットプライスの算出）
+    position_margin = peak_river['gap']
+    stop_or_limit = -1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
+    decision_price = df_r_part.iloc[0]['open']  # 計算用（リターンでも同じものを返却する）
+    expected_direction = peak_river['direction']
+    target_price = decision_price + (position_margin * expected_direction * stop_or_limit)
+    print(take_position_flag)
+    # print(" POSITION情報　決心価格", decision_price, "マージン", position_margin, "targetprice", target_price, "Ex方向", expected_direction)
 
     return {
         # ポジション検証に必要な要素
         "take_position_flag": take_position_flag,  # ポジション取得指示あり
         "decision_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
         "decision_price": df_r_part.iloc[0]['open'],  # ポジションフラグ成立時の価格（先頭[0]列のOpen価格）
-        "position_margin": peak_river['gap'] * -1,  # position_margin,  #
+        "position_margin": peak_river['gap'],  #ポジションまでのマージン
+        "stop_or_limit": stop_or_limit,
+        "target_price": target_price,
         "lc_range": peak_turn['gap'], # 0.04,  # ロスカットレンジ（ポジションの取得有無は無関係）
         "tp_range": peak_turn['gap'], #0.06,  # 利確レンジ（ポジションの取得有無は無関係）
-        "expect_direction": peak_turn['direction'] * -1,  # ターン部分の方向
+        "expect_direction": peak_turn['direction'],  # ターン部分の方向
         # 以下参考項目
         "turn_gap": peak_turn['gap'],
         "turn_count": peak_turn['count'],
@@ -710,15 +745,25 @@ def doublePeak_multi(df_r, params):
     #       "turn_gap:", peak_turn['gap'])
     # print("   triggerPrice:", df_r_part.iloc[0]['open'], position_margin ,df_r_part.iloc[0]['open'] + position_margin)
 
+    # 返却値の整理整頓　(ターゲットプライスの算出）
+    position_margin = peak_river['gap']
+    stop_or_limit = 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
+    decision_price = df_r_part.iloc[0]['open']  # 計算用（リターンでも同じものを返却する）
+    expected_direction = peak_river['direction']
+    target_price = decision_price + (position_margin * expected_direction * stop_or_limit)
+    # print(" POSITION情報　決心価格", decision_price, "マージン", position_margin, "targetprice", target_price, "Ex方向", expected_direction)
+
     return {
         # ポジション検証に必要な要素
         "take_position_flag": take_position_flag,  # ポジション取得指示あり
         "decision_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
         "decision_price": df_r_part.iloc[0]['open'],  # ポジションフラグ成立時の価格（先頭[0]列のOpen価格）
         "position_margin": position_margin,  #
+        "stop_or_limit": stop_or_limit,
+        "target_price": target_price,
         "lc_range": 0.038,  # ロスカットレンジ（ポジションの取得有無は無関係）
         "tp_range": 0.038,  # 利確レンジ（ポジションの取得有無は無関係）
-        "expect_direction": peak_turn['direction'],  # ターン部分の方向
+        "expect_direction": expected_direction,  # ターン部分の方向
         # 以下参考項目
         "turn_gap": peak_turn['gap'],
         "turn_count": peak_turn['count'],

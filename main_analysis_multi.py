@@ -33,7 +33,7 @@ def confirm_part(df_r, ana_ans):
     # print("検証開始価格", df.iloc[0]['open'])
 
     # ★設定　基本的に解析パートから持ってくる。 (150スタート、方向1の場合、DFを巡回して150以上どのくらい行くか)
-    position_target_price = ana_ans['decision_price'] + ana_ans['position_margin']  # マージンを考慮
+    position_target_price = ana_ans['target_price']  # マージンを考慮
     start_time = df.iloc[0]['time_jp']  # ポジション取得決心時間（正確には、５分後）
     expect_direction = ana_ans['expect_direction']  # 進むと予想した方向(1の場合high方向がプラス。
     lc_r = ana_ans['lc_range']  # ロスカの幅（正の値）
@@ -247,8 +247,8 @@ def main(params, params_i):
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
-    count = 5000
-    times = 3  # Count(最大5000件）を何セット取るか
+    count = 215
+    times = 1  # Count(最大5000件）を何セット取るか
     gr = "M15"  # 取得する足の単位
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
