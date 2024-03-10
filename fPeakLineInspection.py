@@ -6,14 +6,27 @@ import fGeneric as f
 
 
 #　ピーク一覧作成&分割
-def peaks_collect_main(df_r):
-    all_peaks = peaks_collect_all(df_r)
+def peaks_collect_main(*args):
+    """
+    引数は、
+    第一引数は、データフレームとする（dr_f)
+    第二引数は任意で、ピークの必要最低個数を受け取る（max_peak_num)　これはループ時間の削減が目的。
+    これらは配列として受け取る。(ちなみに辞書で受け取る場合は**argsで受け取る必要あり
+    :param agrs:
+    :return:
+    """
+    if len(args)==2:
+        # print(" peaks数指定あり")
+        all_peaks = peaks_collect_all(args[0], args[1])
+    else:
+        # print(" peaks数指定なし")
+        all_peaks = peaks_collect_all(args[0])
     separated_peaks = peaks_collect_separate(all_peaks)
     return separated_peaks
 
 
 # ピーク一覧を作成（求める範囲もここで指定する）
-def peaks_collect_all(df_r):
+def peaks_collect_all(*args):
     """
     リバースされたデータフレーム（直近が上）から、極値をN回分求める
     基本的にトップとボトムが交互のエータを返却する。
@@ -21,11 +34,14 @@ def peaks_collect_all(df_r):
     :return:
     """
     # 基本検索と同様、最初の一つは除外する
+    df_r = args[0]  # 引数からデータフレームを受け取る
     df_r = df_r[1:]
 
-    # 時間的な範囲を決める（３時間）⇒36足分50
-    # df_r = df_r[:70]  # ★★
-    # print(" 最終時刻,",df_r.iloc[-1]["time_jp"])
+    # ループの場合時間がかかるので、何個のPeakを取得するかを決定する(引数で指定されている場合は引数から受け取る）
+    if len(args)==2:
+        max_peak_num = args[1]
+    else:
+        max_peak_num = 8  # 9個のピークを取得する
 
     peaks = []  # 結果格納用
     for i in range(222):
@@ -64,6 +80,10 @@ def peaks_collect_all(df_r):
                 peaks.append(peak_info)  # 全部のピークのデータを取得する
         else:
             peaks.append(peak_info)  # 全部のピークのデータを取得する
+
+        # ピーク数の上限を設定する（ループ時に多いと時間がかかるため）
+        if len(peaks) > max_peak_num:
+            return peaks
     return peaks
 
 

@@ -60,62 +60,68 @@ def size_compare(target, partner, min_range, max_range):
     # 表示用
     # print("      ", same_size, size_compare_comment, " ", target,
     #       "範囲", partner, "[", round(target * min_range, 2), round(target * max_range, 2), "]", round(target / partner, 3))
-    #
+
     # 【判定を上書き】大きいほうを基準に考える（２と４が与えられた場合、２に係数をかける基準だと範囲が狭い。４に係数をかける ⇒　targetに大きい数を入れる）
     if partner > target:
         change = 1  # 入れ替えたか(入れ替えると大小関係が逆になる）
-        target1 = partner
-        partner1 = target
+        target_big = partner
+        partner_small = target
     else:
         change = 0
-        target1 = target
-        partner1 = partner
+        target_big = target
+        partner_small = partner
 
-    if target1 * min_range <= partner1 <= target1 * max_range:
+    if target_big * min_range <= partner_small <= target_big * max_range:
         # 同レベルのサイズ感の場合
-        same_size = True
-        size_compare = 0
-        size_compare_comment = "同等"
-    elif partner1 > target1 * max_range:
+        same_size_c = True
+        size_compare_c = 0
+        size_compare_comment_c = "同等"
+    elif partner_small > target_big * max_range:
         # 直近を誤差内の最大値で考えても、partner(過去)より小さい ⇒ 動きが少なくなった瞬間？
         if change == 1:
-            same_size = False
-            size_compare = 1
-            size_compare_comment = "大きくなる変動直後"
+            same_size_c = False
+            size_compare_c = 1
+            size_compare_comment_c = "大きくなる変動直後"
         else:
-            same_size = False
-            size_compare = -1
-            size_compare_comment = "小さくなる変動直後"
-    elif partner1 < target1 * min_range:
+            same_size_c = False
+            size_compare_c = -1
+            size_compare_comment_c = "小さくなる変動直後"
+    elif partner_small < target_big * min_range:
         # 直近を誤差内の最小値で考えても、partner（過去）より大きい ⇒ 動きが激しくなった瞬間？
         if change == 1:
-            same_size = False
-            size_compare = -1
-            size_compare_comment = "小さくなる変動直後"
+            same_size_c = False
+            size_compare_c = -1
+            size_compare_comment_c = "小さくなる変動直後"
         else:
-            same_size = False
-            size_compare = 1
-            size_compare_comment = "大きくなる変動直後"
+            same_size_c = False
+            size_compare_c = 1
+            size_compare_comment_c = "大きくなる変動直後"
     else:
         # 謎の場合
-        same_size = False
-        size_compare = 0
-        size_compare_comment = "謎"
+        same_size_c = False
+        size_compare_c = 0
+        size_compare_comment_c = "謎"
     # 表示用
     # print("      ", same_size, size_compare_comment, " ", target1,
     #       "範囲", partner1, "[", round(target1 * min_range, 2), round(target1 * max_range, 2), "]", round(target1 / partner, 3))
 
     return {
+        "change": change,  # 大小を入れ替えたか
+        # 順番通りの大小比較結果
         "same_size": same_size,  # 同等の場合のみTrue
         "size_compare": size_compare,  # 判定結果として、大きくなった＝１、同等＝０、小さくなった＝ー１
         "size_compare_ratio": round(target / partner, 3),  # 具体的に何倍だったか
-        "size_compare_ratio_r": round(partner / target, 3),  # 具体的に何倍だったか
         "size_compare_comment": size_compare_comment,
         "min": round(target * min_range, 2),
         "max": round(target * max_range, 2),
         "gap": abs(target - partner),
         "partner": partner,
         "target": target,
+        # 大小入れ替え時の比較結果
+        "same_size_c": same_size_c,  # 同等の場合のみTrue
+        "size_compare_c": size_compare_c,  # 判定結果として、大きくなった＝１、同等＝０、小さくなった＝ー１
+        "size_compare_ratio_r": round(partner / target, 3),  # これは大小入れ替え関係なく、partner/targetにしただけ。だから_r
+        "size_compare_comment_c": size_compare_comment,
     }
 
 
@@ -336,14 +342,144 @@ def turn1Rule(df_r):
     }
 
 
+def beforeDoublePeak(df_r):
+    """
+    データフレームを受け取り、範囲の中で、
+    ダブルトップ直前で、ダブルトップに向かう動きについて捉える
+　　　　　　　　　　　　　　　　　←ここら辺までリバーが来てる場合も、もっと上に行く可能性大？
+       　　　　  　   /\← 10（基準：ターン）　←このピークがTP
+       フロップ　30→ /  \/  ← 6(リバー) ＋　割合だけでなく、5pipくらいトップピークまで余裕があれば。
+          　　　　　/　　　　　　　　　←ピークの反対くらいがLC？
+    :param df_r:
+    :return:
+    """
+    print("直前　ダブルピーク判定")
+    df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
+    peaks_info = p.peaks_collect_main(df_r_part, 4)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+    peaks = peaks_info['all_peaks']
+    peaks = add_stdev(peaks)  # 偏差値を付与する
+    f.print_arr(peaks)
+    print("PEAKS↑")
+
+    # 必要なピークを出す
+    peak_river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    peak_turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
+    peak_flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
+    peaks_times = "Old:" + f.delYear(peak_flop3['time_old']) + "-" + f.delYear(peak_flop3['time']) + "_" + \
+                  "Mid:" + f.delYear(peak_turn['time_old']) + "-" + f.delYear(peak_turn['time']) + "_" + \
+                  "Latest" + f.delYear(peak_river['time_old']) + "-" + f.delYear(peak_river['time'])
+    print("対象")
+    print("直近", peak_river)
+    print("ターン", peak_turn)
+    print("古い3", peak_flop3)
+
+    # (1) ターンを基準に
+    col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
+    # ⓪リバーがターンの３０%以内であること
+    print("  リバーのターンに対する割合")
+    size_ans = size_compare(peak_river[col], peak_turn[col], 0.1, 0.3)
+    river_turn_f = size_ans['same_size']
+    river_turn_type = size_ans['size_compare']
+    river_turn_gap = size_ans['gap']
+    river_turn_ratio = size_ans['size_compare_ratio']
+    river_turn_ratio_r = size_ans['size_compare_ratio_r']
+    # ①ターンが、フロップの３０%以内であること
+    print("  ターンのフロップに対する割合")
+    size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.1, 0.3)
+    turn_flop3_f = size_ans['same_size']
+    turn_flop3_type = size_ans['size_compare']
+    turn_flop3_gap = size_ans['gap']
+    turn_flop3_ratio = size_ans['size_compare_ratio']
+    turn_flop3_ratio_r = size_ans['size_compare_ratio_r']
+    print("リバーのターン割合", river_turn_ratio, river_turn_type, "ターンのフロップに対する割合", turn_flop3_ratio, turn_flop3_type)
+
+    if river_turn_ratio < 0.61 and turn_flop3_ratio < 0.3:
+        print("  Beforeダブルトップ成立", river_turn_ratio, turn_flop3_ratio)
+        if river_turn_gap >= 0.05:  # 5pips程度の戻りの有用があれば
+            print("      ポジションしたい(ダブルトップ候補までの距離）", river_turn_gap)
+        else:
+            print("      ポジションはする猶予無し（ダブルトップ候補までの距離）", river_turn_gap)
+    else:
+        print(" 　不成立",  river_turn_ratio, turn_flop3_ratio)
+
+
+def boxSearch(df_r):
+    """
+    データフレームを受け取り、範囲の中で、
+    ・現在の価格の位置（縦方向に、下限上限からどの程度の高さにいるか）
+    ・縦方向に見て、どこの価格帯に多く滞在しているか
+        # (1) 範囲のを縦幅にN等分(大体５？）し、どこに滞在していることが多いかを確認する。また現在価格がどこに属するかも判定
+    #
+    #     /\/\   _ ←この部分が一番、滞在が濃い
+    #    /       _
+    #   /        _
+    # 5%以下の場合は、動き始めた直後くらい
+    # 10%以下の滞在率の場合、かなり動き始めて、最初のターン直後くらい
+    # 20%以下の場合、動き始めて１山程度のレンジに入ったような状態
+    # 結果は[〇%、×%]となり、左（添え字０）が低い価格帯。添え字はcontain_grid_now。
+    # 例えばN=5で[5,10,15,20,50]でcontain_grid_now =1 の場合、やや低価格の位置にいる事になる・
+    :param df_r:
+    :return:
+    """
+    print("ボックスサーチ")
+    df_r = df_r[:60]  # 検証に必要な分だけ抜き取る 90の場合7.5時間前。５時間（６０）くらいでいい？
+
+    box_max = df_r["high"].max()
+    box_min = df_r["low"].min()
+    grid_num = 5
+    grid_range = (box_max - box_min) / grid_num  # 範囲を５等分にする
+    contain_grid_now = 0
+    now_price = df_r.iloc[0]['close']
+    #
+    grid_ans = []
+    grid_ans_ratio = []
+    for g in range(grid_num):
+        min_temp = box_min + grid_range * g
+        max_temp = box_min + grid_range * (g + 1)
+        counter = 0
+        # 現在の価格がどのグリッドかを確認
+        # ToDo GridRangeのサイズによっても変る？
+        if min_temp < now_price <= max_temp:
+            contain_grid_now = g
+        # 各行のグリッド滞在数を確認
+        for i in range(len(df_r)):  # 時間短縮の為、本当はPeakでやりたいが、、一旦DFを直接
+            if min_temp < float(df_r.iloc[i]['mid_outer']) <= max_temp:
+                counter += 1
+
+        grid_ans.append(counter)
+        grid_ans_ratio.append(round(counter/len(df_r) * 100, 0))
+        print(min_temp, max_temp, round(counter/len(df_r) * 100, 0))
+
+    print("もっとも古いデータ", df_r.iloc[-1]['time_jp'], df_r.iloc[0]['time_jp'])
+    print(grid_ans_ratio)
+    print("現在の価格がどのグリッドか",contain_grid_now, grid_ans_ratio[contain_grid_now],now_price, round(grid_range, 3))
+
+
+
+
 def doublePeak(df_r):
     """
-    １、
+    # ★ダブルトップについて
+    #  フロップ3↓
+    #        /\  /\ ←リバー
+    #       /  \/ ←ターン
+    #      /
+    #     ↑フロップ2
+    #  ＜成立条件＞
+    #  ①フロップ３とターンが同値レベル(カウント数は不要かもしれない。あったとしても、２個でも有効なダブルトップがあった 2/13 03:05:00）
+    #    ただし、フロップ３とターンの差分（gap）は0.008以内としたい。指定の範囲以内でも1pipsずれていると、見た目は結構ずれている。。
+    #    その代わり、割合を少し広めにとる。
+    #  ②フロップ３とターン2よりも小さい（0.8くらい）
+    #  ③フロップ３は偏差値４０（４ピップス程度）は欲しい。
+    #  ＜ポジション検討＞
+    #  ①Directionはターンの方向とする。（正の場合、ダブルトップ突破方向）
+    #  ②リバーの長さがMarginとなる。（marginは正の値のみ。渡した先でDirectionを考慮する）
+    #
     :return:
     """
     print("ダブルピーク判定")
-    df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る(時間的な部分）
+    peaks_info = p.peaks_collect_main(df_r_part, 4)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
     f.print_arr(peaks)
@@ -365,6 +501,14 @@ def doublePeak(df_r):
 
     # (1) フロップ部の検証を行う⇒レンジ中なのかとかを確認できれば。。。
     col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
+    # ⓪リバーとターンについての比率を確認
+    print("  レンジ(フロップ３⇒ターン)")
+    size_ans = size_compare(peak_river[col], peak_turn[col], 0.7, 1.42)
+    river_turn_f = size_ans['same_size']
+    river_turn_type = size_ans['size_compare']
+    river_turn_gap = size_ans['gap']
+    river_turn_ratio = size_ans['size_compare_ratio']
+    river_turn_ratio_r = size_ans['size_compare_ratio_r']
     # ①ターンとフロップ３について、サイズの関係性取得する(同程度のgapの場合、レンジ？）
     print("  レンジ(フロップ３⇒ターン)")
     size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.7, 1.42)
@@ -386,33 +530,19 @@ def doublePeak(df_r):
     turn_flop2_f = size_ans['same_size']
     turn_flop2_type = size_ans['size_compare']
 
-    # ★ダブルトップについて
-    #  フロップ3↓
-    #        /\  /\ ←リバー
-    #       /  \/ ←ターン
-    #      /
-    #     ↑フロップ2
-    #  ＜成立条件＞
-    #  ①フロップ３とターンが同値レベル(カウント数は不要かもしれない。あったとしても、２個でも有効なダブルトップがあった 2/13 03:05:00）
-    #    ただし、フロップ３とターンの差分（gap）は0.008以内としたい。指定の範囲以内でも1pipsずれていると、見た目は結構ずれている。。
-    #    その代わり、割合を少し広めにとる。
-    #  ②フロップ３とターン2よりも小さい（0.8くらい）
-    #  ③フロップ３は偏差値４０（４ピップス程度）は欲しい。
-    #  ＜ポジション検討＞
-    #  ①Directionはターンの方向とする。（正の場合、ダブルトップ突破方向）
-    #  ②リバーの長さがMarginとなる。（marginは正の値のみ。渡した先でDirectionを考慮する）
-    #
+
 
     # 初期値の設定
     take_position_flag = False
     # 判定部分
-    if turn_flop3_type == 0 and turn_flop3_gap <= 0.008:
-        # V字部分が、ほぼ同一の高さ(比率だけではなく、Gap値でも判断）
-        if 0.1 >= peak_turn['gap'] >= 0.01:
-            # ターン部分の高さが、市営の範囲内
-            if flop3_flop2_ratio < 0.6 or flop3_flop2_ratio > 1.5:
-                # flop3とflop2のサイズ（ダブルトップへの入り方）についての条件
-                # ダブルピーク確定
+    # (1)ダブルトップの成立を確認
+    if river_turn_ratio <= 0.7:
+        # riverがターンの７割程度の戻り程度の場合（戻りすぎていない）
+        if turn_flop3_type == 0 and turn_flop3_gap <= 0.008:
+            # V字部分が、ほぼ同一の高さ(比率だけではなく、Gap値でも判断）
+            if 0.1 >= peak_turn['gap'] >= 0.01:
+                # ターン部分の高さが、市営の範囲内
+                # ★ダブルピーク確定
                 if peak_flop3['direction'] == -1:
                     print("  ダブルトップ")
                 else:
@@ -423,13 +553,29 @@ def doublePeak(df_r):
                 else:
                     take_position_flag = True
             else:
-                print("  ダブルトップ導入部未遂")
+                print("  ターンの高さ範囲外")
         else:
-            print("  ターンの高さ範囲外")
+            print("   ターンVならず")
     else:
-        print("   ターンVならず")
-    print("    turn_flop3:", turn_flop3_type, round(turn_flop3_gap, 4), "flop3_flop2_ratio:", flop3_flop2_ratio,
-          "turn_gap:", peak_turn['gap'])
+        print("   Riverの戻り率対象外")
+    print("    turn_flop3:", turn_flop3_type, round(turn_flop3_gap, 4), "turn_gap:", peak_turn['gap'])
+
+    # (2)ダブルトップの前の情報
+    if flop3_flop2_ratio < 0.6 or flop3_flop2_ratio > 1.5:
+        # flop3とflop2のサイズ（ダブルトップへの入り方）についての条件
+        # ダブルピーク確定
+        if peak_flop3['direction'] == -1:
+            print("  ダブルトップ")
+        else:
+            print("  ダブルボトム")
+        # リバーの長さ（
+        if peak_river['count'] >= 3:
+            take_position_flag = False
+        else:
+            take_position_flag = True
+    else:
+        print("  ダブルトップ導入部未遂")
+    print("    flop3_flop2:", flop3_flop2_ratio)
 
     return {
         # ポジション検証に必要な要素
@@ -483,6 +629,8 @@ def doublePeak_multi(df_r, params):
 
     # (1) フロップ部の検証を行う⇒レンジ中なのかとかを確認できれば。。。
     col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
+    size_ans = size_compare(peak_turn[col], peak_river[col], 0.7, 1.42)
+    turn_river_f = size_ans['same_size']
     # ①ターンとフロップ３について、サイズの関係性取得する(同程度のgapの場合、レンジ？）
     # print("  レンジ(フロップ３⇒ターン)")
     size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.7, 1.42)
@@ -523,7 +671,7 @@ def doublePeak_multi(df_r, params):
     if params["margin_type"] == "turn":
         position_margin = (peak_turn['gap'] + params['margin']) * params['t_type'] * expected_direction
     elif params['margin_type'] == "river":
-        position_margin = (peak_river['gap'] + params['pmargin']) * params['t_type'] * expected_direction
+        position_margin = (peak_river['gap'] + params['margin']) * params['t_type'] * expected_direction
     elif params['margin_type'] == "both":
         position_margin = (peak_turn['gap'] + peak_river['gap'] + params['position_margin']) * params['t_type'] * expected_direction
     else:
@@ -545,7 +693,7 @@ def doublePeak_multi(df_r, params):
                 else:
                     print("  ダブルボトム")
                 # リバーの長さ（
-                if peak_river['count'] >= 3:
+                if turn_river_f >= 0.8:
                     take_position_flag = False
                 else:
                     take_position_flag = True

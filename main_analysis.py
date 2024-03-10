@@ -17,12 +17,27 @@ gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
 
 # 解析パート
 def analysis_part(df_r):
+    """
+    この解析パートでは、ポジションを持つかのフラグを含めた、ポジションに必要な情報を返却する
+    必須項目は以下の通り。
+    "take_position_flag": take_position_flag,  # ポジション取得指示あり
+    "decision_time": df_r_part.iloc[0]['time_jp'],  # 直近の時刻（ポジションの取得有無は無関係）
+    "decision_price": df_r_part.iloc[0]['open'],  # ポジションフラグ成立時の価格（先頭[0]列のOpen価格）
+    "position_margin": peak_river['gap'] * -1,  # position_margin,  #
+    "lc_range": peak_turn['gap'], # 0.04,  # ロスカットレンジ（ポジションの取得有無は無関係）
+    "tp_range": peak_turn['gap'], #0.06,  # 利確レンジ（ポジションの取得有無は無関係）
+    "expect_direction": peak_turn['direction'] * -1,  # ターン部分の方向
+    :param df_r:
+    :return:
+    """
     print("★★解析パート")
     # return mk.turn1Rule(df_r)
-    return mk.doublePeak(df_r)
     # return mk.stairsPeak(df_r)
     # return mk.now_position(df_r)
     # prac.turn_inspection_main(df_r)
+    # return mk.doublePeak(df_r)
+    return mk.beforeDoublePeak(df_r)
+    # return mk.boxSearch(df_r)
 
 
 # 検証パート
@@ -252,9 +267,9 @@ def main():
     gr = "M5"  # 取得する足の単位
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 2, 26, 12, 20, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
+    target_time = datetime.datetime(2024, 3, 8, 19, 10, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
     # ■■方法の指定
-    inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+    inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
     # (１)情報の取得
     print('###')
@@ -328,6 +343,6 @@ def main():
 
 # Mainスタート
 main()
-tk.line_send("FIN")
+# tk.line_send("FIN")
 
 

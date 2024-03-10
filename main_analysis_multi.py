@@ -248,8 +248,8 @@ def main(params, params_i):
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
     count = 5000
-    times = 4  # Count(最大5000件）を何セット取るか
-    gr = "M5"  # 取得する足の単位
+    times = 3  # Count(最大5000件）を何セット取るか
+    gr = "M15"  # 取得する足の単位
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
     target_time = datetime.datetime(2024, 2, 26, 12, 20, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
@@ -360,14 +360,15 @@ def main(params, params_i):
 # Mainスタート
 multi_answers = []  # 結果一覧を取得
 params_arr = [  # t_type は順張りか逆張りか
-    {"f32_min": 0, "f32_max": 0.6, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": 1},
-    {"f32_min": 0, "f32_max": 0.6, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": -1, "dir": 1},
-    {"f32_min": 0, "f32_max": 0.6, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": -1, "dir": -1},
-    {"f32_min": 0, "f32_max": 0.6, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": -1},
-    {"f32_min": 0.6, "f32_max": 1, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": 1},
-    {"f32_min": 0.6, "f32_max": 1, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": -1, "dir": 1},
-    {"f32_min": 0.6, "f32_max": 1, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": -1, "dir": -1},
-    {"f32_min": 0.6, "f32_max": 1, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": -1},
+    {"f32_min": 0, "f32_max": 0.6, "margin_type": "river", "margin": 0.01, "turn_gap": 0.01, "t_type": 1, "dir": 1},
+    {"f32_min": 0, "f32_max": 0.6, "margin_type": "river", "margin": 0.10, "turn_gap": 0.01, "t_type": 1, "dir": 1},
+    {"f32_min": 0, "f32_max": 0.6, "margin_type": "river", "margin": 0.15, "turn_gap": 0.01, "t_type": 1, "dir": 1},
+    {"f32_min": 0, "f32_max": 0.6, "margin_type": "river", "margin": 0.20, "turn_gap": 0.01, "t_type": 1, "dir": 1},
+    # {"f32_min": 0, "f32_max": 0.6, "margin_type": "river", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": -1},
+    {"f32_min": 0.75, "f32_max": 1, "margin_type": "river", "margin": 0.01, "turn_gap": 0.01, "t_type": 1, "dir": -1},
+    {"f32_min": 0.75, "f32_max": 1, "margin_type": "river", "margin": 0.10, "turn_gap": 0.01, "t_type": 1, "dir": -1},
+    {"f32_min": 0.75, "f32_max": 1, "margin_type": "river", "margin": 0.15, "turn_gap": 0.01, "t_type": 1, "dir": -1},
+    # {"f32_min": 0.75, "f32_max": 1, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": -1},
 
 ]
 
@@ -387,6 +388,7 @@ for i in range(len(params_arr)):
           , round((multi_answers[i]["TotalTakePosition"]+0.1)/(multi_answers[i]["TotalTakePositionFlag"]+0.1), 2))
     print("tp_times", multi_answers[i]["tp_times"], "lc_times", multi_answers[i]["lc_times"])
     print("real_plus", multi_answers[i]["real_plus"], "real_minus", multi_answers[i]["real_minus"])
+tk.line_send("FIN")
 
 
 

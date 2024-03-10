@@ -270,7 +270,7 @@ def turn_each_inspection_skip(data_df_origin):
     # 通常の処理
     base_direction = 0
     counter = 0
-    skip_num = 1
+    skip_num = 2
     for i in range(len(data_df)-1):
         # i+1が変化前（時系列的に前）。 i+1 ⇒ i への傾きを確認する
         tilt = data_df.iloc[i]['middle_price'] - data_df.iloc[i+1]['middle_price']
