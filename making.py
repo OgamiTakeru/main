@@ -342,18 +342,24 @@ def turn1Rule(df_r):
     }
 
 
-def beforeDoublePeak(df_r):
+def beforeDoublePeak(*args):
     """
+    引数は配列で受け取る。
+    １つ目は配列。
     データフレームを受け取り、範囲の中で、
     ダブルトップ直前で、ダブルトップに向かう動きについて捉える
 　　　　　　　　　　　　　　　　　←ここら辺までリバーが来てる場合も、もっと上に行く可能性大？
        　　　　  　   /\← 10（基準：ターン）　←このピークがTP
        フロップ　30→ /  \/  ← 6(リバー) ＋　割合だけでなく、5pipくらいトップピークまで余裕があれば。
           　　　　　/　　　　　　　　　←ピークの反対くらいがLC？
+
+    ２つ目はループ検証時のパラメータ群(ループ検証の時のみ入ってくる）
     :param df_r:
     :return:
     """
+    print(args)
     print("直前　ダブルピーク判定")
+    df_r = args[0]
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
     peaks_info = p.peaks_collect_main(df_r_part, 3)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
     peaks = peaks_info['all_peaks']
@@ -376,7 +382,7 @@ def beforeDoublePeak(df_r):
     # (1) ターンを基準に
     col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
     # ⓪リバーがターンの３０%以内であること
-    print("  リバーのターンに対する割合")
+    # print("  リバーのターンに対する割合")
     size_ans = size_compare(peak_river[col], peak_turn[col], 0.1, 0.3)
     river_turn_f = size_ans['same_size']
     river_turn_type = size_ans['size_compare']
@@ -384,35 +390,52 @@ def beforeDoublePeak(df_r):
     river_turn_ratio = size_ans['size_compare_ratio']
     river_turn_ratio_r = size_ans['size_compare_ratio_r']
     # ①ターンが、フロップの３０%以内であること
-    print("  ターンのフロップに対する割合")
+    # print("  ターンのフロップに対する割合")
     size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.1, 0.3)
     turn_flop3_f = size_ans['same_size']
     turn_flop3_type = size_ans['size_compare']
     turn_flop3_gap = size_ans['gap']
     turn_flop3_ratio = size_ans['size_compare_ratio']
     turn_flop3_ratio_r = size_ans['size_compare_ratio_r']
-    print("リバーのターン割合", river_turn_ratio, river_turn_type, "ターンのフロップに対する割合", turn_flop3_ratio, turn_flop3_type)
+    print("   リバーのターン割合", river_turn_ratio, river_turn_type, "ターンのフロップに対する割合", turn_flop3_ratio, turn_flop3_type)
 
-    # 判定部
-    take_position_flag = False
-    if river_turn_ratio < 0.61 and turn_flop3_ratio < 0.3 and peak_river['count'] == 2:  # 戻り数　river['count']は要変更
-        take_position_flag = True
-        print("  Beforeダブルトップ成立", river_turn_ratio, turn_flop3_ratio)
-        if river_turn_gap >= 0.05:  # 5pips程度の戻りの有用があれば
-            print("      ポジションしたい(ダブルトップ候補までの距離）", river_turn_gap)
-        else:
-            print("      ポジションはする猶予無し（ダブルトップ候補までの距離）", river_turn_gap)
+    # ★★判定部
+    # 条件値の設定（引数の有る場合は引数から設定）
+    if len(args) == 2:  # 引数が存在する場合
+        print(" ループ検証")
+        params = args[1]
+        rt_max = params['river_turn_ratio']
+        tf_max = params['turn_flop_ratio']
+        r_count = params['count']
+        rt_gap_min = params['gap']
+        p_margin = params['margin']
     else:
-        print(" 　不成立",  river_turn_ratio, turn_flop3_ratio)
+        print(" 単発検証")
+        rt_max = 0.61
+        tf_max = 0.5
+        r_count = 2
+        rt_gap_min = 0.05
+        p_margin = 0.01
+
+    take_position_flag = False
+    if river_turn_ratio < rt_max and turn_flop3_ratio < tf_max and peak_river['count'] == r_count:  # 戻り数　river['count']は要変更
+        print("   Beforeダブルトップ成立", river_turn_ratio, turn_flop3_ratio)
+        if river_turn_gap >= rt_gap_min:  # 5pips程度の戻りの有用があれば
+            take_position_flag = True
+            print("   ポジションしたい(ダブルトップ候補までの距離）", river_turn_gap)
+        else:
+            print("   ポジションはする猶予無し（ダブルトップ候補までの距離）", river_turn_gap)
+    else:
+        print("   不成立",  river_turn_ratio, turn_flop3_ratio, peak_river['count'])
 
     # target_priceを求める（そのが各変数を算出）
-    position_margin = 0.01
+    position_margin = p_margin
     stop_or_limit = 1  # # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
     decision_price = df_r_part.iloc[0]['open']  # 計算用（リターンでも同じものを返却する）
     expected_direction = peak_river['direction']
     target_price = decision_price + (position_margin * expected_direction * stop_or_limit)
-    print(" POSITION情報　決心価格", decision_price, "マージン", position_margin, "targetprice", target_price, "Ex方向", expected_direction)
-    print("  ", peak_turn['gap']-peak_river['gap'])
+    print("   POSITION情報　決心価格", decision_price, "マージン", position_margin, "targetprice", target_price, "Ex方向", expected_direction)
+    # print("   ", peak_turn['gap']-peak_river['gap'])
     return {
         # ポジション検証に必要な要素
         "take_position_flag": take_position_flag,  # ポジション取得指示あり

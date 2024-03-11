@@ -51,8 +51,8 @@ def confirm_part(df_r, ana_ans):
     position_target_price = ana_ans['target_price']  # マージンを考慮
     start_time = df.iloc[0]['time_jp']  # ポジション取得決心時間（正確には、５分後）
     expect_direction = ana_ans['expect_direction']  # 進むと予想した方向(1の場合high方向がプラス。
-    lc_r = ana_ans['lc_range']  # ロスカの幅（正の値）
-    tp_r = ana_ans['tp_range']  # 利確の幅（正の値）
+    lc_range = ana_ans['lc_range']  # ロスカの幅（正の値）
+    tp_range = ana_ans['tp_range']  # 利確の幅（正の値）
 
     # 即時のポジションかを判定する
     if df.iloc[0]['open'] - 0.008 < position_target_price < df.iloc[0]['open'] + 0.008:  # 多少の誤差（0.01)は即時ポジション。マージンがない場合は基本即時となる。
@@ -127,27 +127,43 @@ def confirm_part(df_r, ana_ans):
                     max_lower_all_time = lower
                     max_lower_time_all_time = item['time_jp']
                     max_lower_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                # ロスカ分を検討する
-                if lc_r != 0:  # ロスカ設定ありの場合、ロスカに引っかかるかを検討
+                # ロスカ分を検討する(一つの足が長い場合、両方成立の可能性あり。仕様を変えたいけど、、）
+                if lc_range != 0:  # ロスカ設定ありの場合、ロスカに引っかかるかを検討
                     lc_jd = lower if expect_direction == 1 else upper  # 方向が買(expect=1)の場合、LCはLower方向。
-                    if lc_jd > lc_r:  # ロスカが成立する場合
-                        print(" 　LC★", item['time_jp'], lc_r)
+                    if lc_jd > lc_range:  # ロスカが成立する場合
+                        print(" 　LC★", item['time_jp'], lc_range)
                         lc_out = True
                         lc_time = item['time_jp']
                         lc_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                        lc_res = lc_r
-                if tp_r != 0:  # TP設定あるの場合、利確に引っかかるかを検討
+                        lc_res = lc_range
+                if tp_range != 0:  # TP設定あるの場合、利確に引っかかるかを検討
                     tp_jd = upper if expect_direction == 1 else lower  # 方向が買(expect=1)の場合、LCはLower方向。
-                    if tp_jd > tp_r:
-                        print(" 　TP★", item['time_jp'], tp_r)
-                        tp_out = True
-                        tp_time = item['time_jp']
-                        tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                        tp_res = tp_r
+                    if tp_jd > tp_range:
+                        if lc_range:
+                            # LC Range成立時でもTPと並立カウントするか、上書きとする場合（このブロックをコメントイン）
+                            print(" 　TP★", item['time_jp'], tp_range)
+                            tp_out = True
+                            tp_time = item['time_jp']
+                            tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                            tp_res = tp_range
+                            # LCを取り下げる場合は以下をコメントイン
+                            print(" 　LC★", item['time_jp'], lc_range)
+                            lc_out = False
+                            lc_time = 0
+                            lc_time_past = 0
+                            lc_res = 0
+                        else:
+                            # LC成立時はLCを優先する（厳しめ）
+                            print(" 　TP★", item['time_jp'], tp_range)
+                            tp_out = True
+                            tp_time = item['time_jp']
+                            tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                            tp_res = tp_range
         else:
             # ■ポジションがない場合の動き(ポジションを取得する）
             if item['low'] < position_target_price < item['high']:
                 position = True  # 集計に利用するため、一度TrueにしたらFalseにはしないようにする
+                position_time = item['time_jp']
                 print(" 　取得★", item['time_jp'], position_target_price)
 
     # 情報整理＠ループ終了後（directionに対してLow値をHigh値が、金額的にプラスかマイナスかを変更する）
@@ -266,7 +282,7 @@ def main():
     gr = "M5"  # 取得する足の単位
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 3, 8, 19, 5, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+    target_time = datetime.datetime(2024, 3, 8, 15, 25, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
     # ■■方法の指定
     inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
@@ -285,7 +301,7 @@ def main():
         # df = oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間指定
     # データの成型と表示
     df = df["data"]  # data部のみを取得
-    df.to_csv(tk.folder_path + 'main_analysis.csv', index=False, encoding="utf-8")  # 直近保存用
+    df.to_csv(tk.folder_path + 'main_analysis_original_data.csv', index=False, encoding="utf-8")  # 直近保存用
     df_r = df.sort_index(ascending=False)  # 逆順に並び替え（直近が上側に来るように）
     print("全", len(df_r), "行")
     print(df_r.head(2))

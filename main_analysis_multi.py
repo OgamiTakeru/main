@@ -19,7 +19,7 @@ gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
 def analysis_part(df_r, params):
     # print("★★解析パート")
     # return mk.turn1Rule(df_r)
-    return mk.doublePeak_multi(df_r, params)
+    return mk.beforeDoublePeak(df_r, params)
     # return mk.now_position(df_r)
     # prac.turn_inspection_main(df_r)
 
@@ -36,8 +36,8 @@ def confirm_part(df_r, ana_ans):
     position_target_price = ana_ans['target_price']  # マージンを考慮
     start_time = df.iloc[0]['time_jp']  # ポジション取得決心時間（正確には、５分後）
     expect_direction = ana_ans['expect_direction']  # 進むと予想した方向(1の場合high方向がプラス。
-    lc_r = ana_ans['lc_range']  # ロスカの幅（正の値）
-    tp_r = ana_ans['tp_range']  # 利確の幅（正の値）
+    lc_range = ana_ans['lc_range']  # ロスカの幅（正の値）
+    tp_range = ana_ans['tp_range']  # 利確の幅（正の値）
 
     # 即時のポジションかを判定する
     if df.iloc[0]['open'] - 0.008 < position_target_price < df.iloc[0]['open'] + 0.008:  # 多少の誤差（0.01)は即時ポジション。マージンがない場合は基本即時となる。
@@ -113,25 +113,41 @@ def confirm_part(df_r, ana_ans):
                     max_lower_time_all_time = item['time_jp']
                     max_lower_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
                 # ロスカ分を検討する
-                if lc_r != 0:  # ロスカ設定ありの場合、ロスカに引っかかるかを検討
+                if lc_range != 0:  # ロスカ設定ありの場合、ロスカに引っかかるかを検討
                     lc_jd = lower if expect_direction == 1 else upper  # 方向が買(expect=1)の場合、LCはLower方向。
-                    if lc_jd > lc_r:  # ロスカが成立する場合
+                    if lc_jd > lc_range:  # ロスカが成立する場合
                         # print(" 　LC★", item['time_jp'], lc_r)
                         lc_out = True
                         lc_time = item['time_jp']
                         lc_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                        lc_res = lc_r
-                if tp_r != 0:  # TP設定あるの場合、利確に引っかかるかを検討
+                        lc_res = lc_range
+                if tp_range != 0:  # TP設定あるの場合、利確に引っかかるかを検討
                     tp_jd = upper if expect_direction == 1 else lower  # 方向が買(expect=1)の場合、LCはLower方向。
-                    if tp_jd > tp_r:
-                        # print(" 　TP★", item['time_jp'], tp_r)
-                        tp_out = True
-                        tp_time = item['time_jp']
-                        tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                        tp_res = tp_r
+                    if tp_jd > tp_range:
+                        if lc_range:
+                            # LC Range成立時でもTPと並立カウントするか、上書きとする場合（このブロックをコメントイン）
+                            # print(" 　TP★", item['time_jp'], tp_range)
+                            tp_out = True
+                            tp_time = item['time_jp']
+                            tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                            tp_res = tp_range
+                            # LCを取り下げる場合は以下をコメントイン
+                            # print(" 　LC★", item['time_jp'], lc_range)
+                            lc_out = False
+                            lc_time = 0
+                            lc_time_past = 0
+                            lc_res = 0
+                        else:
+                            # LC成立時はLCを優先する（厳しめ）
+                            # print(" 　TP★", item['time_jp'], tp_range)
+                            tp_out = True
+                            tp_time = item['time_jp']
+                            tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                            tp_res = tp_range
         else:
             # ■ポジションがない場合の動き(ポジションを取得する）
             if item['low'] < position_target_price < item['high']:
+                position_time = item['time_jp']
                 position = True  # 集計に利用するため、一度TrueにしたらFalseにはしないようにする
                 # print(" 　取得★", item['time_jp'], position_target_price)
 
@@ -360,15 +376,14 @@ def main(params, params_i):
 # Mainスタート
 multi_answers = []  # 結果一覧を取得
 params_arr = [  # t_type は順張りか逆張りか
-    {"f32_min": 0, "f32_max": 0.6, "margin_type": "river", "margin": 0.01, "turn_gap": 0.01, "t_type": 1, "dir": 1},
-    {"f32_min": 0, "f32_max": 0.6, "margin_type": "river", "margin": 0.10, "turn_gap": 0.01, "t_type": 1, "dir": 1},
-    {"f32_min": 0, "f32_max": 0.6, "margin_type": "river", "margin": 0.15, "turn_gap": 0.01, "t_type": 1, "dir": 1},
-    {"f32_min": 0, "f32_max": 0.6, "margin_type": "river", "margin": 0.20, "turn_gap": 0.01, "t_type": 1, "dir": 1},
-    # {"f32_min": 0, "f32_max": 0.6, "margin_type": "river", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": -1},
-    {"f32_min": 0.75, "f32_max": 1, "margin_type": "river", "margin": 0.01, "turn_gap": 0.01, "t_type": 1, "dir": -1},
-    {"f32_min": 0.75, "f32_max": 1, "margin_type": "river", "margin": 0.10, "turn_gap": 0.01, "t_type": 1, "dir": -1},
-    {"f32_min": 0.75, "f32_max": 1, "margin_type": "river", "margin": 0.15, "turn_gap": 0.01, "t_type": 1, "dir": -1},
-    # {"f32_min": 0.75, "f32_max": 1, "margin_type": "t", "margin": 0.02, "turn_gap": 0.01, "t_type": 1, "dir": -1},
+    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.01},
+    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
+    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.01},
+    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.01},
+    {"river_turn_ratio": 0.41, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.01},
+    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
+    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.3, "count": 2, "gap": 0.05, "margin": 0.01},
+    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
 
 ]
 
