@@ -241,7 +241,7 @@ class Oanda:
             # UNITとTYPEの設定
             data['order']['units'] = str(plan['units'] * plan['ask_bid'])  # 必須　units数 askはマイナス、bidはプラス値
             data['order']['type'] = plan['type']  # 必須
-            # PRICEの設定① 現在価格の取得
+            # PRICEの設定① 現在価格の取得(MARKET注文で利用するため）
             price_dic = self.NowPrice_exe("USD_JPY")  # 現在価格の取得用APIを叩く
             if price_dic['error'] == -1:  # APIエラーの場合はスキップ
                 print("　　API異常発生の可能性　現在価格取得　CreateOrderClass")

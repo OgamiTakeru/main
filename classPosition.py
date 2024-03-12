@@ -129,21 +129,34 @@ class order_information:
         """
         【最重要】
         【最初】オーダー計画情報をクラスに登録する（保存する）。名前やCDCRO情報があれば、その登録含めて行っていく。
-        :param plan:units,ask_bid,price,tp_range,lc_range,type,tr_range は必須。order_timeout,は任意。
-        :return:
+        :受け取る引数 planは、units,ask_bid,price,tp_range,lc_range,type,tr_range,order_timeout,
+                order_permission(Boolean)は必須
+
+        :OandaClass上で必要な情報
+            units: 購入するユニット数。大体1万とか。
+            ask_bid: 1の場合買い(Ask)、-1の場合売り(Bid) 引数時は['direction']になってしまっている。
+            price: 130.150のような小数点三桁で指定。（メモ：APIで渡す際は小数点３桁のStr型である必要がある。本関数内で自動変換）
+                    成り行き注文であっても、LCやTPを設定する上では必要
+            tp_range: 利確の幅を、0.01（1pips)単位で指定。0.06　のように指定する。指定しない場合０を渡す。負の値は正の値に変換
+                      方向を持って渡される場合もあるが、一旦絶対値を取ってから計算する（＝渡される際の方向は不問）
+            lc_range: ロスカの幅を、0.01(1pips)単位で指定。 0.06　のように指定する（負号を付ける必要はない）。指定しない場合０。　
+            　　　　　　方向を持って渡される場合もあるが、一旦絶対値を取ってから計算する（＝渡される際の方向は不問）
+            type: 下記参照
+            tr_range: トレール幅を指定。0.01単位で指定。OANDAの仕様上0.05以上必須。指定しない場合は０を渡す
+            remark: 今は使っていないが、引数としては残してある。何かしら文字列をテキトーに渡す。
         """
         self.reset()  # 一旦リセットする
         self.plan = plan  # 受け取ったプラン情報(そのままOrderできる状態が基本）
 
-        # (1)クラスの名前を付ける (引数で指定されている場合）
+        # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
+        self.plan['price'] = plan['target_price']  # ターゲットプライス（注文価格）は、oandaClassではprice
         self.name = plan['name']  # 名前を入れる(クラス内の変更）
         self.trade_timeout = plan['trade_timeout']
         # (2)各フラグを指定しておく
         self.order_permission = plan['order_permission']  # 即時のオーダー判断に利用する
-        # (3-1) 付加情報１　各便利情報を格納しておく
-        self.plan['lc_price'] = round(plan['price'] - (abs(plan['lc_range']) * plan['direction']), 3)
-        self.plan['tp_price'] = round(plan['price'] + (abs(plan['tp_range']) * plan['direction']), 3)
-        self.plan['target_price'] = plan['margin'] + plan['price']
+        # (3-1) 付加情報１　各便利情報を格納しておく(直接Orderで使わない）
+        self.plan['lc_price'] = round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
+        self.plan['tp_price'] = round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
         self.plan['time'] = datetime.datetime.now()
 
         # (4)LC_Change情報を格納する

@@ -40,12 +40,12 @@ def size_compare(target, partner, min_range, max_range):
         f_range_flag_detail = 0
         f_range_flag_comment = "同等"
     elif partner > target * max_range:
-        # 直近を誤差内の最大値で考えても、partner(過去)より小さい ⇒ 動きが少なくなった瞬間？
+        # 直近を誤差内の最大値で考えても、before_change(過去)より小さい ⇒ 動きが少なくなった瞬間？
         f_range_flag = False
         f_range_flag_detail = 1
         f_range_flag_comment = "小さくなる変動直後"
     elif partner < target * min_range:
-        # 直近を誤差内の最小値で考えても、partner（過去）より大きい ⇒ 動きが激しくなった瞬間？
+        # 直近を誤差内の最小値で考えても、before_change（過去）より大きい ⇒ 動きが激しくなった瞬間？
         f_range_flag = False
         f_range_flag_detail = -1
         f_range_flag_comment = "大きくなる変動直後"
@@ -62,8 +62,8 @@ def size_compare(target, partner, min_range, max_range):
         "f_range_flag_comment": f_range_flag_comment,
         "min": round(target * min_range, 2),
         "max": round(target * max_range, 2),
-        "partner": partner,
-        "target": target,
+        "before_change": partner,
+        "after_change": target,
     }
 
 
@@ -125,21 +125,21 @@ def turn2Rule(df_r):
     size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.85, 1.15)
     turn_flop3_f = size_ans['f_range_flag']
     turn_flop3_detail = size_ans['f_range_flag_detail']
-    print("  レンジ(フロップ３⇒ターン):", size_ans['f_range_flag'], size_ans['f_range_flag_comment'], " ", size_ans['target'],
-          "範囲", size_ans['partner'], "[", size_ans['min'], size_ans['max'], "]", size_ans['f_range_flag_ratio'])
+    print("  レンジ(フロップ３⇒ターン):", size_ans['f_range_flag'], size_ans['f_range_flag_comment'], " ", size_ans['after_change'],
+          "範囲", size_ans['before_change'], "[", size_ans['min'], size_ans['max'], "]", size_ans['f_range_flag_ratio'])
     # ②フロップ３とフロップ２について、サイズの関係性を取得する
     size_ans = size_compare(peak_flop3[col], peak_flop2[col], 0.85, 1.15)
     flop3_flop2_f = size_ans['f_range_flag']
     flop3_flop2_detail = size_ans['f_range_flag_detail']
-    print("  レンジ(フロップ２⇒フロップ3):", size_ans['f_range_flag'], size_ans['f_range_flag_comment'], " ", size_ans['target'],
-          "範囲", size_ans['partner'], "[", size_ans['min'], size_ans['max'], "]", size_ans['f_range_flag_ratio'])
+    print("  レンジ(フロップ２⇒フロップ3):", size_ans['f_range_flag'], size_ans['f_range_flag_comment'], " ", size_ans['after_change'],
+          "範囲", size_ans['before_change'], "[", size_ans['min'], size_ans['max'], "]", size_ans['f_range_flag_ratio'])
     # ③ ターンとフロップ2について、サイズの関係性を取得する（フロップ３を挟む両サイドを意味する）
     #    フロップ２⇒フロップ３が小、フロップ３⇒ターンが大の場合、下げ方向強めの可能性。フロップ２とターンを比較する
     size_ans = size_compare(peak_turn[col], peak_flop2[col], 0.5, 2)
     turn_flop2_f = size_ans['f_range_flag']
     turn_flop2_detail = size_ans['f_range_flag_detail']
-    print("  レンジ(フロップ２⇒ターン):", size_ans['f_range_flag'], size_ans['f_range_flag_comment'], " ", size_ans['target'],
-          "範囲", size_ans['partner'], "[", size_ans['min'], size_ans['max'], "]", size_ans['f_range_flag_ratio'])
+    print("  レンジ(フロップ２⇒ターン):", size_ans['f_range_flag'], size_ans['f_range_flag_comment'], " ", size_ans['after_change'],
+          "範囲", size_ans['before_change'], "[", size_ans['min'], size_ans['max'], "]", size_ans['f_range_flag_ratio'])
     # <結果>
     #
     #  カクカクの条件

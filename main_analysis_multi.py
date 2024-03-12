@@ -35,7 +35,7 @@ def confirm_part(df_r, ana_ans):
     # ★設定　基本的に解析パートから持ってくる。 (150スタート、方向1の場合、DFを巡回して150以上どのくらい行くか)
     position_target_price = ana_ans['target_price']  # マージンを考慮
     start_time = df.iloc[0]['time_jp']  # ポジション取得決心時間（正確には、５分後）
-    expect_direction = ana_ans['expect_direction']  # 進むと予想した方向(1の場合high方向がプラス。
+    expected_direction = ana_ans['expected_direction']  # 進むと予想した方向(1の場合high方向がプラス。
     lc_range = ana_ans['lc_range']  # ロスカの幅（正の値）
     tp_range = ana_ans['tp_range']  # 利確の幅（正の値）
 
@@ -114,7 +114,7 @@ def confirm_part(df_r, ana_ans):
                     max_lower_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
                 # ロスカ分を検討する
                 if lc_range != 0:  # ロスカ設定ありの場合、ロスカに引っかかるかを検討
-                    lc_jd = lower if expect_direction == 1 else upper  # 方向が買(expect=1)の場合、LCはLower方向。
+                    lc_jd = lower if expected_direction == 1 else upper  # 方向が買(expect=1)の場合、LCはLower方向。
                     if lc_jd > lc_range:  # ロスカが成立する場合
                         # print(" 　LC★", item['time_jp'], lc_r)
                         lc_out = True
@@ -122,21 +122,22 @@ def confirm_part(df_r, ana_ans):
                         lc_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
                         lc_res = lc_range
                 if tp_range != 0:  # TP設定あるの場合、利確に引っかかるかを検討
-                    tp_jd = upper if expect_direction == 1 else lower  # 方向が買(expect=1)の場合、LCはLower方向。
+                    tp_jd = upper if expected_direction == 1 else lower  # 方向が買(expect=1)の場合、LCはLower方向。
                     if tp_jd > tp_range:
-                        if lc_range:
+                        if lc_out:
+                            pass
                             # LC Range成立時でもTPと並立カウントするか、上書きとする場合（このブロックをコメントイン）
                             # print(" 　TP★", item['time_jp'], tp_range)
-                            tp_out = True
-                            tp_time = item['time_jp']
-                            tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                            tp_res = tp_range
-                            # LCを取り下げる場合は以下をコメントイン
-                            # print(" 　LC★", item['time_jp'], lc_range)
-                            lc_out = False
-                            lc_time = 0
-                            lc_time_past = 0
-                            lc_res = 0
+                            # tp_out = True
+                            # tp_time = item['time_jp']
+                            # tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                            # tp_res = tp_range
+                            # # LCを取り下げる場合は以下をコメントイン
+                            # # print(" 　LC★", item['time_jp'], lc_range)
+                            # lc_out = False
+                            # lc_time = 0
+                            # lc_time_past = 0
+                            # lc_res = 0
                         else:
                             # LC成立時はLCを優先する（厳しめ）
                             # print(" 　TP★", item['time_jp'], tp_range)
@@ -152,7 +153,7 @@ def confirm_part(df_r, ana_ans):
                 # print(" 　取得★", item['time_jp'], position_target_price)
 
     # 情報整理＠ループ終了後（directionに対してLow値をHigh値が、金額的にプラスかマイナスかを変更する）
-    if expect_direction == 1:  # 買い方向を想定した場合
+    if expected_direction == 1:  # 買い方向を想定した場合
         max_minus = round(max_lower, 3)
         max_minus_time = max_lower_time
         max_minus_past_sec = max_lower_past_sec
@@ -181,7 +182,7 @@ def confirm_part(df_r, ana_ans):
         max_plus_time_all_time = max_lower_time_all_time
         max_plus_past_sec_all_time = max_lower_past_sec_all_time
 
-    print("買い方向", expect_direction, "最大プラス", max_plus, max_plus_time,  "最大マイナス", max_minus, max_minus_time)
+    print("買い方向", expected_direction, "最大プラス", max_plus, max_plus_time,  "最大マイナス", max_minus, max_minus_time)
 
     return {
         "position": position,
@@ -263,7 +264,7 @@ def main(params, params_i):
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
-    count = 215
+    count = 5000
     times = 1  # Count(最大5000件）を何セット取るか
     gr = "M15"  # 取得する足の単位
     # ■■取得時間の指定
@@ -377,13 +378,16 @@ def main(params, params_i):
 multi_answers = []  # 結果一覧を取得
 params_arr = [  # t_type は順張りか逆張りか
     {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.01},
-    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
-    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.01},
-    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.01},
+    {"river_turn_ratio": 0.51, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
+    {"river_turn_ratio": 0.31, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
     {"river_turn_ratio": 0.41, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.01},
-    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
-    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.3, "count": 2, "gap": 0.05, "margin": 0.01},
-    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
+    {"river_turn_ratio": 0.41, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.01},
+    {"river_turn_ratio": 0.41, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.07, "margin": 0.01},
+    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.01},
+    # {"river_turn_ratio": 0.41, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.01},
+    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
+    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.3, "count": 2, "gap": 0.05, "margin": 0.01},
+    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
 
 ]
 

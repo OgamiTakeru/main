@@ -796,7 +796,7 @@ def exe_manage():
 
 
     # グローバル変数の宣言（編集有分のみ）
-    global gl_midnight_close_flag, gl_now_price_mid, gl_first, gl_first_time, gl_latest_exe_time, gl_data5r_df
+    global gl_midnight_close_flag, gl_now_price_mid, gl_first_exe, gl_first_time, gl_latest_exe_time, gl_data5r_df
 
     # 時刻の分割（処理で利用）
     gl_now = oanda_class.str_to_time(gl_data5r_df.iloc[0]['time_jp'])
@@ -941,7 +941,7 @@ def recent_trends_support(arr):
 # 変更なし群
 gl_peak_range = 2  # ピーク値算出用　＠ここ以外で変更なし
 gl_arrow_spread = 0.008  # 実行を許容するスプレッド　＠ここ以外で変更なし
-gl_first = 0
+gl_first_exe = 0
 # 変更あり群
 gl_now = 0  # 現在時刻（ミリ秒無し） @exe_loopのみで変更あり
 gl_now_str = ""

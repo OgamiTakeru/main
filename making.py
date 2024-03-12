@@ -27,101 +27,50 @@ def add_stdev(peaks):
     return peaks
 
 
-def size_compare(target, partner, min_range, max_range):
+def size_compare(after_change, before_change, min_range, max_range):
     """
     二つの数字のサイズ感を求める。
     (例）10, 9, 0.8, 1.2 が引数で来た場合、10の0.8倍＜9＜10の1.1倍　を満たしているかどうかを判定。
-    :param partner: 比較元の数値（「現在に近いほう」が渡されるべき。どう変わったか、を結果として返却するため）
-    :param target: 比較対象の数値
+    :param before_change:　比較対象の数値 （
+    :param after_change: 比較元の数値（「現在に近いほう」が渡されるべき。どう変わったか、を結果として返却するため）
     :param min_range: 最小の比率
     :param max_range: 最大の比率
     :return: {flag: 同等かどうか, comment:コメント}
     """
-    if target * min_range <= partner <= target * max_range:
+
+    # (1)順番をそのままでサイスの比較を実施する
+    amount_of_change = after_change - before_change  # 変化量（変化後ー変化前）
+    amount_of_change_abs = abs(amount_of_change)  # 変化量の絶対値
+    change_ratio = round(after_change / before_change, 3)  # AfterがBeforeの何倍か。（変化量ではなく、サイズのパーセンテージ）
+    change_ratio_r = round(before_change / after_change, 3)  # AfterがBeforeの何倍か。（変化量ではなく、サイズのパーセンテージ）
+
+    # （２）大きい方を基準にして、変化率を求める
+    if before_change > after_change:
+        big = before_change
+        small = after_change
+    else:
+        big = after_change
+        small = before_change
+
+    if big * min_range <= small <= big * max_range:
         # 同レベルのサイズ感の場合
-        same_size = True
-        size_compare = 0
-        size_compare_comment = "同等"
-    elif partner > target * max_range:
-        # 直近を誤差内の最大値で考えても、partner(過去)より小さい ⇒ 動きが少なくなった瞬間？
-        same_size = False
-        size_compare = -1
-        size_compare_comment = "小さくなる変動直後"
-    elif partner < target * min_range:
-        # 直近を誤差内の最小値で考えても、partner（過去）より大きい ⇒ 動きが激しくなった瞬間？
-        same_size = False
-        size_compare = 1
-        size_compare_comment = "大きくなる変動直後"
+        same_size = 0
     else:
         # 謎の場合
-        same_size = False
-        size_compare = 0
-        size_compare_comment = "謎"
-    # 表示用
-    # print("      ", same_size, size_compare_comment, " ", target,
-    #       "範囲", partner, "[", round(target * min_range, 2), round(target * max_range, 2), "]", round(target / partner, 3))
+        same_size = -1
 
-    # 【判定を上書き】大きいほうを基準に考える（２と４が与えられた場合、２に係数をかける基準だと範囲が狭い。４に係数をかける ⇒　targetに大きい数を入れる）
-    if partner > target:
-        change = 1  # 入れ替えたか(入れ替えると大小関係が逆になる）
-        target_big = partner
-        partner_small = target
-    else:
-        change = 0
-        target_big = target
-        partner_small = partner
-
-    if target_big * min_range <= partner_small <= target_big * max_range:
-        # 同レベルのサイズ感の場合
-        same_size_c = True
-        size_compare_c = 0
-        size_compare_comment_c = "同等"
-    elif partner_small > target_big * max_range:
-        # 直近を誤差内の最大値で考えても、partner(過去)より小さい ⇒ 動きが少なくなった瞬間？
-        if change == 1:
-            same_size_c = False
-            size_compare_c = 1
-            size_compare_comment_c = "大きくなる変動直後"
-        else:
-            same_size_c = False
-            size_compare_c = -1
-            size_compare_comment_c = "小さくなる変動直後"
-    elif partner_small < target_big * min_range:
-        # 直近を誤差内の最小値で考えても、partner（過去）より大きい ⇒ 動きが激しくなった瞬間？
-        if change == 1:
-            same_size_c = False
-            size_compare_c = -1
-            size_compare_comment_c = "小さくなる変動直後"
-        else:
-            same_size_c = False
-            size_compare_c = 1
-            size_compare_comment_c = "大きくなる変動直後"
-    else:
-        # 謎の場合
-        same_size_c = False
-        size_compare_c = 0
-        size_compare_comment_c = "謎"
     # 表示用
-    # print("      ", same_size, size_compare_comment, " ", target1,
-    #       "範囲", partner1, "[", round(target1 * min_range, 2), round(target1 * max_range, 2), "]", round(target1 / partner, 3))
+    # print("      ", same_size, size_compare_comment, " ", after_change,
+    #       "範囲", before_change, "[", round(after_change * min_range, 2), round(after_change * max_range, 2), "]", round(after_change / before_change, 3))
 
     return {
-        "change": change,  # 大小を入れ替えたか
         # 順番通りの大小比較結果
+        "size_compare_ratio": change_ratio,
+        "size_compare_ratio_r": change_ratio_r,
+        "gap": amount_of_change,
+        "gap_abs": amount_of_change_abs,
+        # サイズが同等かの判定
         "same_size": same_size,  # 同等の場合のみTrue
-        "size_compare": size_compare,  # 判定結果として、大きくなった＝１、同等＝０、小さくなった＝ー１
-        "size_compare_ratio": round(target / partner, 3),  # 具体的に何倍だったか
-        "size_compare_comment": size_compare_comment,
-        "min": round(target * min_range, 2),
-        "max": round(target * max_range, 2),
-        "gap": abs(target - partner),
-        "partner": partner,
-        "target": target,
-        # 大小入れ替え時の比較結果
-        "same_size_c": same_size_c,  # 同等の場合のみTrue
-        "size_compare_c": size_compare_c,  # 判定結果として、大きくなった＝１、同等＝０、小さくなった＝ー１
-        "size_compare_ratio_r": round(partner / target, 3),  # これは大小入れ替え関係なく、partner/targetにしただけ。だから_r
-        "size_compare_comment_c": size_compare_comment,
     }
 
 
@@ -381,52 +330,44 @@ def beforeDoublePeak(*args):
 
     # (1) ターンを基準に
     col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
-    # ⓪リバーがターンの３０%以内であること
-    # print("  リバーのターンに対する割合")
+    # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
     size_ans = size_compare(peak_river[col], peak_turn[col], 0.1, 0.3)
-    river_turn_f = size_ans['same_size']
-    river_turn_type = size_ans['size_compare']
     river_turn_gap = size_ans['gap']
     river_turn_ratio = size_ans['size_compare_ratio']
-    river_turn_ratio_r = size_ans['size_compare_ratio_r']
-    # ①ターンが、フロップの３０%以内であること
-    # print("  ターンのフロップに対する割合")
+    # ①ターンのフロップ３に対する割合を取得（〇%に小さくなっていることを想定）
     size_ans = size_compare(peak_turn[col], peak_flop3[col], 0.1, 0.3)
-    turn_flop3_f = size_ans['same_size']
-    turn_flop3_type = size_ans['size_compare']
-    turn_flop3_gap = size_ans['gap']
     turn_flop3_ratio = size_ans['size_compare_ratio']
-    turn_flop3_ratio_r = size_ans['size_compare_ratio_r']
-    print("   リバーのターン割合", river_turn_ratio, river_turn_type, "ターンのフロップに対する割合", turn_flop3_ratio, turn_flop3_type)
+    print("   リバーのターン割合", river_turn_ratio, "ターンのフロップに対する割合", turn_flop3_ratio)
 
     # ★★判定部
     # 条件値の設定（引数の有る場合は引数から設定）
     if len(args) == 2:  # 引数が存在する場合
-        print(" ループ検証")
         params = args[1]
         rt_max = params['river_turn_ratio']
         tf_max = params['turn_flop_ratio']
         r_count = params['count']
         rt_gap_min = params['gap']
         p_margin = params['margin']
+        lc = (peak_turn['gap']-peak_river['gap']) * 2
+        tp = peak_turn['gap']-peak_river['gap']
     else:
-        print(" 単発検証")
-        rt_max = 0.61
-        tf_max = 0.5
+        rt_max = 0.6
+        tf_max = 0.6
         r_count = 2
-        rt_gap_min = 0.05
-        p_margin = 0.01
-
+        rt_gap_min = 0.03
+        p_margin = 0.02
+        lc = (peak_turn['gap']-peak_river['gap']) * 2
+        tp = peak_turn['gap']-peak_river['gap']
+    # 判定
     take_position_flag = False
     if river_turn_ratio < rt_max and turn_flop3_ratio < tf_max and peak_river['count'] == r_count:  # 戻り数　river['count']は要変更
-        print("   Beforeダブルトップ成立", river_turn_ratio, turn_flop3_ratio)
-        if river_turn_gap >= rt_gap_min:  # 5pips程度の戻りの有用があれば
+        if abs(river_turn_gap) >= rt_gap_min:  # 5pips程度の戻りの有用があれば
             take_position_flag = True
-            print("   ポジションしたい(ダブルトップ候補までの距離）", river_turn_gap)
+            print("   ■■Beforeダブルトップ完成", river_turn_ratio, turn_flop3_ratio, abs(river_turn_gap), peak_river['count'])
         else:
-            print("   ポジションはする猶予無し（ダブルトップ候補までの距離）", river_turn_gap)
+            print("   ポジションはする猶予無し（ダブルトップ候補までの距離）", river_turn_ratio, turn_flop3_ratio, abs(river_turn_gap), peak_river['count'])
     else:
-        print("   不成立",  river_turn_ratio, turn_flop3_ratio, peak_river['count'])
+        print("   不成立", river_turn_ratio, turn_flop3_ratio, abs(river_turn_gap), peak_river['count'])
 
     # target_priceを求める（そのが各変数を算出）
     position_margin = p_margin
@@ -444,10 +385,15 @@ def beforeDoublePeak(*args):
         "position_margin": position_margin,  # position_margin (+値は猶予大）
         "stop_or_limit": stop_or_limit,
         "target_price": target_price,
-        "lc_range": peak_turn['gap']-peak_river['gap'], # 0.04,  # ロスカットレンジ（ポジションの取得有無は無関係）
-        "tp_range": peak_turn['gap']-peak_river['gap'], #0.06,  # 利確レンジ（ポジションの取得有無は無関係）
-        "expect_direction": expected_direction,
+        "lc_range": lc, # 0.04,  # ロスカットレンジ（ポジションの取得有無は無関係）
+        "tp_range": tp, #0.06,  # 利確レンジ（ポジションの取得有無は無関係）
+        "expected_direction": expected_direction,
         # 以下参考項目
+        "river_turn_ratio": river_turn_ratio,
+        "turn_flop3_ratio": turn_flop3_ratio,
+        "peak_river": peak_river['count'],
+        "river_turn_gap": river_turn_gap,
+        "tp_base": peak_turn['gap']-peak_river['gap']
     }
 
 

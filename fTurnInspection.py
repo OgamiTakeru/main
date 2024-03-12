@@ -270,15 +270,15 @@ def turn_each_inspection_skip(data_df_origin):
     # 通常の処理
     base_direction = 0
     counter = 0
-    skip_num = 2
+    skip_num = 1
     for i in range(len(data_df)-1):
-        # i+1が変化前（時系列的に前）。 i+1 ⇒ i への傾きを確認する
+        # 最新から古い方に１行ずつ検証するため、i+1が変化前（時系列的に前）。 i+1 ⇒ i への傾きを確認する（コード上はi→i+1の動き）
         tilt = data_df.iloc[i]['middle_price'] - data_df.iloc[i+1]['middle_price']
         # print("TILT検証", data_df.iloc[i]['middle_price'], data_df.iloc[i+1]['middle_price'], data_df.iloc[i]['time_jp'], data_df.iloc[i+1]['time_jp'])
         # print("  ⇒", tilt)
         if tilt == 0:
             tilt = 0.001
-        tilt_direction = round(tilt / abs(tilt), 0)  # 方向のみ（念のためラウンドしておく）
+        tilt_direction = round(tilt / abs(tilt), 0)  # 方向のみ。（１かー１に変換する）（念のためラウンドしておく）
         # ■初回の場合の設定。１行目と２行目の変化率に関する情報を取得、セットする
         if counter == 0:
             base_direction = tilt_direction
@@ -289,6 +289,7 @@ def turn_each_inspection_skip(data_df_origin):
             counter += 1
         else:
             # ■SKIPを考慮したうえで、skipしても成立するか確認する。
+            print(" 逆向き発生", data_df.iloc[i]['time_jp'] ,"から", data_df.iloc[i+1]['time_jp'])
             if i + 1 + skip_num >= len(data_df):
                 # データフレームの数を超えてしまう場合はスキップ（データなしエラーになるため）
                 break
@@ -299,9 +300,19 @@ def turn_each_inspection_skip(data_df_origin):
                 # ①SKIPでの傾き
                 tilt_cal = data_df.iloc[i-1]['middle_price'] - data_df.iloc[i + skip_num]['middle_price']
                 tilt_direction_skip = round(tilt_cal / abs(tilt_cal), 0) if tilt_cal != 0 else 0.001  # 傾きが継続判断基準
+                # print("　　", data_df.iloc[i-1]['time_jp'], "と", data_df.iloc[i + skip_num]['time_jp'], "でSKIP検証")
                 # ②SKIP後の傾き（従来の傾きと同一でないといけない部分）
                 tilt_cal_future = data_df.iloc[i + skip_num]['middle_price'] - data_df.iloc[i + skip_num + 1]['middle_price']
                 tilt_direction_future = round(tilt_cal_future / abs(tilt_cal_future), 0) if tilt_cal_future != 0 else 0.001  # 傾きが継続判断基準
+                # print("   ", data_df.iloc[i + skip_num]['time_jp'], "と", data_df.iloc[i + skip_num+1]['time_jp'], "でBase方向と比較")
+                # ③厳しめ条件 SKIP部のPIP数が大きくても、折り返しを検出したい。
+                # temp_str = ""
+                # total_gap = 0
+                # for skip_gap_i in range(skip_num):
+                #     temp_str = temp_str + str(data_df.iloc[i + skip_gap_i]['time_jp']) + ","
+                #     total_gap = total_gap + data_df.iloc[i + skip_gap_i]['body']
+                # print("　　これの合計移動距離",total_gap, temp_str)
+                # 判定処理　
                 if tilt_direction_skip == base_direction and base_direction == tilt_direction_future:
                     # 規定数抜いてもなお、同方向の場合
                     # print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
@@ -565,7 +576,7 @@ def turn_merge_inspection(figure_condition):
 #         # ②marginの検討
 #         margin2 = 0  # MARKETのため
 #
-#         # ③ base price(システム利用値) & target price(参考値=システム不使用)の調整
+#         # ③ base price(システム利用値) & after_change price(参考値=システム不使用)の調整
 #         base_price2 = latest_ans['latest_price']
 #         target_price2 = latest_ans['latest_price']  # 計算用に直近の価格を取得しておく
 #
@@ -607,7 +618,7 @@ def turn_merge_inspection(figure_condition):
 #         # ②　margin
 #         margin_abs = 0.015
 #
-#         # ③ base price(システム利用値) & target price(参考値=システム不使用)の調整
+#         # ③ base price(システム利用値) & after_change price(参考値=システム不使用)の調整
 #         base_price = junc['base_price'] + junc['lc_range']  # BaseはレンジのLC価格。
 #         target_price = round(base_price + margin_abs * trend_d, 3)  # target_priceを念のために取得しておく
 #         print(base_price, margin_abs)

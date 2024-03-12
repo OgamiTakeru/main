@@ -11,6 +11,7 @@ import classPosition as classPosition  # とりあえずの関数集
 import fTurnInspection as t  # とりあえずの関数集
 import fGeneric as f
 import fPeakLineInspection as p
+import making as ins
 
 
 def order_line_send(class_order_arr, add_info):
@@ -129,187 +130,238 @@ def order_link_inspection():
 
 def mode1():
     """
-    低頻度モード（条件を検索し、４２検査を実施する）
+    低頻度モード（ローソクを解析し、注文を行う関数）
+    ・調査対象のデータフレームはexe_manageで取得し、グローバル変数として所有済（gl_data5r_df）。時短の為。
+    ・調査を他関数に依頼し、取得フラグと取得価格等を受け取り、それに従って注文を実行する関数
     :return: なし
     """
     print("  Mode1")
     global gl_latest_trigger_time, gl_peak_memo
 
-    # チャート分析結果を取得する
-    inspection_condition = {
-        "now_price": gl_now_price_mid,  # 現在価格を渡す
-        "data_r": gl_data5r_df,  # 対象となるデータ
-        "turn_2": {"data_r": gl_data5r_df, "ignore": 1, "latest_n": 2, "oldest_n": 30, "return_ratio": 40},
-        "turn_3": {"data_r": gl_data5r_df, "ignore": 2, "latest_n": 2, "oldest_n": 30, "return_ratio": 40},
-        "time_str": gl_now_str,  # 記録用の現在時刻
-    }
-    ans_dic = t.inspection_candle(inspection_condition)  # 状況を検査する（買いフラグの確認）
+    # 調査結果を取得する
+    ins_res = ins.beforeDoublePeak(gl_data5r_df)  # 調査結果を受け取る
 
-    # 一旦整理。。
-    # (1) turn2関連
-    result_turn2_result = ans_dic['turn2_ans']['turn_ans']  # 直近のターンがあるかどうか（連続性の考慮無し）
-    result_turn2_orders = ans_dic['turn2_ans']['order_dic']
-    # (2)ターン未遂部
-    result_attempt_turn = ans_dic['latest3_figure_result']['result']
-    result_attempt_turn_orders = ans_dic['latest3_figure_result']['order_dic']
-
-    # LCを絞る時間
-    lc_change_time = 540  # 通常は５４０くらいを想定
-
-    # ■オーダーの生成、発行
-    # ■実際の発行が可能かを判断し、オーダーを作成する
-    wait_time_new = 5  # ６分以上で、上書きオーダーの受け入れが可能のフラグを出せる。
-    past_sec = (datetime.datetime.now() - gl_latest_trigger_time).seconds
-    if 0 < past_sec < wait_time_new * 59:  # 0の場合はTrueなるので、不等号に＝はNG。オーダー発行時比較
-        print("時間不可 last", gl_latest_trigger_time, past_sec, wait_time_new * 59)
-        new_order = False
-        return 0  # 時間的に負荷の場合は終了
-    else:
-        new_order = True  # 最初はこっちに行く（初期では基本こっち）
-
-    # ■　付加情報を記録する
-    add_info = {
-    }
-
-    # ■　条件有でも除外される消すを探す（return 0とする場合）
-    position_check = classPosition.new_order_permission(classes)
-    if not position_check['ans']:  # ポジション上書き許がFalseの場合(Trueではない場合）
-        if result_turn2_result == 1:  # ターン有の場合、LINEする
-            tk.line_send("既にPosition有の為見送り(ターン）", position_check['open_positions'])
-        elif result_attempt_turn == 1:  # ターン未遂が確認された場合（早い場合）
-            tk.line_send("既にPosition有の為見送り(ターン未遂）", position_check['open_positions'])
-        else:
-            pass
-        # 処理終了
-        return 0
-    else:
-        trade_exist = classPosition.position_check(classes)
-        if trade_exist['ans']:
-            if result_turn2_result == 1:  # ターン有の場合、LINEする
-                tk.line_send("ポジション上書き(ターン）", trade_exist['open_positions'])
-            elif result_attempt_turn == 1:  # ターン未遂が確認された場合（早い場合）
-                tk.line_send("ポジション上書き(ターン未遂）", trade_exist['open_positions'])
-            else:
-                pass
-
-    # ■パターンでオーダーのベースを組み立て、発行する（発行タイミングはずれる可能性もある）
-    # ■現在の勝敗で倍率を決定する
-    if classPosition.order_information.total_yen > 0:
-        # 勝っている場合
-        mag_unit_wl = mag_unit_w
-        mag_lc = mag_lc_w
-        mag_tp = mag_tp_w
-        add_info['wl_info'] = "Win中"  # 情報をLINEに送るよう
-    else:
-        mag_unit_wl = mag_unit_l
-        mag_lc = mag_lc_l
-        mag_tp = mag_tp_l
-        add_info['wl_info'] = "Lose中"  # 情報をLINEに送るよう
-    # ■オーダー生成処理
-    if result_turn2_result == 1:  # ターンが確認された場合（最優先）
-        # 事前処理
-        print(" ★オーダー発行（ターン起点）★")
-        classPosition.reset_all_position(classes)  # ポジションのリセット&情報アップデート
-        gl_latest_trigger_time = datetime.datetime.now()  # 現在時刻を、最終トリガー時刻に入れておく
-        # (1)順思想のオーダー群作成
-        # 元オーダーの取得
-        main_order = result_turn2_orders['main']  # オーダーを受け取る
-        # 順思想メインオーダーの作成
-        order = main_order.copy()
-        order['name'] = order['name'] + "N"  # 編集
-        order['tp_range'] = 0.1  # 追加項目
-        order['target_class'] = main_c  # 追加項目　格納するクラス
-        order['price'] = round(order['base_price'] + order['margin'], 3)
-        order['units'] = round(order['units'] * unit_mag * mag_unit_wl, 3)  # 編集
-        order['tp_range'] = round(order['tp_range'] * mag_tp, 3)  # 追加項目
-        order['lc_range'] = round(order['lc_range'] * mag_lc, 3)
-        order['order_permission'] = True  # 即時の取得は行わない
-        order['over_write_block'] = False  # ポジション上書きブロックをOff
-        order['trade_timeout'] = 7  # ポジション上書きブロックをOff
-        order['win_lose_border_range'] = order['lc_range'] / 2  #
-        order['lc_change'] = {
-            "lc_change_exe": True,
-            "lc_ensure_range": 0.05,  # 最低限確保するPLu
-            "lc_trigger_range": 0.07,
+    # 発注を実行する
+    if ins_res['take_position_flag']:
+        # 調査の結果、取得結果有の場合
+        tk.line_send(ins_res['decision_time'], ins_res['decision_price'], ins_res['expected_direction'])
+        # 注文を実行する
+        order = {
+            "name": "test",
+            "order_permission": True,
+            "target_price": ins_res['target_price'],
+            "tp_range": ins_res['tp_range'],
+            "lc_range": ins_res['lc_range'],
+            "units": 10,
+            "direction": ins_res['expected_direction'],
+            "type": "STOP",  # 1が順張り、-1が逆張り
+            "trade_timeout": 1800,
+            "remark": "test",
+            "tr_range": 0,
         }
-        order['cascade_close_map_arr'] = [
-            {"range": order['cascade_unit'] * 0.2, "close_ratio": 0.4},
-            {"range": order['cascade_unit'] * 0.6, "close_ratio": 0.3},
-            {"range": order['cascade_unit'] * 0.8, "close_ratio": 0.2},
-        ]
         main_c.order_plan_registration(order)
 
-        # (2)レンジオーダー群作成
-        # レンジオーダーの元を作成
-        junc_order = result_turn2_orders['junc']
-        # レンジメインオーダーの作成
-        order2 = junc_order.copy()
-        order2['name'] = order2['name'] + "N"  # 編集
-        # order2['direction'] = order2['direction'] * -1
-        order2['target_class'] = third_c  # 追加項目　格納するクラス
-        order2['price'] = round(order2['base_price'] + order2['margin'], 3)
-        order2['units'] = round(order2['units'] * unit_mag * mag_unit_wl, 3)  # 編集
-        order2['tp_range'] = round(order2['tp_range'] * mag_tp, 3)  # 追加項目
-        order2['lc_range'] = round(order2['lc_range'] * mag_lc, 3)
-        order2['order_permission'] = True  # 即時の取得は行わない
-        order2['over_write_block'] = False  # オーダー上書きブロックをOff
-        order2['win_lose_border_range'] = order2['lc_range'] / 2  #
-        order2['trade_timeout'] = 7  # ポジション上書きブロックをOff
-        order2['lc_change'] = {
-            "lc_change_exe": True,
-            "lc_ensure_range": -0.01,  # 最低限確保するPLu
-            "lc_trigger_range": 0.10,
-        }
-        order2['cascade_close_map_arr'] = [
-            {"range": order2['cascade_unit'] * 0.2, "close_ratio": 0.4},
-            {"range": order2['cascade_unit'] * 0.5, "close_ratio": 0.3},
-            {"range": order2['cascade_unit'] * 0.7, "close_ratio": 0.2},
-        ]
-        third_c.order_plan_registration(order2)
+    # # チャート分析結果を取得する
+    # inspection_condition = {
+    #     "now_price": gl_now_price_mid,  # 現在価格を渡す
+    #     "data_r": gl_data5r_df,  # 対象となるデータ
+    #     "turn_2": {"data_r": gl_data5r_df, "ignore": 1, "latest_n": 2, "oldest_n": 30, "return_ratio": 40},
+    #     "turn_3": {"data_r": gl_data5r_df, "ignore": 2, "latest_n": 2, "oldest_n": 30, "return_ratio": 40},
+    #     "time_str": gl_now_str,  # 記録用の現在時刻
+    # }
+    # ans_dic = t.inspection_candle(inspection_condition)  # 状況を検査する（買いフラグの確認）
+    # # 元オーダーの取得
+    # main_order = result_turn2_orders['main']  # オーダーを受け取る
+    # # 順思想メインオーダーの作成
+    # order = main_order.copy()
+    # order['name'] = order['name'] + "N"  # 編集
+    # order['tp_range'] = 0.1  # 追加項目
+    # order['target_class'] = main_c  # 追加項目　格納するクラス
+    # order['price'] = round(order['base_price'] + order['margin'], 3)
+    # order['units'] = round(order['units'] * unit_mag * mag_unit_wl, 3)  # 編集
+    # order['tp_range'] = round(order['tp_range'] * mag_tp, 3)  # 追加項目
+    # order['lc_range'] = round(order['lc_range'] * mag_lc, 3)
+    # order['order_permission'] = True  # 即時の取得は行わない
+    # order['over_write_block'] = False  # ポジション上書きブロックをOff
+    # order['trade_timeout'] = 7  # ポジション上書きブロックをOff
+    # order['win_lose_border_range'] = order['lc_range'] / 2  #
+    # order['lc_change'] = {
+    #     "lc_change_exe": True,
+    #     "lc_ensure_range": 0.05,  # 最低限確保するPLu
+    #     "lc_trigger_range": 0.07,
+    # }
+    # order['cascade_close_map_arr'] = [
+    #     {"range": order['cascade_unit'] * 0.2, "close_ratio": 0.4},
+    #     {"range": order['cascade_unit'] * 0.6, "close_ratio": 0.3},
+    #     {"range": order['cascade_unit'] * 0.8, "close_ratio": 0.2},
+    # ]
+    # main_c.order_plan_registration(order)
 
-        # レンジオーダーの集約
-        # order_pair = [watch_main, order, order_mini, watch_main2, order2, order2_mini]  #
-        order_pair = [order, order2]  # LINE用とか
-        order_line_send(order_pair, add_info)
-
-    elif result_attempt_turn == 1:  # ターン未遂が確認された場合（早い場合）
-        # 事前処理
-        print("  ★オーダー発行 ターン未遂を確認　")  # result_attempt_turn_orders
-        classPosition.reset_all_position(classes)  # ポジションのリセット&情報アップデート
-        gl_latest_trigger_time = datetime.datetime.now()  # 現在時刻を、最終トリガー時刻に入れておく
-        # watch用のメニューを作成
-        watch_main = result_attempt_turn_orders.copy()
-        watch_main['name'] = watch_main['name'] + "W"  # 編集
-        watch_main['target_class'] = watch1_c  # 追加項目　格納するクラス
-        watch_main['price'] = round(watch_main['base_price'] + watch_main['margin'], 3)
-        watch_main['units'] = 1  # 編集
-        watch_main['tp_range'] = 0.2  # 追加項目
-        watch_main['lc_range'] = 0.1
-        watch_main['order_permission'] = True  # 即時の取得
-        watch_main['over_write_block'] = False  # オーダー上書きブロックをOff
-        watch1_c.order_plan_registration(watch_main)
-
-        # MINIオーダーの作成
-        order_mini = result_attempt_turn_orders.copy()
-        order_mini['name'] = order_mini['name'] + "m"
-        order_mini['target_class'] = second_c  # 追加項目　格納するクラス
-        order_mini['price'] = round(order_mini['base_price'] + order_mini['margin'], 3)
-        order_mini['units'] = round(order_mini['units'] * unit_mag, 0)
-        order_mini['lc'] = 0.030  # order_mini['lc_range']
-        order_mini['tp'] = 0.022
-        order_mini['order_permission'] = False  # 即時の取得しない
-        order_mini['trade_timeout'] = 60  # ポジション上書きブロックをOff
-        order_mini['over_write_block'] = True  # オーダー上書きブロックをtrue
-        order_mini['lc_change'] = {
-            "lc_change_exe": True,
-            "lc_ensure_range": 0.01,  # 最低限確保するPLu
-            "lc_trigger_range": 0.04,
-        }
-        second_c.order_plan_registration(order_mini)
-
-        # オーダーの集約
-        order_pair = [watch_main, order_mini]
-        order_line_send(order_pair, add_info)
+    # # 一旦整理。。
+    # # (1) turn2関連
+    # result_turn2_result = ans_dic['turn2_ans']['turn_ans']  # 直近のターンがあるかどうか（連続性の考慮無し）
+    # result_turn2_orders = ans_dic['turn2_ans']['order_dic']
+    # # (2)ターン未遂部
+    # result_attempt_turn = ans_dic['latest3_figure_result']['result']
+    # result_attempt_turn_orders = ans_dic['latest3_figure_result']['order_dic']
+    #
+    # # LCを絞る時間
+    # lc_change_time = 540  # 通常は５４０くらいを想定
+    #
+    # # ■オーダーの生成、発行
+    # # ■実際の発行が可能かを判断し、オーダーを作成する
+    # wait_time_new = 5  # ６分以上で、上書きオーダーの受け入れが可能のフラグを出せる。
+    # past_sec = (datetime.datetime.now() - gl_latest_trigger_time).seconds
+    # if 0 < past_sec < wait_time_new * 59:  # 0の場合はTrueなるので、不等号に＝はNG。オーダー発行時比較
+    #     print("時間不可 last", gl_latest_trigger_time, past_sec, wait_time_new * 59)
+    #     new_order = False
+    #     return 0  # 時間的に負荷の場合は終了
+    # else:
+    #     new_order = True  # 最初はこっちに行く（初期では基本こっち）
+    #
+    # # ■　付加情報を記録する
+    # add_info = {
+    # }
+    #
+    # # ■　条件有でも除外される消すを探す（return 0とする場合）
+    # position_check = classPosition.new_order_permission(classes)
+    # if not position_check['ans']:  # ポジション上書き許がFalseの場合(Trueではない場合）
+    #     if result_turn2_result == 1:  # ターン有の場合、LINEする
+    #         tk.line_send("既にPosition有の為見送り(ターン）", position_check['open_positions'])
+    #     elif result_attempt_turn == 1:  # ターン未遂が確認された場合（早い場合）
+    #         tk.line_send("既にPosition有の為見送り(ターン未遂）", position_check['open_positions'])
+    #     else:
+    #         pass
+    #     # 処理終了
+    #     return 0
+    # else:
+    #     trade_exist = classPosition.position_check(classes)
+    #     if trade_exist['ans']:
+    #         if result_turn2_result == 1:  # ターン有の場合、LINEする
+    #             tk.line_send("ポジション上書き(ターン）", trade_exist['open_positions'])
+    #         elif result_attempt_turn == 1:  # ターン未遂が確認された場合（早い場合）
+    #             tk.line_send("ポジション上書き(ターン未遂）", trade_exist['open_positions'])
+    #         else:
+    #             pass
+    #
+    # # ■パターンでオーダーのベースを組み立て、発行する（発行タイミングはずれる可能性もある）
+    # # ■現在の勝敗で倍率を決定する
+    # if classPosition.order_information.total_yen > 0:
+    #     # 勝っている場合
+    #     mag_unit_wl = mag_unit_w
+    #     mag_lc = mag_lc_w
+    #     mag_tp = mag_tp_w
+    #     add_info['wl_info'] = "Win中"  # 情報をLINEに送るよう
+    # else:
+    #     mag_unit_wl = mag_unit_l
+    #     mag_lc = mag_lc_l
+    #     mag_tp = mag_tp_l
+    #     add_info['wl_info'] = "Lose中"  # 情報をLINEに送るよう
+    # # ■オーダー生成処理
+    # if result_turn2_result == 1:  # ターンが確認された場合（最優先）
+    #     # 事前処理
+    #     print(" ★オーダー発行（ターン起点）★")
+    #     classPosition.reset_all_position(classes)  # ポジションのリセット&情報アップデート
+    #     gl_latest_trigger_time = datetime.datetime.now()  # 現在時刻を、最終トリガー時刻に入れておく
+    #     # (1)順思想のオーダー群作成
+    #     # 元オーダーの取得
+    #     main_order = result_turn2_orders['main']  # オーダーを受け取る
+    #     # 順思想メインオーダーの作成
+    #     order = main_order.copy()
+    #     order['name'] = order['name'] + "N"  # 編集
+    #     order['tp_range'] = 0.1  # 追加項目
+    #     order['target_class'] = main_c  # 追加項目　格納するクラス
+    #     order['price'] = round(order['base_price'] + order['margin'], 3)
+    #     order['units'] = round(order['units'] * unit_mag * mag_unit_wl, 3)  # 編集
+    #     order['tp_range'] = round(order['tp_range'] * mag_tp, 3)  # 追加項目
+    #     order['lc_range'] = round(order['lc_range'] * mag_lc, 3)
+    #     order['order_permission'] = True  # 即時の取得は行わない
+    #     order['over_write_block'] = False  # ポジション上書きブロックをOff
+    #     order['trade_timeout'] = 7  # ポジション上書きブロックをOff
+    #     order['win_lose_border_range'] = order['lc_range'] / 2  #
+    #     order['lc_change'] = {
+    #         "lc_change_exe": True,
+    #         "lc_ensure_range": 0.05,  # 最低限確保するPLu
+    #         "lc_trigger_range": 0.07,
+    #     }
+    #     order['cascade_close_map_arr'] = [
+    #         {"range": order['cascade_unit'] * 0.2, "close_ratio": 0.4},
+    #         {"range": order['cascade_unit'] * 0.6, "close_ratio": 0.3},
+    #         {"range": order['cascade_unit'] * 0.8, "close_ratio": 0.2},
+    #     ]
+    #     main_c.order_plan_registration(order)
+    #
+    #     # (2)レンジオーダー群作成
+    #     # レンジオーダーの元を作成
+    #     junc_order = result_turn2_orders['junc']
+    #     # レンジメインオーダーの作成
+    #     order2 = junc_order.copy()
+    #     order2['name'] = order2['name'] + "N"  # 編集
+    #     # order2['direction'] = order2['direction'] * -1
+    #     order2['target_class'] = third_c  # 追加項目　格納するクラス
+    #     order2['price'] = round(order2['base_price'] + order2['margin'], 3)
+    #     order2['units'] = round(order2['units'] * unit_mag * mag_unit_wl, 3)  # 編集
+    #     order2['tp_range'] = round(order2['tp_range'] * mag_tp, 3)  # 追加項目
+    #     order2['lc_range'] = round(order2['lc_range'] * mag_lc, 3)
+    #     order2['order_permission'] = True  # 即時の取得は行わない
+    #     order2['over_write_block'] = False  # オーダー上書きブロックをOff
+    #     order2['win_lose_border_range'] = order2['lc_range'] / 2  #
+    #     order2['trade_timeout'] = 7  # ポジション上書きブロックをOff
+    #     order2['lc_change'] = {
+    #         "lc_change_exe": True,
+    #         "lc_ensure_range": -0.01,  # 最低限確保するPLu
+    #         "lc_trigger_range": 0.10,
+    #     }
+    #     order2['cascade_close_map_arr'] = [
+    #         {"range": order2['cascade_unit'] * 0.2, "close_ratio": 0.4},
+    #         {"range": order2['cascade_unit'] * 0.5, "close_ratio": 0.3},
+    #         {"range": order2['cascade_unit'] * 0.7, "close_ratio": 0.2},
+    #     ]
+    #     third_c.order_plan_registration(order2)
+    #
+    #     # レンジオーダーの集約
+    #     # order_pair = [watch_main, order, order_mini, watch_main2, order2, order2_mini]  #
+    #     order_pair = [order, order2]  # LINE用とか
+    #     order_line_send(order_pair, add_info)
+    #
+    # elif result_attempt_turn == 1:  # ターン未遂が確認された場合（早い場合）
+    #     # 事前処理
+    #     print("  ★オーダー発行 ターン未遂を確認　")  # result_attempt_turn_orders
+    #     classPosition.reset_all_position(classes)  # ポジションのリセット&情報アップデート
+    #     gl_latest_trigger_time = datetime.datetime.now()  # 現在時刻を、最終トリガー時刻に入れておく
+    #     # watch用のメニューを作成
+    #     watch_main = result_attempt_turn_orders.copy()
+    #     watch_main['name'] = watch_main['name'] + "W"  # 編集
+    #     watch_main['target_class'] = watch1_c  # 追加項目　格納するクラス
+    #     watch_main['price'] = round(watch_main['base_price'] + watch_main['margin'], 3)
+    #     watch_main['units'] = 1  # 編集
+    #     watch_main['tp_range'] = 0.2  # 追加項目
+    #     watch_main['lc_range'] = 0.1
+    #     watch_main['order_permission'] = True  # 即時の取得
+    #     watch_main['over_write_block'] = False  # オーダー上書きブロックをOff
+    #     watch1_c.order_plan_registration(watch_main)
+    #
+    #     # MINIオーダーの作成
+    #     order_mini = result_attempt_turn_orders.copy()
+    #     order_mini['name'] = order_mini['name'] + "m"
+    #     order_mini['target_class'] = second_c  # 追加項目　格納するクラス
+    #     order_mini['price'] = round(order_mini['base_price'] + order_mini['margin'], 3)
+    #     order_mini['units'] = round(order_mini['units'] * unit_mag, 0)
+    #     order_mini['lc'] = 0.030  # order_mini['lc_range']
+    #     order_mini['tp'] = 0.022
+    #     order_mini['order_permission'] = False  # 即時の取得しない
+    #     order_mini['trade_timeout'] = 60  # ポジション上書きブロックをOff
+    #     order_mini['over_write_block'] = True  # オーダー上書きブロックをtrue
+    #     order_mini['lc_change'] = {
+    #         "lc_change_exe": True,
+    #         "lc_ensure_range": 0.01,  # 最低限確保するPLu
+    #         "lc_trigger_range": 0.04,
+    #     }
+    #     second_c.order_plan_registration(order_mini)
+    #
+    #     # オーダーの集約
+    #     order_pair = [watch_main, order_mini]
+    #     order_line_send(order_pair, add_info)
     #
     print("MODE1 END")
 
@@ -320,7 +372,7 @@ def mode2():
     if classPosition.life_check(classes):
         # 表示用（１分に１回表示させたい）
         temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
-        if 0 <= int(temp_date.second) < 2:  # ＝１分に一回
+        if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒と２秒)
             classes_info = classPosition.position_info(classes)
             print("■■■Mode2(各分表示 &　いずれかポジション有)", f.now())
             if classes_info == "":
@@ -343,7 +395,7 @@ def exe_manage():
     time_sec = gl_now.second  # 現在時刻の「秒」のみを取得
 
     # グローバル変数の宣言（編集有分のみ）
-    global gl_midnight_close_flag, gl_now_price_mid, gl_data5r_df, gl_first, gl_first_time, gl_latest_exe_time
+    global gl_midnight_close_flag, gl_now_price_mid, gl_data5r_df, gl_first_exe, gl_first_time, gl_latest_exe_time
 
     # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
     if 3 <= time_hour <= 6:
@@ -369,6 +421,7 @@ def exe_manage():
             return -1  # 強制終了
 
         # ■直近の検討データの取得　　　メモ：data_format = '%Y/%m/%d %H:%M:%S'
+        # 直近の実行したローソク取得からの経過時間を取得する（秒単位で２連続の取得を行わないようにするためマージン）
         if gl_latest_exe_time == 0:
             past_time = 66  # 初回のみテキトーな値でごまかす
         else:
@@ -397,8 +450,8 @@ def exe_manage():
             mode2()
 
         # ■　初回だけ実行と同時に行う
-        if gl_first == 0:
-            gl_first = 1
+        if gl_first_exe == 0:
+            gl_first_exe = 1
             gl_first_time = gl_now
             print("■■■初回", gl_now, gl_exe_mode, gl_live)  # 表示用（実行時）
             # classPosition.all_update_information(classes)  # 情報アップデート
@@ -447,9 +500,8 @@ def exe_loop(interval, fun, wait=True):
 
 # ■グローバル変数の宣言等
 # 変更なし群
-gl_peak_range = 2  # ピーク値算出用　＠ここ以外で変更なし
-gl_arrow_spread = 0.008  # 実行を許容するスプレッド　＠ここ以外で変更なし
-gl_first = 0
+gl_arrow_spread = 0.011  # 実行を許容するスプレッド　＠ここ以外で変更なし
+gl_first_exe = 0  # 初回のみ実行する内容があるため、初回フラグを準備しておく
 # 変更あり群
 gl_now = 0  # 現在時刻（ミリ秒無し） @exe_loopのみで変更あり
 gl_now_str = ""
