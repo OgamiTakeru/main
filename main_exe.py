@@ -60,29 +60,6 @@ def order_line_send(class_order_arr, add_info):
     peak_inspection = p.inspection_test(gl_data5r_df)
     tk.line_send(peak_inspection)
 
-def order_delete_function():
-    """
-    反対側のオーダーを消しておく
-    理由は両建てがダメなため、LCのかぶり等の問題が発生する
-    :return:
-    """
-
-    if main_c.t_state == "OPEN":  # and main_c.life:
-        # main（順思想がオーダー)が入っている場合、逆思想は消す
-        if third_c.life or fourth_c.life:  # どちらかがOnの場合（基本は同時にOffになるはずだけど）
-            third_c.close_order()
-            fourth_c.close_order()
-            watch2_c.close_order()
-            tk.line_send("■逆思想オーダー削除（ポジションは解消しない）", third_c.life, fourth_c.life)
-    elif third_c.t_state == "OPEN":# and third_c.life:
-        # third(逆思想オーダー）が入っている場合、順思想は消す
-        if main_c.life or second_c.life:
-            main_c.close_order()
-            second_c.close_order()
-            watch1_c.close_order()
-            tk.line_send("■順思想オーダー削除（ポジションは解消しない）", main_c.life, second_c.life)
-
-
 def mode1():
     """
     低頻度モード（ローソクを解析し、注文を行う関数）
@@ -114,7 +91,7 @@ def mode1():
             "remark": "test",
             "tr_range": 0,
         }
-        main_c.order_plan_registration(order)
+        classes[0].order_plan_registration(order)
     print("MODE1 END")
 
 
@@ -259,6 +236,7 @@ gl_midnight_close_flag = 0  # 深夜突入時に一回だけポジション等�
 gl_exe_mode = 0  # 実行頻度のモード設定　＠
 gl_data5r_df = 0  # 毎回複数回ローソクを取得は時間無駄なので１回を使いまわす　＠exe_manageで取得
 gl_trade_num = 0  # 取引回数をカウントする
+gl_num_for_new_class = 1  # クラスを生成する際、クラス名として利用する変数。（＝クラスの数）
 gl_result_dic = {}
 # gl_trade_win = 0  # プラスの回数を記録する
 gl_live = "Pra"
@@ -286,14 +264,18 @@ else:  # Live
     gl_live = "Live"
 
 # ■ポジションクラスの生成
-main_c = classPosition.order_information("1", oa)  # 順思想のオーダーを入れるクラス
-second_c = classPosition.order_information("2", oa)  # 順思想のオーダーを入れるクラス
-third_c = classPosition.order_information("3", oa)  # 順思想のオーダーを入れるクラス
-fourth_c = classPosition.order_information("4", oa)  # 順思想のオーダーを入れるクラス
-watch1_c = classPosition.order_information("5", oa)
-watch2_c = classPosition.order_information("6", oa)
-# ■ポジションクラスを一まとめにしておく
-classes = [main_c, second_c, third_c, fourth_c, watch1_c, watch2_c]
+classes = []
+for i in range(1):
+    # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
+    # クラス名を確定し、クラスを生成する。
+    new_name = "c" + str(i)
+    classes.append(classPosition.order_information(new_name, oa))  # 順思想のオーダーを入れるクラス
+    # クラス数を記録し、通し番号をグローバル変数で記憶する（本文上で名前を付与するときに、利用する）
+    gl_num_for_new_class += 1
+
+print(classes)
+print(classes[0].name)
+
 
 # ■処理の開始
 classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う

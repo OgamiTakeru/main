@@ -270,7 +270,7 @@ def turn_each_inspection_skip(data_df_origin):
     # 通常の処理
     base_direction = 0
     counter = 0
-    skip_num = 0
+    skip_num = 1
     for i in range(len(data_df)-1):
         # 最新から古い方に１行ずつ検証するため、i+1が変化前（時系列的に前）。 i+1 ⇒ i への傾きを確認する（コード上はi→i+1の動き）
         tilt = data_df.iloc[i]['middle_price'] - data_df.iloc[i+1]['middle_price']
@@ -294,17 +294,27 @@ def turn_each_inspection_skip(data_df_origin):
                 # データフレームの数を超えてしまう場合はスキップ（データなしエラーになるため）
                 break
             else:
+                #
+                #
+                #     i+1  i    i-1
+                #               ↑
+                #      ↑   ↓    ↑
+                #      ↑   ↓    ↑
+                #   ↑      ↓    ↑
+                #   ↑  　  〇の足が原因
+                #   ↑
+                #
                 # [i]が方向転換のカギになっている為、[i]を飛ばして、[i-1]と[i+skip]で成立するかを確認。
                 # ただしその場合、ターンに食い込む可能性あるため、
                 # ここまでの傾きと、[i+skip]と[i+skip+1]の傾きが一致していればスキップ成立（１個１個で折り返す場合は、、、これでもダメかも)
                 # ①SKIPでの傾き
                 tilt_cal = data_df.iloc[i-1]['middle_price'] - data_df.iloc[i + skip_num]['middle_price']
                 tilt_direction_skip = round(tilt_cal / abs(tilt_cal), 0) if tilt_cal != 0 else 0.001  # 傾きが継続判断基準
-                # print("　　", data_df.iloc[i-1]['time_jp'], "と", data_df.iloc[i + skip_num]['time_jp'], "でSKIP検証")
+                print("　　", data_df.iloc[i-1]['time_jp'], "(i-1)と", data_df.iloc[i + skip_num]['time_jp'], "でSKIP検証")
                 # ②SKIP後の傾き（従来の傾きと同一でないといけない部分）
                 tilt_cal_future = data_df.iloc[i + skip_num]['middle_price'] - data_df.iloc[i + skip_num + 1]['middle_price']
                 tilt_direction_future = round(tilt_cal_future / abs(tilt_cal_future), 0) if tilt_cal_future != 0 else 0.001  # 傾きが継続判断基準
-                # print("   ", data_df.iloc[i + skip_num]['time_jp'], "と", data_df.iloc[i + skip_num+1]['time_jp'], "でBase方向と比較")
+                print("   ", data_df.iloc[i + skip_num]['time_jp'], "と", data_df.iloc[i + skip_num+1]['time_jp'], "でBase方向と比較")
                 # ③厳しめ条件 SKIP部のPIP数が大きくても、折り返しを検出したい。
                 # temp_str = ""
                 # total_gap = 0
@@ -315,7 +325,7 @@ def turn_each_inspection_skip(data_df_origin):
                 # 判定処理　
                 if tilt_direction_skip == base_direction and base_direction == tilt_direction_future:
                     # 規定数抜いてもなお、同方向の場合
-                    # print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
+                    print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
                     counter = counter + skip_num
                 else:
                     break

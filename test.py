@@ -13,18 +13,18 @@ now_price = now_price_dic['data']['mid']
 print(now_price)
 gl_start_time = datetime.datetime.now()
 
-now_price = 148.35
-data = {
-    "units": 1,
-    "direction": 1,
-    "price": now_price,
-    "tp_price": now_price + 0.06,
-    "lc_price": now_price - 0.06,
-    "tp_range": 0.01,
-    # "lc_range": 0.01,
-    "type": "STOP",
+df_ans = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 10}, 1)
+df = df_ans['data'].head(2)
+latest = df.iloc[-1]['time']
+latest_jp = df.iloc[-1]['time_jp']
+print(latest, latest_jp)
 
+params = {
+    "granularity": "S5",
+    "count": 1000,  # 60は10分分。240が正規
+    "from": latest,
 }
-oa.OrderCreate_dic_exe(data)
+i_df = oa.InstrumentsCandles_multi_exe("USD_JPY", params, 1)
 
-
+print(df.head(2))
+print(i_df['data'].head(5))

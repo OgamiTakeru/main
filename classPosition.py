@@ -484,6 +484,9 @@ class order_information:
 
     def update_information(self):  # orderとpositionを両方更新する
         """
+        この関数では最新の状態を取得する（インスタンス変数を更新する）
+        ただし、orderやTradeのステータスはこの関数では変更しない。
+        （Update実行前との差分をみて変化を検知するプログラムより変更したくなく、その変化検知後に、order_update,trade_updateで更新）
         order "PENDING" "CANCELLED" "FILLED"
         position "OPEN" "CLOSED"
         :return:

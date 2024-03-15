@@ -31,7 +31,16 @@ def confirm_part(df_r, ana_ans):
     # 検証パートは古いのから順に並び替える（古いのが↑、新しいのが↓）
     df = df_r.sort_index(ascending=True)  # 正順に並び替え（古い時刻から新しい時刻に向けて１行筒検証する）
     df = df[:10]
-    # print("検証開始価格", df.iloc[0]['open'])
+    confirm_start_time = df.iloc[0]['time']  # 検証開始時間を入れる
+    # 検証用の５秒足データを取得し、荒い足のdfに上書きをする（上書きにすることで、この部分をコメントアウトすれば変数名を変えなくても対応可能）
+    params = {
+        "granularity": "S5",
+        "count": 550,  #約４５分。５秒足×550足分
+        "from": confirm_start_time,
+    }
+    df = oa.InstrumentsCandles_multi_exe("USD_JPY", params, 1)['data']
+    print(" 検証対象")
+    print(df.head(5))
 
     # ★設定　基本的に解析パートから持ってくる。 (150スタート、方向1の場合、DFを巡回して150以上どのくらい行くか)
     position_target_price = ana_ans['target_price']  # マージンを考慮
@@ -265,14 +274,14 @@ def main(params, params_i):
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
-    count = 5000
-    times = 3  # Count(最大5000件）を何セット取るか
-    gr = "M5"  # 取得する足の単位
+    count = gl_count  # 5000
+    times = gl_times  # 1  # Count(最大5000件）を何セット取るか
+    gr = gl_gr  # "M5"  # 取得する足の単位
     # ■■取得時間の指定
-    now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 3, 13, 2, 25, 6)   # 本当に欲しい時間 (以後ループの有無で調整が入る）
+    now_time = gl_now_time  # False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
+    target_time = gl_target_time  # datetime.datetime(2024, 3, 13, 16, 20, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
     # ■■方法の指定
-    inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+    inspection_only = gl_inspection_only  # False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
     # (１)情報の取得
     print('###')
@@ -400,6 +409,18 @@ params_arr = [  # t_type は順張りか逆張りか
 
 ]
 
+
+# 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
+gl_count = 5000
+gl_times = 3  # Count(最大5000件）を何セット取るか
+gl_gr = "M5"  # 取得する足の単位
+# ■■取得時間の指定
+gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
+gl_target_time = datetime.datetime(2024, 3, 15, 10, 25, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+# ■■方法の指定
+gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+
+# メイン実施
 for i in range(len(params_arr)):
     main(params_arr[i], i)
 
