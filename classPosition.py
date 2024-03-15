@@ -707,7 +707,7 @@ def position_info(classes):
         else:
             if item.life:
                 # 文章生成
-                temp = item.name + "," + item.t_state + ",pl:" + str(round(float(item.t_unrealize_pl), 2)) + "円,"
+                temp = "@:" + item.name + "," + item.t_state + ",pl:" + str(round(float(item.t_unrealize_pl), 2)) + "円,"
                 temp = temp + str(item.t_pl_u) + " PLu," + "ID" + str(item.t_id) + " "
                 temp = temp + str(item.t_time_past) + "  "
                 if count == 0:  # 初回のみ

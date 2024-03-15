@@ -30,19 +30,20 @@ def analysis_part(df_r):
     :param df_r:
     :return:
     """
-    print("★★解析パート")
+    print("■　解析パート")
     # return mk.turn1Rule(df_r)
     # return mk.stairsPeak(df_r)
     # return mk.now_position(df_r)
     # prac.turn_inspection_main(df_r)
     # return mk.doublePeak(df_r)
     return mk.beforeDoublePeak(df_r)
+    # return mk.beforeDoublePeakBreak(df_r)
     # return mk.boxSearch(df_r)
 
 
 # 検証パート
 def confirm_part(df_r, ana_ans):
-    print("★★確認パート")
+    print("■　確認パート")
     # 検証パートは古いのから順に並び替える（古いのが↑、新しいのが↓）
     df = df_r.sort_index(ascending=True)  # 正順に並び替え（古い時刻から新しい時刻に向けて１行筒検証する）
     df = df[:10]
@@ -278,14 +279,14 @@ def main():
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
-    count =215
+    count =2000
     times = 1  # Count(最大5000件）を何セット取るか
     gr = "M5"  # 取得する足の単位
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 3, 12, 20, 30, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+    target_time = datetime.datetime(2024, 3, 13, 16, 20, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
     # ■■方法の指定
-    inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+    inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
     # (１)情報の取得
     print('###')
@@ -319,7 +320,7 @@ def main():
     all_ans = []
     print("ループ処理")
     for i in range(len(df_r)):
-        print("■", i, i + need_analysis_num, len(df_r))
+        print("■■■", i, i + need_analysis_num, len(df_r))
         if i + need_analysis_num <= len(df_r):  # 検証用の行数が確保できていれば,検証へ進む
             ans = check_main(df_r[i: i+need_analysis_num])  # ★チェック関数呼び出し
             all_ans.append(ans)

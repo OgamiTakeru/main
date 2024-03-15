@@ -19,7 +19,8 @@ gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
 def analysis_part(df_r, params):
     # print("★★解析パート")
     # return mk.turn1Rule(df_r)
-    return mk.beforeDoublePeak(df_r, params)
+    # return mk.beforeDoublePeak(df_r, params)
+    return mk.beforeDoublePeakBreak(df_r, params)
     # return mk.now_position(df_r)
     # prac.turn_inspection_main(df_r)
 
@@ -265,11 +266,11 @@ def main(params, params_i):
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
     count = 5000
-    times = 1  # Count(最大5000件）を何セット取るか
-    gr = "M15"  # 取得する足の単位
+    times = 3  # Count(最大5000件）を何セット取るか
+    gr = "M5"  # 取得する足の単位
     # ■■取得時間の指定
     now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-    target_time = datetime.datetime(2024, 2, 26, 12, 20, 6)  # 本当に欲しい時間 (以後ループの有無で調整が入る）
+    target_time = datetime.datetime(2024, 3, 13, 2, 25, 6)   # 本当に欲しい時間 (以後ループの有無で調整が入る）
     # ■■方法の指定
     inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
@@ -377,17 +378,25 @@ def main(params, params_i):
 # Mainスタート
 multi_answers = []  # 結果一覧を取得
 params_arr = [  # t_type は順張りか逆張りか
-    {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.01},
-    {"river_turn_ratio": 0.51, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
-    {"river_turn_ratio": 0.31, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
-    {"river_turn_ratio": 0.41, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.01},
-    {"river_turn_ratio": 0.41, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.01},
-    {"river_turn_ratio": 0.41, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.07, "margin": 0.01},
-    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.01},
-    # {"river_turn_ratio": 0.41, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.01},
-    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
-    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.3, "count": 2, "gap": 0.05, "margin": 0.01},
-    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},
+    {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
+    {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": -1},
+    {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": -1, "d": 1},
+    {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": -1, "d": -1},
+    {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.3, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
+    {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.3, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": -1},
+    {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.3, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": -1, "d": 1},
+    {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.3, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": -1, "d": -1},
+    {"river_turn_ratio_min": 0.7, "river_turn_ratio": 1, "turn_flop_ratio": 0.6, "count": 3, "gap_min": 0, "gap": 0.02, "margin": 0.01, "sl": 1, "d": 1},
+    {"river_turn_ratio_min": 0.7, "river_turn_ratio": 1, "turn_flop_ratio": 0.6, "count": 3, "gap_min": 0, "gap": 0.02, "margin": 0.01, "sl": 1, "d": -1},
+    {"river_turn_ratio_min": 0.7, "river_turn_ratio": 1, "turn_flop_ratio": 0.6, "count": 3, "gap_min": 0, "gap": 0.02, "margin": 0.01, "sl": -1, "d": 1},
+    {"river_turn_ratio_min": 0.7, "river_turn_ratio": 1, "turn_flop_ratio": 0.6, "count": 3, "gap_min": 0, "gap": 0.02, "margin": 0.01, "sl": -1, "d": -1},
+    {"river_turn_ratio_min": 0.7, "river_turn_ratio": 1, "turn_flop_ratio": 0.3, "count": 3, "gap_min": 0, "gap": 0.02, "margin": 0.01, "sl": 1, "d": 1},
+    {"river_turn_ratio_min": 0.7, "river_turn_ratio": 1, "turn_flop_ratio": 0.3, "count": 3, "gap_min": 0, "gap": 0.02, "margin": 0.01, "sl": 1, "d": -1},
+    {"river_turn_ratio_min": 0.7, "river_turn_ratio": 1, "turn_flop_ratio": 0.3, "count": 3, "gap_min": 0, "gap": 0.02, "margin": 0.01, "sl": -1, "d": 1},
+    {"river_turn_ratio_min": 0.7, "river_turn_ratio": 1, "turn_flop_ratio": 0.3, "count": 3, "gap_min": 0, "gap": 0.02, "margin": 0.01, "sl": -1, "d": -1},
+    # {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.4, "count": 3, "gap_min": 0, "gap": 0.03,"margin": 0.01},
+
+    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.05, "margin": 0.02},  # beforeDoublePeaks用
 
 ]
 

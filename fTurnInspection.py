@@ -270,7 +270,7 @@ def turn_each_inspection_skip(data_df_origin):
     # 通常の処理
     base_direction = 0
     counter = 0
-    skip_num = 1
+    skip_num = 0
     for i in range(len(data_df)-1):
         # 最新から古い方に１行ずつ検証するため、i+1が変化前（時系列的に前）。 i+1 ⇒ i への傾きを確認する（コード上はi→i+1の動き）
         tilt = data_df.iloc[i]['middle_price'] - data_df.iloc[i+1]['middle_price']
@@ -289,7 +289,7 @@ def turn_each_inspection_skip(data_df_origin):
             counter += 1
         else:
             # ■SKIPを考慮したうえで、skipしても成立するか確認する。
-            print(" 逆向き発生", data_df.iloc[i]['time_jp'] ,"から", data_df.iloc[i+1]['time_jp'])
+            # print(" 逆向き発生", data_df.iloc[i]['time_jp'] ,"から", data_df.iloc[i+1]['time_jp'])
             if i + 1 + skip_num >= len(data_df):
                 # データフレームの数を超えてしまう場合はスキップ（データなしエラーになるため）
                 break
