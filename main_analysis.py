@@ -51,7 +51,7 @@ def confirm_part(df_r, ana_ans):
     # 検証用の５秒足データを取得し、荒い足のdfに上書きをする（上書きにすることで、この部分をコメントアウトすれば変数名を変えなくても対応可能）
     params = {
         "granularity": "S5",
-        "count": 550,  #約４５分。５秒足×550足分
+        "count": 550,  # 約４５分。５秒足×550足分
         "from": confirm_start_time,
     }
     df = oa.InstrumentsCandles_multi_exe("USD_JPY", params, 1)['data']
@@ -370,8 +370,8 @@ def main():
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 215
-gl_times = 1  # Count(最大5000件）を何セット取るか
+gl_count = 5000
+gl_times = 3  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。

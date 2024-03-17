@@ -13,18 +13,10 @@ now_price = now_price_dic['data']['mid']
 print(now_price)
 gl_start_time = datetime.datetime.now()
 
-df_ans = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 10}, 1)
-df = df_ans['data'].head(2)
-latest = df.iloc[-1]['time']
-latest_jp = df.iloc[-1]['time_jp']
-print(latest, latest_jp)
+double_bef = {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 15, "tp": 1.5, "lc":1.5}
+params_arr = [  # t_type は順張りか逆張りか
+    double_bef['river_turn_ratio']=0.66,
+    double_bef
+]
 
-params = {
-    "granularity": "S5",
-    "count": 1000,  # 60は10分分。240が正規
-    "from": latest,
-}
-i_df = oa.InstrumentsCandles_multi_exe("USD_JPY", params, 1)
-
-print(df.head(2))
-print(i_df['data'].head(5))
+print(params_arr)

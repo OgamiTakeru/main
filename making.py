@@ -1101,30 +1101,34 @@ def beforeDoublePeak(*args):
     # ★★判定部
     # 条件値の設定（引数の有る場合は引数から設定）
     if len(args) == 2:  # 引数が存在する場合
-        f_gap = 0.1
+        f_gap = 0.2
         params = args[1]
         rt_max = params['river_turn_ratio']
         tf_max = params['turn_flop_ratio']
         r_count = params['count']
         rt_gap_min = params['gap']
         p_margin = params['margin']
-        lc = (peak_turn['gap']-peak_river['gap']) * 0.8
-        tp = peak_turn['gap']-peak_river['gap']
+        t_count = params['tc']
+        t_gap = params['tg']
+        tp = (peak_turn['gap']-peak_river['gap'])* params['tp']
+        lc = (peak_turn['gap']-peak_river['gap'])* params['lc']
     else:
-        f_gap = 0.1  # new
-        rt_max = 0.6  # 0.6
-        tf_max = 0.6  # 0.6
+        f_gap = 0.2  # new
+        rt_max = 0.7  # 0.6
+        tf_max = 0.7  # 0.6
         r_count = 2  # 2
-        rt_gap_min = 0.01  # 0.03
+        rt_gap_min = 0.03  # 0.03
         p_margin = 0.008  # 0.01
-        lc = (peak_turn['gap']-peak_river['gap'])
         tp = (peak_turn['gap']-peak_river['gap'])
+        lc = (peak_turn['gap']-peak_river['gap'])
+        t_count = 7
+        t_gap = 0.12
     # 判定
     take_position_flag = False
     if peak_river['count'] == r_count:  # リバーのカウント
         if river_turn_ratio < rt_max and turn_flop3_ratio < tf_max and peak_flop3['gap'] > f_gap:  # 戻り数　river['count']は要変更
             if abs(river_turn_gap) >= rt_gap_min:  # 5pips程度の戻りの有用があれば
-                if peak_turn['gap'] <= 0.14 and peak_turn['count']<=8:  # 0.08,4
+                if peak_turn['gap'] <= t_gap and peak_turn['count'] <= t_count:  # 0.08,4
                     take_position_flag = True
                     print("   ■■Beforeダブルトップ完成", river_turn_ratio, turn_flop3_ratio, abs(river_turn_gap), peak_river['count'])
                 else:

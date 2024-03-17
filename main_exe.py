@@ -60,38 +60,87 @@ def order_line_send(class_order_arr, add_info):
     peak_inspection = p.inspection_test(gl_data5r_df)
     tk.line_send(peak_inspection)
 
+
+def beforeDoublePeak_arrange(info):
+    """
+    beforeDoublePeakで取得した値を、必要に応じて複数のオーダーに分割したり、値の調整や、オーダーに適した形にする。
+    :return: オーダーできる形のDic（配列の場合もあり）
+    """
+    # オーダーを二つに分解する。
+    # 調査の結果、マージンが大きいほど勝率が上がることが判明。
+    # その為、
+    # 1 マージンを狭くして(５分足時は0.008)ポジション取得率を上げ、最低限の利確を目指すオーダー
+    # 2 マージンを少し広くとり(5分足時は0.03)、勝率を上げつつ、大きな利益を狙いに行くオーダー
+    #
+    # オーダーの配列を定義する
+    orders = []
+    # 一旦結果を変数に入れておく
+    decision_price = info['decision_price']
+    position_margin = info['position_margin']
+    expected_direction = info['expected_direction']
+    tp_range = info['tp_range']
+    lc_range = info['lc_range']
+    stop_or_limit = info['stop_or_limit']
+    if stop_or_limit == 1:
+        type = "STOP"
+    else:
+        type = "LIMIT"
+
+    # 1を作成（マージン小、利確小）
+    orders.append(
+        {
+            "name": "MarginS-TPS",
+            "order_permission": True,
+            "target_price": decision_price + (0.008 * expected_direction * stop_or_limit),
+            "tp_range": tp_range * 0.8,
+            "lc_range": lc_range,
+            "units": 10,
+            "direction": expected_direction,
+            "type": type,  # 1が順張り、-1が逆張り
+            "trade_timeout": 1800,
+            "remark": "test",
+            "tr_range": 0,
+        }
+    )
+    # 2を作成
+    orders.append(
+        {
+            "name": "MarginS-TPS",
+            "order_permission": True,
+            "target_price": decision_price + (0.03 * expected_direction * stop_or_limit),
+            "tp_range": tp_range * 3,
+            "lc_range": lc_range,
+            "units": 20,
+            "direction": expected_direction,
+            "type": type,  # 1が順張り、-1が逆張り
+            "trade_timeout": 1800,
+            "remark": "test",
+            "tr_range": 0.05,
+        }
+    )
+    return orders
+
+
 def mode1():
     """
     低頻度モード（ローソクを解析し、注文を行う関数）
-    ・調査対象のデータフレームはexe_manageで取得し、グローバル変数として所有済（gl_data5r_df）。時短の為。
+    ・調査対象のデータフレームはexe_manageで取得し、グローバル変数として所有済（gl_data5r_df）。API発行回数削減の為。
     ・調査を他関数に依頼し、取得フラグと取得価格等を受け取り、それに従って注文を実行する関数
     :return: なし
     """
     print("  Mode1")
     global gl_latest_trigger_time, gl_peak_memo
 
-    # 調査結果を取得する
-    ins_res = ins.beforeDoublePeak(gl_data5r_df)  # 調査結果を受け取る
-
+    # beforeDoublePeakについての調査結果を取得する
+    ins_res = ins.beforeDoublePeak(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
+    orders_beforeDoublePeak = beforeDoublePeak_arrange(ins_res)  # 結果を成型する
     # 発注を実行する
     if ins_res['take_position_flag']:
         # 調査の結果、取得結果有の場合
         tk.line_send(ins_res['decision_time'], ins_res['decision_price'], ins_res['expected_direction'])
         # 注文を実行する
-        order = {
-            "name": "test",
-            "order_permission": True,
-            "target_price": ins_res['target_price'],
-            "tp_range": ins_res['tp_range'],
-            "lc_range": ins_res['lc_range'],
-            "units": 10,
-            "direction": ins_res['expected_direction'],
-            "type": "STOP",  # 1が順張り、-1が逆張り
-            "trade_timeout": 1800,
-            "remark": "test",
-            "tr_range": 0,
-        }
-        classes[0].order_plan_registration(order)
+        for order_i in range(len(orders_beforeDoublePeak)):
+            classes[order_i].order_plan_registration(orders_beforeDoublePeak[order_i])
     print("MODE1 END")
 
 
@@ -122,6 +171,11 @@ def exe_manage():
 
     # グローバル変数の宣言（編集有分のみ）
     global gl_midnight_close_flag, gl_now_price_mid, gl_data5r_df, gl_first_exe, gl_first_time, gl_latest_exe_time
+
+    # ■土日は実行しない（ループにはいるが、API実行はしない）
+    if gl_now.weekday() >=5:
+        # print("■土日の為API実行無し")
+        return 0
 
     # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
     if 3 <= time_hour <= 6:
@@ -265,7 +319,7 @@ else:  # Live
 
 # ■ポジションクラスの生成
 classes = []
-for i in range(1):
+for i in range(2):
     # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
     # クラス名を確定し、クラスを生成する。
     new_name = "c" + str(i)

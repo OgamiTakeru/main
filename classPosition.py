@@ -258,9 +258,9 @@ class order_information:
         else:  # FIEELDとかCANCELLEDの場合は、lifeにfalseを入れておく
             print("   order無し(決済済orキャンセル済)@close_order")
 
-    def after_close_function(self):
+    def after_close_trade_function(self):
         """
-        クローズを検知した場合、（１）トータル価格等を更新　（２）Lineの送信　を実施する。
+        ポジションのクローズを検知した場合、（１）トータル価格等を更新　（２）Lineの送信　を実施する。
         呼ばれるパターンは２種類
         ①自然のロスカット⇒クローズ状態が格納されている。
         ②強制クローズ⇒クローズ後に呼ばれるが、t_jsonの情報が書き換わっていない為、一つ古いOpen時の情報を使うことになる(いつかClose情報を使う？）
@@ -318,7 +318,7 @@ class order_information:
                 tk.line_send("  ★ポジション解消ミスNone＠close_position", self.name, self.t_id, self.t_pl_u)
                 return 0
             tk.line_send("  ポジション解消指示", self.name, self.t_id, self.t_pl_u)
-            self.after_close_function()
+            self.after_close_trade_function()
 
         # 部分解除の場合（LINE送信無し）
         else:
@@ -438,7 +438,7 @@ class order_information:
                 tk.line_send("    (即時)クローズ")
         elif self.t_state == "OPEN" and trade_latest['state'] == "CLOSED":  # 通常の成り行きのクローズ時
             print("    成り行きのクローズ発生")
-            self.after_close_function()
+            self.after_close_trade_function()
             return 0
 
     def order_update(self):

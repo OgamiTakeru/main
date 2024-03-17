@@ -295,13 +295,13 @@ def turn_each_inspection_skip(data_df_origin):
                 break
             else:
                 #
-                #
+                #          〇の足が原因
                 #     i+1  i    i-1
                 #               ↑
                 #      ↑   ↓    ↑
                 #      ↑   ↓    ↑
                 #   ↑      ↓    ↑
-                #   ↑  　  〇の足が原因
+                #   ↑  　
                 #   ↑
                 #
                 # [i]が方向転換のカギになっている為、[i]を飛ばして、[i-1]と[i+skip]で成立するかを確認。
@@ -310,11 +310,11 @@ def turn_each_inspection_skip(data_df_origin):
                 # ①SKIPでの傾き
                 tilt_cal = data_df.iloc[i-1]['middle_price'] - data_df.iloc[i + skip_num]['middle_price']
                 tilt_direction_skip = round(tilt_cal / abs(tilt_cal), 0) if tilt_cal != 0 else 0.001  # 傾きが継続判断基準
-                print("　　", data_df.iloc[i-1]['time_jp'], "(i-1)と", data_df.iloc[i + skip_num]['time_jp'], "でSKIP検証")
+                # print("　　", data_df.iloc[i-1]['time_jp'], "(i-1)と", data_df.iloc[i + skip_num]['time_jp'], "でSKIP検証")
                 # ②SKIP後の傾き（従来の傾きと同一でないといけない部分）
                 tilt_cal_future = data_df.iloc[i + skip_num]['middle_price'] - data_df.iloc[i + skip_num + 1]['middle_price']
                 tilt_direction_future = round(tilt_cal_future / abs(tilt_cal_future), 0) if tilt_cal_future != 0 else 0.001  # 傾きが継続判断基準
-                print("   ", data_df.iloc[i + skip_num]['time_jp'], "と", data_df.iloc[i + skip_num+1]['time_jp'], "でBase方向と比較")
+                # print("   ", data_df.iloc[i + skip_num]['time_jp'], "と", data_df.iloc[i + skip_num+1]['time_jp'], "でBase方向と比較")
                 # ③厳しめ条件 SKIP部のPIP数が大きくても、折り返しを検出したい。
                 # temp_str = ""
                 # total_gap = 0
@@ -325,7 +325,7 @@ def turn_each_inspection_skip(data_df_origin):
                 # 判定処理　
                 if tilt_direction_skip == base_direction and base_direction == tilt_direction_future:
                     # 規定数抜いてもなお、同方向の場合
-                    print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
+                    # print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
                     counter = counter + skip_num
                 else:
                     break
