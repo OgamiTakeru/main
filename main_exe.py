@@ -11,6 +11,7 @@ import classPosition as classPosition  # とりあえずの関数集
 import fTurnInspection as t  # とりあえずの関数集
 import fGeneric as f
 import fPeakLineInspection as p
+import fDoublePeaks as dp
 import making as ins
 
 
@@ -61,66 +62,6 @@ def order_line_send(class_order_arr, add_info):
     tk.line_send(peak_inspection)
 
 
-def beforeDoublePeak_arrange(info):
-    """
-    beforeDoublePeakで取得した値を、必要に応じて複数のオーダーに分割したり、値の調整や、オーダーに適した形にする。
-    :return: オーダーできる形のDic（配列の場合もあり）
-    """
-    # オーダーを二つに分解する。
-    # 調査の結果、マージンが大きいほど勝率が上がることが判明。
-    # その為、
-    # 1 マージンを狭くして(５分足時は0.008)ポジション取得率を上げ、最低限の利確を目指すオーダー
-    # 2 マージンを少し広くとり(5分足時は0.03)、勝率を上げつつ、大きな利益を狙いに行くオーダー
-    #
-    # オーダーの配列を定義する
-    orders = []
-    # 一旦結果を変数に入れておく
-    decision_price = info['decision_price']
-    position_margin = info['position_margin']
-    expected_direction = info['expected_direction']
-    tp_range = info['tp_range']
-    lc_range = info['lc_range']
-    stop_or_limit = info['stop_or_limit']
-    if stop_or_limit == 1:
-        type = "STOP"
-    else:
-        type = "LIMIT"
-
-    # 1を作成（マージン小、利確小）
-    orders.append(
-        {
-            "name": "MarginS-TPS",
-            "order_permission": True,
-            "target_price": decision_price + (0.008 * expected_direction * stop_or_limit),
-            "tp_range": tp_range * 0.8,
-            "lc_range": lc_range,
-            "units": 10,
-            "direction": expected_direction,
-            "type": type,  # 1が順張り、-1が逆張り
-            "trade_timeout": 1800,
-            "remark": "test",
-            "tr_range": 0,
-        }
-    )
-    # 2を作成
-    orders.append(
-        {
-            "name": "MarginS-TPS",
-            "order_permission": True,
-            "target_price": decision_price + (0.03 * expected_direction * stop_or_limit),
-            "tp_range": tp_range * 3,
-            "lc_range": lc_range,
-            "units": 20,
-            "direction": expected_direction,
-            "type": type,  # 1が順張り、-1が逆張り
-            "trade_timeout": 1800,
-            "remark": "test",
-            "tr_range": 0.05,
-        }
-    )
-    return orders
-
-
 def mode1():
     """
     低頻度モード（ローソクを解析し、注文を行う関数）
@@ -132,15 +73,14 @@ def mode1():
     global gl_latest_trigger_time, gl_peak_memo
 
     # beforeDoublePeakについての調査結果を取得する
-    ins_res = ins.beforeDoublePeak(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
-    orders_beforeDoublePeak = beforeDoublePeak_arrange(ins_res)  # 結果を成型する
+    orders_DoublePeak = dp.wrapUp(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
     # 発注を実行する
-    if ins_res['take_position_flag']:
-        # 調査の結果、取得結果有の場合
-        tk.line_send(ins_res['decision_time'], ins_res['decision_price'], ins_res['expected_direction'])
+    if orders_DoublePeak['take_position_flag']:
         # 注文を実行する
-        for order_i in range(len(orders_beforeDoublePeak)):
-            classes[order_i].order_plan_registration(orders_beforeDoublePeak[order_i])
+        for order_i in range(len(orders_DoublePeak)):
+            print(order_i)
+            print(orders_DoublePeak['orders'][order_i])
+            classes[order_i].order_plan_registration(orders_DoublePeak['orders'][order_i])
     print("MODE1 END")
 
 
@@ -241,11 +181,12 @@ def exe_manage():
             else:
                 d5_df = d5_df['data']
             # ↓時間指定
-            jp_time = datetime.datetime(2023, 9, 20, 12, 39, 0)
-            euro_time_datetime = jp_time - datetime.timedelta(hours=9)
-            euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-            param = {"granularity": "M5", "count": 50, "to": euro_time_datetime_iso}
-            d5_df = oa.InstrumentsCandles_exe("USD_JPY", param)
+            # jp_time = datetime.datetime(2023, 9, 20, 12, 39, 0)
+            # euro_time_datetime = jp_time - datetime.timedelta(hours=9)
+            # euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
+            # param = {"granularity": "M5", "count": 50, "to": euro_time_datetime_iso}
+            # d5_df = oa.InstrumentsCandles_exe("USD_JPY", param)
+            d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)
             d5_df = d5_df['data']
             print(d5_df.head(5))
             # ↑時間指定

@@ -4,6 +4,7 @@ import fTurnInspection as f  # とりあえずの関数集
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
 import making as mk
+import fDoublePeaks as dp
 import fGeneric as f
 
 # グローバルでの宣言
@@ -18,10 +19,10 @@ gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
 # 解析パート
 def analysis_part(df_r, params):
     # print("★★解析パート")
-    # return mk.turn1Rule(df_r)
-    return mk.beforeDoublePeak(df_r, params)
-    # return mk.beforeDoublePeakBreak(df_r, params)
-    # return mk.now_position(df_r)
+    # return dp.turn1Rule(df_r)
+    return dp.beforeDoublePeak(df_r, params)
+    # return dp.beforeDoublePeakBreak(df_r, params)
+    # return dp.now_position(df_r)
     # prac.turn_inspection_main(df_r)
 
 
@@ -390,11 +391,11 @@ params_arr = [  # t_type は順張りか逆張りか
     # {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
     # {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.4, "count": 3, "gap_min": 0, "gap": 0.03,"margin": 0.01},
     # beforeDoublePeaks用
-    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.07, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1},
-    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1},
-    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1.2, "lc": 1},
-    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1.5, "lc": 1},
-    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1.5},
+    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.07, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1 },
+    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1},
+    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":-1},
+    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1},
+    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1},
     # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 1.8, "lc": 0.8},
     # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 1.5, "lc": 1.8},
     # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 1.3, "lc": 1.8},
@@ -415,7 +416,7 @@ params_arr = [  # t_type は順張りか逆張りか
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
 gl_count = 5000
-gl_times = 5  # Count(最大5000件）を何セット取るか
+gl_times = 7  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。

@@ -3,6 +3,7 @@ import datetime
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
 import making as mk
+import fDoublePeaks as dp
 import fGeneric as f
 
 # グローバルでの宣言
@@ -31,14 +32,14 @@ def analysis_part(df_r):
     :return:
     """
     print("■　解析パート")
-    # return mk.turn1Rule(df_r)
-    # return mk.stairsPeak(df_r)
-    # return mk.now_position(df_r)
+    # return dp.turn1Rule(df_r)
+    # return dp.stairsPeak(df_r)
+    # return dp.now_position(df_r)
     # prac.turn_inspection_main(df_r)
-    # return mk.doublePeak(df_r)
-    return mk.beforeDoublePeak(df_r)
-    # return mk.beforeDoublePeakBreak(df_r)
-    # return mk.boxSearch(df_r)
+    # return dp.doublePeak(df_r)
+    # return dp.beforeDoublePeak(df_r)
+    return dp.beforeDoublePeakBreak(df_r)
+    # return dp.boxSearch(df_r)
 
 
 # 検証パート
@@ -370,8 +371,8 @@ def main():
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 5000
-gl_times = 3  # Count(最大5000件）を何セット取るか
+gl_count = 1000
+gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
