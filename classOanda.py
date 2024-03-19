@@ -331,7 +331,7 @@ class Oanda:
             ep = OrderCreate(accountID=self.accountID, data=data)  #
             res_json = eval(json.dumps(self.api.request(ep), indent=2))
             if 'orderCancelTransaction' in res_json:
-                print("   ■■■OrderCANCELあり")
+                print("   ■■■OrderCANCELあり(エラーによるorderReject)")
                 print(res_json)
                 canceled = True
                 order_id = 0
@@ -347,6 +347,7 @@ class Oanda:
                     execution_price = float(res_json['orderFillTransaction']['price'])
                 else:  # 約定がない場合、planの値通りか、成り行きの場合は（通常の指値注文等の場合）
                     execution_price = 0  #
+                print("   ★Order発行完了", order_id, order_time, execution_price)
 
             # オーダー情報履歴をまとめておく
             order_info = {"price": str(round(plan['price'], 3)),
@@ -380,7 +381,7 @@ class Oanda:
         except Exception as e:  # エラー文短め
             print("OrderCansel_APIerror", order_id)
             print(e)
-            e_info = error_method("OrderCancel_APIerror", start_time, e)
+            e_info = error_method("OrderCancel_APIerror" + str(order_id), start_time, e)
             return e_info
 
     # (7)オーダーを全てキャンセル
@@ -452,7 +453,7 @@ class Oanda:
             return {"data": res_json, "error": 0}
         except Exception as e:
             # print(e)
-            e_info = error_method("OrderDetail", start_time, e)
+            e_info = error_method("OrderDetail" + str(order_id), start_time, e)
             return {"data": e_info, "error": 1}
 
     # (9)指定のオーダーのステータス（オーダーとトレードの詳細）を取得
@@ -708,7 +709,7 @@ class Oanda:
             return {"data": res_json, "error": 0}  # 単品が対象なので、Jsonで返した方がよい（DataFrameで返すと、単品なのに行の指定が必要）
         except Exception as e:
             print(trade_id)
-            e_info = error_method("TradeDetails", start_time, e)
+            e_info = error_method("TradeDetails" + str(trade_id), start_time, e)
             return {"data": e_info, "error": 1}
 
     # (14)指定のトレードの変更

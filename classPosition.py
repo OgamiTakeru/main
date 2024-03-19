@@ -183,7 +183,11 @@ class order_information:
 
         # (Final)オーダーを発行する
         if self.order_permission:
-            self.make_order()
+            order_res = self.make_order()
+        else:
+            order_res = {"order_id": 0}  # 返り値を揃えるため、強引だが辞書型を入れておく
+
+        return {"order_name": self.name, "order_id": order_res['order_id']}
 
     def make_order(self):
         """
@@ -195,22 +199,22 @@ class order_information:
         position_num_dic = self.oa.TradeAllCount_exe()
         position_num = position_num_dic['data']  # 現在のオーダー数を取得
         if position_num >= 6:
-            # エラー等で大量のオーダーが入るのを防ぐ
+            # エラー等で大量のオーダーが入るのを防ぐ(６個以上のオーダーは防ぐ）
             tk.line_send(" 【注】大量ポジション入る可能性", position_num_dic)
-            return 0
+            return {"order_name": "error", "order_id": 0}
         # (2)オーダー数の確認
         order_num = self.oa.OrderCount_All_exe()
         if order_num >= 6:
             # エラー等で大量のオーダーが入るのを防ぐ
             tk.line_send(" 【注】大量オーダー入る可能性", order_num)
-            return 0
+            return {"order_name": "error", "order_id": 0}
 
         # (3)オーダー発行処理★
         order_ans_dic = self.oa.OrderCreate_dic_exe(self.plan)  # Plan情報からオーダー発行しローカル変数に結果を格納する
         order_ans = order_ans_dic['data']  # エラーはあんまりないから、いいわ。
         if order_ans['cancel']:  # キャンセルされている場合は、リセットする
             tk.line_send(" 　Order不成立（今後ループの可能性）", self.name, order_ans['order_id'])
-            return 0  # 情報の登録は出来ないはず
+            return {"order_name": "error", "order_id": 0}
 
         # (4)オーダー状況判断
         # ①単純オーダー②単純オーダー即時取得③単純オーダー＋自身打ち消しクローズ④単純オーダー＋自身一部打ち消し&ポジション有
@@ -228,11 +232,14 @@ class order_information:
         #         # 他のトレードをクローズしているので、クローズライン送る？
         #         pass
 
+        # 必要な情報を登録する
         self.o_id = order_ans['order_id']
         self.o_time = order_ans['order_time']
         self.o_time_past = 0  # 初回は変更なし
         self.life_set(True)  # ★重要　LIFEのONはここでのみ実施
         print("    オーダー発行完了＠make_order", self.name, )
+
+        return {"order_name": "", "order_id": order_ans['order_id']}
 
     def close_order(self):
         # オーダークローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -304,6 +311,7 @@ class order_information:
 
     def close_trade(self, units):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
+        # クローズ後は、AfterCloseFunctionに移行し、情報の送信等を行う
         if not self.life:
             print("    position既にないが、Close関数呼び出しあり", self.name)
             return 0
@@ -429,6 +437,10 @@ class order_information:
                 target_info['under_hold_time'] += 2  # 前回もマイナスの場合、継続時間をプラスする（実行スパンが２秒ごとの為＋２）
 
     def detect_change(self):
+        """
+        update_informationでへんかを検知した場合これが　呼ばれる。
+        :return:
+        """
         order_latest = self.o_json
         trade_latest = self.t_json
         if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
@@ -539,9 +551,11 @@ class order_information:
 
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
-        ロスカット底上げを実施する。
+        ロスカット底上げを実施する。セルフとレールに近い
         lc_change_dicに格納された情報を元に実施。
         lc_change_dicはPlanと同時にクラスに渡される。
+        {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
+
         :return:
         """
         if len(self.lc_change_dic) == 0:

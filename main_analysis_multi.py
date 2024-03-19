@@ -388,8 +388,8 @@ def main(params, params_i):
 # Mainスタート
 params_arr = [  # t_type は順張りか逆張りか。rtはリバーターン、tfはターンフロップを示した単語
     # beforeDoublePeakBreak用
-    {"tf_ratio_max": 0.6, "rt_ratio_min": 0.9, "rt_ratio_max": 1.4, "count": 2, "gap_min": 0, "gap": 0.05, "margin": 0.02, "sl": 1, "d": 1},
-    {"tf_ratio_max": 0.6, "rt_ratio_min": 0.9, "rt_ratio_max": 1.4, "count": 2, "gap_min": 0, "gap": 0.05, "margin": 0.02, "sl": 1, "d": -1},
+    {"tf_ratio_max": 0.6, "rt_ratio_min": 0.9, "rt_ratio_max": 1.4, "count": 2, "gap_min": 0, "gap": 0.05, "margin": 0.01, "sl": 1, "d": 1},
+    {"tf_ratio_max": 0.6, "rt_ratio_min": 0.9, "rt_ratio_max": 1.4, "count": 2, "gap_min": 0, "gap": 0.05, "margin": 0.01, "sl": 1, "d": -1},
     # beforeDoublePeaks用
     # {"tf_ratio": 0.7, "rt_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.07, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1 },
     # {"tf_ratio": 0.7, "rt_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1},
@@ -398,8 +398,8 @@ params_arr = [  # t_type は順張りか逆張りか。rtはリバーターン�
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 215
-gl_times = 1  # Count(最大5000件）を何セット取るか
+gl_count = 5000
+gl_times = 2  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。

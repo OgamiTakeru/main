@@ -85,9 +85,9 @@ def beforeDoublePeak(*args):
     peak_river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     peak_turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
     peak_flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-    peaks_times = "River:" + f.delYear(peak_river['time']) + "-" + f.delYear(peak_river['time_old']) + "_" + str(peak_river['direction']) + \
-                  "Turn:" + f.delYear(peak_turn['time']) + "-" + f.delYear(peak_turn['time_old']) + "_" + str(peak_river['direction']) +\
-                  "FLOP3" + f.delYear(peak_flop3['time']) + "-" + f.delYear(peak_flop3['time_old']) + "_" + str(peak_river['direction'])
+    peaks_times = "◇River:" + f.delYear(peak_river['time']) + "-" + f.delYear(peak_river['time_old']) + "(" + str(peak_river['direction']) + ")" \
+                  "◇Turn:" + f.delYear(peak_turn['time']) + "-" + f.delYear(peak_turn['time_old']) + "(" + str(peak_river['direction']) + ")" \
+                  "◇FLOP三" + f.delYear(peak_flop3['time']) + "-" + f.delYear(peak_flop3['time_old']) + "(" + str(peak_river['direction']) + ")"
     print("  <対象>")
     print("  RIVER", peak_river)
     print("  TURN ", peak_turn)
@@ -115,28 +115,28 @@ def beforeDoublePeak(*args):
         p_margin = params['margin']
         t_count = params['tc']
         t_gap = params['tg']
-        tp = (peak_turn['gap'] - peak_river['gap']) * params['tp']
-        lc = (peak_turn['gap'] - peak_river['gap']) * params['lc']
+        tp = f.cal_at_least(0.03, (peak_turn['gap'] - peak_river['gap']) * params['tp'])
+        lc = f.cal_at_least(0.03, (peak_turn['gap'] - peak_river['gap']) * params['lc'])
         stop_or_limit = params['sl']
     else:
         # 基本的なパラメータ（呼び出し元から引数の指定でない場合、こちらを採用する）
-        f_gap = 0.1  # フロップがは出来るだけ大きいほうが良い（強い方向を感じるため）
+        f_gap = 0.05  # フロップがは出来るだけ大きいほうが良い（強い方向を感じるため）
         tf_max = 0.7  # 0.6
-        rt_max = 0.7  # 0.6
+        rt_max = 0.5  # 0.6
         r_count = 2  # 2
         rt_gap_min = 0.03  # 0.03
         p_margin = 0.008  # 0.01
-        tp = (peak_turn['gap'] - peak_river['gap'])
-        lc = (peak_turn['gap'] - peak_river['gap'])
+        tp = f.cal_at_least(0.03, (peak_turn['gap'] - peak_river['gap']) * 1)  # 5pipsとなると結構大きい。Minでも3pips欲しい
+        lc = f.cal_at_least(0.03, (peak_turn['gap'] - peak_river['gap'] * 1))
         t_count = 7  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
-        t_gap = 0.12  # ターンは長すぎる(gap)と、戻しが強すぎるため、この値以下にしておきたい。
+        t_gap = 0.12  # ターンは長すぎる(gap)と、戻しが強すぎるため、この値以下にしておきたい。出来れば８くらい・・？
         stop_or_limit = 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
     # 判定
     take_position_flag = False  # ポジションフラグを初期値でFalseにする
-    if peak_river['count'] == 2:  # リバーカウントは２丁度の場合のみ実施（最短）
-        if turn_flop3_ratio < tf_max and peak_flop3['gap'] >= 0.06:  # フロップとターンの関係、フロップのサイズで分岐
-            if river_turn_ratio < rt_max and abs(river_turn_gap) >= rt_gap_min and peak_river['count'] == r_count:  # ターンとリバーの関係、リバーの情報で分岐
-                if peak_turn['gap'] <= t_gap and peak_turn['count'] <= t_count and peak_flop3['gap'] > f_gap:  # 各サイズで判定
+    if peak_river['count'] == r_count:  # リバーカウントは２丁度の場合のみ実施（最短）
+        if turn_flop3_ratio < tf_max and peak_flop3['gap'] >= f_gap:  # フロップとターンの関係、フロップのサイズで分岐
+            if river_turn_ratio < rt_max and abs(river_turn_gap) >= rt_gap_min:  # ターンとリバーの関係、リバーの情報で分岐
+                if peak_turn['gap'] <= t_gap and peak_turn['count'] <= t_count:  # ターンサイズで判定(大きいターンなNG）
                     take_position_flag = True
                     print("   ■■Beforeダブルトップ完成")
                 else:
@@ -145,7 +145,7 @@ def beforeDoublePeak(*args):
                 print("   不成立(ターンリバー関係)")
                 if len(args) != 2:
                     # 条件指定有の場合は送付しない（おおむね、テストなのでLINE送信しない。したらヤバイ）
-                    tk.line_send(" リバー注目", peaks_times)
+                    tk.line_send(" リバー注目", river_turn_ratio, peaks_times)
         else:
             print("   不成立(フロップターン関係)")
     else:
@@ -217,9 +217,9 @@ def beforeDoublePeakBreak(*args):
     peak_river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     peak_turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
     peak_flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-    peaks_times = "River:" + f.delYear(peak_river['time']) + "-" + f.delYear(peak_river['time_old']) + "_" + str(peak_river['direction']) + \
-                  "Turn:" + f.delYear(peak_turn['time']) + "-" + f.delYear(peak_turn['time_old']) + "_" + str(peak_river['direction']) +\
-                  "FLOP3" + f.delYear(peak_flop3['time']) + "-" + f.delYear(peak_flop3['time_old']) + "_" + str(peak_river['direction'])
+    peaks_times = "◇River:" + f.delYear(peak_river['time']) + "-" + f.delYear(peak_river['time_old']) + "(" + str(peak_river['direction']) + ")" \
+                  "◇Turn:" + f.delYear(peak_turn['time']) + "-" + f.delYear(peak_turn['time_old']) + "(" + str(peak_river['direction']) + ")" \
+                  "◇FLOP三" + f.delYear(peak_flop3['time']) + "-" + f.delYear(peak_flop3['time_old']) + "(" + str(peak_river['direction']) + ")"
     print("  <対象>")
     print("  RIVER", peak_river)
     print("  TURN ", peak_turn)
@@ -246,18 +246,18 @@ def beforeDoublePeakBreak(*args):
         rt_gap_max = params['gap']
         r_count = params['count']
         p_margin = params['margin']
-        lc = abs(peak_turn['gap']-peak_river['gap'])
-        tp = abs(peak_turn['gap']-peak_river['gap'])
+        lc = peak_river['gap']  # abs(peak_turn['gap']-peak_river['gap'])
+        tp = peak_river['gap']  # abs(peak_turn['gap']-peak_river['gap'])
         stop_or_limit = params['sl']
         d = params['d']
     else:
         tf_max = 0.6  # あんまり戻りすぎていると、順方向に行く体力がなくなる？？だから少なめにしたい
-        rt_min = 1.1
-        rt_max = 1.5
+        rt_min = 0.8
+        rt_max = 1.6
         rt_gap_min = 0.00
-        rt_gap_max = 0.03  # リバーがターンより長い量が、どの程度まで許容か(大きいほうがいい可能性も？）
+        rt_gap_max = 0.22  # リバーがターンより長い量が、どの程度まで許容か(大きいほうがいい可能性も？）
         r_count = 2
-        p_margin = 0.05
+        p_margin = 0.02
         lc = peak_river['gap']
         tp = peak_river['gap']
         stop_or_limit = 1
@@ -265,20 +265,20 @@ def beforeDoublePeakBreak(*args):
     # 判定
     take_position_flag = False
     if peak_river['count'] == 2:  # リバーのカウントは最短の２のみ
-        if turn_flop3_ratio < tf_max and peak_flop3['gap'] >= 0.06:  # フロップ３とターンの関係、フロップ３のサイズ（GAP)について
+        if turn_flop3_ratio < tf_max and peak_flop3['gap'] >= 0.05:  # フロップ３とターンの関係、フロップ３のサイズ（GAP)について
             if rt_min < river_turn_ratio < rt_max:  # ターンとリバーの関係(率とgap)
                 if rt_gap_min < abs(river_turn_gap) < rt_gap_max:  # リバーのサイズ感
                     take_position_flag = True
                     print("   ■■BREAK_Beforeダブルトップ完成")
                 else:
-                    print("   不成立BREAK（リバーサイズ）")
+                    print("   不成立BREAK（リバーサイズ）", abs(river_turn_gap))
             else:
                 print("   不成立BREAK(リバーターン)")
         else:
-            print("   不成立BREAK(ターンフロップ)")
+            print("   不成立BREAK(ターンフロップ率, flopサイズ)")
     else:
         print("   不成立BREAK(リバーカウント)")
-    print("   情報", turn_flop3_ratio, "%", river_turn_ratio, "%", turn_flop3_ratio, abs(river_turn_gap), peak_river['count'])
+    print("   情報", turn_flop3_ratio, "%", river_turn_ratio, "%", abs(river_turn_gap), peak_river['count'])
 
     # target_priceを求める（そのが各変数を算出）
     position_margin = p_margin
@@ -312,7 +312,7 @@ def beforeDoublePeakBreak(*args):
 
 def wrapUp(df_r):
     """
-    主にExeから呼ばれ、ダブル関係の結果をまとめ、注文形式にして返却する関数
+    主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
     引数は現状ローソク情報(逆順[直近が上の方にある＝時間降順])のみ。
     :return:doublePeakの結果をまとめて、そのまま注文できるJsonの配列にして返却する
     """
@@ -352,6 +352,7 @@ def wrapUp(df_r):
             "trade_timeout": 1800,
             "remark": "test",
             "tr_range": 0,
+            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
         }
     )
     # 2を作成
@@ -368,6 +369,7 @@ def wrapUp(df_r):
             "trade_timeout": 1800,
             "remark": "test",
             "tr_range": 0.05,
+            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
         }
     )
     # DoublePeakに関するデータ
@@ -409,6 +411,7 @@ def wrapUp(df_r):
             "trade_timeout": 1800,
             "remark": "test",
             "tr_range": 0,
+            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
         }
     )
     # 2を作成(レンジの方向。リバーとは逆の方向）
@@ -425,6 +428,7 @@ def wrapUp(df_r):
             "trade_timeout": 1800,
             "remark": "test",
             "tr_range": 0.05,
+            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
         }
     )
     # DoublePeakに関するデータ
