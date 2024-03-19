@@ -82,6 +82,7 @@ def mode1():
             print(orders_DoublePeak['orders'][order_i])
             classes[order_i].order_plan_registration(orders_DoublePeak['orders'][order_i])
     print("MODE1 END")
+    print("")
 
 
 def mode2():

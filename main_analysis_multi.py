@@ -20,8 +20,8 @@ gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
 def analysis_part(df_r, params):
     # print("★★解析パート")
     # return dp.turn1Rule(df_r)
-    return dp.beforeDoublePeak(df_r, params)
-    # return dp.beforeDoublePeakBreak(df_r, params)
+    # return dp.beforeDoublePeak(df_r, params)
+    return dp.beforeDoublePeakBreak(df_r, params)
     # return dp.now_position(df_r)
     # prac.turn_inspection_main(df_r)
 
@@ -386,41 +386,24 @@ def main(params, params_i):
 
 
 # Mainスタート
-double_bef = {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 15, "tp": 1.5, "lc":1.5}
-params_arr = [  # t_type は順張りか逆張りか
-    # {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
-    # {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.4, "count": 3, "gap_min": 0, "gap": 0.03,"margin": 0.01},
+params_arr = [  # t_type は順張りか逆張りか。rtはリバーターン、tfはターンフロップを示した単語
+    # beforeDoublePeakBreak用
+    {"tf_ratio_max": 0.6, "rt_ratio_min": 0.9, "rt_ratio_max": 1.4, "count": 2, "gap_min": 0, "gap": 0.05, "margin": 0.02, "sl": 1, "d": 1},
+    {"tf_ratio_max": 0.6, "rt_ratio_min": 0.9, "rt_ratio_max": 1.4, "count": 2, "gap_min": 0, "gap": 0.05, "margin": 0.02, "sl": 1, "d": -1},
     # beforeDoublePeaks用
-    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.07, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1 },
-    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1},
-    {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":-1},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 1.8, "lc": 0.8},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 1.5, "lc": 1.8},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 1.3, "lc": 1.8},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1.8},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 0.7, "lc": 1.8},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 1.5, "lc": 1.5},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 0.7, "lc": 0.7},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 0.7, "lc": 1.0},
-    # {"river_turn_ratio": 0.7, "turn_flop_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 7, "tp": 1.5, "lc": 1.0},
-    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 15},
-    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.10, "tc": 8},
-    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.08, "tc": 6},
-    # {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.06, "tc": 4},
-
-
+    # {"tf_ratio": 0.7, "rt_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.07, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1 },
+    # {"tf_ratio": 0.7, "rt_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1},
+    # {"tf_ratio": 0.7, "rt_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":-1},
 ]
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 5000
-gl_times = 7  # Count(最大5000件）を何セット取るか
+gl_count = 215
+gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 3, 15, 10, 25, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2024, 3, 18, 21, 50, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定
 gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 

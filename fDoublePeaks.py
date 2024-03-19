@@ -85,9 +85,9 @@ def beforeDoublePeak(*args):
     peak_river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     peak_turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
     peak_flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-    peaks_times = "River:" + f.delYear(peak_river['time']) + "-" + f.delYear(peak_river['time_old']) + "_" + \
-                  "Turn:" + f.delYear(peak_turn['time']) + "-" + f.delYear(peak_turn['time_old']) + "_" + \
-                  "FLOP3" + f.delYear(peak_flop3['time']) + "-" + f.delYear(peak_flop3['time_old'])
+    peaks_times = "River:" + f.delYear(peak_river['time']) + "-" + f.delYear(peak_river['time_old']) + "_" + str(peak_river['direction']) + \
+                  "Turn:" + f.delYear(peak_turn['time']) + "-" + f.delYear(peak_turn['time_old']) + "_" + str(peak_river['direction']) +\
+                  "FLOP3" + f.delYear(peak_flop3['time']) + "-" + f.delYear(peak_flop3['time_old']) + "_" + str(peak_river['direction'])
     print("  <対象>")
     print("  RIVER", peak_river)
     print("  TURN ", peak_turn)
@@ -108,10 +108,10 @@ def beforeDoublePeak(*args):
     if len(args) == 2:  # 引数が存在する場合
         params = args[1]  # 引数の条件辞書を取得
         f_gap = 0.1
-        rt_max = params['river_turn_ratio']
-        tf_max = params['turn_flop_ratio']
+        tf_max = params['tf_ratio']
+        rt_max = params['rt_ratio']
         r_count = params['count']
-        rt_gap_min = params['gap']
+        rt_gap_min = params['rt_gap']
         p_margin = params['margin']
         t_count = params['tc']
         t_gap = params['tg']
@@ -121,8 +121,8 @@ def beforeDoublePeak(*args):
     else:
         # 基本的なパラメータ（呼び出し元から引数の指定でない場合、こちらを採用する）
         f_gap = 0.1  # フロップがは出来るだけ大きいほうが良い（強い方向を感じるため）
-        rt_max = 0.7  # 0.6
         tf_max = 0.7  # 0.6
+        rt_max = 0.7  # 0.6
         r_count = 2  # 2
         rt_gap_min = 0.03  # 0.03
         p_margin = 0.008  # 0.01
@@ -157,7 +157,9 @@ def beforeDoublePeak(*args):
     decision_price = df_r_part.iloc[0]['open']  # 計算用（リターンでも同じものを返却する）
     expected_direction = peak_river['direction']
     target_price = decision_price + (position_margin * expected_direction * stop_or_limit)
-    # print("   ", peak_turn['gap']-peak_river['gap'])
+    if take_position_flag:  # 表示用（ポジションある時のみ表示する）
+        print("   決心価格", df_r_part.iloc[0]['open'], "決心時間", df_r_part.iloc[0]['time_jp'])
+        print("   注文価格", target_price, "向とSL", expected_direction, stop_or_limit)
     return {
         # ポジション検証に必要な要素
         "take_position_flag": take_position_flag,  # ポジション取得指示あり
@@ -215,13 +217,13 @@ def beforeDoublePeakBreak(*args):
     peak_river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     peak_turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
     peak_flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-    peaks_times = "Old:" + f.delYear(peak_flop3['time_old']) + "-" + f.delYear(peak_flop3['time']) + "_" + \
-                  "Mid:" + f.delYear(peak_turn['time_old']) + "-" + f.delYear(peak_turn['time']) + "_" + \
-                  "Latest" + f.delYear(peak_river['time_old']) + "-" + f.delYear(peak_river['time'])
-    print("対象")
-    print("直近", peak_river)
-    print("ターン", peak_turn)
-    print("古い3", peak_flop3)
+    peaks_times = "River:" + f.delYear(peak_river['time']) + "-" + f.delYear(peak_river['time_old']) + "_" + str(peak_river['direction']) + \
+                  "Turn:" + f.delYear(peak_turn['time']) + "-" + f.delYear(peak_turn['time_old']) + "_" + str(peak_river['direction']) +\
+                  "FLOP3" + f.delYear(peak_flop3['time']) + "-" + f.delYear(peak_flop3['time_old']) + "_" + str(peak_river['direction'])
+    print("  <対象>")
+    print("  RIVER", peak_river)
+    print("  TURN ", peak_turn)
+    print("  FLOP3", peak_flop3)
 
     # (1) ターンを基準に
     col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
@@ -237,9 +239,9 @@ def beforeDoublePeakBreak(*args):
     # 条件値の設定（引数の有る場合は引数から設定）
     if len(args) == 2:  # 引数が存在する場合
         params = args[1]  # 引数の条件辞書を取得
-        tf_max = params['turn_flop_ratio']
-        rt_min = params['river_turn_ratio_min']
-        rt_max = params['river_turn_ratio']
+        tf_max = params['tf_ratio_max']
+        rt_min = params['rt_ratio_min']
+        rt_max = params['rt_ratio_max']
         rt_gap_min = params['gap_min']
         rt_gap_max = params['gap']
         r_count = params['count']
@@ -264,9 +266,12 @@ def beforeDoublePeakBreak(*args):
     take_position_flag = False
     if peak_river['count'] == 2:  # リバーのカウントは最短の２のみ
         if turn_flop3_ratio < tf_max and peak_flop3['gap'] >= 0.06:  # フロップ３とターンの関係、フロップ３のサイズ（GAP)について
-            if rt_min < river_turn_ratio < rt_max and rt_gap_min < abs(river_turn_gap) < rt_gap_max:  # ターンとリバーの関係(率とgap）
-                take_position_flag = True
-                print("   ■■BREAK_Beforeダブルトップ完成")
+            if rt_min < river_turn_ratio < rt_max:  # ターンとリバーの関係(率とgap)
+                if rt_gap_min < abs(river_turn_gap) < rt_gap_max:  # リバーのサイズ感
+                    take_position_flag = True
+                    print("   ■■BREAK_Beforeダブルトップ完成")
+                else:
+                    print("   不成立BREAK（リバーサイズ）")
             else:
                 print("   不成立BREAK(リバーターン)")
         else:
@@ -281,7 +286,10 @@ def beforeDoublePeakBreak(*args):
     decision_price = df_r_part.iloc[0]['open']  # 計算用（リターンでも同じものを返却する）
     expected_direction = peak_river['direction'] * d
     target_price = decision_price + (position_margin * expected_direction * stop_or_limit)
-    # print("   ", peak_turn['gap']-peak_river['gap'])
+    if take_position_flag:  # 表示用（ポジションある時のみ表示する）
+        print("   決心価格", df_r_part.iloc[0]['open'], "決心時間", df_r_part.iloc[0]['time_jp'])
+        print("   注文価格", target_price, "向とSL", expected_direction, stop_or_limit)
+
     return {
         # ポジション検証に必要な要素
         "take_position_flag": take_position_flag,  # ポジション取得指示あり
@@ -393,7 +401,7 @@ def wrapUp(df_r):
             "name": "Break_forward",
             "order_permission": True,
             "target_price": decision_price + (0.015 * expected_direction * stop_or_limit),
-            "tp_range": tp_range * 0.8,
+            "tp_range": tp_range * 1,
             "lc_range": lc_range,
             "units": 15,
             "direction": expected_direction,
@@ -409,10 +417,10 @@ def wrapUp(df_r):
             "name": "Break_reverse",
             "order_permission": True,
             "target_price": decision_price + (0.03 * (expected_direction * -1) * stop_or_limit),  # ダブルピークポイントにする？
-            "tp_range": tp_range * 3,
+            "tp_range": tp_range * 1,
             "lc_range": lc_range,
             "units": 25,
-            "direction": expected_direction,
+            "direction": (expected_direction * -1),
             "type": type,  # 1が順張り、-1が逆張り
             "trade_timeout": 1800,
             "remark": "test",

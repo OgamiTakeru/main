@@ -270,7 +270,9 @@ def turn_each_inspection_skip(data_df_origin):
     # 通常の処理
     base_direction = 0
     counter = 0
-    skip_num = 1
+    skip_num = 1  # 変数として利用する値（スキップ指定）
+    skip_num_always = 1   # SKIPNUMに代入して利用。初回以外はスキップ有で実行
+    skip_num_first = 0  # SKIPNUMに代入して利用。初回のみスキップ無しで実行
     for i in range(len(data_df)-1):
         # 最新から古い方に１行ずつ検証するため、i+1が変化前（時系列的に前）。 i+1 ⇒ i への傾きを確認する（コード上はi→i+1の動き）
         tilt = data_df.iloc[i]['middle_price'] - data_df.iloc[i+1]['middle_price']
@@ -282,8 +284,11 @@ def turn_each_inspection_skip(data_df_origin):
         # ■初回の場合の設定。１行目と２行目の変化率に関する情報を取得、セットする
         if counter == 0:
             base_direction = tilt_direction
+        elif counter ==1:
+            skip_num = skip_num_first  # 初回をスキップすると、折り返しが見抜けないことがある。counterは１の時。
         else:
-            pass
+            skip_num = skip_num_always
+
         # ■カウントを進めていく
         if tilt_direction == base_direction:  # 今回の検証変化率が、初回と動きの方向が同じ場合
             counter += 1
@@ -325,7 +330,7 @@ def turn_each_inspection_skip(data_df_origin):
                 # 判定処理　
                 if tilt_direction_skip == base_direction and base_direction == tilt_direction_future:
                     # 規定数抜いてもなお、同方向の場合
-                    # print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
+                    print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
                     counter = counter + skip_num
                 else:
                     break
