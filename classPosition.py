@@ -446,8 +446,14 @@ class order_information:
         if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
                 tk.line_send("    (取得)", self.name)
-            elif trade_latest['position_state'] == 'CLOSED':  # ポジションクローズ（ポジション取得とほぼ同時にクローズ[異常]）
-                tk.line_send("    (即時)クローズ")
+
+            if "position_state" in trade_latest:
+                if trade_latest['position_state'] == 'CLOSED':  # ポジションクローズ（ポジション取得とほぼ同時にクローズ[異常]）
+                    tk.line_send("    (即時)クローズ")
+            else:
+                pass
+                # print("    NOT GOOD Ref")
+
         elif self.t_state == "OPEN" and trade_latest['state'] == "CLOSED":  # 通常の成り行きのクローズ時
             print("    成り行きのクローズ発生")
             self.after_close_trade_function()
@@ -511,6 +517,7 @@ class order_information:
         order_latest = order_ans['data']['order']  # jsonを取得
         self.o_json = order_latest  # Json自体も格納
         if "tradeOpenedID" in order_latest:  # ポジションが存在している場合
+            # print("    トレードdetect", self.t_id)
             self.t_id = order_latest['tradeOpenedID']
             trade_ans = self.oa.TradeDetails_exe(self.t_id)  # ■■API
             if trade_ans['error'] == 1:
@@ -519,12 +526,13 @@ class order_information:
             trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
             self.t_json = trade_latest  # Json自体も格納
         else:  # ポジションが存在していない（既存ポジションに相殺された）　または、ポジション取得待ち
+            # print("    トレード not detect", self.t_id)
             self.t_id = 0
             # tradeが０の場合、オーダーの更新のみ行う。
             self.order_update()
             return 0
 
-        # (2) 【以下トレードありが前提】変化点を確認する
+        # (2) 【以下トレードありが前提】変化点を確認する order_update,trade_update yori mae niarukoto
         self.detect_change()
 
         # (3)情報をUpdate and Closeする

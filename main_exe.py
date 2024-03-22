@@ -73,7 +73,8 @@ def mode1():
     global gl_latest_trigger_time, gl_peak_memo
 
     # beforeDoublePeakについての調査結果を取得する
-    orders_DoublePeak = dp.wrapUp(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
+    # orders_DoublePeak = dp.wrapUp(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
+    orders_DoublePeak = dp.triplePeaks(gl_data5r_df)
     # ■発注を実行する
     if orders_DoublePeak['take_position_flag']:  # 発注形状を検知している場合
         # 現在注文があるかを確認する
@@ -83,7 +84,7 @@ def mode1():
             print("  既存ポジションがあるため、解消してからオーダーを発行する")
         # 注文を実行する
         order_informations = ""  # LINE送信用の注文結果の情報
-        for order_i in range(len(orders_DoublePeak)):
+        for order_i in range(len(orders_DoublePeak['orders'])):
             res_dic = classes[order_i].order_plan_registration(orders_DoublePeak['orders'][order_i])
             order_informations = order_informations + res_dic['order_name'] + "-" + res_dic['order_id'] + ", "
         # 注文結果を送信する
