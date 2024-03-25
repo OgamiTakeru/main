@@ -28,6 +28,24 @@ def analysis_part(df_r, params):
 
 # 検証パート
 def confirm_part(df_r, ana_ans):
+    """
+
+    :param df_r: 検証用のデータフレーム（関数内で5S足のデータを別途取得する場合は利用しない）
+    :param ana_ans: 解析の結果、どの価格でポジションを取得するか等の情報 以下の辞書を受け取る
+    order_base = {
+        "stop_or_limit": stop_or_limit,  # 〇
+        "expected_direction": expected_direction,  # 〇
+        "decision_time": river['time'],  # 〇
+        "decision_price": river['peak'],  # ×　
+        "position_margin": position_margin,  # ×
+        "target_price": target_price,  # 〇
+        "lc_range": lc,  #　〇
+        "tp_range": tp,  # 〇
+        "tp_price": target_price + (tp * expected_direction),  # ×
+        "lc_price": target_price - (lc * expected_direction),  # ×
+    }
+    :return:　return内を参照。
+    """
     print("★★確認パート")
     # 検証パートは古いのから順に並び替える（古いのが↑、新しいのが↓）
     df = df_r.sort_index(ascending=True)  # 正順に並び替え（古い時刻から新しい時刻に向けて１行筒検証する）

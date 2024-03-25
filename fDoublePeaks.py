@@ -41,10 +41,6 @@ def size_compare(after_change, before_change, min_range, max_range):
         # 謎の場合
         same_size = -1
 
-    # 表示用
-    # print("      ", same_size, size_compare_comment, " ", after_change,
-    #       "範囲", before_change, "[", round(after_change * min_range, 2), round(after_change * max_range, 2), "]", round(after_change / before_change, 3))
-
     return {
         # 順番通りの大小比較結果
         "size_compare_ratio": change_ratio,
@@ -54,6 +50,31 @@ def size_compare(after_change, before_change, min_range, max_range):
         # サイズが同等かの判定
         "same_size": same_size,  # 同等の場合のみTrue
     }
+
+
+def judge_list_or_data_frame(*args):
+    """
+    各解析関数から呼ばれる。各解析関数は、データフレームかリスト（ピークのリスト）が渡される。(１つだけの引数）
+    理由は、データフレームからピークを計算する処理を少なくしたいが、関数を分割したいため、どっちも受け取れた方が便利なため。
+    データフレームを渡された場合、ピークスを算出してピークスを返却する。
+    リスト（ピークのリスト）を渡された場合、そのままピークスを返却する。この際ピークの個数もチェックできるといいかもしれないが。
+    :param args: DateFrame（逆順）か、ピークスのリストが渡される
+    :return: {"result":}ピークスのリスト(peaks_collect_mainの返り値の['all_peaks'])を返却する
+    """
+    if type(args[0]) == pd.core.frame.DataFrame:
+        print("       -検証モード（データフレームからピークスを算出)")
+        peaks_info = p.peaks_collect_main(args[:90], 3)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+        peaks = peaks_info['all_peaks']
+        print("  <対象>")
+        print("  RIVER", peaks[0])
+        print("  TURN ", peaks[1])
+        print("  FLOP3", peaks[2])
+        print("　　　価格整合性調査:", args[0].iloc[0]['open'], args[0].iloc[1]['close'], peaks[0]['peak'])
+    else:
+        # 運用モードでは、元々ピークスが渡されているので、そのまま返却する
+        peaks = args[0]
+
+    return peaks
 
 
 def beforeDoublePeak(*args):
@@ -66,13 +87,13 @@ def beforeDoublePeak(*args):
     データフレーム：ローソク情報(逆順[直近が上の方にある＝時間降順])データフレーム
     条件(param) ：ループ検証時のパラメータ群(ループ検証の時のみ入ってくる）
     例→params_arr = [
-             {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
-             {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
-         ]
+        {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2}
+        {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2}
+    ]
     ③においてピークスは、peaks_collect_mainの返り値内の,["all_peaks"]が対象。
     ＜まとめ＞いかなる場合もargs[0]はデータフレームまたはPeaksとなり、[1]以降がオプションとなる。
 
-　　　　　　　　　　　　　　　　　
+　　　　　　　　　
        　　23pips　   /\← 10pips（基準：ターン）
            フロップ→ /  \/  ← 7pipsまで(リバー)
           　　　　　/　　　　　　　　　←ピークの反対くらいがLC？
@@ -81,44 +102,17 @@ def beforeDoublePeak(*args):
        ・リバーはターンの８割まで以内の戻り。出来ればターン起点（ダブルトップ成立ポイント）まで3pips欲しい
        ・利確、理想はターン起点。ただリバーが大きい時は小さすぎるので、その時は3pipsとする。
        ・ロスカは、リバーの倍？あるいはターンの半分の長さまで（価格指定）とか。
-
-    :param df_r:
     :return:　必須最低限　{"take_position_flag": boolean} の返却は必須。さらにTrueの場合注文情報が必要。
     """
     # print(args)
     print("■直前ダブルピーク判定")
-    # (1)利用するデータ（Peaks）を取得する
+    # (1)ピークスを取得（引数か処理）、パラメータの設定（引数か直接の設定）
+    # ①必要最低限の項目たちを取得する
     peaks = judge_list_or_data_frame(args[0])  # ピークスを確保。モードを問わない共通処理。args[0]はデータフレームまたはPeaksList。
     river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
     flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-    if type(args[0]) == pd.core.frame.DataFrame:
-        print("       -検証モード（データフレームからピークスを算出)")
-        print("　　　価格整合性調査:", args[0].iloc[0]['open'], args[0].iloc[1]['close'], river['peak'])
-        print("  <対象>")
-        print("  RIVER", river)
-        print("  TURN ", turn)
-        print("  FLOP3", flop3)
-    else:
-        print("  -運用モード")
-        peaks_times = "◇River:" + \
-                      f.delYear(river['time']) + "-" + f.delYear(river['time_old']) + "(" + str(river['direction']) + ")" \
-                      "◇Turn:" + \
-                      f.delYear(turn['time']) + "-" + f.delYear(turn['time_old']) + "(" + str(turn['direction']) + ")" \
-                      "◇FLOP三" + \
-                      f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
-    # (1)-②　情報を変数に取得する
-    col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
-    # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
-    size_ans = size_compare(river[col], turn[col], 0.1, 0.3)
-    river_turn_gap = round(size_ans['gap'], 3)
-    river_turn_ratio = size_ans['size_compare_ratio']
-    # ①ターンのフロップ３に対する割合を取得（〇%に小さくなっていることを想定）
-    size_ans = size_compare(turn[col], flop3[col], 0.1, 0.3)
-    turn_flop3_ratio = size_ans['size_compare_ratio']
-
-    # (2)★★判定部
-    # 条件値の設定（引数の有る場合は引数から設定）
+    # ②paramsがある場合（ループ検証）の場合は、パラメーターを引数から取得する(args[1]。それ以外は、直接の設定
     if len(args) == 2:  # 引数が存在する場合
         params = args[1]  # 引数の条件辞書を取得
         f_gap = 0.1
@@ -145,25 +139,38 @@ def beforeDoublePeak(*args):
         t_count = 7  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
         t_gap = 0.12  # ターンは長すぎる(gap)と、戻しが強すぎるため、この値以下にしておきたい。出来れば８くらい・・？
         stop_or_limit = 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
-    # 判定
+    # (1)-②　情報を変数に取得する
+    col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
+    # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
+    size_ans = size_compare(river[col], turn[col], 0.1, 0.3)
+    river_turn_gap = round(size_ans['gap'], 3)
+    river_turn_ratio = size_ans['size_compare_ratio']
+    # ①ターンのフロップ３に対する割合を取得（〇%に小さくなっていることを想定）
+    size_ans = size_compare(turn[col], flop3[col], 0.1, 0.3)
+    turn_flop3_ratio = size_ans['size_compare_ratio']
+
+    # (3)★★判定部
     take_position_flag = False  # ポジションフラグを初期値でFalseにする
-    if river['count'] == r_count:  # リバーカウントは２丁度の場合のみ実施（最短）
-        if turn_flop3_ratio < tf_max and flop3['gap'] >= f_gap:  # フロップとターンの関係、フロップのサイズで分岐
-            if river_turn_ratio < rt_max and abs(river_turn_gap) >= rt_gap_min:  # ターンとリバーの関係、リバーの情報で分岐
-                if turn['gap'] <= t_gap and turn['count'] <= t_count:  # ターンサイズで判定(大きいターンなNG）
-                    take_position_flag = True
-                    print("   ■■Beforeダブルトップ完成")
-                else:
-                    print("   不成立(サイズ)")
+    # リバー数で最初の判定（ネストを深くしないため、外に出した）
+    if river['count'] != r_count:
+        print("   不成立　リバー数", river['count'])
+        return {"take_position_flag": False}
+    # その他条件で判定
+    if turn_flop3_ratio < tf_max and flop3['gap'] >= f_gap:  # フロップとターンの関係、フロップのサイズで分岐
+        if river_turn_ratio < rt_max and abs(river_turn_gap) >= rt_gap_min:  # ターンとリバーの関係、リバーの情報で分岐
+            if turn['gap'] <= t_gap and turn['count'] <= t_count:  # ターンサイズで判定(大きいターンなNG）
+                take_position_flag = True
+                print("   ■■Beforeダブルトップ完成")
             else:
-                print("   不成立(ターンリバー関係)")
-                if type(args[0]) == pd.core.frame.DataFrame:
-                    # 条件指定有の場合は送付しない（おおむね、テストなのでLINE送信しない。したらヤバイ）
-                    tk.line_send(" リバー注目", river_turn_ratio, river['time'])
+                print("   不成立(サイズ)")
         else:
-            print("   不成立(フロップターン関係)")
+            print("   不成立(ターンリバー関係)")
+            if type(args[0]) == pd.core.frame.DataFrame:
+                # 条件指定有の場合は送付しない（おおむね、テストなのでLINE送信しない。したらヤバイ）
+                tk.line_send(" リバー注目", river_turn_ratio, river['time'])
     else:
-        print("   不成立(リバーCount)")
+        print("   不成立(フロップターン関係)")
+
     print("   情報 tf:", turn_flop3_ratio, "%(<", tf_max, "),rt:", river_turn_ratio, "%(<", rt_max, "),",
                     "rt_gap:", abs(river_turn_gap), "(<", 0, "), t_gap", turn['gap'], "(<", t_gap,"),", flop3['gap'])
 
@@ -174,9 +181,9 @@ def beforeDoublePeak(*args):
     # ②オーダー発生時は、情報を整える
     expected_direction = river['direction']  # 以後のコード短縮化の為、変数化
     target_price = river['peak'] + (position_margin * expected_direction * stop_or_limit)  # 以後のコード短縮化の為、変数化
-    print("   決心価格", river['peak'], "決心時間", river['time'])
-    print("   注文価格", target_price, "向とSL", expected_direction, stop_or_limit)
-    # ③オーダーのベースを組み立てる
+    print("   ★決心価格", river['peak'], "決心時間", river['time'])
+    print("   　注文価格", target_price, "向とSL", expected_direction, stop_or_limit)
+    # ③オーダーのベースを組み立てる（オーダ発行の元。また、検証ではこの値で検証を行う）
     order_base = {
         "stop_or_limit": stop_or_limit,  # 運用で必須
         "expected_direction": expected_direction,  # 必須
@@ -189,7 +196,7 @@ def beforeDoublePeak(*args):
         "tp_price": target_price + (tp * expected_direction),  # 任意
         "lc_price": target_price - (lc * expected_direction),  # 任意
     }
-    # ④利用したパラメータ情報を組み立てる
+    # ④利用したパラメータ情報を組み立てる（検証のアウトプット用）
     params = {
         "p_margin_min": position_margin,
         "p_turn_flop3_ratio_max": tf_max,
@@ -200,7 +207,7 @@ def beforeDoublePeak(*args):
         "p_tp": tp,
         "p_lc": lc,
     }
-    # ⑤記録用の情報を組み立てる
+    # ⑤記録用の情報を組み立てる（検証のアウトプット用）
     records = {
         "river_turn_ratio": river_turn_ratio,
         "turn_flop3_ratio": turn_flop3_ratio,
@@ -257,7 +264,7 @@ def beforeDoublePeakBreak(*args):
     引数２つ目はループ検証時のパラメータ群(ループ検証の時のみ入ってくる）
     ②パターン２
 
-　　　　　　　　　  ターン↓　　/　←このでっぱり部が、5pips以内（リーバーがターンの1.1倍以内？）
+　　　　　　　　　  ターン↓　 /　←このでっぱり部が、5pips以内（リーバーがターンの1.1倍以内？）
        　　　　  　   /\  /
        フロップ　30→ /  \/  ← 6(リバー) ＋　割合だけでなく、5pipくらいトップピークまで余裕があれば。
           　　　　　/　　　　　　　　　←ピークの反対くらいがLC？
@@ -267,38 +274,13 @@ def beforeDoublePeakBreak(*args):
     """
     # print(args)
     print("■ダブルピークBreak判定")
-    # (1)利用するデータ（Peaks）を取得する
+    # (1)ピークスを取得（引数か処理）、パラメータの設定（引数か直接の設定）
+    # ①必要最低限の項目たちを取得する
     peaks = judge_list_or_data_frame(args[0])  # ピークスを確保。モードを問わない共通処理。args[0]はデータフレームまたはPeaksList。
     river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
     flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-    if type(args[0]) == pd.core.frame.DataFrame:
-        print("       -検証モード（データフレームからピークスを算出)")
-        print("　　　価格整合性調査:", args[0].iloc[0]['open'], args[0].iloc[1]['close'], river['peak'])
-        print("  <対象>")
-        print("  RIVER", river)
-        print("  TURN ", turn)
-        print("  FLOP3", flop3)
-    else:
-        print("  -運用モード")
-        peaks_times = "◇River:" + \
-                      f.delYear(river['time']) + "-" + f.delYear(river['time_old']) + "(" + str(river['direction']) + ")" \
-                      "◇Turn:" + \
-                      f.delYear(turn['time']) + "-" + f.delYear(turn['time_old']) + "(" + str(turn['direction']) + ")" \
-                      "◇FLOP三" + \
-                      f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
-    # (1)-②　情報を変数に取得する
-    col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
-    # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
-    size_ans = size_compare(river[col], turn[col], 0.1, 0.3)
-    river_turn_gap = round(size_ans['gap'], 3)
-    river_turn_ratio = size_ans['size_compare_ratio']
-    # ①ターンのフロップ３に対する割合を取得（〇%に小さくなっていることを想定）
-    size_ans = size_compare(turn[col], flop3[col], 0.1, 0.3)
-    turn_flop3_ratio = size_ans['size_compare_ratio']
-
-    # (2)★★判定部
-    # 条件値の設定（引数の有る場合は引数から設定）
+    # ②paramsがある場合（ループ検証）の場合は、パラメーターを引数から取得する(args[1]。それ以外は、直接の設定
     if len(args) == 2:  # 引数が存在する場合
         params = args[1]  # 引数の条件辞書を取得
         tf_max = params['tf_ratio_max']
@@ -324,28 +306,45 @@ def beforeDoublePeakBreak(*args):
         tp = f.cal_at_least(0.04, river['gap']* 1)
         stop_or_limit = 1
         d = 1
-    # 判定
+
+    # (1)-②　情報を変数に取得する
+    col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
+    # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
+    size_ans = size_compare(river[col], turn[col], 0.1, 0.3)
+    river_turn_gap = round(size_ans['gap'], 3)
+    river_turn_ratio = size_ans['size_compare_ratio']
+    # ①ターンのフロップ３に対する割合を取得（〇%に小さくなっていることを想定）
+    size_ans = size_compare(turn[col], flop3[col], 0.1, 0.3)
+    turn_flop3_ratio = size_ans['size_compare_ratio']
+
+    # (2)★★判定部
     take_position_flag = False
-    if river['count'] == 2:  # リバーのカウントは最短の２のみ
-        if turn_flop3_ratio < tf_max and flop3['gap'] >= 0.05:  # フロップ３とターンの関係、フロップ３のサイズ（GAP)について
-            if rt_min < river_turn_ratio < rt_max:  # ターンとリバーの関係(率とgap)
-                if rt_gap_min < abs(river_turn_gap) < rt_gap_max:  # リバーのサイズ感(どれくらい出てるか）
-                    take_position_flag = True
-                    print("   ■■BREAK_Beforeダブルトップ完成")
-                else:
-                    print("   不成立BREAK（リバーサイズ）", abs(river_turn_gap))
+    # リバー数で最初の判定（ネストを深くしないため、外に出した）
+    if river['count'] != r_count:
+        print("   不成立　リバー数", river['count'])
+        return {"take_position_flag": False}
+    # その他条件で判定
+    if turn_flop3_ratio < tf_max and flop3['gap'] >= 0.05:  # フロップ３とターンの関係、フロップ３のサイズ（GAP)について
+        if rt_min < river_turn_ratio < rt_max:  # ターンとリバーの関係(率とgap)
+            if rt_gap_min < abs(river_turn_gap) < rt_gap_max:  # リバーのサイズ感(どれくらい出てるか）
+                take_position_flag = True
+                print("   ■■BREAK_Beforeダブルトップ完成")
             else:
-                print("   不成立BREAK(リバーターン)")
+                print("   不成立BREAK（リバーサイズ）", abs(river_turn_gap))
         else:
-            print("   不成立BREAK(ターンフロップ率, flopサイズ)")
+            print("   不成立BREAK(リバーターン)")
     else:
-        print("   不成立BREAK(リバーカウント)")
+        print("   不成立BREAK(ターンフロップ率, flopサイズ)")
+
     print("   情報 tf:", turn_flop3_ratio, "%(<", tf_max, "),rt:(", rt_min, "<)", river_turn_ratio, "%(<", rt_max, "),",
                     "f_gap:", flop3['gap'], "(>", 0.05, "), rt_gap凸:(",
                     rt_min, "<)", river_turn_gap, "(<", rt_max, ")")
 
     # (3) ★★オーダーのベースを生成する（検証で利用するのはこのオブジェクト）
-    # ①オーダー発生時は、情報を整える
+    # ①オーダー無し時は除外
+    if not take_position_flag:  # ポジションフラグがFalseの場合は、返却をして終了
+        return {"take_position_flag": False}
+    # ②オーダー発生時は、情報を整える
     expected_direction = river['direction']  # 以後のコード短縮化の為、変数化
     target_price = river['peak'] + (position_margin * expected_direction * stop_or_limit)  # 以後のコード短縮化の為、変数化
     print("   決心価格", river['peak'], "決心時間", river['time'])
@@ -393,7 +392,7 @@ def beforeDoublePeakBreak(*args):
             "direction": order_base['expected_direction'],
             "type": "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT",   # 1が順張り、-1が逆張り,  # 1が順張り、-1が逆張り
             "trade_timeout": 1800,
-            "remark": "test",
+            "remark": "target:",
             "tr_range": 0.05,
             "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
         },
@@ -567,125 +566,36 @@ def wrapUp(df_r):
     引数は現状ローソク情報(逆順[直近が上の方にある＝時間降順])のみ。
     :return:doublePeakの結果をまとめて、そのまま注文できるJsonの配列にして返却する
     """
+    # （０）データを取得する
+    peaks_info = p.peaks_collect_main(df_r[:90], 3)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+    peaks = peaks_info['all_peaks']
+    river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
+    flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
+
+    print("  <対象>:運用モード")
+    print("  RIVER", river)
+    print("  TURN ", turn)
+    print("  FLOP3", flop3)
+    peaks_times = "◇River:" + \
+                  f.delYear(river['time']) + "-" + f.delYear(river['time_old']) + "(" + str(river['direction']) + ")" \
+                  "◇Turn:" + \
+                  f.delYear(turn['time']) + "-" + f.delYear(turn['time_old']) + "(" + str(turn['direction']) + ")" \
+                  "◇FLOP三" + \
+                  f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
 
     # （１）beforeDoublePeakについて
-    # オーダーを二つに分解する。
-    # 調査の結果、マージンが大きいほど勝率が上がることが判明。
-    # その為、
-    # 1 マージンを狭くして(５分足時は0.008)ポジション取得率を上げ、最低限の利確を目指すオーダー
-    # 2 マージンを少し広くとり(5分足時は0.03)、勝率を上げつつ、大きな利益を狙いに行くオーダー
-    # 検証を行う
-    info = beforeDoublePeak(df_r)
-    # オーダーの配列を定義する
-    orders = []
-    # 一旦結果を変数に入れておく
-    if info['stop_or_limit'] == 1:
-        type = "STOP"
-    else:
-        type = "LIMIT"
-    # 1を作成（マージン小、利確小）
-    orders.append(
-        {
-            "name": "MarginS-TPS",
-            "order_permission": True,
-            "target_price": info['decision_price'] + (0.008 * info['expected_direction'] * info['stop_or_limit']),
-            "tp_range": info['tp_range'] * 0.8,
-            "lc_range": info['lc_range'],
-            "units": 10,
-            "direction": info['expected_direction'],
-            "type": type,  # 1が順張り、-1が逆張り
-            "trade_timeout": 1800,
-            "remark": "test",
-            "tr_range": 0,
-            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
-        }
-    )
-    # 2を作成
-    orders.append(
-        {
-            "name": "Margin_B-TP_B",
-            "order_permission": True,
-            "target_price": info['decision_price'] + (0.03 * info['expected_direction'] * info['stop_or_limit']),
-            "tp_range": info['tp_range'] * 3,
-            "lc_range": info['lc_range'],
-            "units": 20,
-            "direction": info['expected_direction'],
-            "type": type,  # 1が順張り、-1が逆張り
-            "trade_timeout": 1800,
-            "remark": "test",
-            "tr_range": 0.05,
-            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
-        }
-    )
-    # DoublePeakに関するデータ
-    order_double_peak_before = {
-        "take_position_flag": info['take_position_flag'],
-        "orders": orders
-    }
+    # tf < 0.4
+    beforeDoublePeak_ans = beforeDoublePeak(peaks)
 
     # (2)beforeDoublePeakBreakについて
-    # オーダーを二つに分解する。
-    # その為、
-    # 1 既に超えているので、超える側と、戻す側に両方にオーダーを入れておく
-    info = beforeDoublePeakBreak(df_r)
-    # オーダーの配列を定義する
-    orders = []
-    # 一旦結果を変数に入れておく
-    if info['stop_or_limit'] == 1:
-        type = "STOP"
-    else:
-        type = "LIMIT"
+    beforeDoublePeakBreak_ans = beforeDoublePeakBreak(peaks)
 
-    # 1を作成（マージン小、利確小）
-    orders.append(
-        {
-            "name": "Break_forward",
-            "order_permission": True,
-            "target_price": info['decision_price'] + (0.015 * info['expected_direction'] * info['stop_or_limit']),
-            "tp_range": info['tp_range'] * 1,
-            "lc_range": info['lc_range'],
-            "units": 15,
-            "direction": info['expected_direction'],
-            "type": type,  # 1が順張り、-1が逆張り
-            "trade_timeout": 1800,
-            "remark": "test",
-            "tr_range": 0.05,
-            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
-        }
-    )
-    # 2を作成(レンジの方向。リバーとは逆の方向）
-    orders.append(
-        {
-            "name": "Break_reverse",
-            "order_permission": True,
-            "target_price": info['decision_price'] + (0.03 * (info['expected_direction'] * -1) * info['stop_or_limit']),
-            "tp_range": info['tp_range'] * 1,
-            "lc_range": info['lc_range'],
-            "units": 25,
-            "direction": (info['expected_direction'] * -1),
-            "type": type,  # 1が順張り、-1が逆張り
-            "trade_timeout": 1800,
-            "remark": "test",
-            "tr_range": 0.05,
-            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
-        }
-    )
-    # DoublePeakに関するデータ
-    order_double_peak_break = {
-        "take_position_flag": info['take_position_flag'],
-        "orders": orders
-    }
-
-    # (3) 色々複合
-    info = notDoublePeak(df_r)
-
-    # 【オーダーを統合する】  現状同時に成立しないため、Trueの方のオーダーを採択する
-    if order_double_peak_before['take_position_flag']:
-        order_information = order_double_peak_before
-        comment = "BEFORE"
-    elif order_double_peak_break['take_position_flag']:
-        order_information = order_double_peak_break
-        comment = "BREAK"
+    # 【オーダーを統合する】  現状同時に成立しない仕様。
+    if beforeDoublePeak_ans['take_position_flag']:
+        order_information = beforeDoublePeak_ans['exe_orders']  # オーダー発行情報のみをへんきゃく
+    elif beforeDoublePeakBreak_ans['take_position_flag']:
+        order_information = beforeDoublePeakBreak_ans  # オーダー発行情報のみを返却する
     else:
         # 何もない場合はPositionFlagをFalseにして返す
         order_information = {"take_position_flag": False}
@@ -777,6 +687,7 @@ def triplePeaks(*args):
     # 実判定
     # ①リバーはターン直後のみを採用。
     if river['count'] != 2:
+        print("   River 2以外の為スキップ")
         return {"take_position_flag": False}
     # ②フロップターンと、リバーターンの関係で調査する(複雑注意)
     if turn_flop3_ratio <= tf1:  # ◆微戻りパターン(<40)。順方向に伸びる、一番狙いの形状の為、順張りしたい。
@@ -976,213 +887,10 @@ def triplePeaks(*args):
 
     return {
         "take_position_flag": take_position_flag,
-        "orders": orders,
+        "exe_orders": orders,
     }
 
 
-def judge_list_or_data_frame(arg):
-    """
-    各解析関数から呼ばれる。各解析関数は、データフレームかリスト（ピークのリスト）が渡される。
-    理由は、データフレームからピークを計算する処理を少なくしたいが、関数を分割したいため、どっちも受け取れた方が便利なため。
-    データフレームを渡された場合、ピークスを算出してピークスを返却する。
-    リスト（ピークのリスト）を渡された場合、そのままピークスを返却する。この際ピークの個数もチェックできるといいかもしれないが。
-    :param arg: DateFrame（逆順）か、ピークスのリストが渡される
-    :return: {"result":}ピークスのリスト(peaks_collect_mainの返り値の['all_peaks'])を返却する
-    """
-    if type(arg) == pd.core.frame.DataFrame:
-        # データフレームが渡された場合、Peaksを求める。
-        # print("   データフレームが渡されたためPeaksを求めます")
-        peaks_info = p.peaks_collect_main(arg[:90], 3)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
-        peaks = peaks_info['all_peaks']
-    elif type(arg) == list:
-        # print("   リスト形式＝ピークで渡されているので、そのまま利用します。")
-        peaks = arg
-
-    # 表示も実施する
-    # river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-    # turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
-    # flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-    # peaks_times = "◇River:" + \
-    #               f.delYear(river['time']) + "-" + f.delYear(river['time_old']) + "(" + str(river['direction']) + ")" \
-    #               "◇Turn:" + \
-    #               f.delYear(turn['time']) + "-" + f.delYear(turn['time_old']) + "(" + str(turn['direction']) + ")" \
-    #               "◇FLOP三" + \
-    #               f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
-    # print("  <対象>")
-    # print("  RIVER", river)
-    # print("  TURN ", turn)
-    # print("  FLOP3", flop3)
-
-    return peaks
-
-
-# def beforeDoublePeak_fromTotal(*args):
-#     """
-#     （１）引数のパターンは３パターン。
-#     ①データフレームだけが来る。これはAnalysisから呼び出され、データフレームからピークスを算出後に、本関数メインの判定処理を実施。
-#     ②データフレームと条件(param)の２つが来る。これはAnalysisMultiから呼ばれている。基本は①と同様だが、条件ごとにループ検証を行う。
-#     ③ピークス(peaks_collect_mainの返り値内の,["all_peaks"])だけが来る。Total実行の関数から呼び出され、本関数メインの判定処理を実施。
-#     なお①②において、
-#     データフレーム：ローソク情報(逆順[直近が上の方にある＝時間降順])データフレーム
-#     条件(param) ：ループ検証時のパラメータ群(ループ検証の時のみ入ってくる）
-#     例→params_arr = [
-#             {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
-#             {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
-#         ]
-#     ③においてピークスは、peaks_collect_mainの返り値内の,["all_peaks"]が対象。
-#     ＜まとめ＞いかなる場合もargs[0]はデータフレームまたはPeaksとなり、[1]以降がオプションとなる。
-#     （２）検証内容について
-#     理想形 (ダブルトップ到達前）
-# 　　　　　　　　　　　　　　　　　
-#        　　23pips　   /\← 10pips（基準：ターン）
-#            フロップ→ /  \/  ← 7pipsまで(リバー)
-#           　　　　　/　　　　　　　　　←ピークの反対くらいがLC？
-#        ルール一覧
-#        ・ターンはフロップの４割まで以内の戻り。出来れば５pips以内？（ターンが大きいと、完全な折り返しになる為。）
-#        ・リバーはターンの８割まで以内の戻り。出来ればターン起点（ダブルトップ成立ポイント）まで3pips欲しい
-#        ・利確、理想はターン起点。ただリバーが大きい時は小さすぎるので、その時は3pipsとする。
-#        ・ロスカは、リバーの倍？あるいはターンの半分の長さまで（価格指定）とか。
-#
-#     :param df_r:
-#     :return:　必須最低限　{"take_position_flag": boolean, "remark":"コメント"} の返却は必須。
-#     　　　　　　さらにTrueの場合注文情報が必要。
-#     """
-#     # print(args)
-#     print("■直前ダブルピーク判定")
-#
-#     # (1)利用するデータ（Peaks）を取得する
-#     peaks = judge_list_or_data_frame(args[0])  # モードを問わない共通処理。args[0]はデータフレームまたはPeaksList。
-#     river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-#     turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
-#     flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-#     if len(args) == 1:
-#         print("  モード：運用モード(引数1つ）")
-#         if type(args[0]) == pd.core.frame.DataFrame:
-#             print("       -検証モード（データフレームからピークスを算出")
-#             print("  <対象>")
-#             print("  RIVER", river)
-#             print("  TURN ", turn)
-#             print("  FLOP3", flop3)
-#         elif type(args[0]) == list:
-#             print("       -複合運用モード（ピークスをそのまま利用)")
-#     else:
-#         print("  モード：ループ検証モード(引数複数)")
-#
-#     # (2) 各ピークの情報取得する
-#     col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
-#     # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
-#     size_ans = size_compare(river[col], turn[col], 0.1, 0.3)
-#     river_turn_gap = round(size_ans['gap'], 3)
-#     river_turn_ratio = size_ans['size_compare_ratio']
-#     # ①ターンのフロップ３に対する割合を取得（〇%に小さくなっていることを想定）
-#     size_ans = size_compare(turn[col], flop3[col], 0.1, 0.3)
-#     turn_flop3_ratio = size_ans['size_compare_ratio']
-#
-#     # ★★判定部
-#     # 条件値の設定（引数の有る場合は引数から設定）
-#     if len(args) == 2:  # 引数が存在する場合
-#         params = args[1]  # 引数の条件辞書を取得
-#         f_gap = 0.1
-#         tf_max = params['tf_ratio']
-#         rt_max = params['rt_ratio']
-#         r_count = params['count']
-#         rt_gap_min = params['rt_gap']
-#         p_margin = params['margin']
-#         t_count = params['tc']
-#         t_gap = params['tg']
-#         tp = f.cal_at_least(0.04, (turn['gap'] - river['gap']) * params['tp'])
-#         lc = f.cal_at_least(0.04, (turn['gap'] - river['gap']) * params['lc'])
-#         stop_or_limit = params['sl']
-#     else:
-#         # 基本的なパラメータ（呼び出し元から引数の指定でない場合、こちらを採用する）
-#         f_gap = 0.05  # フロップがは出来るだけ大きいほうが良い（強い方向を感じるため）
-#         tf_min = 0
-#         tf_max = 0.4  # 0.6
-#         rt_max = 0.7  # 0.6
-#         r_count = 2  # 2
-#         rt_gap_min = 0  # 0.03
-#         p_margin = 0.008  # 0.01
-#         tp = f.cal_at_least(0.04, (turn['gap'] - river['gap']) * 1)  # 5pipsとなると結構大きい。Minでも3pips欲しい
-#         lc = f.cal_at_least(0.04, (turn['gap'] - river['gap'] * 1))
-#         t_count = 7  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
-#         t_gap = 0.12  # ターンは長すぎる(gap)と、戻しが強すぎるため、この値以下にしておきたい。出来れば８くらい・・？
-#         stop_or_limit = 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
-#     # 判定
-#     take_position_flag = False  # ポジションフラグを初期値でFalseにする
-#     # 複合運用では既に、以下の条件は弾かれている。ただこの単発関数のために改めて定義
-#     # リバーに関する条件。は２丁度の場合のみ実施（最短）
-#     if river['count'] != r_count:
-#         return {"take_position_flag": False, "remark":"リバーカウントアウト" }
-#     # ターンに関する条件は弾かれている
-#     if not(tf_min < river_turn_ratio < tf_max):
-#         return {"take_position_flag": False, "remark":"ターン率アウト"}
-#
-#     # リバーターンに関する条件たち(メイン）
-#     if river_turn_ratio < rt_max and abs(river_turn_gap) >= rt_gap_min:  # ターンとリバーの関係、リバーの情報で分岐
-#         if turn['gap'] <= t_gap and turn['count'] <= t_count:  # ターンサイズで判定(大きいターンなNG）
-#             take_position_flag = True
-#             print("   ■■Beforeダブルトップ完成")
-#         else:
-#             print("   不成立(サイズ)")
-#     else:
-#         print("   不成立(ターンリバー関係)")
-#         if len(args) != 2:
-#             # 条件指定有の場合は送付しない（おおむね、テストなのでLINE送信しない。したらヤバイ）
-#             tk.line_send(" リバー注目", river_turn_ratio, peaks_times)
-#     else:
-#         print("   不成立(フロップターン関係)")
-#     else:
-#         print("   不成立(リバーCount)")
-#     print("   情報 tf:", turn_flop3_ratio, "%(<", tf_max, "),rt:", river_turn_ratio, "%(<", rt_max, "),",
-#                     "rt_gap:", abs(river_turn_gap), "(<", 0, "), t_gap", turn['gap'], "(<", t_gap,"),", flop3['gap'])
-#
-#
-#
-# def triplePeakPortal(df_r):
-#     """
-#     3つのピークを使った解析を行い、最終的にオーダーのリストを返却する。
-#     また、解析においてはフロップとターンの関係の分岐を行い、ターンとリバーの関係の分岐は各関数にピークスを渡して計算してもらう事にする。。
-#     （参考。ここから呼び出す各関数も、独立して使えるようにする（DataFrameもピークも受け取れる））
-#     :param df_r: 逆順（直近が上部）のデーらフレーム
-#     :return: {"take_position_flag":Boo, "orders":オーダー可能形式のJson(oandaClass参照)を、リスト形式（複数ある場合があるため）}
-#     """
-#
-#     print("■3つの力判定")
-#     # (1) データフレームからピークの収集を行う
-#     peaks = p.peaks_collect_main(df_r[:90], 3)['all_peaks']  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数(3)を指定する）
-#     # 各情報を変数に入れて、コードの短縮が出来るようにする。
-#     river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-#     turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
-#     flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-#     peaks_times = "◇River:" + \
-#                   f.delYear(river['time']) + "-" + f.delYear(river['time_old']) + "(" + str(river['direction']) + ")" \
-#                   "◇Turn:" + \
-#                   f.delYear(turn['time']) + "-" + f.delYear(turn['time_old']) + "(" + str(turn['direction']) + ")" \
-#                   "◇FLOP三" + \
-#                   f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
-#     print("  <対象>")
-#     print("  RIVER", river)
-#     print("  TURN ", turn)
-#     print("  FLOP3", flop3)
-#
-#     # (2)フロップとターンの関係性を定義し、それぞれの条件で、ターンとリバー調査用関数に遷移する
-#     # ①割合毎に指定する
-#     tf_ratio = [0.6, 0.7, 1.0, 1.5]  #0~0.6 ,0.6~0.7　で分岐する
-#
-#     # ②リバーカウントが２の場合の未実施。2は折り返し直後となる。　＊ここだけリバー値で判定している
-#     if river['count'] != 2:
-#         return {"take_position_flag": False}  # ポジション無し確定で返却
-#
-#     # ③各条件で検証
-#     if turn_flop3_ratio <= tf_ratio[0]:  # ◆微戻りパターン(<40)。順方向に伸びる、一番狙いの形状の為、順張りしたい。
-#         tf_come = "1 tf_微戻り(0-" + str(tf_ratio[0]*100) + ")"
-#     elif turn_flop3_ratio <= tf_ratio[1]:  # ◆待機パターン(<70)。戻が半端なため。
-#         tf_come = "2 tf_中途戻り(0-" + str(tf_ratio[1]*100) + ")"
-#     elif turn_flop3_ratio <= tf_ratio[2]:  # ◆深戻りパターン(<100)。旗形状やジグザグトレンド(リバー同方向)と推定。
-#         tf_come = "3 tf_深戻り(0-" + str(tf_ratio[2]*100) + ")"
-#     elif turn_flop3_ratio <= tf_ratio[3]:  # ◆戻り大パターン(<150)。ジグザグトレンド(リバー逆方向)の入口と推定。
-#         tf_come = "4 tf強戻り(0-" + str(tf_ratio[3]*100) + ")"
-#     else:  # ◆待機パターン。戻りが強すぎるため。
 
 
 

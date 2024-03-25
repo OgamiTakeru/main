@@ -67,28 +67,45 @@ def mode1():
     低頻度モード（ローソクを解析し、注文を行う関数）
     ・調査対象のデータフレームはexe_manageで取得し、グローバル変数として所有済（gl_data5r_df）。API発行回数削減の為。
     ・調査を他関数に依頼し、取得フラグと取得価格等を受け取り、それに従って注文を実行する関数
+    発注に必要（引数で受け取るべき）な情報は以下の通り（oandaClass.order_plan_registrationに渡す最低限の情報)
+    {
+        "name": "MarginS-TPS",  # 〇　LINE送信に利用する
+        "order_permission": True,  # 〇
+        "target_price": order_base['decision_price'],  # ×
+        "tp_range": order_base['tp_range'] * 0.8,  # 〇
+        "lc_range": order_base['lc_range'],  # 〇
+        "units": 10,  # 〇
+        "direction": order_base['expected_direction'],  # 〇　（ask_bidとなる）
+        "type": "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT",　 # 〇
+        "trade_timeout": 1800,  # 〇
+        "remark": "test",  # 任意
+        "tr_range": 0,  # 〇
+        "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}　任意
+    },
     :return: なし
     """
     print("  Mode1")
     global gl_latest_trigger_time, gl_peak_memo
 
-    # beforeDoublePeakについての調査結果を取得する
-    # orders_DoublePeak = dp.wrapUp(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
-    orders_DoublePeak = dp.triplePeaks(gl_data5r_df)
+    # ■取得可能タイミング化の調査を行う
+    orders_DoublePeak = dp.wrapUp(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
+    # orders_DoublePeak = dp.triplePeaks(gl_data5r_df)
     # ■発注を実行する
-    if orders_DoublePeak['take_position_flag']:  # 発注形状を検知している場合
-        # 現在注文があるかを確認する
-        now_positions = classPosition.position_check(classes)
-        if len(now_positions) >= 1:
-            classPosition.reset_all_position(classes)
-            print("  既存ポジションがあるため、解消してからオーダーを発行する")
-        # 注文を実行する
-        order_informations = ""  # LINE送信用の注文結果の情報
-        for n in range(len(orders_DoublePeak['orders'])):
-            res_dic = classes[n].order_plan_registration(orders_DoublePeak['orders'][n])
-            order_informations = order_informations + res_dic['order_name'] + "-" + res_dic['order_id'] + ", "
-        # 注文結果を送信する
-        tk.line_send("★オーダー発行", order_informations)
+    if not orders_DoublePeak['take_position_flag']:  # 発注がない場合は、終了
+        return 0
+
+    # 現在注文があるかを確認する
+    if len(classPosition.position_check(classes)) >= 1:  # 現在、ポジションが１以上がある場合、解除。
+        classPosition.reset_all_position(classes)
+        print("  既存ポジションがあるため、解消してからオーダーを発行する")
+    # 注文を実行する
+    line_send = ""  # LINE送信用の注文結果の情報
+    for n in range(len(orders_DoublePeak['exe_orders'])):
+        res_dic = classes[n].order_plan_registration(orders_DoublePeak['exe_orders'][n])  #
+        line_send = line_send + res_dic['order_name'] + \
+                    "(" + str(orders_DoublePeak['exe_orders'][n]['target_price']) + res_dic['order_id'] + "), "
+    # 注文結果を送信する
+    tk.line_send("★オーダー発行", line_send)
 
     print("MODE1 END")
     print("")
