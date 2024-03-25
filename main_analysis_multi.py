@@ -253,16 +253,17 @@ def check_main(df_r, params):
     # print(analysis_part_df.tail(2))
 
     # 解析パート　todo
-    ana_ans = analysis_part(analysis_part_df, params)  # ana_ans={"ans": bool(結果照合要否必須）, "price": }
+    analysis_result = analysis_part(analysis_part_df, params)  # ana_ans={"ans": bool(結果照合要否必須）, "price": }
+    for_export_results = (analysis_result['order_base']|analysis_result['records'])  # 解析結果を格納
+    for_export_results['take_position_flag'] = analysis_result['take_position_flag']
     # 検証パート todo
-    if ana_ans['take_position_flag']:  # ポジション判定ある場合のみ
+    if analysis_result['take_position_flag']:  # ポジション判定ある場合のみ
         # 検証と結果の関係性の確認　todo
-        conf_ans = confirm_part(res_part_df, ana_ans)  # 対象のDataFrame,ポジション取得価格/時刻等,ロスカ/利確幅が必要
+        conf_ans = confirm_part(res_part_df, analysis_result['order_base'])  # 対象のDataFrame,ポジション取得価格/時刻等,ロスカ/利確幅が必要
         # 検証結果と確認結果の結合
-        ana_ans = dict(**ana_ans, **conf_ans)
-        pass
-    return ana_ans
+        for_export_results = (for_export_results|conf_ans)
 
+    return for_export_results
 
 def main(params, params_i):
     """
@@ -344,7 +345,12 @@ def main(params, params_i):
     print("finTime", fin_time)
     print(fin_time - gl_start_time)
 
+    if len(ans_df) == 0:
+        print("  対象無し")
+        return 0
+
     fd_forview = ans_df[ans_df["take_position_flag"] == True]  # 取引フラグありのみを抽出
+    print(fd_forview)
     if len(fd_forview) == 0:
         print("   なにもなし")
         # あんまり書きたくないけど、なんか書かないとエラーになる事が多いんので（値が入ってないとかそういう系の）
@@ -398,8 +404,8 @@ params_arr = [  # t_type は順張りか逆張りか。rtはリバーターン�
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 5000
-gl_times = 2  # Count(最大5000件）を何セット取るか
+gl_count = 215
+gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。

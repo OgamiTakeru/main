@@ -84,8 +84,8 @@ def mode1():
             print("  既存ポジションがあるため、解消してからオーダーを発行する")
         # 注文を実行する
         order_informations = ""  # LINE送信用の注文結果の情報
-        for order_i in range(len(orders_DoublePeak['orders'])):
-            res_dic = classes[order_i].order_plan_registration(orders_DoublePeak['orders'][order_i])
+        for n in range(len(orders_DoublePeak['orders'])):
+            res_dic = classes[n].order_plan_registration(orders_DoublePeak['orders'][n])
             order_informations = order_informations + res_dic['order_name'] + "-" + res_dic['order_id'] + ", "
         # 注文結果を送信する
         tk.line_send("★オーダー発行", order_informations)
@@ -123,7 +123,7 @@ def exe_manage():
     global gl_midnight_close_flag, gl_now_price_mid, gl_data5r_df, gl_first_exe, gl_first_time, gl_latest_exe_time
 
     # ■土日は実行しない（ループにはいるが、API実行はしない）
-    if gl_now.weekday() >=5:
+    if gl_now.weekday() >= 5:
         # print("■土日の為API実行無し")
         return 0
 

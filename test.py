@@ -13,10 +13,9 @@ now_price = now_price_dic['data']['mid']
 print(now_price)
 gl_start_time = datetime.datetime.now()
 
-double_bef = {"river_turn_ratio": 0.61, "turn_flop_ratio": 0.5, "count": 2, "gap": 0.03, "margin": 0.008, "tg": 0.12, "tc": 15, "tp": 1.5, "lc":1.5}
-params_arr = [  # t_type は順張りか逆張りか
-    double_bef['river_turn_ratio']=0.66,
-    double_bef
-]
+a = {"a":1}
+b = {"b": 2}
+c = {"c": 3}
 
-print(params_arr)
+res = (a|b|c)
+print(res)

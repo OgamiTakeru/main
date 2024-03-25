@@ -31,19 +31,20 @@ def analysis_part(df_r):
     :param df_r:
     :return:
     """
-    print("■　解析パート")
+    # モードによる引数の差分を処理
     # return dp.turn1Rule(df_r)
     # return dp.stairsPeak(df_r)
     # return dp.now_position(df_r)
     # prac.turn_inspection_main(df_r)
     # return dp.doublePeak(df_r)
-    # return dp.beforeDoublePeak(df_r)
-    return dp.beforeDoublePeakBreak(df_r)
+    return dp.beforeDoublePeak(df_r)
+    # return dp.beforeDoublePeakBreak(df_r)
     # return dp.boxSearch(df_r)
 
 
 # 検証パート
 def confirm_part(df_r, ana_ans):
+    # ここはパラメータを受け取らないため、通常検証かループ検証かの影響を受けない
     print("■　確認パート")
     # 検証パートは古いのから順に並び替える（古いのが↑、新しいのが↓）
     df = df_r.sort_index(ascending=True)  # 正順に並び替え（古い時刻から新しい時刻に向けて１行筒検証する）
@@ -243,9 +244,15 @@ def confirm_part(df_r, ana_ans):
 def check_main(df_r):
     """
     受け取ったデータフレームを解析部と結果部に分割し、それぞれの結果をマージする
-    :param df_r:
+    :param args:    通常の解析と、ループの解析で利用する。
+    通常の解析の場合、*argsは1つ、データフレームのみ。args[0]はdf_rとして扱う。
+    ループ解析(別ファイルの関数)の場合、*argsはargs[0]はdf_r。args[1]はparams(パラメータ[個])
+
     :return:
     """
+    # モードによる引数の差分を処理
+
+
     # 各数の定義
     res_part_low = 15  # 結果解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])
@@ -269,21 +276,28 @@ def check_main(df_r):
     print(analysis_part_df.tail(2))
 
     # 解析パート　todo
-    ana_ans = analysis_part(analysis_part_df)  # ana_ans={"ans": bool(結果照合要否必須）, "price": }
+    analysis_result = analysis_part(analysis_part_df)  # ana_ans={"ans": bool(結果照合要否必須）, "price": }
+    for_export_results = (analysis_result['order_base']|analysis_result['records'])  # 解析結果を格納
+    for_export_results['take_position_flag'] = analysis_result['take_position_flag']
     # 検証パート todo
-    if ana_ans['take_position_flag']:  # ポジション判定ある場合のみ
+    if analysis_result['take_position_flag']:  # ポジション判定ある場合のみ
         # 検証と結果の関係性の確認　todo
-        conf_ans = confirm_part(res_part_df, ana_ans)  # 対象のDataFrame,ポジション取得価格/時刻等,ロスカ/利確幅が必要
+        conf_ans = confirm_part(res_part_df, analysis_result['order_base'])  # 対象のDataFrame,ポジション取得価格/時刻等,ロスカ/利確幅が必要
         # 検証結果と確認結果の結合
-        ana_ans = dict(**ana_ans, **conf_ans)
-    return ana_ans
+        for_export_results = (for_export_results|conf_ans)
+
+    return for_export_results
 
 
 def main():
     """
     メイン関数　全てここからスタートする。ここではデータを取得する
+    通常の解析と、ループの解析で利用する。
+    通常の解析の場合、*argsは０個。
+    ループ解析(別ファイルの関数)の場合、*argsはargs[0]はparams(パラメータ集)、args[1]はパメータ番号(表示用）
     :return:
     """
+
     # （０）環境の準備
     # ■■調査用のDFの行数の指定
     res_part_low = 15  # 解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]。check_mainと同値であること。
@@ -371,14 +385,14 @@ def main():
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 1000
+gl_count = 215
 gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
 gl_target_time = datetime.datetime(2024, 3, 19, 14, 5, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定
-gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
 # Mainスタート
 main()
