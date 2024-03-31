@@ -14,26 +14,18 @@ def order_finalize(order_base):
     オーダーを完成させる。TPRangeとTpPrice、Marginとターゲットプライスのどちらかが入ってれば完成させたい。
     :param order_base:必須
     order_base = {
-        "stop_or_limit": stop_or_limit,  # 運用で必須
-        "expected_direction": river['direction'] * -1,  # 必須(基本的には直近(リバー)の順方向）
-        "decision_time": river['time'],  # 任意
-        "decision_price": river['peak'],  # 検証で任意　運用で必須(複数Marginで再計算する可能性あり)
+        "stop_or_limit": stop_or_limit,  # 必須
+        "expected_direction": river['direction'] * -1,  # 必須
+        "decision_time": river['time'],  # 必須（実際には使わないけど、、）
+        "decision_price": river['peak'],  # 必須
+        "tp": 価格 or Range,  # 80以上の値は価格とみなし、それ以外ならMarginとする
+        "lc": 価格　or Range  # 80以上の値は価格とみなし、それ以外ならMarginとする
     }
     いずれかが必須
     # ポジションマージンか、target_priceが必要。最終的に必要になるのは「ポジションマージン」　（targetは複数オーダー発行だと調整が入る）
     {　
         "position_margin": position_margin,  # 検証で任意　運用で必須(複数Marginで再計算する可能性あり)
         "target_price": target_price,  # 検証で必須　運用で任意(複数Marginで再計算する可能性あり)
-    }
-    # TPレンジかPrice指定（Price指定は強い為注意が必要）
-    {
-        "tp_range": tp,
-        "tp_price": target_price + (tp * river['direction']),
-    }
-    # LCレンジかPrice指定（Price指定は強い為注意が必要）
-    {
-        "lc_range": lc,
-        "lc_price": target_price - (lc * river['direction']),
     }
     :return:　order_base = {
         "stop_or_limit": stop_or_limit,  # 運用で必須
@@ -56,13 +48,13 @@ def order_finalize(order_base):
         return -1  # エラー
 
     # ①TargetPriceを確実に取得する
-    if not('target_price' in order_base) and not('position_margin' in order_base):
+    if not ('target_price' in order_base) and not ('position_margin' in order_base):
         # どっちも入ってない場合、Ｅｒｒｏｒ
         print("    ★★★targetPriceもPositionMarginも両方入っていません（NG）")
-    elif 'target_price' in order_base and not('position_margin' in order_base):
+    elif 'target_price' in order_base and not ('position_margin' in order_base):
         # targetPriceのみ入っている（marginを算出する）
-        order_base['position_margin'] = abs(order_base['decision_price']-order_base['target_price'])
-    elif 'position_margin' in order_base and not('target_price' in order_base):
+        order_base['position_margin'] = abs(order_base['decision_price'] - order_base['target_price'])
+    elif 'position_margin' in order_base and not ('target_price' in order_base):
         # position_marginのみ入っている（当初の一般的。TargetPriceを算出する）
         order_base['target_price'] = order_base['decision_price'] + \
                                      (order_base['position_margin'] * order_base['expected_direction'] * order_base['stop_or_limit'])
@@ -70,30 +62,30 @@ def order_finalize(order_base):
         print("     Target_price PositionMarginどっちも入っている")
 
     # ② TP
-    if not('tp_range' in order_base) and not('tp_price' in order_base):
-        # どっちも入ってない場合、エラー
-        print("    ★★★TPRangeもTPPriceも両方入っていません（NG）")
-    elif 'tp_range' in order_base and not('tp_price' in order_base):
-        # TPRangeのみ入っている。TPRangeを算出し追加（初期の通常）
-        order_base['tp_price'] = order_base['target_price'] + (order_base['tp_range'] * order_base['expected_direction'])
-    elif 'tp_price' in order_base and not('tp_range' in order_base):
-        # tp_priceのみ入っている（classOanda内では、TPPriceがあれば優先利用するので、tpRangeの算出は不要だが、念のため。）
-        order_base['tp_range'] = abs(order_base['target_price'] - order_base['tp_price'])
-    else:
-        print("TP Range Priceどっちも入っている")
+    if not ('tp' in order_base):
+        print("    ★★★TP情報が入っていません（利確設定なし？？？）")
+        order_base['tp_range'] = 0  # 念のため０を入れておく（価格の指定は絶対に不要）
+    elif order_base['tp'] >= 80:
+        # 80以上の数字は、Price値だと認識。Priceの設定と、Rangeの算出と設定を実施。
+        order_base['tp_price'] = order_base['tp']
+        order_base['tp_range'] = abs(order_base['target_price'] - order_base['tp'])
+    elif order_base['tp'] < 80:
+        # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
+        order_base['tp_price'] = order_base['target_price'] + (order_base['tp'] * order_base['expected_direction'])
+        order_base['tp_range'] = order_base['tp']
 
     # ③ LC
-    if not('lc_range' in order_base) and not('lc_price' in order_base):
+    if not('lc' in order_base):
         # どっちも入ってない場合、エラー
-        print("    ★★★LCRangeもLcPriceも両方入っていません（NG）")
-    elif 'lc_range' in order_base and not('lc_price' in order_base):
-        # lcRangeのみ入っている。lcRangeを算出し追加（初期の通常）
-        order_base['lc_price'] = order_base['target_price'] - (order_base['lc_range'] * order_base['expected_direction'])
-    elif 'lc_price' in order_base and not('lc_range' in order_base):
-        # lc_priceのみ入っている（classOanda内では、LcPriceがあれば優先利用するので、LcRangeの算出は不要だが、念のため。）
-        order_base['lc_range'] = abs(order_base['target_price'] - order_base['lc_price'])
-    else:
-        print("LC RangePriceどっちも入っている")
+        print("    ★★★LC情報が入っていません（利確設定なし？？）")
+    elif order_base['lc'] >= 80:
+        # 80以上の数字は、Price値だと認識。Priceの設定と、Rangeの算出と設定を実施。
+        order_base['lc_price'] = order_base['lc']
+        order_base['lc_range'] = abs(order_base['target_price'] - order_base['lc'])
+    elif order_base['lc'] < 80:
+        # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
+        order_base['lc_price'] = order_base['target_price'] - (order_base['lc'] * order_base['expected_direction'])
+        order_base['lc_range'] = order_base['lc']
 
     return order_base
 
@@ -412,8 +404,8 @@ def DoublePeakBreak(*args):
                                  "decision_time": river['time'],
                                  "decision_price": peaks[0]['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
                                  "position_margin": position_margin,
-                                 "lc_range": lc,
-                                 "tp_range": tp,
+                                 "lc": lc,
+                                 "tp": tp,
                                  })
 
     # (3)★★判定部
@@ -565,8 +557,8 @@ def DoublePeak(*args):
                                  "decision_time": river['time'],
                                  "decision_price": peaks[0]['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
                                  "position_margin": position_margin,
-                                 "lc_range": lc,
-                                 "tp_range": tp,
+                                 "lc": lc,
+                                 "tp": tp,
                                  })
 
     # (3)★★判定部
