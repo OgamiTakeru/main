@@ -18,6 +18,7 @@ def order_finalize(order_base):
         "expected_direction": river['direction'] * -1,  # 必須
         "decision_time": river['time'],  # 必須（実際には使わないけど、、）
         "decision_price": river['peak'],  # 必須
+        "target": 価格 or Range  # 80以上の値は価格とみなし、それ以外ならMarginとする
         "tp": 価格 or Range,  # 80以上の値は価格とみなし、それ以外ならMarginとする
         "lc": 価格　or Range  # 80以上の値は価格とみなし、それ以外ならMarginとする
     }
@@ -48,41 +49,65 @@ def order_finalize(order_base):
         return -1  # エラー
 
     # ①TargetPriceを確実に取得する
-    if not ('target_price' in order_base) and not ('position_margin' in order_base):
+    if not ('target' in order_base):
         # どっちも入ってない場合、Ｅｒｒｏｒ
-        print("    ★★★targetPriceもPositionMarginも両方入っていません（NG）")
-    elif 'target_price' in order_base and not ('position_margin' in order_base):
-        # targetPriceのみ入っている（marginを算出する）
-        order_base['position_margin'] = abs(order_base['decision_price'] - order_base['target_price'])
-    elif 'position_margin' in order_base and not ('target_price' in order_base):
-        # position_marginのみ入っている（当初の一般的。TargetPriceを算出する）
+        print("    ★★★target(Rangeか価格か）が入力されていません")
+    elif order_base['target'] >= 80:
+        # targetが８０以上の数字の場合、ターゲット価格が指定されたとみなす
+        print("    target 価格指定")
+        order_base['position_margin'] = abs(order_base['decision_price'] - order_base['target'])
+        order_base['target_price'] = order_base['target']
+    elif order_base['target'] < 80:
+        # targetが80未満の数字の場合、PositionまでのMarginが指定されたとみなす
+        print("    target Margin指定")
+        order_base['position_margin'] = order_base['target']
         order_base['target_price'] = order_base['decision_price'] + \
-                                     (order_base['position_margin'] * order_base['expected_direction'] * order_base['stop_or_limit'])
+                                     (order_base['target'] * order_base['expected_direction'] * order_base['stop_or_limit'])
     else:
         print("     Target_price PositionMarginどっちも入っている")
 
-    # ② TP
+    # ② TP_priceとTP_Rangeを求める
     if not ('tp' in order_base):
         print("    ★★★TP情報が入っていません（利確設定なし？？？）")
         order_base['tp_range'] = 0  # 念のため０を入れておく（価格の指定は絶対に不要）
     elif order_base['tp'] >= 80:
+        print("    TP 価格指定")
         # 80以上の数字は、Price値だと認識。Priceの設定と、Rangeの算出と設定を実施。
-        order_base['tp_price'] = order_base['tp']
-        order_base['tp_range'] = abs(order_base['target_price'] - order_base['tp'])
+        #    ただし、偶然Target_Priceと同じになる(秒でTPが入ってしまう)可能性あるため、target_price-価格が0.02未満の場合は調整する。
+        if abs(order_base['target_price'] - order_base['tp']) < 0.02:
+            # 調整を行う（Rangeを最低の0.02に設定し、そこから改めてLC＿Priceを算出する）
+            print("  ★★TP価格とTarget価格が同値となったため、調整あり(0.02)")
+            order_base['tp_range'] = 0.02
+            order_base['tp_price'] = order_base['target_price'] + (order_base['tp_range'] * order_base['expected_direction'])
+        else:
+            # 調整なしでOK
+            order_base['tp_price'] = order_base['tp']
+            order_base['tp_range'] = abs(order_base['target_price'] - order_base['tp'])
     elif order_base['tp'] < 80:
+        print("    TP　Range指定")
         # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
         order_base['tp_price'] = order_base['target_price'] + (order_base['tp'] * order_base['expected_direction'])
         order_base['tp_range'] = order_base['tp']
 
-    # ③ LC
+    # ③ LC_priceとLC_rangeを求める
     if not('lc' in order_base):
         # どっちも入ってない場合、エラー
         print("    ★★★LC情報が入っていません（利確設定なし？？）")
     elif order_base['lc'] >= 80:
+        print("    LC 価格指定")
         # 80以上の数字は、Price値だと認識。Priceの設定と、Rangeの算出と設定を実施。
-        order_base['lc_price'] = order_base['lc']
-        order_base['lc_range'] = abs(order_base['target_price'] - order_base['lc'])
+        #     ただし、偶然Target_Priceと同じになる(秒でLCが入ってしまう)可能性あるため、target_price-価格が0.02未満の場合は調整する。
+        if abs(order_base['target_price'] - order_base['lc']) < 0.02:
+            # 調整を行う（Rangeを最低の0.02に設定し、そこから改めてLC＿Priceを算出する）
+            print("  ★★LC価格とTarget価格が同値となったため、調整あり(0.02)")
+            order_base['lc_range'] = 0.02
+            order_base['lc_price'] = order_base['target_price'] - (order_base['lc_range'] * order_base['expected_direction'])
+        else:
+            # 調整なしでOK
+            order_base['lc_price'] = order_base['lc']
+            order_base['lc_range'] = abs(order_base['target_price'] - order_base['lc'])
     elif order_base['lc'] < 80:
+        print("    LC RANGE指定")
         # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
         order_base['lc_price'] = order_base['target_price'] - (order_base['lc'] * order_base['expected_direction'])
         order_base['lc_range'] = order_base['lc']
@@ -114,7 +139,6 @@ def peak_of_peak_judgement(peaks_past, flop3):
                 not_peak_gap = 0
         else:
             # フロップ傾きがー１の場合、flop['peaks']より小さな値がないかを探索
-            print(" ", flop3['peak'], peaks_past[i]['peak'])
             if peaks_past[i]['peak'] <= flop3['peak']:
                 not_peak = True
                 not_peak_gap = peaks_past[i]['peak'] - flop3['peak']
@@ -390,23 +414,24 @@ def DoublePeakBreak(*args):
     # ①　パラメータを設定する
     tf_max = args[1]['tf_ratio_max'] if len(args) == 2 else 0.8  # 0.6
     rt_min = args[1]['rt_ratio_min'] if len(args) == 2 else 1.1  #
-    rt_max = args[1]['rt_ratio_max'] if len(args) == 2 else 1.2  #
-    position_margin = river['gap']  # river['gap']0abs(turn['peak_old'] - river['peak']) + 0.008
-    tp = f.cal_at_least(0.04, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
-    lc = f.cal_at_least(0.03, (abs(turn['peak'] - river['peak_old']) * 0.8))
+    rt_max = args[1]['rt_ratio_max'] if len(args) == 2 else 2.0  #
+    position_margin = args[1]['margin'] if len(args) == 2 else 0.02  #
+    tp = 0.03
+    lc = turn['peak']
     t_count = 2  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
     t_gap = 0.12  # ターンは長すぎる(gap)と、戻しが強すぎるため、この値以下にしておきたい。出来れば８くらい・・？
     stop_or_limit = args[1]['sl'] if len(args) == 2 else 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
-    d = args[1]['d'] if len(args) == 2 else -1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
+    d = args[1]['d'] if len(args) == 2 else 1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
     # ②オーダーのベースを組み立てる（オーダ発行の元にするため、返却が必要な値。target_price等の算出）
     order_base = order_finalize({"stop_or_limit": stop_or_limit,
                                  "expected_direction": river['direction'] * d,
                                  "decision_time": river['time'],
                                  "decision_price": peaks[0]['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
-                                 "position_margin": position_margin,
+                                 "target": position_margin,  # 価格かマージンかを入れることが出来る
                                  "lc": lc,
                                  "tp": tp,
                                  })
+    print(order_base)
 
     # (3)★★判定部
     take_position_flag = False  # ポジションフラグを初期値でFalseにする
@@ -415,7 +440,7 @@ def DoublePeakBreak(*args):
         if turn_flop3_ratio < tf_max and 0.012 < turn['gap'] and t_count <= turn['count']:  # ターンの情報
             if rt_min < river_turn_ratio < rt_max:  # リバーについて（リバー比）
                 take_position_flag = True
-                print("   ■■ダブルトップ完成")
+                print("   ■■ダブルピークBreak判定")
             else:
                 print("   不成立(リバー関係)")
         else:
@@ -544,7 +569,7 @@ def DoublePeak(*args):
     tf_max = args[1]['tf_ratio_max'] if len(args) == 2 else 0.8  # 0.6
     rt_min = args[1]['rt_ratio_min'] if len(args) == 2 else 0.7  #
     rt_max = args[1]['rt_ratio_max'] if len(args) == 2 else 1.0  #
-    position_margin = river['gap']  # river['gap']0abs(turn['peak_old'] - river['peak']) + 0.008
+    position_margin = args[1]['margin'] if len(args) == 2 else 0.02  #
     tp = f.cal_at_least(0.04, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
     lc = f.cal_at_least(0.03, (abs(turn['peak'] - river['peak_old']) * 0.8))
     t_count = 2  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
@@ -556,7 +581,7 @@ def DoublePeak(*args):
                                  "expected_direction": river['direction'] * d,
                                  "decision_time": river['time'],
                                  "decision_price": peaks[0]['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
-                                 "position_margin": position_margin,
+                                 "target": position_margin,  # 価格かマージンかを入れることが出来る
                                  "lc": lc,
                                  "tp": tp,
                                  })

@@ -37,8 +37,8 @@ def analysis_part(df_r):
     # return dp.now_position(df_r)
     # prac.turn_inspection_main(df_r)
     # return dp.doublePeak(df_r)
-    return dp.DoublePeak(df_r)
-    # return dp.beforeDoublePeakBreak(df_r)
+    # return dp.DoublePeak(df_r)
+    return dp.DoublePeakBreak(df_r)
     # return dp.boxSearch(df_r)
 
 
