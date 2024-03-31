@@ -177,8 +177,8 @@ class Oanda:
         temp_df.drop(['index'], axis=1, inplace=True)  # 不要項目の削除
         # 解析用の列を追加する（不要列の削除も含む）
         data_df = add_basic_data(temp_df)  # 【関数/必須】基本項目を追加する
-        data_df = add_ema_data(data_df)
-        data_df = add_bb_data(data_df)
+        # data_df = add_ema_data(data_df)
+        # data_df = add_bb_data(data_df)
         # data_df = self.add_peak(data_df)
         # 返却
         return {"data": data_df, "error": 0}
