@@ -115,7 +115,7 @@ def order_finalize(order_base):
     return order_base
 
 
-def peak_of_peak_judgement(peaks_past, flop3):
+def peak_of_peak_judgement(peaks_past, flop3, df_r):
     """
     過去数個のピークの中で、フロップのピークが頂点かどうか(フロップが傾きマイナスなら最低値、逆なら最高値か)を判定する。
     とりあえず、最高値（最低値）であればTrue、最高値ではなくレンジ等の一部の場合はFalseを返却。
@@ -125,32 +125,60 @@ def peak_of_peak_judgement(peaks_past, flop3):
     flop3: ピーク判定を行うピーク。向きが山なのか谷なのか１の場合(=フロップが右肩上がり)は山。またピーク価格もする。
     :return:　peak Of Peakの場合Trueを返却。
     """
-
+    # 必要なギャップを設定（PeakOfPeakを認定する為に、どの程度大きければ別とみなすのか）
+    gap = 0 # Flop3の半分くらいは余裕度が欲しい
     # ピークポイントを検索する（ここではピークofピークの場合Falseを意味する、not_peakを設定。
+    print("　　　　PeakOfPeak最古時間", peaks_past[-1]["time_old"])
     for i in range(len(peaks_past)):
         if flop3['direction'] == 1:
             # フロップ傾きが１の場合、flop['peak']より大きな値がないかを探索
-            if peaks_past[i]['peak'] >= flop3['peak']:
-                not_peak = True
-                not_peak_gap = peaks_past[i]['peak'] - flop3['peak']
-                break
+            if flop3['peak'] >= peaks_past[i]['peak'] + gap:
+                # flop3が大きい場合、peakofPeak継続
+                peak_of_peak = True
+                peak_gap = peaks_past[i]['peak'] - flop3['peak']
             else:
-                not_peak = False
-                not_peak_gap = 0
+                # flop3が前のより小さい場合、peakOfPeak解除。ループ終了
+                peak_of_peak = False
+                peak_gap = 0
+                break
         else:
             # フロップ傾きがー１の場合、flop['peaks']より小さな値がないかを探索
-            if peaks_past[i]['peak'] <= flop3['peak']:
-                not_peak = True
-                not_peak_gap = peaks_past[i]['peak'] - flop3['peak']
-                break
+            if flop3['peak'] <= peaks_past[i]['peak'] - gap:
+                # flop3が小さい場合、peakofPeak継続
+                peak_of_peak = True
+                peak_gap = peaks_past[i]['peak'] - flop3['peak']
             else:
-                not_peak = False
-                not_peak_gap = 0
-    # ノットピークだと、わかりにくいので、peak_of_peakがTrueかどうか（ピーク＝True）を返却
-    if not_peak:
-        return False
-    else:
-        return True
+                # flop3が前のより大きい場合、peakOfPeak解除。ループ終了
+                peak_of_peak = False
+                peak_gap = 0
+                break
+
+    # peak10個分だと少ないので、DfRでも検討する(自分自身も検索範囲に入っているんので、Gapを入れるとおかしくなる）
+    # part_of_df_r = df_r[15:40]  # ４時間分（４８足分）  # 自身(ターンピーク)を入れないためには、リバー2足＋ターン分で大体15足あれば。。
+    # print("　　　　PeakOfPeak最古時間", part_of_df_r.iloc[-1]['time_jp'])
+    # if flop3['direction'] == 1:
+    #     # フロップ傾きが１の場合、flop['peak']より大きな値がないかを探索
+    #     past_peak = part_of_df_r["inner_high"].max()
+    #     # print("  最大価格", part_of_df_r["inner_high"].max())
+    #     if flop3['peak'] >= past_peak + gap:
+    #         # print(" ", flop3['peak'], past_peak + gap)
+    #         peak_of_peak = True
+    #     else:
+    #         # print(" g", flop3['peak'], past_peak + gap)
+    #         peak_of_peak = False
+    # else:
+    #     # フロップ傾きがー１の場合、flop['peaks']より小さな値がないかを探索
+    #     past_peak = part_of_df_r["inner_low"].min()
+    #     # print("  最小価格", part_of_df_r["inner_low"].min())
+    #     if flop3['peak'] <= past_peak - gap:
+    #         # print("  ", flop3['peak'], past_peak - gap)
+    #         peak_of_peak = True
+    #     else:
+    #         # print("  g", flop3['peak'], past_peak - gap)
+    #         peak_of_peak = False
+
+    # 終了
+    return peak_of_peak
 
 
 def size_compare(after_change, before_change, min_range, max_range):
@@ -196,16 +224,61 @@ def size_compare(after_change, before_change, min_range, max_range):
     }
 
 
+# def judge_list_or_data_frame(*args):
+#     """
+#     各解析関数から呼ばれる。各解析関数は、データフレームかリスト（ピークのリスト）が渡される。(１つだけの引数）
+#     理由は、データフレームからピークを計算する処理を少なくしたいが、関数を分割したいため、どっちも受け取れた方が便利なため。
+#     データフレームを渡された場合、ピークスを算出してピークスを返却する。
+#     リスト（ピークのリスト）を渡された場合、そのままピークスを返却する。この際ピークの個数もチェックできるといいかもしれないが。
+#     :param args: DateFrame（逆順）か、ピークスのリストが渡される
+#     :return: {"result":}ピークスのリスト(peaks_collect_mainの返り値の['all_peaks'])を返却する
+#     """
+#     if type(args[0]) == pd.core.frame.DataFrame:
+#         print("       -検証モード（データフレームからピークスを算出)")
+#         peaks_info = p.peaks_collect_main(args[0][:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+#         peaks = peaks_info['all_peaks']
+#         print("  <対象>")
+#         print("  RIVER", peaks[0])
+#         print("  TURN ", peaks[1])
+#         print("  FLOP3", peaks[2])
+#         print("　　　価格整合性調査:", args[0].iloc[0]['open'], args[0].iloc[1]['close'], peaks[0]['peak'])
+#     else:
+#         # 運用モードでは、元々ピークスが渡されているので、そのまま返却する
+#         peaks = args[0]
+#
+#     return peaks
+#
+
 def judge_list_or_data_frame(*args):
     """
-    各解析関数から呼ばれる。各解析関数は、データフレームかリスト（ピークのリスト）が渡される。(１つだけの引数）
-    理由は、データフレームからピークを計算する処理を少なくしたいが、関数を分割したいため、どっちも受け取れた方が便利なため。
-    データフレームを渡された場合、ピークスを算出してピークスを返却する。
-    リスト（ピークのリスト）を渡された場合、そのままピークスを返却する。この際ピークの個数もチェックできるといいかもしれないが。
-    :param args: DateFrame（逆順）か、ピークスのリストが渡される
-    :return: {"result":}ピークスのリスト(peaks_collect_mainの返り値の['all_peaks'])を返却する
+    各解析関数から呼ばれる。各解析関数が検証から呼ばれているか、本番から呼ばれているかを判定する
+    第二引数存在し、かつそれがpeaks辞書の配列ではない場合、パラメータモードとする
+    :param args: 以下３種類
+        データフレームのみ→検証
+        データフレーム＋Paramsの辞書(辞書配列ではない）　→検証（ループ）
+        データフレーム＋Peaksの配列　→本番　（時短の為、ピークの再計算を行いたくない）
+    :return: {"peaks":peaks, "param_mode":boolean(paramがある時のみ)}
     """
-    if type(args[0]) == pd.core.frame.DataFrame:
+    print(" モード検証")
+    # print(len(args))
+    # print(args)
+    # print(args[1])
+    if len(args) == 2:
+        # ２つある場合は、より深い判定が必要
+        if isinstance(args[1], list):  # "time" in args[1][0]:
+            # 配列が渡されているとき、それはピークスである。そして実践モード
+            param_mode = False
+            inspection_mode = False
+        else:
+            # 配列の先頭の辞書にTimeを含まない場合、それはParamである。そして検証モード
+            param_mode = True
+            inspection_mode = True
+    else:
+        # １つの場合は、パラむモードではない。そして検証モード
+        param_mode = False
+        inspection_mode = True
+
+    if inspection_mode:
         print("       -検証モード（データフレームからピークスを算出)")
         peaks_info = p.peaks_collect_main(args[0][:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
         peaks = peaks_info['all_peaks']
@@ -216,9 +289,10 @@ def judge_list_or_data_frame(*args):
         print("　　　価格整合性調査:", args[0].iloc[0]['open'], args[0].iloc[1]['close'], peaks[0]['peak'])
     else:
         # 運用モードでは、元々ピークスが渡されているので、そのまま返却する
-        peaks = args[0]
+        print("      -運用モード")
+        peaks = args[1]
 
-    return peaks
+    return {"param_mode": param_mode, "peaks": peaks, "df_r": args[0]}
 
 
 def beforeDoublePeak(*args):
@@ -372,15 +446,27 @@ def beforeDoublePeak(*args):
 
 def DoublePeakBreak(*args):
     """
-    引数は配列で受け取る。今は最大二つを想定。
-    引数１つ目：ローソク情報(逆順[直近が上の方にある＝時間降順])データフレームを受け取り、範囲の中で、ダブルトップ直前ついて捉える
-    引数２つ目はループ検証時のパラメータ群(ループ検証の時のみ入ってくる）
-    ②パターン２
+    １）引数について。　引数は全３パターン。
+    ①データフレームだけが来る。これはAnalysisから呼び出され、データフレームからピークスを算出後に、本関数メインの判定処理を実施。
+    ②データフレームと条件配列(param)の２つが来る。これはAnalysisMultiから呼ばれている。基本は①と同様だが、条件ごとにループ検証を行う。
+    ③ピークス(peaks_collect_mainの返り値内の,["all_peaks"])とデータフレームが。Total実行の関数から呼び出され、本関数メインの判定処理を実施。
+    なお①②において、
+    データフレーム：ローソク情報(逆順[直近が上の方にある＝時間降順])データフレーム
+    条件(param) ：ループ検証時のパラメータ群(ループ検証の時のみ入ってくる）
+    例→params_arr = [
+        {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2}
+        {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2}
+    ]
+    ③においてピークスは、peaks_collect_mainの返り値内の,["all_peaks"]が対象。
+    ＜まとめ＞いかなる場合もargs[0]はデータフレームまたはPeaksとなり、[1]以降がオプションとなる。
+    ＜ロジック＞ダブルトップの頂点を超えた場合、伸びる方向に進んでいくポジションをとる。
 
 　　　　　　　　　  ターン↓　 /　←このでっぱり部が、5pips以内（リーバーがターンの1.1倍以内？）
        　　　　  　   /\  /
        フロップ　30→ /  \/  ← 6(リバー) ＋　割合だけでなく、5pipくらいトップピークまで余裕があれば。
           　　　　　/　　　←ターンのPeak値がLCPriceにする？
+        ・リバーの個数に制限は設けない。その場合、１か所で数回発生する場合がある。
+        　（
 
     :param df_r:
     :return:　必須最低限　{"take_position_flag": boolean} の返却は必須。さらにTrueの場合注文情報が必要。
@@ -389,10 +475,12 @@ def DoublePeakBreak(*args):
     print("■ダブルピークBreak判定")
     # (1)ピークスを取得（引数か処理）。この関数ではPeaksの情報を元にし、Dfは使わない。
     # ①必要最低限の項目たちを取得する
-    peaks = judge_list_or_data_frame(args[0])  # ピークスを確保。モードを問わない共通処理。args[0]はデータフレームまたはPeaksList。
+    mode_judge = judge_list_or_data_frame(*args)  # ピークスを確保。モードを問わない共通処理。args[0]はデータフレームまたはPeaksList。
+    peaks = mode_judge['peaks']
     river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
     flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
+    param_mode = mode_judge['param_mode']
     # (2)情報を変数に取得する
     # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
     size_ans = size_compare(river["gap"], turn["gap"], 0.1, 0.3)
@@ -412,21 +500,21 @@ def DoublePeakBreak(*args):
 
     # (3)パラメータ指定。常実行時は数字の直接指定。paramsがある場合（ループ検証）の場合は、パラメーターを引数から取得する(args[1]=params)
     # ①　パラメータを設定する
-    tf_max = args[1]['tf_ratio_max'] if len(args) == 2 else 0.8  # 0.6
-    rt_min = args[1]['rt_ratio_min'] if len(args) == 2 else 1.1  #
-    rt_max = args[1]['rt_ratio_max'] if len(args) == 2 else 2.0  #
-    position_margin = args[1]['margin'] if len(args) == 2 else 0.02  #
+    tf_max = args[1]['tf_ratio_max'] if param_mode else 0.8  # 0.6
+    rt_min = args[1]['rt_ratio_min'] if param_mode else 1.1  #
+    rt_max = args[1]['rt_ratio_max'] if param_mode else 2.0  #
+    position_margin = args[1]['margin'] if param_mode else 0.02  #
     tp = 0.03
     lc = turn['peak']
     t_count = 2  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
     t_gap = 0.12  # ターンは長すぎる(gap)と、戻しが強すぎるため、この値以下にしておきたい。出来れば８くらい・・？
-    stop_or_limit = args[1]['sl'] if len(args) == 2 else 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
-    d = args[1]['d'] if len(args) == 2 else 1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
+    stop_or_limit = args[1]['sl'] if param_mode else 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
+    d = args[1]['d'] if param_mode else 1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
     # ②オーダーのベースを組み立てる（オーダ発行の元にするため、返却が必要な値。target_price等の算出）
     order_base = order_finalize({"stop_or_limit": stop_or_limit,
                                  "expected_direction": river['direction'] * d,
                                  "decision_time": river['time'],
-                                 "decision_price": peaks[0]['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
+                                 "decision_price": river['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
                                  "target": position_margin,  # 価格かマージンかを入れることが出来る
                                  "lc": lc,
                                  "tp": tp,
@@ -514,10 +602,11 @@ def DoublePeakBreak(*args):
 
 def DoublePeak(*args):
     """
-    １）引数のパターンは３パターン。
+    ★ピークスは１０個必要
+    １）引数について。　引数は全３パターン。
     ①データフレームだけが来る。これはAnalysisから呼び出され、データフレームからピークスを算出後に、本関数メインの判定処理を実施。
-    ②データフレームと条件(param)の２つが来る。これはAnalysisMultiから呼ばれている。基本は①と同様だが、条件ごとにループ検証を行う。
-    ③ピークス(peaks_collect_mainの返り値内の,["all_peaks"])だけが来る。Total実行の関数から呼び出され、本関数メインの判定処理を実施。
+    ②データフレームと条件配列(param)の２つが来る。これはAnalysisMultiから呼ばれている。基本は①と同様だが、条件ごとにループ検証を行う。
+    ③ピークス(peaks_collect_mainの返り値内の,["all_peaks"])とデータフレームが。Total実行の関数から呼び出され、本関数メインの判定処理を実施。
     なお①②において、
     データフレーム：ローソク情報(逆順[直近が上の方にある＝時間降順])データフレーム
     条件(param) ：ループ検証時のパラメータ群(ループ検証の時のみ入ってくる）
@@ -527,26 +616,32 @@ def DoublePeak(*args):
     ]
     ③においてピークスは、peaks_collect_mainの返り値内の,["all_peaks"]が対象。
     ＜まとめ＞いかなる場合もargs[0]はデータフレームまたはPeaksとなり、[1]以降がオプションとなる。
+    ２）ロジックについて
+    ＜ロジック概要＞ダブルトップを頂点とし、そこから戻る方向にポジションする。
                      ↓ 10pips（基準：ターン）
        　　23pips　   /\  /
            フロップ→ /  \/  ← 7pipsまで(リバー)
           　　　　　/　　　　　　　　　←ピークの反対くらいがLC？
        ルール一覧
-       ・ターンが小さい、または、少ない場合、ダブルトップポイントを瞬間的に突破する回数が多い為、
-       　ターンは３足分以上かつ、2pips以上。
+       ・ターンが小さい、または、少ない場合、ダブルトップポイントを瞬間的に突破する回数が多い為NGとしたい。、
+       　その為、ターンは３足分以上かつ、2pips以上とする。
        ・出来ればフロップは長い方がいい気がする。フロップカウントは７以上
        　（さらにフロップの頂点が新規ポイントの場合は率上がるかも？）
        ・フロップのピーク点か、直近の10ピークの中で最も頂点の場合は、折り返し濃厚。最も頂点でない場合は、Breakまで行く可能性高い。
+       　（別途関数を準備）
     :return:　必須最低限　{"take_position_flag": boolean} の返却は必須。さらにTrueの場合注文情報が必要。
     """
     # print(args)
     print("■ダブルピーク判定")
     # (1)ピークスを取得（引数か処理）。この関数ではPeaksの情報を元にし、Dfは使わない。
     # ①必要最低限の項目たちを取得する
-    peaks = judge_list_or_data_frame(args[0])  # ピークスを確保。モードを問わない共通処理。args[0]はデータフレームまたはPeaksList。
+    mode_judge = judge_list_or_data_frame(*args)  # ピークスを確保。モードを問わない共通処理。args[0]はデータフレームまたはPeaksList。
+    peaks = mode_judge['peaks']
     river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
     flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
+    param_mode = mode_judge['param_mode']
+    df_r = mode_judge['df_r']
     # (2)情報を変数に取得する
     # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
     size_ans = size_compare(river["gap"], turn["gap"], 0.1, 0.3)
@@ -566,21 +661,21 @@ def DoublePeak(*args):
 
     # (3)パラメータ指定。常実行時は数字の直接指定。paramsがある場合（ループ検証）の場合は、パラメーターを引数から取得する(args[1]=params)
     # ①　パラメータを設定する
-    tf_max = args[1]['tf_ratio_max'] if len(args) == 2 else 0.8  # 0.6
-    rt_min = args[1]['rt_ratio_min'] if len(args) == 2 else 0.7  #
-    rt_max = args[1]['rt_ratio_max'] if len(args) == 2 else 1.0  #
-    position_margin = args[1]['margin'] if len(args) == 2 else 0.02  #
+    tf_max = args[1]['tf_ratio_max'] if param_mode else 0.8  # 0.6
+    rt_min = args[1]['rt_ratio_min'] if param_mode else 0.7  #
+    rt_max = args[1]['rt_ratio_max'] if param_mode else 1.0  #
+    position_margin = args[1]['margin'] if param_mode else 0.02  #
     tp = f.cal_at_least(0.04, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
     lc = f.cal_at_least(0.03, (abs(turn['peak'] - river['peak_old']) * 0.8))
     t_count = 2  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
     t_gap = 0.12  # ターンは長すぎる(gap)と、戻しが強すぎるため、この値以下にしておきたい。出来れば８くらい・・？
-    stop_or_limit = args[1]['sl'] if len(args) == 2 else 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
-    d = args[1]['d'] if len(args) == 2 else -1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
+    stop_or_limit = args[1]['sl'] if param_mode else 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
+    d = args[1]['d'] if param_mode else -1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
     # ②オーダーのベースを組み立てる（オーダ発行の元にするため、返却が必要な値。target_price等の算出）
     order_base = order_finalize({"stop_or_limit": stop_or_limit,
                                  "expected_direction": river['direction'] * d,
                                  "decision_time": river['time'],
-                                 "decision_price": peaks[0]['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
+                                 "decision_price": river['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
                                  "target": position_margin,  # 価格かマージンかを入れることが出来る
                                  "lc": lc,
                                  "tp": tp,
@@ -605,7 +700,8 @@ def DoublePeak(*args):
                     "rt_gap:", abs(river_turn_gap), "(<", 0, "), t_gap", turn['gap'], "(<", t_gap,"),", flop3['gap'])
 
     # (3) ★★判定部2(過去数個のピークの中で、フロップのピークが頂点かどうか(フロップが傾きマイナスなら最低値、逆なら最高値か）
-    peak_of_peak = peak_of_peak_judgement(peaks[3:10], flop3)
+    peak_of_peak = peak_of_peak_judgement(peaks[3:10], flop3, df_r)
+
 
     # ダブルトップの成立判定
     if not peak_of_peak:
@@ -810,7 +906,7 @@ def wrapUp(df_r):
     :return:doublePeakの結果をまとめて、そのまま注文できるJsonの配列にして返却する
     """
     # （０）データを取得する
-    peaks_info = p.peaks_collect_main(df_r[:90], 3)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+    peaks_info = p.peaks_collect_main(df_r[:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
     peaks = peaks_info['all_peaks']
     river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
@@ -828,21 +924,20 @@ def wrapUp(df_r):
                   f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
 
     # （１）beforeDoublePeakについて
-    # ダブルトップ直前で、ダブルトップを形成するところを狙いに行く。TF＜0.4、RT＜0.7
-    beforeDoublePeak_ans = beforeDoublePeak(peaks)
-
-    # (2)ダブルトップポイントをリバーが大きく通過している場合。TF＜0.4、RT＞1.3
-    beforeDoublePeakBreak_ans = DoublePeakBreak(peaks)
+    # # ダブルトップ直前で、ダブルトップを形成するところを狙いに行く。TF＜0.4、RT＜0.7
+    # beforeDoublePeak_ans = beforeDoublePeak(df_r, peaks)
+    #
+    # # (2)ダブルトップポイントをリバーが大きく通過している場合。TF＜0.4、RT＞1.3
+    # beforeDoublePeakBreak_ans = DoublePeakBreak(df_r, peaks)
 
     # (3)ダブルトップ（これはピークが１０個必要。過去のデータを比べて最ピークかどうかを確認したいため）
-    peaks_info_many = p.peaks_collect_main(df_r[:90], 10)  # Peaksの算出（多めの１０行）
-    doublePeak_ans = DoublePeak(peaks_info_many['all_peaks'])
+    doublePeak_ans = DoublePeak(df_r, peaks)
 
     # 【オーダーを統合する】  現状同時に成立しない仕様。
-    if beforeDoublePeak_ans['take_position_flag']:
-        order_information = beforeDoublePeak_ans['exe_orders']  # オーダー発行情報のみをへんきゃく
-    elif beforeDoublePeakBreak_ans['take_position_flag']:
-        order_information = beforeDoublePeakBreak_ans  # オーダー発行情報のみを返却する
+    if doublePeak_ans['take_position_flag']:
+        order_information = doublePeak_ans
+    # elif doublePeak_ans['take_position_flag']:
+    #     order_information = beforeDoublePeakBreak_ans  # オーダー発行情報のみを返却する
     else:
         # 何もない場合はPositionFlagをFalseにして返す
         order_information = {"take_position_flag": False}

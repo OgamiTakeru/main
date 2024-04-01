@@ -88,8 +88,8 @@ def mode1():
     global gl_latest_trigger_time, gl_peak_memo
 
     # ■取得可能タイミング化の調査を行う
-    # orders_DoublePeak = dp.wrapUp(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
-    orders_DoublePeak = dp.triplePeaks(gl_data5r_df)
+    orders_DoublePeak = dp.wrapUp(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
+    # orders_DoublePeak = dp.triplePeaks(gl_data5r_df)
     # ■発注を実行する
     if not orders_DoublePeak['take_position_flag']:  # 発注がない場合は、終了
         return 0
@@ -103,7 +103,7 @@ def mode1():
     for n in range(len(orders_DoublePeak['exe_orders'])):
         res_dic = classes[n].order_plan_registration(orders_DoublePeak['exe_orders'][n])  #
         line_send = line_send + res_dic['order_name'] + \
-                    "(" + str(orders_DoublePeak['exe_orders'][n]['target_price']) + res_dic['order_id'] + "), "
+                    "(" + str(orders_DoublePeak['exe_orders'][n]['target_price']) + "," + str(res_dic['order_id']) + "), "
     # 注文結果を送信する
     tk.line_send("★オーダー発行", line_send)
 
