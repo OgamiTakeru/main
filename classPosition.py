@@ -116,6 +116,14 @@ class order_information:
         print("   【trade1】", self.t_time, self.t_time_past)
         print("   【trade2】", self.t_state, self.t_realize_pl, self.t_close_time, self.t_close_price)
 
+    def print_info_short(self):
+        print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
+        print("　 【life】", self.life)
+        print("   【name】", self.name)
+        print("   【order1】", self.o_id, self.o_time, self.o_state, self.o_time_past)
+        print("   【trade1】", self.t_id, self.t_initial_units, self.t_current_units, self.t_execution_price)
+        print("   【trade1】", self.t_unrealize_pl, self.t_pl_u, self.t_time_past)
+
     def life_set(self, boo):
         self.life = boo
         if boo:
@@ -544,18 +552,23 @@ class order_information:
         # 変化による情報（規定ボーダー）
         self.updateOverBorderTime(trade_latest['PLu'], self.over_border_time)
 
-        # ポジションに対する時間的な解消を行う
-        if "W" in self.name:  # ウォッチ用のポジションは時間で消去。ただしCRCDOはしない
-            if self.t_time_past > 1200 and self.t_state == "OPEN":
-                # tk.line_send("   W-Position時間解消", self.name, self.o_time_past)
-                self.close_trade(None)
-        else:
-            # LCの底上げを行う
-            self.lc_change()
-            # 部分解消を行う
-            self.cascade_close()
-            # トレールの実施を行う
-            # self.trail()
+        # print("  検証用ClassPosition")
+        # self.print_info_short()
+
+        self.lc_change()
+
+        # # ポジションに対する時間的な解消を行う
+        # if "W" in self.name:  # ウォッチ用のポジションは時間で消去。ただしCRCDOはしない
+        #     if self.t_time_past > 1200 and self.t_state == "OPEN":
+        #         # tk.line_send("   W-Position時間解消", self.name, self.o_time_past)
+        #         self.close_trade(None)
+        # else:
+        #     # LCの底上げを行う
+        #     self.lc_change()
+        #     # 部分解消を行う
+        #     self.cascade_close()
+        #     # トレールの実施を行う
+        #     # self.trail()
 
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
@@ -563,13 +576,12 @@ class order_information:
         lc_change_dicに格納された情報を元に実施。
         lc_change_dicはPlanと同時にクラスに渡される。
         {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
-
         :return:
         """
         if len(self.lc_change_dic) == 0:
             # 指定がない場合は実行しない。
             return 0
-
+        # print("  ★LC＿Change実行関数")
         # コードの１行を短くするため、置きかておく
         lc_exe = self.lc_change_dic['lc_change_exe']
         lc_ensure_range = self.lc_change_dic['lc_ensure_range']
@@ -584,10 +596,11 @@ class order_information:
 
         # ■実行処理
         # 経過時間、または、プラス分に応じてLCの変更（主に底上げ）を実施する
-        if self.o_time_past > 60:  # N秒以上経過している場合、ロスカ引き上げ
+        if self.t_time_past > 10:  # N秒以上経過している場合、ロスカ引き上げ
             # ボーダーラインを超えた場合
+            # print(" 変更確認", self.t_pl_u, ">", lc_trigger_range, "を満たしたとき")
             if self.t_pl_u > lc_trigger_range:
-                # new_lc_price = str(round(self.t_execution_price - lc_ensure_range if self.plan['ask_bid'] < 0 else self.t_execution_price + lc_ensure_range, 3))
+                # print("　★変更確定")
                 new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan['ask_bid']), 3)
                 data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
                 res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行

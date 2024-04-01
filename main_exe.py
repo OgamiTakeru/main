@@ -113,6 +113,7 @@ def mode1():
 
 def mode2():
     global gl_exe_mode
+    # print("MODE2")
     classPosition.all_update_information(classes)  # 情報アップデート
     if classPosition.life_check(classes):
         # 表示用（１分に１回表示させたい）
