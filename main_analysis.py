@@ -36,9 +36,9 @@ def analysis_part(df_r):
     # return dp.stairsPeak(df_r)
     # return dp.now_position(df_r)
     # prac.turn_inspection_main(df_r)
-    # return dp.DoublePeak(df_r)
+    return dp.DoublePeak(df_r)
     # return dp.DoublePeakBreak(df_r)
-    return dp.DoublePeak_4peaks(df_r)
+    # return dp.DoublePeak_4peaks(df_r)
 
 
 # 検証パート
@@ -403,12 +403,12 @@ def main():
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 5000
+gl_count = 215
 gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False Truxe　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 4, 2, 17, 45, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2024, 4, 2, 20, 25, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定      datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
 gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 

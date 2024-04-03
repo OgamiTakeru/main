@@ -155,6 +155,7 @@ def peak_of_peak_judgement(peaks_past, flop3, df_r):
         else:
             # print(" g", flop3['peak'], past_peak + gap)
             peak_of_peak = False
+            print(" 　他に最大値が存在", part_of_df_r.loc[part_of_df_r["inner_high"].idxmax()]['time_jp'])
     else:
         # フロップ傾きがー１の場合、flop['peaks']より小さな値がないかを探索
         past_peak = part_of_df_r["inner_low"].min()
@@ -165,6 +166,7 @@ def peak_of_peak_judgement(peaks_past, flop3, df_r):
         else:
             # print("  g", flop3['peak'], past_peak - gap)
             peak_of_peak = False
+            print(" 　他に最小値が存在", part_of_df_r.loc[part_of_df_rgitgitgit ["inner_low"].idxmin()]['time_jp'])
 
     # 終了
     return peak_of_peak
@@ -601,8 +603,15 @@ def DoublePeak(*args):
 
     # (3)パラメータ指定。常実行時は数字の直接指定。paramsがある場合（ループ検証）の場合は、パラメーターを引数から取得する(args[1]=params)
     # ①　パラメータを設定する
-    tf_max = args[1]['tf_ratio_max'] if param_mode else 0.8  # 0.6
-    rt_min = args[1]['rt_ratio_min'] if param_mode else 0.7  #
+    if param_mode: # turn['peak']はダブルトップBreakしない(river逆)
+        if args[1]["p"] == "turn":
+            target = turn['peak'] + (args[1]['margin'] * river['direction'] * -1)  # 抵抗側
+        else:
+            target = flop3['peak'] + (args[1]['margin'] * river['direction'])  # 突破側
+    else:
+        target = turn['peak'] + (0.005 * river['direction'] * -1)
+    tf_max = args[1]['tf_ratio_max'] if param_mode else 0.65  # 0.6
+    rt_min = args[1]['rt_ratio_min'] if param_mode else 0.4  #
     rt_max = args[1]['rt_ratio_max'] if param_mode else 1.0  #
     position_margin = args[1]['margin'] if param_mode else 0.02  #
     tp = f.cal_at_least(0.04, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
@@ -616,7 +625,7 @@ def DoublePeak(*args):
                                  "expected_direction": river['direction'] * d,
                                  "decision_time": river['time'],
                                  "decision_price": river['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
-                                 "target": turn['peak'] + (0.01 * river['direction']),  # 価格かマージンかを入れることが出来る
+                                 "target": target,  # turn['peak'] + (0.01 * river['direction']),  # 価格かマージンかを入れることが出来る
                                  "lc": lc,
                                  "tp": tp,  # tp,
                                  })
@@ -625,7 +634,7 @@ def DoublePeak(*args):
     take_position_flag = False  # ポジションフラグを初期値でFalseにする
     # ①形状の判定
     if 4 <= flop3['count']:
-        if turn_flop3_ratio < tf_max and 0.012 < turn['gap'] and t_count <= turn['count']:  # ターンの情報
+        if turn_flop3_ratio < tf_max and 0.011 <= turn['gap'] and t_count <= turn['count']:  # ターンの情報
             if rt_min < river_turn_ratio < rt_max:  # リバーについて（リバー比）
                 take_position_flag = True
                 print("   ■■ダブルトップ完成")
@@ -1111,11 +1120,11 @@ def DoublePeak_4peaks(*args):
     # ①　パラメータを設定する
     if param_mode: # turn['peak']はダブルトップBreakしない(river逆)
         if args[1]["p"] == "turn":
-            target = turn['peak'] + (args[1]['margin'] * river['direction'])  # 抵抗側
+            target = turn['peak'] + (args[1]['margin'] * river['direction'] * -1)  # 抵抗側
         else:
             target = flop3['peak'] + (args[1]['margin'] * river['direction'])  # 突破側
     else:
-        target = turn['peak'] + (args[1]['margin'] * river['direction'])
+        target = turn['peak'] + (0.01 * river['direction'] * -1)
     tf_max = args[1]['tf_ratio_max'] if param_mode else 0.8  # 0.6
     rt_min = args[1]['rt_ratio_min'] if param_mode else 0.7  #
     rt_max = args[1]['rt_ratio_max'] if param_mode else 1.0  #
