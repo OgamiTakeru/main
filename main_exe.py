@@ -120,7 +120,7 @@ def mode2():
         temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
         if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒と２秒)
             classes_info = classPosition.position_info(classes)
-            print("■■■Mode2(各分表示 &　いずれかポジション有)", f.now())
+            print("■■■Mode2(いずれかポジション有)", f.now(), "これは１分に１回表示")
             if classes_info == "":
                 pass  # Wだけの場合は表示しない（改行がうっとうしい）
             else:

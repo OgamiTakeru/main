@@ -12,15 +12,18 @@ oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの�
 def order_finalize(order_base):
     """
     オーダーを完成させる。TPRangeとTpPrice、Marginとターゲットプライスのどちらかが入ってれば完成させたい。
+    martinとTarget価格をいずれかの受け取り。両方受け取ると齟齬が発生する可能性があるため、片方のみとする
     :param order_base:必須
     order_base = {
         "stop_or_limit": stop_or_limit,  # 必須
         "expected_direction": river['direction'] * -1,  # 必須
-        "decision_time": river['time'],  # 必須（実際には使わないけど、、）
+        "decision_time": river['time'],  # 任意（アウトプットのエクセルの時に使う　それ以外は使わない）
         "decision_price": river['peak'],  # 必須
         "target": 価格 or Range  # 80以上の値は価格とみなし、それ以外ならMarginとする
         "tp": 価格 or Range,  # 80以上の値は価格とみなし、それ以外ならMarginとする
         "lc": 価格　or Range  # 80以上の値は価格とみなし、それ以外ならMarginとする
+        #オプション
+        ""
     }
     いずれかが必須
     # ポジションマージンか、target_priceが必要。最終的に必要になるのは「ポジションマージン」　（targetは複数オーダー発行だと調整が入る）
@@ -29,28 +32,31 @@ def order_finalize(order_base):
         "target_price": target_price,  # 検証で必須　運用で任意(複数Marginで再計算する可能性あり)
     }
     :return:　order_base = {
-        "stop_or_limit": stop_or_limit,  # 運用で必須
-        "expected_direction": river['direction'] * -1,  # 必須(基本的には直近(リバー)の順方向）
-        "decision_time": river['time'],  # 任意
-        "decision_price": river['peak'],  # 検証で任意　運用で必須(複数Marginで再計算する可能性あり)
-        "position_margin": position_margin,  # 検証で任意　運用で必須(複数Marginで再計算する可能性あり)
-        "target_price": target_price,  # 検証で必須　運用で任意(複数Marginで再計算する可能性あり)
-        "lc_range": lc,  # 検証で必須　運用で任意
-        "tp_range": tp,  # 検証で必須　運用で任意
-        "tp_price": target_price + (tp * river['direction']),  # 任意
-        "lc_price": target_price - (lc * river['direction']),  # 任意
+        "stop_or_limit": stop_or_limit,  # 任意（本番ではtype項目に置換して別途必要になる）
+        "expected_direction": # 検証で必須（本番ではdirectionという名前で別途必須になる）
+        "decision_time": # 任意
+        "decision_price": # 検証で任意
+        "position_margin": # 検証で任意
+        "target_price": # 検証で必須　運用で任意(複数Marginで再計算する可能性あり)
+        "lc_range": # 検証と本番で必須
+        "tp_range": # 検証と本番で必須
+        "tp_price": # 任意
+        "lc_price": # 任意
+        "type":"STOP" or "LIMIT",# 最終的にオーダーに必須（OandaClass）
+        "direction", # 最終的にオーダーに必須（OandaClass）
+        "price":,  # 最終的にオーダーに必須（OandaClass）
     }
     """
     # ⓪必須項目がない場合、エラーとする
-    if not('stop_or_limit' in order_base) or not('expected_direction' in order_base) or \
-            not('decision_price' in order_base) or not('decision_time' in order_base):
-        print("　　　　エラー（項目不足)",'stop_or_limit' in order_base,'expected_direction' in order_base,
+    if not ('stop_or_limit' in order_base) or not ('expected_direction' in order_base) or \
+            not ('decision_price' in order_base):
+        print("　　　　エラー（項目不足)", 'stop_or_limit' in order_base, 'expected_direction' in order_base,
               'decision_price' in order_base, 'decision_time' in order_base)
         return -1  # エラー
 
     # ①TargetPriceを確実に取得する
     if not ('target' in order_base):
-        # どっちも入ってない場合、Ｅｒｒｏｒ
+        # どっちも入ってない場合、Error
         print("    ★★★target(Rangeか価格か）が入力されていません")
     elif order_base['target'] >= 80:
         # targetが８０以上の数字の場合、ターゲット価格が指定されたとみなす
@@ -62,7 +68,8 @@ def order_finalize(order_base):
         print("    target Margin指定")
         order_base['position_margin'] = order_base['target']
         order_base['target_price'] = order_base['decision_price'] + \
-                                     (order_base['target'] * order_base['expected_direction'] * order_base['stop_or_limit'])
+                                     (order_base['target'] * order_base['expected_direction'] * order_base[
+                                         'stop_or_limit'])
     else:
         print("     Target_price PositionMarginどっちも入っている")
 
@@ -78,7 +85,8 @@ def order_finalize(order_base):
             # 調整を行う（Rangeを最低の0.02に設定し、そこから改めてLC＿Priceを算出する）
             print("  ★★TP価格とTarget価格が同値となったため、調整あり(0.02)")
             order_base['tp_range'] = 0.02
-            order_base['tp_price'] = order_base['target_price'] + (order_base['tp_range'] * order_base['expected_direction'])
+            order_base['tp_price'] = order_base['target_price'] + (
+                        order_base['tp_range'] * order_base['expected_direction'])
         else:
             # 調整なしでOK
             order_base['tp_price'] = order_base['tp']
@@ -90,7 +98,7 @@ def order_finalize(order_base):
         order_base['tp_range'] = order_base['tp']
 
     # ③ LC_priceとLC_rangeを求める
-    if not('lc' in order_base):
+    if not ('lc' in order_base):
         # どっちも入ってない場合、エラー
         print("    ★★★LC情報が入っていません（利確設定なし？？）")
     elif order_base['lc'] >= 80:
@@ -101,7 +109,8 @@ def order_finalize(order_base):
             # 調整を行う（Rangeを最低の0.02に設定し、そこから改めてLC＿Priceを算出する）
             print("  ★★LC価格とTarget価格が同値となったため、調整あり(0.02)")
             order_base['lc_range'] = 0.02
-            order_base['lc_price'] = order_base['target_price'] - (order_base['lc_range'] * order_base['expected_direction'])
+            order_base['lc_price'] = order_base['target_price'] - (
+                        order_base['lc_range'] * order_base['expected_direction'])
         else:
             # 調整なしでOK
             order_base['lc_price'] = order_base['lc']
@@ -111,6 +120,11 @@ def order_finalize(order_base):
         # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
         order_base['lc_price'] = order_base['target_price'] - (order_base['lc'] * order_base['expected_direction'])
         order_base['lc_range'] = order_base['lc']
+
+    # 最終的にオーダーで必要な情報を付与する(項目名を整えるためにコピーするだけ）。LimitかStopかを算出
+    order_base['type'] = "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT"
+    order_base['direction'] = order_base['expected_direction']
+    order_base['price'] = order_base['target_price']
 
     return order_base
 
@@ -224,6 +238,7 @@ def size_compare(after_change, before_change, min_range, max_range):
 #     return peaks
 #
 
+
 def judge_list_or_data_frame(*args):
     """
     各解析関数から呼ばれる。各解析関数が検証から呼ばれているか、本番から呼ばれているかを判定する
@@ -270,6 +285,54 @@ def judge_list_or_data_frame(*args):
     return {"param_mode": param_mode, "peaks": peaks, "df_r": args[0]}
 
 
+def judge_list_or_data_frame_4peaks(*args):
+    """
+    各解析関数から呼ばれる。各解析関数が検証から呼ばれているか、本番から呼ばれているかを判定する
+    第二引数存在し、かつそれがpeaks辞書の配列ではない場合、パラメータモードとする
+    :param args: 以下３種類
+        データフレームのみ→検証
+        データフレーム＋Paramsの辞書(辞書配列ではない）　→検証（ループ）
+        データフレーム＋Peaksの配列　→本番　（時短の為、ピークの再計算を行いたくない）
+    :return: {"peaks":peaks, "param_mode":boolean(paramがある時のみ)}
+    """
+    print(" モード検証")
+    # print(len(args))
+    # print(args)
+    # print(args[1])
+    if len(args) == 2:
+        # ２つある場合は、より深い判定が必要
+        if isinstance(args[1], list):  # "time" in args[1][0]:
+            # 配列が渡されているとき、それはピークスである。そして実践モード
+            param_mode = False
+            inspection_mode = False
+        else:
+            # 配列の先頭の辞書にTimeを含まない場合、それはParamである。そして検証モード
+            param_mode = True
+            inspection_mode = True
+    else:
+        # １つの場合は、パラむモードではない。そして検証モード
+        param_mode = False
+        inspection_mode = True
+
+    if inspection_mode:
+        print("       -検証モード（データフレームからピークスを算出)")
+        peaks_info = p.peaks_collect_main(args[0][:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+        peaks = peaks_info['all_peaks']
+        print("  <対象>")
+        print("  LATEST", peaks[0])
+        print("  RIVER", peaks[1])
+        print("  TURN ", peaks[2])
+        print("  FLOP3", peaks[3])
+        print("　　　価格整合性調査:", args[0].iloc[0]['open'], args[0].iloc[1]['close'], peaks[0]['peak'])
+    else:
+        # 運用モードでは、元々ピークスが渡されているので、そのまま返却する
+        print("      -運用モード")
+        peaks = args[1]
+
+    return {"param_mode": param_mode, "peaks": peaks, "df_r": args[0]}
+
+
+
 def DoublePeakBreak_formed_in_past(df_r):
     """
     通常のDublePeakBreakを検証するさい、５分ごとに連続して成立する可能性あり。（運用だと繰り返しのオーダーが入る）
@@ -302,7 +365,7 @@ def DoublePeakBreak_formed_in_past(df_r):
     t_gap = 0.12  # ターンは長すぎる(gap)と、戻しが強すぎるため、この値以下にしておきたい。出来れば８くらい・・？
     stop_or_limit = 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
     d = 1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
-    #（４）判定
+    # （４）判定
     take_position_flag = False  # ポジションフラグを初期値でFalseにする
     # リバー数で最初の判定（ネストを深くしないため、外に出した）
     if 4 <= flop3['count']:
@@ -313,7 +376,7 @@ def DoublePeakBreak_formed_in_past(df_r):
             else:
                 print("   不成立(リバー関係)")
         else:
-            print("   不成立(ターン関係)", turn['gap'],turn['count'])
+            print("   不成立(ターン関係)", turn['gap'], turn['count'])
     else:
         print("   　不成立（フロップカウント）")
 
@@ -358,7 +421,7 @@ def DoublePeakBreak(*args):
     flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
     param_mode = mode_judge['param_mode']
     df_r = mode_judge['df_r']
-    formed_in_past = DoublePeakBreak_formed_in_past(df_r[1:])   # 【特殊】ひとつ前の足でも試す
+    formed_in_past = DoublePeakBreak_formed_in_past(df_r[1:])  # 【特殊】ひとつ前の足でも試す
     # (2)情報を変数に取得する
     # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
     size_ans = size_compare(river["gap"], turn["gap"], 0.1, 0.3)
@@ -379,26 +442,26 @@ def DoublePeakBreak(*args):
 
     # (3)パラメータ指定。常実行時は数字の直接指定。paramsがある場合（ループ検証）の場合は、パラメーターを引数から取得する(args[1]=params)
     # ①　パラメータを設定する
-    tf_max = args[1]['tf_ratio_max'] if param_mode else 0.8  # 0.6
+    tf_max = args[1]['tf_ratio_max'] if param_mode else 0.6  # 0.6
     rt_min = args[1]['rt_ratio_min'] if param_mode else 1.0  #
     rt_max = args[1]['rt_ratio_max'] if param_mode else 2.0  #
-    position_margin = args[1]['margin'] if param_mode else 0.02  #
-    tp = turn['peak']
-    lc = turn['peak']
+    position_margin = args[1]['margin'] if param_mode else 0.013  #
+    tp = river['gap']
+    lc = river['gap']
     t_count = 2  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
     t_gap = 0.13  # ターンは長すぎる(gap)と、戻しが強すぎるため、この値以下にしておきたい。出来れば８くらい・・？
     stop_or_limit = args[1]['sl'] if param_mode else 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
     d = args[1]['d'] if param_mode else 1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
     # ②オーダーのベースを組み立てる（オーダ発行の元にするため、返却が必要な値。target_price等の算出）
-    order_base = order_finalize({"stop_or_limit": stop_or_limit,
-                                 "expected_direction": river['direction'] * d,
-                                 "decision_time": river['time'],
-                                 "decision_price": river['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
-                                 "target": position_margin,  # 価格かマージンかを入れることが出来る
-                                 "lc": lc,
-                                 "tp": tp,
-                                 })
-    print(order_base)
+    order_base = order_finalize(
+        {"stop_or_limit": stop_or_limit,
+         "expected_direction": river['direction'] * d,
+         "decision_time": river['time'],
+         "decision_price": river['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
+         "target": flop3['peak'],  # 価格かマージンかを入れることが出来る
+         "lc": lc,
+         "tp": tp,}
+    )
 
     # (3)★★判定部
     take_position_flag = False  # ポジションフラグを初期値でFalseにする
@@ -411,18 +474,19 @@ def DoublePeakBreak(*args):
             else:
                 print("   不成立(リバー関係)")
         else:
-            print("   不成立(ターン関係)", turn['gap'],turn['count'])
+            print("   不成立(ターン関係)", turn['gap'], turn['count'])
     else:
         print("   　不成立（フロップカウント）", flop3['count'])
 
-    print("   情報 tf:", turn_flop3_ratio, "%(<", tf_max, "),rt:(", rt_min, "<)" ,river_turn_ratio, "%(<", rt_max, "),",
-                    "rt_gap:", abs(river_turn_gap), "(<", 0, "), t_gap", turn['gap'], "(<", t_gap,"),", flop3['gap'])
+    print("   情報 tf:", turn_flop3_ratio, "%(<", tf_max, "),rt:(", rt_min, "<)", river_turn_ratio, "%(<", rt_max, "),",
+          "rt_gap:", abs(river_turn_gap), "(<", 0, "), t_gap", turn['gap'], "(<", t_gap, "),", flop3['gap'])
 
     # (3) ★★判定部2(過去数個のピークの中で、フロップのピークが頂点かどうか(フロップが傾きマイナスなら最低値、逆なら最高値か）
+    # Breakの場合だと、逆に最ピークじゃない方が抜けやすい？
     peak_of_peak = peak_of_peak_judgement(peaks[3:10], flop3, df_r)
     # ダブルトップの成立判定
     if not peak_of_peak:
-        # flop3が頂点ではなかった場合、信用できないダブルトップ。
+        # flop3が頂点だった場合、戻る予想なのでBreakには向いていない。
         if take_position_flag:
             take_position_flag = False
             print("    ■TakePositionFlagを解除（最ピークでないため）")
@@ -447,34 +511,22 @@ def DoublePeakBreak(*args):
     print("   決心価格", order_base['decision_price'], "決心時間", order_base['decision_time'])
     print("   注文価格", order_base['target_price'], "向とSL", order_base['expected_direction'], stop_or_limit)
     exe_orders = [
-        {  # オーダー１を作成
-            "name": "MarginS-TPS",
+        order_finalize({  # オーダー２を作成
+            "name": "DoublePeakBreak(Riv順）",
             "order_permission": True,
-            "target_price": order_base['decision_price'] + (0.008 * order_base['expected_direction'] * order_base['stop_or_limit']),
-            "tp_range": order_base['tp_range'] * 0.8,
-            "lc_range": order_base['lc_range'],
+            "decision_price": river['peak'],  # ★
+            "target": river['peak'] + (position_margin * river['direction']),  # 価格でする
+            "decision_time": 0,  #
+            "tp": 0.10,
+            "lc": 0.03,
             "units": 10,
-            "direction": order_base['expected_direction'],
-            "type": "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT",
-            "trade_timeout": 1800,
-            "remark": "test",
-            "tr_range": 0,
-            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
-        },
-        {  # オーダー２を作成
-            "name": "Margin_B-TP_B",
-            "order_permission": True,
-            "target_price": order_base['decision_price'] + (0.03 * order_base['expected_direction'] * order_base['stop_or_limit']),
-            "tp_range": order_base['tp_range'] * 3,
-            "lc_range": order_base['lc_range'],
-            "units": 20,
-            "direction": order_base['expected_direction'],
-            "type": "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT",   # 1が順張り、-1が逆張り
+            "expected_direction": river['direction'],
+            "stop_or_limit": 1,  # ★順張り
             "trade_timeout": 1800,
             "remark": "test",
             "tr_range": 0.05,
-            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
-        }
+            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.01}
+        })
     ]
 
     return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
@@ -507,6 +559,9 @@ def DoublePeak(*args):
        　　23pips　   /\  /
            フロップ→ /  \/  ← 7pipsまで(リバー)
           　　　　　/　　　　　　　　　←ピークの反対くらいがLC？
+    　　トラップライン
+    　　・ターンのピークオールド起点でリバーの逆方向（逆張り）
+    　　・ターンのピーク起点でリバーの逆方向（順張り）
        ルール一覧
        ・ターンが小さい、または、少ない場合、ダブルトップポイントを瞬間的に突破する回数が多い為NGとしたい。、
        　その為、ターンは３足分以上かつ、2pips以上とする。
@@ -561,9 +616,9 @@ def DoublePeak(*args):
                                  "expected_direction": river['direction'] * d,
                                  "decision_time": river['time'],
                                  "decision_price": river['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
-                                 "target": position_margin,  # 価格かマージンかを入れることが出来る
+                                 "target": turn['peak'] + (0.01 * river['direction']),  # 価格かマージンかを入れることが出来る
                                  "lc": lc,
-                                 "tp": 0.2, #tp,
+                                 "tp": tp,  # tp,
                                  })
 
     # (3)★★判定部
@@ -577,12 +632,12 @@ def DoublePeak(*args):
             else:
                 print("   不成立(リバー関係)")
         else:
-            print("   不成立(ターン関係)", turn['gap'],turn['count'])
+            print("   不成立(ターン関係)", turn['gap'], turn['count'])
     else:
         print("   　不成立（フロップカウント）")
 
-    print("   情報 tf:", turn_flop3_ratio, "%(<", tf_max, "),rt:(", rt_min, "<)" ,river_turn_ratio, "%(<", rt_max, "),",
-                    "rt_gap:", abs(river_turn_gap), "(<", 0, "), t_gap", turn['gap'], "(<", t_gap,"),", flop3['gap'])
+    print("   情報 tf:", turn_flop3_ratio, "%(<", tf_max, "),rt:(", rt_min, "<)", river_turn_ratio, "%(<", rt_max, "),",
+          "rt_gap:", abs(river_turn_gap), "(<", 0, "), t_gap", turn['gap'], "(<", t_gap, "),", flop3['gap'])
 
     # ②判定部2(過去数個のピークの中で、フロップのピークが頂点かどうか(フロップが傾きマイナスなら最低値、逆なら最高値か）
     peak_of_peak = peak_of_peak_judgement(peaks[3:10], flop3, df_r)
@@ -607,34 +662,38 @@ def DoublePeak(*args):
     print("   決心価格", order_base['decision_price'], "決心時間", order_base['decision_time'])
     print("   注文価格", order_base['target_price'], "向とSL", order_base['expected_direction'], stop_or_limit)
     exe_orders = [
-        {  # オーダー１を作成
-            "name": "DoublePeak",
+        order_finalize({  # オーダー２を作成
+            "name": "DoublePeak(ダブル抵抗）",
             "order_permission": True,
-            "target_price": order_base['target_price'],
-            "tp_range": order_base['tp_range'],
-            "lc_range": order_base['lc_range'],
-            "units": 20,
-            "direction": order_base['expected_direction'],
-            "type": "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT",
-            "trade_timeout": 1800,
-            "remark": "test",
-            "tr_range": 0.05,
-            "lc_change": {"lc_change_exe": True, "lc_trigger_range": tp * 0.7, "lc_ensure_range": 0.1}
-        },
-        {  # オーダー２を作成
-            "name": "DoublePeak-r(break)",
-            "order_permission": True,
-            "target_price": order_base['decision_price'] + (0.03 * order_base['expected_direction'] * order_base['stop_or_limit']),
-            "tp_range": order_base['tp_range'],
-            "lc_range": order_base['lc_range'],
+            "decision_price": river['peak'],  # ★
+            "target": turn['peak'] + (0.01 * river['direction'] * -1),  # 価格でする
+            "decision_time": 0,  #
+            "tp": 0.10,
+            "lc": 0.03,
             "units": 10,
-            "direction": order_base['expected_direction'] * 1,
-            "type": "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT",   # 1が順張り、-1が逆張り
+            "expected_direction": river['direction'] * -1,
+            "stop_or_limit": 1,  # ★順張り
             "trade_timeout": 1800,
             "remark": "test",
             "tr_range": 0.05,
-            "lc_change": {"lc_change_exe": True, "lc_trigger_range": tp * 0.7, "lc_ensure_range": 0.1}
-        }
+            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.01}
+        }),
+        order_finalize({
+            "name": "DoublePeak(ダブル突破）",
+            "order_permission": True,
+            "decision_price": river['peak'],  # ★
+            "target": flop3['peak'] + (0.01 * river['direction']),  # 価格でする
+            "decision_time": 0,  #
+            "tp": 0.10,
+            "lc": 0.03,
+            "units": 10,
+            "expected_direction": river['direction'],
+            "stop_or_limit": 1,  # ★
+            "trade_timeout": 1800,
+            "remark": "test",
+            "tr_range": 0.05,
+            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.02}
+        })
     ]
 
     return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
@@ -664,9 +723,9 @@ def wrapUp(df_r):
     print("  FLOP3", flop3)
     peaks_times = "◇River:" + \
                   f.delYear(river['time']) + "-" + f.delYear(river['time_old']) + "(" + str(river['direction']) + ")" \
-                  "◇Turn:" + \
+                                                                                                                  "◇Turn:" + \
                   f.delYear(turn['time']) + "-" + f.delYear(turn['time_old']) + "(" + str(turn['direction']) + ")" \
-                  "◇FLOP三" + \
+                                                                                                               "◇FLOP三" + \
                   f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
 
     # （１）beforeDoublePeakについて
@@ -674,7 +733,7 @@ def wrapUp(df_r):
     # beforeDoublePeak_ans = beforeDoublePeak(df_r, peaks)
     #
     # # (2)ダブルトップポイントをリバーが大きく通過している場合。TF＜0.4、RT＞1.3
-    # beforeDoublePeakBreak_ans = DoublePeakBreak(df_r, peaks)
+    DoublePeakBreak_ans = DoublePeakBreak(df_r, peaks)
 
     # (3)ダブルトップ（これはピークが１０個必要。過去のデータを比べて最ピークかどうかを確認したいため）
     doublePeak_ans = DoublePeak(df_r, peaks)
@@ -682,8 +741,8 @@ def wrapUp(df_r):
     # 【オーダーを統合する】  現状同時に成立しない仕様。
     if doublePeak_ans['take_position_flag']:
         order_information = doublePeak_ans
-    # elif doublePeak_ans['take_position_flag']:
-    #     order_information = beforeDoublePeakBreak_ans  # オーダー発行情報のみを返却する
+    elif DoublePeakBreak_ans['take_position_flag']:
+        order_information = DoublePeakBreak_ans  # オーダー発行情報のみを返却する
     else:
         # 何もない場合はPositionFlagをFalseにして返す
         order_information = {"take_position_flag": False}
@@ -717,9 +776,9 @@ def triplePeaks(*args):
     flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
     peaks_times = "◇River:" + \
                   f.delYear(river['time']) + "-" + f.delYear(river['time_old']) + "(" + str(river['direction']) + ")" \
-                  "◇Turn:" + \
+                                                                                                                  "◇Turn:" + \
                   f.delYear(turn['time']) + "-" + f.delYear(turn['time_old']) + "(" + str(turn['direction']) + ")" \
-                  "◇FLOP三" + \
+                                                                                                               "◇FLOP三" + \
                   f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
     print("  <対象>")
     print("  RIVER", river)
@@ -861,7 +920,7 @@ def triplePeaks(*args):
             #    /  \  /  ↑
             #   /    \/
             #  /
-            position_margin = margin_for_flag   # 予め計算しておいたターン起点の少し手前までのマージン
+            position_margin = margin_for_flag  # 予め計算しておいたターン起点の少し手前までのマージン
             expected_direction = river['direction'] * -1  # リバーと逆
             stop_or_limit = -1
             tp_range = turn['gap'] * 0.7  # ターンの価格終わり(ちょっと手前)を目標(ターンの７掛け目安）
@@ -915,7 +974,7 @@ def triplePeaks(*args):
 
     print("    ", console_comment)
     print("   情報 tf:", turn_flop3_ratio, "(", turn_flop3_gap, ")", "rt:", river_turn_ratio, "(", river_turn_gap, ")",
-                    "f_gap:", flop3['gap'], "t_gap:", turn['gap'], "r_gap:", river['gap'])
+          "f_gap:", flop3['gap'], "t_gap:", turn['gap'], "r_gap:", river['gap'])
 
     # 集計
     target_price = df_r_part.iloc[0]['open'] + (position_margin * expected_direction * stop_or_limit)
@@ -930,8 +989,8 @@ def triplePeaks(*args):
         "position_margin": position_margin,  # position_margin (+値は猶予大）
         "stop_or_limit": stop_or_limit,
         "target_price": target_price,  # 直接使うこともあるが、マージンを数種類で実行する場合、渡し先で再計算する場合もあり。
-        "lc_range": lc_range, # 0.04,  # ロスカットレンジ（ポジションの取得有無は無関係）
-        "tp_range": tp_range, #0.06,  # 利確レンジ（ポジションの取得有無は無関係）
+        "lc_range": lc_range,  # 0.04,  # ロスカットレンジ（ポジションの取得有無は無関係）
+        "tp_range": tp_range,  # 0.06,  # 利確レンジ（ポジションの取得有無は無関係）
         "expected_direction": expected_direction,
         # 以下参考項目
         "console_comment": console_comment
@@ -956,7 +1015,9 @@ def triplePeaks(*args):
         {
             "name": console_comment,
             "order_permission": True,
-            "target_price": order_base_information['decision_price'] + (0.03 * (order_base_information['expected_direction']) * order_base_information['stop_or_limit']),
+            "target_price": order_base_information['decision_price'] + (
+                        0.03 * (order_base_information['expected_direction']) * order_base_information[
+                    'stop_or_limit']),
             "tp_range": tp_range,
             "lc_range": lc_range,
             "units": 10,
@@ -970,7 +1031,9 @@ def triplePeaks(*args):
         {
             "name": console_comment,
             "order_permission": True,
-            "target_price": order_base_information['decision_price'] + (0.03 * (order_base_information['expected_direction'] * -1) * order_base_information['stop_or_limit']),
+            "target_price": order_base_information['decision_price'] + (
+                        0.03 * (order_base_information['expected_direction'] * -1) * order_base_information[
+                    'stop_or_limit']),
             "tp_range": tp_range,
             "lc_range": lc_range,
             "units": 10,
@@ -989,6 +1052,168 @@ def triplePeaks(*args):
     }
 
 
+def DoublePeak_4peaks(*args):
+    """
+    ★ピークスは１０個必要
+    １）引数について。　引数は全３パターン。
+    ①データフレームだけが来る。これはAnalysisから呼び出され、データフレームからピークスを算出後に、本関数メインの判定処理を実施。
+    ②データフレームと条件配列(param)の２つが来る。これはAnalysisMultiから呼ばれている。基本は①と同様だが、条件ごとにループ検証を行う。
+    ③ピークス(peaks_collect_mainの返り値内の,["all_peaks"])とデータフレームが。Total実行の関数から呼び出され、本関数メインの判定処理を実施。
+    なお①②において、
+    データフレーム：ローソク情報(逆順[直近が上の方にある＝時間降順])データフレーム
+    条件(param) ：ループ検証時のパラメータ群(ループ検証の時のみ入ってくる）
+    例→params_arr = [
+        {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2}
+        {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2}
+    ]
+    ③においてピークスは、peaks_collect_mainの返り値内の,["all_peaks"]が対象。
+    ＜まとめ＞いかなる場合もargs[0]はデータフレームまたはPeaksとなり、[1]以降がオプションとなる。
+    ２）ロジックについて
+    ＜ロジック概要＞ダブルトップを頂点とし、そこから戻る方向にポジションする。
+                      ↓ ターン
+       　　     　   /\  /\ ←レイテスト
+        　フロップ3→ /  \/ ←リバー
+         　 　　　　/　　　　　　　　　←ピークの反対くらいがLC？
+    　　レイテストのCountが２に限定する（リバーが確定するタイミング）
 
+    :return:　必須最低限　{"take_position_flag": boolean} の返却は必須。さらにTrueの場合注文情報が必要。
+    """
+    # print(args)
+    print("  ■ダブルトップ(4ピーク)")
+    # (1)ピークスを取得（引数か処理）。この関数ではPeaksの情報を元にし、Dfは使わない。
+    # ①必要最低限の項目たちを取得する
+    mode_judge = judge_list_or_data_frame_4peaks(*args)  # ピークスを確保。モードを問わない共通処理。args[0]はデータフレームまたはPeaksList。
+    peaks = mode_judge['peaks']
+    latest = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    river = peaks[1]  # ピーク（リバーと呼ぶ）
+    turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
+    flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
+    param_mode = mode_judge['param_mode']
+    df_r = mode_judge['df_r']
+    # (2)情報を変数に取得する
+    # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
+    size_ans = size_compare(river["gap"], turn["gap"], 0.1, 0.3)
+    river_turn_gap = round(size_ans['gap'], 3)
+    river_turn_ratio = size_ans['size_compare_ratio']
+    # ①ターンのフロップ３に対する割合を取得（〇%に小さくなっていることを想定）
+    size_ans = size_compare(turn["gap"], flop3["gap"], 0.1, 0.3)
+    turn_flop3_ratio = size_ans['size_compare_ratio']
+    # ②記録用の情報を組み立てる（検証のアウトプット用）この情報は、成立有無関係なく生成可能。
+    records = {
+        "river_turn_ratio": river_turn_ratio,
+        "turn_flop3_ratio": turn_flop3_ratio,
+        "peak_river": river['count'],
+        "river_turn_gap": river_turn_gap,
+        "tp_base": turn['gap'] - river['gap'],
+    }
 
+    # (3)パラメータ指定。常実行時は数字の直接指定。paramsがある場合（ループ検証）の場合は、パラメーターを引数から取得する(args[1]=params)
+    # ①　パラメータを設定する
+    if param_mode: # turn['peak']はダブルトップBreakしない(river逆)
+        if args[1]["p"] == "turn":
+            target = turn['peak'] + (args[1]['margin'] * river['direction'])  # 抵抗側
+        else:
+            target = flop3['peak'] + (args[1]['margin'] * river['direction'])  # 突破側
+    else:
+        target = turn['peak'] + (args[1]['margin'] * river['direction'])
+    tf_max = args[1]['tf_ratio_max'] if param_mode else 0.8  # 0.6
+    rt_min = args[1]['rt_ratio_min'] if param_mode else 0.7  #
+    rt_max = args[1]['rt_ratio_max'] if param_mode else 1.0  #
+    position_margin = args[1]['margin'] if param_mode else 0.02
+    tp = f.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
+    lc = f.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
+    t_count = 2  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
+    t_gap = 0.12  # ターンは長すぎる(gap)と、戻しが強すぎるため、この値以下にしておきたい。出来れば８くらい・・？
+    stop_or_limit = args[1]['sl'] if param_mode else 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
+    d = args[1]['d'] if param_mode else -1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
+    # ②オーダーのベースを組み立てる（オーダ発行の元にするため、返却が必要な値。target_price等の算出）
+    order_base = order_finalize({"stop_or_limit": stop_or_limit,
+                                 "expected_direction": river['direction'] * d,
+                                 "decision_time": river['time'],
+                                 "decision_price": river['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
+                                 "target": target,  # turn['peak'] + (0.00 * river['direction']),  # 価格かマージンかを入れることが出来る
+                                 "lc": lc,
+                                 "tp": tp,  # tp,
+                                 })
 
+    # (3)★★判定部
+    take_position_flag = False  # ポジションフラグを初期値でFalseにする
+    # ①形状の判定
+    if 4 <= flop3['count'] and latest['count'] == 2:
+        if turn_flop3_ratio < tf_max and 0.012 < turn['gap'] and t_count <= turn['count']:  # ターンの情報
+            if rt_min < river_turn_ratio < rt_max:  # リバーについて（リバー比）
+                take_position_flag = True
+                print("   ■■ダブルトップ完成")
+            else:
+                print("   不成立(リバー関係)")
+        else:
+            print("   不成立(ターン関係)", turn['gap'], turn['count'])
+    else:
+        print("   　不成立（フロップAndリバーカウント）")
+
+    print("   情報 tf:", turn_flop3_ratio, "%(<", tf_max, "),rt:(", rt_min, "<)", river_turn_ratio, "%(<", rt_max, "),",
+          "rt_gap:", abs(river_turn_gap), "(<", 0, "), t_gap", turn['gap'], "(<", t_gap, "),", flop3['gap'])
+
+    # ②判定部2(過去数個のピークの中で、フロップのピークが頂点かどうか(フロップが傾きマイナスなら最低値、逆なら最高値か）
+    peak_of_peak = peak_of_peak_judgement(peaks[3:10], flop3, df_r)
+
+    # ③ダブルトップの成立判定
+    if not peak_of_peak:
+        # flop3が頂点ではなかった場合、信用できないダブルトップ。
+        if take_position_flag:
+            take_position_flag = False
+            print("    ■TakePositionFlagを解除（最ピークでないため）")
+
+    # (4) ★★オーダーのベースを生成する（検証で利用するのはこのオブジェクト）
+    # ①オーダー無し時は除外
+    if not take_position_flag:  # ポジションフラグがFalseの場合は、返却をして終了
+        return {  # フラグ無しの場合、オーダー以外を返却。
+            "take_position_flag": take_position_flag,
+            "order_base": order_base,  # 検証で利用する。
+            "records": records  # 記録軍。CSV保存時に出力して解析ができるように。
+        }
+
+    # ②★★実オーダーを組み立てる（成立時のみ生成）
+    print("   決心価格", order_base['decision_price'], "決心時間", order_base['decision_time'])
+    print("   注文価格", order_base['target_price'], "向とSL", order_base['expected_direction'], stop_or_limit)
+    exe_orders = [
+        order_finalize({  # オーダー２を作成
+            "name": "DoublePeak４(ダブルピーク抵抗）",
+            "order_permission": True,
+            "decision_price": river['peak'],  # ★
+            "target": turn['peak'] + (0.01 * river['direction'] * -1),  # 価格でする
+            "decision_time": 0,  #
+            "tp": 0.10,
+            "lc": 0.03,
+            "units": 10,
+            "expected_direction": river['direction'] * -1,
+            "stop_or_limit": 1,  # ★順張り
+            "trade_timeout": 1800,
+            "remark": "test",
+            "tr_range": 0.05,
+            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.02, "lc_ensure_range": 0.01}
+        }),
+        order_finalize({
+            "name": "DoublePeak４(ダブルピーク突破）",
+            "order_permission": True,
+            "decision_price": river['peak'],  # ★
+            "target": flop3['peak'] + (0.01 * river['direction']),  # 価格でする
+            "decision_time": 0,  #
+            "tp": 0.10,
+            "lc": 0.03,
+            "units": 10,
+            "expected_direction": river['direction'],
+            "stop_or_limit": 1,  # ★
+            "trade_timeout": 1800,
+            "remark": "test",
+            "tr_range": 0.05,
+            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.02, "lc_ensure_range": 0.01}
+        })
+    ]
+
+    return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
+        "take_position_flag": take_position_flag,
+        "order_base": order_base,  # 検証で利用する。
+        "exe_orders": exe_orders,  # 発行するオーダー。このままオーダーを発行できる状態
+        "records": records  # 記録軍。CSV保存時に出力して解析ができるように。
+    }

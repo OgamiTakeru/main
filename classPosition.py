@@ -596,11 +596,17 @@ class order_information:
 
         # ■実行処理
         # 経過時間、または、プラス分に応じてLCの変更（主に底上げ）を実施する
-        if self.t_time_past > 10:  # N秒以上経過している場合、ロスカ引き上げ
+        if self.t_time_past > 60:  # N秒以上経過している場合、ロスカ引き上げ
             # ボーダーラインを超えた場合
-            # print(" 変更確認", self.t_pl_u, ">", lc_trigger_range, "を満たしたとき")
-            if self.t_pl_u > lc_trigger_range:
-                # print("　★変更確定")
+            print(" 変更確認", self.t_pl_u, ">=", lc_trigger_range, "を満たしたとき")
+            if self.t_pl_u >= lc_trigger_range:
+                print("  変更OK")
+            else:
+                print("  変更NG", self.t_pl_u, ">=", lc_trigger_range, type(self.t_pl_u), type(lc_trigger_range))
+                print("  FalseTrue", self.t_pl_u >= lc_trigger_range)
+
+            if self.t_pl_u >= lc_trigger_range:
+                print("　★変更確定")
                 new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan['ask_bid']), 3)
                 data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
                 res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行

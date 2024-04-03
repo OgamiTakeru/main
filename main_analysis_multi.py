@@ -21,7 +21,8 @@ def analysis_part(df_r, params):
     # print("★★解析パート")
     # return dp.turn1Rule(df_r)
     # return dp.beforeDoublePeak(df_r, params)
-    return dp.DoublePeak(df_r, params)
+    # return dp.DoublePeak(df_r, params)
+    return dp.DoublePeak_4peaks(df_r, params)
     # return dp.DoublePeakBreak(df_r, params)
     # return dp.now_position(df_r)
     # prac.turn_inspection_main(df_r)
@@ -372,7 +373,6 @@ def main(params, params_i):
         return 0
 
     fd_forview = ans_df[ans_df["take_position_flag"] == True]  # 取引フラグありのみを抽出
-    print(fd_forview)
     if len(fd_forview) == 0:
         print("   なにもなし")
         # あんまり書きたくないけど、なんか書かないとエラーになる事が多いんので（値が入ってないとかそういう系の）
@@ -419,10 +419,22 @@ params_arr = [  # t_type は順張りか逆張りか。rtはリバーターン�
     # {"tf_ratio_max": 0.6, "rt_ratio_min": 0.9, "rt_ratio_max": 1.4, "margin": 0.01, "sl": 1, "d": 1},
     # {"tf_ratio_max": 0.6, "rt_ratio_min": 0.9, "rt_ratio_max": 1.4, "margin": 0.01, "sl": 1, "d": -1},
     # DoublePeak用
-    {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1},
-    {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.04, "sl": 1, "d": 1},
-    {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": -1, "d": -1},
-    {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.04, "sl": -1, "d": -1},
+    # {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1},
+    # {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": -1},
+    # {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": -1, "d": -1},
+    # {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.04, "sl": -1, "d": -1},
+    # {"tf_ratio_max": 0.5, "rt_ratio_min": 0.4, "rt_ratio_max": 1.0, "margin": 0.03, "sl": 1, "d": 1},
+    # {"tf_ratio_max": 0.3, "rt_ratio_min": 0.8, "rt_ratio_max": 1.0, "margin": 0.03, "sl": 1, "d": 1},
+    # {"tf_ratio_max": 0.5, "rt_ratio_min": 0.4, "rt_ratio_max": 1.0, "margin": 0.03, "sl": -1, "d": -1},
+    # {"tf_ratio_max": 0.3, "rt_ratio_min": 0.8, "rt_ratio_max": 1.0, "margin": 0.03, "sl": -1, "d": -1},
+    # DoublePeak4用
+    {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1, "p": "river"},
+    {"tf_ratio_max": 0.4, "rt_ratio_min": 0.4, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1, "p": "river"},
+    {"tf_ratio_max": 0.4, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1, "p": "river"},
+    {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": -1, "p": "turn"},
+    {"tf_ratio_max": 0.4, "rt_ratio_min": 0.4, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": -1, "p": "turn"},
+    {"tf_ratio_max": 0.4, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": -1, "p": "turn"},
+
     # DoublePeakBreak用
     # {"tf_ratio_max": 0.8, "rt_ratio_min": 1.0, "rt_ratio_max": 2, "margin": 0.02, "sl": 1, "d": 1},
     # {"tf_ratio_max": 0.8, "rt_ratio_min": 1.0, "rt_ratio_max": 2, "margin": 0.04, "sl": 1, "d": 1},
@@ -436,8 +448,8 @@ params_arr = [  # t_type は順張りか逆張りか。rtはリバーターン�
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 1000
-gl_times = 1  # Count(最大5000件）を何セット取るか
+gl_count = 5000
+gl_times = 3  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
@@ -468,7 +480,3 @@ for i in range(len(params_arr)):
     print("tp_times", multi_answers[i]["tp_times"], "lc_times", multi_answers[i]["lc_times"])
     print("real_plus", multi_answers[i]["real_plus"], "real_minus", multi_answers[i]["real_minus"])
 tk.line_send("FIN")
-
-
-
-
