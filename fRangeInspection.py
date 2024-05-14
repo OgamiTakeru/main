@@ -1,41 +1,20 @@
-import pandas as pd
-import threading  # 定時実行用
-import time
-import datetime
-import fTurnInspection as t  # とりあえずの関数集
-import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
-import classOanda as classOanda
-import making as mk
+import fPeakLineInspection as p  # とりあえずの関数集
 import fGeneric as f
 import fDoublePeaks as dp
-import classPosition as classPosition
-import fPeakLineInspection as p
-
-# グローバルでの宣言
-oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
-now_price_dic = oa.NowPrice_exe("USD_JPY")
-now_price = now_price_dic['data']['mid']
-print(now_price)
-gl_start_time = datetime.datetime.now()
-# クラスの定義
-classes = []
-for i in range(3):
-    # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
-    # クラス名を確定し、クラスを生成する。
-    new_name = "c" + str(i)
-    classes.append(classPosition.order_information(new_name, oa))  # 順思想のオーダーを入れるクラス
 
 
-def test(df_r):
+def latest_move_horizon(df_r):
     """
-    直近のピーク価格について調査する
+    直近の４個くらいが、ギザギザしながら、水平に近い動きをしているか
+    直近から４個分のPeaksで、
+    ・
     :param df_r:
     :return:
     """
-    # 準備部分（表示や、ピークスの算出を行う）
-    target_df = df_r[0:11]
+    target_df = df_r[0:36]
     peaks_info = p.peaks_collect_main(df_r, 10)
     peaks_all = peaks_info["all_peaks"]
+    print(" レンジインスペクション(latest_Move)")
     print(target_df.head(1))
     print(target_df.tail(1))
     f.print_arr(peaks_all)
@@ -46,7 +25,83 @@ def test(df_r):
     # を実施する
     high = target_df["inner_high"].max()
     low = target_df["inner_low"].min()
-    print("　　価格範囲", high- low, high, low)
+    high_ave = target_df["inner_high"].mean()
+    low_ave = target_df["inner_low"].mean()
+
+
+    # (1) 直近のピークが再出現値か
+    latest_peak = peaks_all[0]['peak']
+    latest_dir = peaks_all[0]['direction']
+    latest_time = peaks_all[0]['time']
+    print("　　latestPeakInfo", latest_peak, latest_dir)
+
+
+def latest_move_type(df_r):
+    """
+    直近の動きの激しさを検証する
+    直近から４個分のPeaksで、
+    ・Gapがすべて4pips以内の場合、平坦な動きとする。
+    ・Countが全て３以内の場合、平坦な動きとする
+    :param df_r:
+    :return:
+    """
+    target_df = df_r[0:36]
+    peaks_info = p.peaks_collect_main(df_r, 10)
+    peaks_all = peaks_info["all_peaks"]
+    print(" レンジインスペクション(latest_Move)")
+    print(target_df.head(1))
+    print(target_df.tail(1))
+    f.print_arr(peaks_all)
+
+    # Gapの検証
+    # GAP が少ない場合、トラリピ含めて狙いにくい。
+    max_peak_updown = 0
+    for i in range(3):  # 3ピーク分検証
+        # print(peaks_all[i]['gap'])
+        if peaks_all[i]['gap'] > max_peak_updown:
+            max_peak_updown = peaks_all[i]['gap']
+
+    if max_peak_updown <= 0.04:
+        print("  直近は縦には平坦な値動き", max_peak_updown)
+    else:
+        print("  オーダー入れることが出来る動き", max_peak_updown)
+
+    # Countの検証(あまり関係ないかも？？）
+    # max_peak_count = 0
+    # for i in range(3):  # 3ピーク分検証
+    #     # print(peaks_all[i]['gap'])
+    #     if peaks_all[i]['count'] > max_peak_count:
+    #         max_peak_count = peaks_all[i]['count']
+    # if max_peak_count <= 3:
+    #     print("  直近はカウントには平坦な値動き", max_peak_count)
+    # else:
+    #     print("  オーダー入れることが出来る動き", max_peak_count)
+
+
+def test(df_r):
+    """
+    直近のピーク価格について調査する
+    :param df_r:
+    :return:
+    """
+    # 準備部分（表示や、ピークスの算出を行う）
+    target_df = df_r[0:36]
+    peaks_info = p.peaks_collect_main(df_r, 10)
+    peaks_all = peaks_info["all_peaks"]
+    print(" レンジインスペクション")
+    print(target_df.head(1))
+    print(target_df.tail(1))
+    f.print_arr(peaks_all)
+
+    # (0)最高値と最低値を取得
+    # ・現在のピークがどの高さにいるか
+    # ・どの価格帯が、濃いかを算出
+    # を実施する
+    high = target_df["inner_high"].max()
+    low = target_df["inner_low"].min()
+    high_ave = target_df["inner_high"].mean()
+    low_ave = target_df["inner_low"].mean()
+
 
     # (1) 直近のピークが再出現値か
     latest_peak = peaks_all[0]['peak']
@@ -62,7 +117,7 @@ def test(df_r):
     print("　　平均ピーク", ave)
     # 分析を開始する
     counter = 0  # 何回同等の値が出現したかを把握する
-    range_yen = ave * 0.3  # * 0.1  # 元々0.06の固定値。ただレンジのサイズ感によって変るべき
+    range_yen = ave * 0.2  # * 0.1  # 元々0.06の固定値。ただレンジのサイズ感によって変るべき
     same_dir = False
     same_peak = 0
     depth_point_gap = 0  # 今のピークと一番離れている値、かつ、逆方向のポイント（同価格発見のタイミングでリセット）
@@ -151,16 +206,20 @@ def test(df_r):
                     near_point_gap = caldera_gap
                     near_point = item['peak']
                     near_point_time = item['time']
-    print("　　個数的には", counter, "回同等のぴーくが発生")
     f.print_arr(same_list)
+    print("　　個数的には", counter, "回同等のぴーくが発生")
+    print("　　対象ピークは", latest_peak, latest_dir)
 
     # 結果をもとに、谷があるかを判定する
-    if len(same_list)>= 2:
+    if len(same_list) >= 2 :
         print("  複数のSamePriceあり。強いトップではあるが、当たってきてる回数が多いので、抜ける可能性大？")
-    else:
+        take_position_flag = 0
+    elif len(same_list) > 0:
         print("  単発のSamePriceあり→　調査する")
+        take_position_flag = 1
         # ニア（逆方向ピーク）までの凹みが、平均ピークのAveの半分以上ある場合は、深さが足りないと判断
         # 候補②　ニアまでの凹みが、直近のピークの３分の１までの折り返しに満たない状態だったら(長さが最大でも0.6倍）、カルデラとみなす
+        print(" バグだし", len(same_list))
         info = same_list[0]  # 同一価格が１つだけが成立（その情報を取得する）
         if info['near_point_gap'] < 0:
             # マイナス値の場合は、
@@ -179,24 +238,28 @@ def test(df_r):
                 print("  カルデラ成立", info['near_point_gap'], peaks_all[0]['gap'], peaks_all[0]['gap'] * 0.33)
             else:
                 print("  深さ足りず", info['near_point_gap'], peaks_all[0]['gap'], peaks_all[0]['gap'] * 0.33)
+    else:
+        take_position_flag = 0
 
-# data = {
-#     "decision_price": 150,
-#     "units": 2,
-#     "expected_direction": 1,
-#     "ask_bid": 1,
-#     "start_price": 155.950,
-#     "grid": 0.02,
-#     "num": 3,
-#     "end_price": 156.0,
-#     "type": "STOP"
-# }
-#
-# print("test")
-# ans = dp.make_trid_order(data)
-# f.print_arr(ans['exe_orders'])
-# print(" オーダー実行")
-# for n in range(len(ans['exe_orders'])):
-#     print(" No." + str(n))
-#     res_dic = classes[n].order_plan_registration(ans['exe_orders'][n])  #
-#
+
+    # 範囲情報
+    print(" 　 時間範囲", target_df.iloc[0]['time_jp'], ",", target_df.iloc[-1]['time_jp'])
+    print("　　価格範囲", high-low, high, low)  # 0.10以下は低い。なんなら0.15でも低いくらい。。
+    print("    価格範囲Ave", high_ave- low_ave, high_ave, low_ave)
+
+
+    order_base = dp.order_finalize({"stop_or_limit": 1,
+                                 "expected_direction": latest_dir * -1,
+                                 "decision_time": 0,
+                                 "decision_price": latest_peak,  # フラグ成立時の価格（先頭[0]列のOpen価格）
+                                 "target": -0.02,  # 価格orマージンかを入れることが出来る
+                                 "lc": 0.05,
+                                 "tp": 0.05,  # tp,
+                                 })
+
+    return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
+        "take_position_flag": take_position_flag,
+        "order_base": order_base,  # 検証で利用する。
+        # "exe_orders": exe_orders,  # 発行するオーダー。このままオーダーを発行できる状態
+        "records": {}  #records  # 記録軍。CSV保存時に出力して解析ができるように。
+    }

@@ -139,9 +139,197 @@ def cal_at_least_most(min_value, now_value, most_value):
     return ans
 
 
-
 def print_json(dic):
     print(json.dumps(dic, indent=2, ensure_ascii=False))
+
+
+def order_finalize(order_base):
+    """
+    オーダーを完成させる。TPRangeとTpPrice、Marginとターゲットプライスのどちらかが入ってれば完成させたい。
+    martinとTarget価格をいずれかの受け取り。両方受け取ると齟齬が発生する可能性があるため、片方のみとする
+    :param order_base:必須
+    order_base = {
+        "stop_or_limit": stop_or_limit,  # 必須 (1の場合順張り＝Stop,-1の場合逆張り＝Limit
+        "expected_direction": river['direction'] * -1,  # 必須
+        "decision_time": river['time'],  # 任意（アウトプットのエクセルの時に使う　それ以外は使わない）
+        "decision_price": river['peak'],  # 必須
+        "target": 価格 or Range  # 80以上の値は価格とみなし、それ以外ならMarginとする
+        "tp": 価格 or Range,  # 80以上の値は価格とみなし、それ以外ならMarginとする
+        "lc": 価格　or Range  # 80以上の値は価格とみなし、それ以外ならMarginとする
+        #オプション
+        ""
+    }
+    いずれかが必須
+    # ポジションマージンか、target_priceが必要。最終的に必要になるのは「ポジションマージン」　（targetは複数オーダー発行だと調整が入る）
+    {　
+        "position_margin": position_margin,  # 検証で任意　運用で必須(複数Marginで再計算する可能性あり)
+        "target_price": target_price,  # 検証で必須　運用で任意(複数Marginで再計算する可能性あり)
+    }
+    :return:　order_base = {
+        "stop_or_limit": stop_or_limit,  # 任意（本番ではtype項目に置換して別途必要になる）
+        "expected_direction": # 検証で必須（本番ではdirectionという名前で別途必須になる）
+        "decision_time": # 任意
+        "decision_price": # 検証で任意
+        "position_margin": # 検証で任意
+        "target_price": # 検証で必須　運用で任意(複数Marginで再計算する可能性あり)
+        "lc_range": # 検証と本番で必須
+        "tp_range": # 検証と本番で必須
+        "tp_price": # 任意
+        "lc_price": # 任意
+        "type":"STOP" or "LIMIT",# 最終的にオーダーに必須（OandaClass）
+        "direction", # 最終的にオーダーに必須（OandaClass）
+        "price":,  # 最終的にオーダーに必須（OandaClass）
+    }
+    """
+    # ⓪必須項目がない場合、エラーとする
+    if not ('stop_or_limit' in order_base) or not ('expected_direction' in order_base) or \
+            not ('decision_price' in order_base):
+        print("　　　　エラー（項目不足)", 'stop_or_limit' in order_base, 'expected_direction' in order_base,
+              'decision_price' in order_base, 'decision_time' in order_base)
+        return -1  # エラー
+
+    # ①TargetPriceを確実に取得する
+    if not ('target' in order_base):
+        # どっちも入ってない場合、Error
+        print("    ★★★target(Rangeか価格か）が入力されていません")
+    elif order_base['target'] >= 80:
+        # targetが８０以上の数字の場合、ターゲット価格が指定されたとみなす
+        # print("    target 価格指定")
+        order_base['position_margin'] = abs(order_base['decision_price'] - order_base['target'])
+        order_base['target_price'] = order_base['target']
+    elif order_base['target'] < 80:
+        # targetが80未満の数字の場合、PositionまでのMarginが指定されたとみなす
+        # print("    target Margin指定")
+        order_base['position_margin'] = order_base['target']
+        order_base['target_price'] = order_base['decision_price'] + \
+                                     (order_base['target'] * order_base['expected_direction'] * order_base[
+                                         'stop_or_limit'])
+    else:
+        print("     Target_price PositionMarginどっちも入っている")
+
+    # ② TP_priceとTP_Rangeを求める
+    if not ('tp' in order_base):
+        print("    ★★★TP情報が入っていません（利確設定なし？？？）")
+        order_base['tp_range'] = 0  # 念のため０を入れておく（価格の指定は絶対に不要）
+    elif order_base['tp'] >= 80:
+        # print("    TP 価格指定")
+        # 80以上の数字は、Price値だと認識。Priceの設定と、Rangeの算出と設定を実施。
+        #    ただし、偶然Target_Priceと同じになる(秒でTPが入ってしまう)可能性あるため、target_price-価格が0.02未満の場合は調整する。
+        if abs(order_base['target_price'] - order_base['tp']) < 0.02:
+            # 調整を行う（Rangeを最低の0.02に設定し、そこから改めてLC＿Priceを算出する）
+            print("  ★★TP価格とTarget価格が同値となったため、調整あり(0.02)")
+            order_base['tp_range'] = 0.02
+            order_base['tp_price'] = order_base['target_price'] + (
+                        order_base['tp_range'] * order_base['expected_direction'])
+        else:
+            # 調整なしでOK
+            order_base['tp_price'] = order_base['tp']
+            order_base['tp_range'] = abs(order_base['target_price'] - order_base['tp'])
+    elif order_base['tp'] < 80:
+        # print("    TP　Range指定")
+        # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
+        order_base['tp_price'] = order_base['target_price'] + (order_base['tp'] * order_base['expected_direction'])
+        order_base['tp_range'] = order_base['tp']
+
+    # ③ LC_priceとLC_rangeを求める
+    if not ('lc' in order_base):
+        # どっちも入ってない場合、エラー
+        print("    ★★★LC情報が入っていません（利確設定なし？？）")
+    elif order_base['lc'] >= 80:
+        # print("    LC 価格指定")
+        # 80以上の数字は、Price値だと認識。Priceの設定と、Rangeの算出と設定を実施。
+        #     ただし、偶然Target_Priceと同じになる(秒でLCが入ってしまう)可能性あるため、target_price-価格が0.02未満の場合は調整する。
+        if abs(order_base['target_price'] - order_base['lc']) < 0.02:
+            # 調整を行う（Rangeを最低の0.02に設定し、そこから改めてLC＿Priceを算出する）
+            print("  ★★LC価格とTarget価格が同値となったため、調整あり(0.02)")
+            order_base['lc_range'] = 0.02
+            order_base['lc_price'] = order_base['target_price'] - (
+                        order_base['lc_range'] * order_base['expected_direction'])
+        else:
+            # 調整なしでOK
+            order_base['lc_price'] = order_base['lc']
+            order_base['lc_range'] = abs(order_base['target_price'] - order_base['lc'])
+    elif order_base['lc'] < 80:
+        # print("    LC RANGE指定")
+        # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
+        order_base['lc_price'] = order_base['target_price'] - (order_base['lc'] * order_base['expected_direction'])
+        order_base['lc_range'] = order_base['lc']
+
+    # 最終的にオーダーで必要な情報を付与する(項目名を整えるためにコピーするだけ）。LimitかStopかを算出
+    order_base['type'] = "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT"
+    order_base['direction'] = order_base['expected_direction']
+    order_base['price'] = order_base['target_price']
+
+    return order_base
+
+
+def make_trid_order(plan):
+    """
+    トラップ&リピートイフダンの注文を入れる
+    :param plan{
+        decision_price: 参考値だが、入れておく
+        units: １つのグリッドあたりの注文数。
+        ask_bid: 1の場合買い(Ask)、-1の場合売り(Bid) 引数時は['direction']になってしまっている。
+        start_price: 130.150のような小数点三桁で指定。（メモ：APIで渡す際は小数点３桁のStr型である必要がある。本関数内で自動変換）
+                     トラリピの最初の価格を指定する
+        expected_direction: 1 or -1
+        grid: 格子幅の設定。またこれは基本的に各LCRangeとほぼ同等となる。
+        start_price_lc: 検討中。
+        num: end_priceがない場合は必須。何個分のグリッドを設置。
+        end_price:　numがない場合は必須。numと両方ある場合は、こちらが優先。StartPriceからEndPriceまで設置する
+        type:　"STOP" 基本はストップになるはずだけれど。
+
+    :return: 上記の情報をまとめてArrで。オーダーミス発生(オーダー入らず)した場合は、辞書内cancelがTrueとなる。
+    ■　結果は配列で返される。
+    """
+    # startPriceを取得する
+    if 'start_price' in plan:
+        start_price = plan['start_price']
+        for_price = start_price  # for分で利用する価格
+    else:
+        print(" startPriceが入っていません")
+
+    # NUMを求める（そっちの方が計算しやすいから。。endpriceの場合、ループ終了条件が、買いか売りかによって分岐が必要になる）
+    if 'num' in plan:
+        # numが指定されている場合は、純粋にそれを指定する
+        num = plan['num']
+    else:
+        # numが指定されていない場合、EndpriceとstartPriceとの差分をgridで割った数がNumとなる
+        if 'end_price' in plan and plan['end_price'] > 1:
+            # エンドプライスが入っており、異常値（rangeを表すような極小値）が入っていないか
+            num = int(abs(start_price - plan['end_price']) / plan['grid'])
+        else:
+            print("Endpriceが入ってない、またはEndpriceが異常値です")
+
+    order_result_arr = []
+    for i in range(num):
+        # ループでGrid分を加味した価格でオーダーを打っていく。ただし、初回のみはLC価格が例外
+        if i == 100:
+            # 初回のみLCは広めにする？
+            pass
+        else:
+            # 指定価格の設定
+            each_order = order_finalize({  # オーダー２を作成
+                "name": "TRID" + str(i),
+                "order_permission": True,
+                "decision_price": plan['decision_price'],  # ★
+                "target": for_price,  # 価格で指定する
+                "decision_time": 0,  #
+                "tp": plan['grid'] * 0.8,
+                "lc": plan['grid'] * 0.8,
+                "units": plan['units'],
+                "expected_direction": plan['expected_direction'],
+                "stop_or_limit": 1,  # ★順張り
+                "trade_timeout": 1800,
+                "remark": "test",
+            })
+            # オーダーの蓄積
+            order_result_arr.append(each_order)
+
+            # 次のループへ
+            for_price = for_price + (plan['ask_bid'] * plan['grid'])
+
+    return {"error": 0, "exe_orders": order_result_arr}
 
 
 def draw_graph(mid_df):

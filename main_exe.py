@@ -88,7 +88,7 @@ def mode1():
     global gl_latest_trigger_time, gl_peak_memo
 
     # ■取得可能タイミング化の調査を行う
-    orders_DoublePeak = dp.wrapUp(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
+    orders_DoublePeak = dp.Inspection_main(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
     # orders_DoublePeak = dp.triplePeaks(gl_data5r_df)
     # ■発注を実行する
     if not orders_DoublePeak['take_position_flag']:  # 発注がない場合は、終了
@@ -294,7 +294,7 @@ for i in range(2):
     new_name = "c" + str(i)
     classes.append(classPosition.order_information(new_name, oa))  # 順思想のオーダーを入れるクラス
     # クラス数を記録し、通し番号をグローバル変数で記憶する（本文上で名前を付与するときに、利用する）
-    gl_num_for_new_class += 1
+    gl_num_for_new_class += 1  # 実際使っていない
 
 print(classes)
 print(classes[0].name)

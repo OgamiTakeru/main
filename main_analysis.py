@@ -4,7 +4,9 @@ import tokens as tk  # Token等、各自環境の設定ファイル（git対象�
 import classOanda as oanda_class
 import making as mk
 import fDoublePeaks as dp
+import fRangeInspection as ri
 import fGeneric as f
+import test as test
 
 # グローバルでの宣言
 oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
@@ -30,15 +32,18 @@ def analysis_part(df_r):
     "expect_direction": peak_turn['direction'] * -1,  # ターン部分の方向
     :param df_r:
     :return:
+        "oeder_base"と"records"が必須。recordsは条件等の辞書型
     """
     # モードによる引数の差分を処理
     # return dp.turn1Rule(df_r)
     # return dp.stairsPeak(df_r)
     # return dp.now_position(df_r)
     # prac.turn_inspection_main(df_r)
-    return dp.DoublePeak(df_r)
+    # return dp.DoublePeak(df_r)
     # return dp.DoublePeakBreak(df_r)
     # return dp.DoublePeak_4peaks(df_r)
+    return ri.test(df_r)
+    # return ri.latest_move_type(df_r)
 
 
 # 検証パート
@@ -70,12 +75,13 @@ def confirm_part(df_r, ana_ans):
     # 検証用の５秒足データを取得し、荒い足のdfに上書きをする（上書きにすることで、この部分をコメントアウトすれば変数名を変えなくても対応可能）
     params = {
         "granularity": "S5",
-        "count": 550,  # 約４５分。５秒足×550足分
+        "count": 720,  # 約45分= 5秒足×550足分  , 60分　= 720
         "from": confirm_start_time,
     }
     df = oa.InstrumentsCandles_multi_exe("USD_JPY", params, 1)['data']
     print(" 検証対象")
-    print(df.head(5))
+    print(df.head(2))
+    print(df.tail(2))
 
     # ★設定　基本的に解析パートから持ってくる。 (150スタート、方向1の場合、DFを巡回して150以上どのくらい行くか)
     position_target_price = ana_ans['target_price']  # マージンを考慮
@@ -294,6 +300,7 @@ def check_main(df_r):
 
     # 解析パート　todo
     analysis_result = analysis_part(analysis_part_df)  # ana_ans={"ans": bool(結果照合要否必須）, "price": }
+    print(analysis_result)
     for_export_results = (analysis_result['order_base'] | analysis_result['records'])  # 解析結果を格納
     for_export_results["take_position_flag"] = analysis_result['take_position_flag']
     # 検証パート todo
@@ -407,10 +414,10 @@ gl_count = 215
 gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
-gl_now_time = False  # 現在時刻実行するかどうか False Truxe　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 4, 2, 20, 25, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
+gl_target_time = datetime.datetime(2024, 5, 13, 12, 55, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定      datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
-gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
 # Mainスタート
 main()

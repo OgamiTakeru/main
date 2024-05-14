@@ -22,8 +22,8 @@ def analysis_part(df_r, params):
     # return dp.turn1Rule(df_r)
     # return dp.beforeDoublePeak(df_r, params)
     # return dp.DoublePeak(df_r, params)
-    return dp.DoublePeak_4peaks(df_r, params)
-    # return dp.DoublePeakBreak(df_r, params)
+    # return dp.DoublePeak_4peaks(df_r, params)
+    return dp.DoublePeakBreak(df_r, params)
     # return dp.now_position(df_r)
     # prac.turn_inspection_main(df_r)
 
@@ -428,18 +428,18 @@ params_arr = [  # t_type は順張りか逆張りか。rtはリバーターン�
     # {"tf_ratio_max": 0.5, "rt_ratio_min": 0.4, "rt_ratio_max": 1.0, "margin": 0.03, "sl": -1, "d": -1},
     # {"tf_ratio_max": 0.3, "rt_ratio_min": 0.8, "rt_ratio_max": 1.0, "margin": 0.03, "sl": -1, "d": -1},
     # DoublePeak4用
-    {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1, "p": "river"},
-    {"tf_ratio_max": 0.4, "rt_ratio_min": 0.4, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1, "p": "river"},
-    {"tf_ratio_max": 0.4, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1, "p": "river"},
-    {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": -1, "p": "turn"},
-    {"tf_ratio_max": 0.4, "rt_ratio_min": 0.4, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": -1, "p": "turn"},
-    {"tf_ratio_max": 0.4, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": -1, "p": "turn"},
+    # {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1, "p": "river"},
+    # {"tf_ratio_max": 0.4, "rt_ratio_min": 0.4, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1, "p": "river"},
+    # {"tf_ratio_max": 0.4, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": 1, "p": "river"},
+    # {"tf_ratio_max": 0.8, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": -1, "p": "turn"},
+    # {"tf_ratio_max": 0.4, "rt_ratio_min": 0.4, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": -1, "p": "turn"},
+    # {"tf_ratio_max": 0.4, "rt_ratio_min": 0.7, "rt_ratio_max": 1.0, "margin": 0.02, "sl": 1, "d": -1, "p": "turn"},
 
     # DoublePeakBreak用
-    # {"tf_ratio_max": 0.8, "rt_ratio_min": 1.0, "rt_ratio_max": 2, "margin": 0.02, "sl": 1, "d": 1},
-    # {"tf_ratio_max": 0.8, "rt_ratio_min": 1.0, "rt_ratio_max": 2, "margin": 0.04, "sl": 1, "d": 1},
-    # {"tf_ratio_max": 0.8, "rt_ratio_min": 1.0, "rt_ratio_max": 2, "margin": 0.02, "sl": -1, "d": -1},
-    # {"tf_ratio_max": 0.8, "rt_ratio_min": 1.0, "rt_ratio_max": 2, "margin": 0.04, "sl": -1, "d": -1},
+    {"tf_ratio_max": 0.4, "rt_ratio_min": 1.0, "rt_ratio_max": 2, "margin": 0.005, "sl": 1, "d": 1},
+    {"tf_ratio_max": 0.4, "rt_ratio_min": 1.0, "rt_ratio_max": 2, "margin": 0.02, "sl": 1, "d": 1},
+    {"tf_ratio_max": 0.4, "rt_ratio_min": 1.0, "rt_ratio_max": 2, "margin": 0.005, "sl": -1, "d": -1},
+    {"tf_ratio_max": 0.4, "rt_ratio_min": 1.0, "rt_ratio_max": 2, "margin": 0.02, "sl": -1, "d": -1},
     # beforeDoublePeaks用
     # {"tf_ratio": 0.7, "rt_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.07, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1 },
     # {"tf_ratio": 0.7, "rt_ratio": 0.7, "count": 2, "gap": 0.03, "margin": 0.03, "tg": 0.12, "tc": 7, "tp": 1, "lc": 1, "sl":1},

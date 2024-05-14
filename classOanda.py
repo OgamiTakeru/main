@@ -281,13 +281,15 @@ class Oanda:
                 if plan['ask_bid'] == 1 and plan['tp_price'] < plan['price']:
                     # 買い方向なのに、利確がターゲット価格より低い場合。（めんどいからテキトーに設定しちゃう）
                     print("不適正　利確")
-                    data['order']['takeProfitOnFill']['price'] = str(round(plan['price'] + (0.05 * plan['ask_bid']), 3))  # 利確
+                    data['order']['takeProfitOnFill']['price'] = str(
+                        round(plan['price'] + (0.05 * plan['ask_bid']), 3))  # 利確
                 elif plan['ask_bid'] == -1 and plan['tp_price'] > plan['price']:
                     # 売り方向なのに、利確がターゲット価格より高い場合。（めんどいからテキトーに設定しちゃう）
                     print("不適正　利確")
-                    data['order']['takeProfitOnFill']['price'] = str(round(plan['price'] + (0.05 * plan['ask_bid']), 3))  # 利確
+                    data['order']['takeProfitOnFill']['price'] = str(
+                        round(plan['price'] + (0.05 * plan['ask_bid']), 3))  # 利確
                 else:
-                    print("通常　利確")
+                    # print("適正　利確")
                     data['order']['takeProfitOnFill']['price'] = str(round(plan['tp_price'], 3))  # 利確
 
             # ロスカの設定
@@ -308,13 +310,15 @@ class Oanda:
                 if plan['ask_bid'] == 1 and plan['lc_price'] > plan['price']:
                     # 買い方向なのに、利確がターゲット価格より高い場合。（めんどいからテキトーに設定しちゃう）
                     print(" 不適正　ロスカ")
-                    data['order']['stopLossOnFill']['price'] = str(round(plan['price'] - (0.05 * plan['ask_bid']), 3))  # 利確
+                    data['order']['stopLossOnFill']['price'] = str(
+                        round(plan['price'] - (0.05 * plan['ask_bid']), 3))  # 利確
                 elif plan['ask_bid'] == -1 and plan['lc_price'] < plan['price']:
                     # 売り方向なのに、利確がターゲット価格より低い場合。（めんどいからテキトーに設定しちゃう）
                     print(" 不適正　ロスカ")
-                    data['order']['stopLossOnFill']['price'] = str(round(plan['price'] - (0.05 * plan['ask_bid']), 3))  # 利確
+                    data['order']['stopLossOnFill']['price'] = str(
+                        round(plan['price'] - (0.05 * plan['ask_bid']), 3))  # 利確
                 else:
-                    print("通常　ロスカ")
+                    # print("適正　ロスカ")
                     data['order']['stopLossOnFill']['price'] = str(round(plan['lc_price'], 3))  # 利確
 
             # トレールの設定
@@ -541,18 +545,18 @@ class Oanda:
                     if position_js_dic['error'] == -1:
                         # わかりやすいJsonを作っておく
                         position_js_dic['method'] = "★OrderDatailState- positionDetail ミス"
-                        print("   ★OrderDatailState- positionDetail ミス", position_id,"(", order_id, ")")
+                        print("   ★OrderDatailState- positionDetail ミス", position_id, "(", order_id, ")")
                         error_flag = -1
                     else:
                         position_js = position_js_dic['data']
                         if position_js['trade']['state'] == 'CLOSED':  # すでに閉じたポジションの場合
                             # splitnumは本来１：１の分割ではないが、手間なのでとりあえず半々に分ける
                             split_num = float(len(position_js['trade']['closingTransactionIDs']))  # 複数が同時に出力される場合有
-                            pips = round((float(position_js['trade']['realizedPL'])/split_num) / abs(
+                            pips = round((float(position_js['trade']['realizedPL']) / split_num) / abs(
                                 float(position_js['trade']['initialUnits'])), 3)
                             position_initial_units = position_js['trade']['initialUnits']
                             position_current_units = position_js['trade']['currentUnits']
-                            position_realize_pl = float(position_js['trade']['realizedPL'])/split_num
+                            position_realize_pl = float(position_js['trade']['realizedPL']) / split_num
                             position_time = iso_to_jstdt_single(position_js['trade']['openTime'])  # ポジションした時間がうまる
                             position_close_time = iso_to_jstdt_single(
                                 position_js['trade']['closeTime'])  # ポジションがクローズした時間がうまる
@@ -773,7 +777,7 @@ class Oanda:
             open_df = open_df_dic['data']
             if len(open_df) == 0:
                 # print("  @ポジションキャンセル(対象無し/trade)")
-                return {"data":None, "error": 0}
+                return {"data": None, "error": 0}
             else:
                 count = 0
                 close_df = None
@@ -971,6 +975,9 @@ class Oanda:
         return for_ans
 
 
+
+
+
 ############################################################
 # # 関連する関数
 ############################################################
@@ -987,7 +994,8 @@ def error_method(name, start_time, e):
     elif name == "オーダー" or name == "TradeClose":
         tk.line_send("オーダーエラー")
     else:
-        tk.line_send("エラー")
+        pass
+        # tk.line_send("エラー")
     # if type(e) == 'oandapyV20.exceptions.V20Error':
     #     e
 
@@ -1374,4 +1382,3 @@ def add_bb_data(data_df):
 
     # 返却
     return data_df
-
