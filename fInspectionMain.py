@@ -9,6 +9,7 @@ import making as mk
 import fGeneric as f
 import fDoublePeaks as dp
 import classPosition as classPosition
+import fRangeInspection as ri
 import fPeakLineInspection as p
 
 # 調査として、DoubleやRange等の複数Inspectionを利用する場合、このファイルから呼び出す(一番下）
@@ -24,12 +25,14 @@ def Inspection_main(df_r):
     # （０）データを取得する
     peaks_info = p.peaks_collect_main(df_r[:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
     peaks = peaks_info['all_peaks']
-    river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-    turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
-    flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
+    latest = peaks[0]
+    river = peaks[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
+    flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
     order_information = {"take_position_flag": False}  # ■何もなかった場合に返すもの（最低限の返却値）
 
     print("  <対象>:運用モード")
+    print("  Latest", latest)
     print("  RIVER", river)
     print("  TURN ", turn)
     print("  FLOP3", flop3)
@@ -40,25 +43,32 @@ def Inspection_main(df_r):
                                                                                                                "◇FLOP三" + \
                   f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
 
+    if latest['count'] != 2:
+        return {"line_strength": 0}
+
+    print(" ここから")
+    ans = ri.test(df_r)
+    print("結果", ans)
+    return ans
     # ターンの直後かどうか
-    if peaks[0]['count'] != 2:
-        print(" ターンから離れた状態。必要に応じて状態判別")
-        return order_information
-
-    # （１）beforeDoublePeakについて
-    # ダブルトップ直前で、ダブルトップを形成するところを狙いに行く。TF＜0.4、RT＜0.7
-    beforeDoublePeak_ans = dp.beforeDoublePeak(df_r, peaks)
+    # if peaks[0]['count'] != 2:
+    #     print(" ターンから離れた状態。必要に応じて状態判別")
+    #     return order_information
     #
-    # # (2)ダブルトップポイントをリバーが大きく通過している場合。TF＜0.4、RT＞1.3
-    DoublePeakBreak_ans = dp.DoublePeakBreak(df_r, peaks)
-
-    # (3)ダブルトップ（これはピークが１０個必要。過去のデータを比べて最ピークかどうかを確認したいため）
-    doublePeak_ans = dp.DoublePeak_4peaks(df_r, peaks)
-
-    # 【オーダーを統合する】  現状同時に成立しない仕様。
-    if doublePeak_ans['take_position_flag']:
-        order_information = doublePeak_ans
-    elif DoublePeakBreak_ans['take_position_flag']:
-        order_information = DoublePeakBreak_ans  # オーダー発行情報のみを返却する
-
-    return order_information
+    # # （１）beforeDoublePeakについて
+    # # ダブルトップ直前で、ダブルトップを形成するところを狙いに行く。TF＜0.4、RT＜0.7
+    # beforeDoublePeak_ans = dp.beforeDoublePeak(df_r, peaks)
+    # #
+    # # # (2)ダブルトップポイントをリバーが大きく通過している場合。TF＜0.4、RT＞1.3
+    # DoublePeakBreak_ans = dp.DoublePeakBreak(df_r, peaks)
+    #
+    # # (3)ダブルトップ（これはピークが１０個必要。過去のデータを比べて最ピークかどうかを確認したいため）
+    # doublePeak_ans = dp.DoublePeak_4peaks(df_r, peaks)
+    #
+    # # 【オーダーを統合する】  現状同時に成立しない仕様。
+    # if doublePeak_ans['take_position_flag']:
+    #     order_information = doublePeak_ans
+    # elif DoublePeakBreak_ans['take_position_flag']:
+    #     order_information = DoublePeakBreak_ans  # オーダー発行情報のみを返却する
+    #
+    # return order_information

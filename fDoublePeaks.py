@@ -766,8 +766,6 @@ def DoublePeak_4peaks(*args):
     }
 
 
-
-
 def triplePeaks(*args):
     """
     引数は配列で受け取る。今は最大二つを想定。
@@ -1067,4 +1065,181 @@ def triplePeaks(*args):
     return {
         "take_position_flag": take_position_flag,
         "exe_orders": exe_orders,
+    }
+
+
+def triplePeaks_pattern(*args):
+    """
+    引数は配列で受け取る。今は最大二つを想定。
+    引数１つ目：ローソク情報(逆順[直近が上の方にある＝時間降順])データフレームを受け取り、範囲の中で、ダブルトップ直前ついて捉える
+    引数２つ目はループ検証時のパラメータ群(ループ検証の時のみ入ってくる）
+    例→params_arr = [
+            {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
+            {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
+        ]
+    理想形 (ダブルトップ到達前）
+
+    :param df_r:
+    :return:　必須最低限　{"take_position_flag": boolean} の返却は必須。さらにTrueの場合注文情報が必要。
+    """
+    # print(args)
+    print("■3つの力判定")
+    df_r_part = args[0][:90]  # 検証に必要な分だけ抜き取る
+    peaks_info = p.peaks_collect_main(df_r_part, 3)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+    peaks = peaks_info['all_peaks']
+
+    # 必要なピークを出す (どれをRiverにするかを判断する）
+    # 一番直近のピークをlatestとするが、
+    # ①latestをriverとして扱う場合 (未確定のriverを扱う）。ただしlatestのCount＝２でないと毎回実施になってしまう)
+    # ②形が確定したriverを扱う場合　でスイッチできるようにする
+    latest_is_river = False
+    if latest_is_river:
+        # ①形の決まっていないlatestをriverとして扱う場合
+        latest = peaks[0]
+        river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+        turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
+        flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
+    else:
+        #　②形が確定したriverを扱う場合
+        latest = peaks[0]  #
+        river = peaks[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+        turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
+        flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
+    peaks_times = "◇River:" + \
+                  f.delYear(river['time']) + "-" + f.delYear(river['time_old']) + "(" + str(river['direction']) + ")" \
+                                                                                                                  "◇Turn:" + \
+                  f.delYear(turn['time']) + "-" + f.delYear(turn['time_old']) + "(" + str(turn['direction']) + ")" \
+                                                                                                               "◇FLOP三" + \
+                  f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
+    print("  <対象>")
+    print("  RIVER", river)
+    print("  TURN ", turn)
+    print("  FLOP3", flop3)
+
+    # (1) ターンを基準に
+    col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
+    # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
+    size_ans = size_compare(river[col], turn[col], 0.1, 0.3)
+    river_turn_gap = round(size_ans['gap'], 3)
+    river_turn_ratio = size_ans['size_compare_ratio']
+    # ①ターンのフロップ３に対する割合を取得（〇%に小さくなっていることを想定）
+    size_ans = size_compare(turn[col], flop3[col], 0.1, 0.3)
+    turn_flop3_gap = round(size_ans['gap'], 3)
+    turn_flop3_ratio = size_ans['size_compare_ratio']
+
+    # (2)条件の設定
+    # フロップターンの関係
+    tf1 = 0.6
+    tf2 = 0.7
+    tf3 = 1.0
+    tf4 = 1.5
+    # ターンリバーの関係
+    tr1_1 = 0.6
+    tr1_2 = 0.9
+    tr1_3 = 1.1
+    tr1_4 = 1.4
+    #
+    tr3_1 = 0.3
+    tr3_2 = 1.0
+    #
+    tr4_1 = 0.9
+    tr4_2 = 1.5
+
+    # (3)判定処理  （マージン、ポジション方向、タイプ、TP、LCを取得する）
+    # ①リバーはターン直後のみを採用。
+    if latest['count'] != 2:
+        print("   River 2以外の為スキップ")
+        return {"take_position_flag": False}
+    # ②フロップターンと、リバーターンの関係で調査する(複雑注意)
+    if turn_flop3_ratio <= tf1:  # ◆微戻りパターン(<40)。順方向に伸びる、一番狙いの形状の為、順張りしたい。
+        # フロップ３とターンの関係
+        #     /\　←微戻り
+        #    /  　
+        #   /
+        if river_turn_ratio <= tr1_1:  # ◇0-60 マージン有、順張りのリバー同方向にオーダー。一番いい形
+            #     /\/ ↑　　　←この形(もう少しリバーの戻りが弱い状態）
+            #    /  　
+            #   /
+            p_type = "t微戻り→r微戻り"
+        elif river_turn_ratio <= tr1_2:  # ◇60-90 順張りのリバー同方向にオーダー。ただしMargin余裕があれば。
+            #     /\/ ↑　←この形（リバーのが殆ど上まで戻っている状態）
+            #    /  　
+            #   /
+            p_type = "t微戻り→rダブルトップ"
+        elif river_turn_ratio <= tr1_3:  # ◇90-110 待機
+            #        /　↑↓？　　 ←ダブルトップを超えた直後を想定
+            #     /\/
+            #    /  　
+            p_type = "t微戻り→r戻り微オーバー"
+        elif river_turn_ratio <= tr1_4:  # ◇110-130 即順張りのリバー同方向にオーダー。ジグザグトレンドと推定
+            #         / ↑　　　　←結構、ダブルトップを超えた直後を想定
+            #        /
+            #     /\/
+            #    /  　
+            p_type = "t微戻り→r戻り強オーバー"
+        else:  # 130以上 待機　（伸びすぎていて、失速の可能性もあるため）
+            #         / ←これが大きすぎる場合
+            #        /
+            #     /\/
+            #    /
+            p_type = "t微戻り→r戻り超強オーバー"
+    elif turn_flop3_ratio <= tf2:  # ◆待機パターン(<70)。戻が半端なため。
+        #     /\ ←この形（リバーのが殆ど上まで戻っている状態）
+        #    /  \　
+        #   /
+        p_type = "t中途半端戻り"
+    elif turn_flop3_ratio <= tf3:  # ◆深戻りパターン(<100)。旗形状やジグザグトレンド(リバー同方向)と推定。
+        #     /\ ←この形（リバーのが殆ど上まで戻っている状態）
+        #    /  \　
+        #   /    \
+        #  /
+        if river_turn_ratio <= tr3_1:  # ◇0-30 逆張りのリバー逆方向。旗形状(大きく上がらない)等のレンジ。ワンチャン、ジグトレ
+            #     /\　　　↓
+            #    /  \　
+            #   /    \/
+            #  /
+            p_type = "tやや深戻り→r微戻り"
+        elif river_turn_ratio <= tr3_2:  # ◇30-100 逆張りのリバー逆方向にオーダー（ターゲットはターン開始位置）ジグザグトレンドと推定
+            #     /\
+            #    /  \  /  ↑
+            #   /    \/
+            #  /
+            p_type = "tやや深戻り→rダブルトップ以下"
+        else:  # ◇100-
+            #            /
+            #     /\    /
+            #    /  \  /  ↑
+            #   /    \/
+            #  /
+            p_type = "tやや深戻り→r戻りオーバー"
+    elif turn_flop3_ratio <= tf4:  # ◆戻り大パターン(<150)。ジグザグトレンド(リバー逆方向)の入口と推定。
+        #     /\
+        #    /  \　
+        #   /    \
+        #         \ ←　ターンが長い
+        if river_turn_ratio <= tr4_1:  # ◇0-90 逆張りのリバー逆方向にオーダー（ターン起点手前）。ジグザグトレンド（リバー逆）と推定
+            #     /\
+            #    /  \    /　↓　　　　
+            #   /    \  /
+            #         \/
+            p_type = "t強戻り→r戻り"
+        elif river_turn_ratio <= tr4_2:  # ◇90-150 即順リバー同方向。リバー強く、ジグザグするにせよ、リバー方向に行くと推定。
+            #              /
+            #     /\      /
+            #    /  \    /　　　　　
+            #   /    \  /
+            #         \/
+            p_type = "t強戻り→r強戻り"
+        else:
+            p_type = "t強戻り→r強すぎる戻り"
+    else:  # ◆待機パターン。戻りが強すぎるため。
+        p_type = "t強戻りすぎる"
+    print(p_type)
+    print("   情報 tf:", turn_flop3_ratio, "(", turn_flop3_gap, ")", "rt:", river_turn_ratio, "(", river_turn_gap, ")",
+          "f_gap:", flop3['gap'], "t_gap:", turn['gap'], "r_gap:", river['gap'])
+
+
+    return {
+        "take_position_flag": False,
+        "exe_orders":0,
     }

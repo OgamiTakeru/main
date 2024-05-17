@@ -269,7 +269,7 @@ def make_trid_order(plan):
     :param plan{
         decision_price: 参考値だが、入れておく
         units: １つのグリッドあたりの注文数。
-        ask_bid: 1の場合買い(Ask)、-1の場合売り(Bid) 引数時は['direction']になってしまっている。
+        (不要）ask_bid: 1の場合買い(Ask)、-1の場合売り(Bid) 引数時は['direction']になってしまっている。
         start_price: 130.150のような小数点三桁で指定。（メモ：APIで渡す際は小数点３桁のStr型である必要がある。本関数内で自動変換）
                      トラリピの最初の価格を指定する
         expected_direction: 1 or -1
@@ -329,7 +329,7 @@ def make_trid_order(plan):
             # 次のループへ
             for_price = for_price + (plan['ask_bid'] * plan['grid'])
 
-    return {"error": 0, "exe_orders": order_result_arr}
+    return order_result_arr
 
 
 def draw_graph(mid_df):

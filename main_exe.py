@@ -12,6 +12,7 @@ import fTurnInspection as t  # とりあえずの関数集
 import fGeneric as f
 import fPeakLineInspection as p
 import fDoublePeaks as dp
+import fInspectionMain as im
 import making as ins
 
 
@@ -86,12 +87,28 @@ def mode1():
     """
     print("  Mode1")
     global gl_latest_trigger_time, gl_peak_memo
+    global gl_upper_line, gl_lower_line  # RangeInspectionのみ
 
     # ■取得可能タイミング化の調査を行う
-    orders_DoublePeak = dp.Inspection_main(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
+    # orders = im.Inspection_main(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
     # orders_DoublePeak = dp.triplePeaks(gl_data5r_df)
+
+    # ■TEST用(オーダーを取らないような物。プログラムが止まらないような記述も必要）■
+    range_ans = im.Inspection_main(gl_data5r_df)
+    if range_ans['line_strength'] != 0:
+        # LINEが発見された場合、LINEを更新する
+        if range_ans['direction'] == 1:
+            gl_upper_line = range_ans['line_price']
+        else:
+            gl_lower_line = range_ans['line_price']
+        latest_dir = range_ans['latest_peak_direction']
+        tk.line_send(range_ans)
+        orders = im.range_trid_make_order(gl_lower_line, gl_upper_line, range_ans['decision_price'], latest_dir)
+    else:
+        return 0
+
     # ■発注を実行する
-    if not orders_DoublePeak['take_position_flag']:  # 発注がない場合は、終了
+    if not orders['take_position_flag']:  # 発注がない場合は、終了
         return 0
 
     # 現在注文があるかを確認する
@@ -100,10 +117,10 @@ def mode1():
         print("  既存ポジションがあるため、解消してからオーダーを発行する")
     # 注文を実行する
     line_send = ""  # LINE送信用の注文結果の情報
-    for n in range(len(orders_DoublePeak['exe_orders'])):
-        res_dic = classes[n].order_plan_registration(orders_DoublePeak['exe_orders'][n])  #
+    for n in range(len(orders['exe_orders'])):
+        res_dic = classes[n].order_plan_registration(orders['exe_orders'][n])  #
         line_send = line_send + res_dic['order_name'] + \
-                    "(" + str(orders_DoublePeak['exe_orders'][n]['target_price']) + "," + str(res_dic['order_id']) + "), "
+                    "(" + str(orders['exe_orders'][n]['target_price']) + "," + str(res_dic['order_id']) + "), "
     # 注文結果を送信する
     tk.line_send("★オーダー発行", line_send)
 
@@ -146,11 +163,12 @@ def exe_manage():
         return 0
 
     # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
-    if 3 <= time_hour <= 6:
-        if gl_midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
-            classPosition.reset_all_position(classes)
-            tk.line_send("■深夜のポジション・オーダー解消を実施")
-            gl_midnight_close_flag = 1  # 実施済みフラグを立てる
+    # if 3 <= time_hour <= 6:
+    #     if gl_midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
+    #         classPosition.reset_all_position(classes)
+    #         tk.line_send("■深夜のポジション・オーダー解消を実施")
+    #         gl_midnight_close_flag = 1  # 実施済みフラグを立てる
+
     # ■実行を行う
     else:
         gl_midnight_close_flag = 0  # 実行可能時には深夜フラグを解除しておく（毎回やってしまうけどいいや）
@@ -276,6 +294,10 @@ mag_tp_w = 1  # 勝っているときのLC幅の調整
 mag_unit_l = 1  # 負けている時のUnit倍率
 mag_lc_l = 0.8  # 負けているときのLC幅の調整
 mag_tp_l = 1  # 負けているときのLC幅の調整
+
+# Rangeinspectionの結果保存用
+gl_lower_line = 0
+gl_upper_line = 0
 
 # ■オアンダクラスの設定
 fx_mode = 0  # 1=practice, 0=Live
