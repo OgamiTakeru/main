@@ -124,6 +124,8 @@ def size_compare(after_change, before_change, min_range, max_range):
 def judge_list_or_data_frame(*args):
     """
     各解析関数から呼ばれる。各解析関数が検証から呼ばれているか、本番から呼ばれているかを判定する
+    [0]=df_r データフレーム
+
     第二引数存在し、かつそれがpeaks辞書の配列ではない場合、パラメータモードとする
     :param args: 以下３種類
         データフレームのみ→検証
@@ -626,13 +628,14 @@ def DoublePeak_4peaks(*args):
     # (1)ピークスを取得（引数か処理）。この関数ではPeaksの情報を元にし、Dfは使わない。
     # ①必要最低限の項目たちを取得する
     mode_judge = judge_list_or_data_frame_4peaks(*args)  # ピークスを確保。モードを問わない共通処理。args[0]はデータフレームまたはPeaksList。
+    param_mode = mode_judge['param_mode']
+    df_r = mode_judge['df_r']
     peaks = mode_judge['peaks']
     latest = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     river = peaks[1]  # ピーク（リバーと呼ぶ）
     turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
     flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
-    param_mode = mode_judge['param_mode']
-    df_r = mode_judge['df_r']
+
     # (2)情報を変数に取得する
     # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
     size_ans = size_compare(river["gap"], turn["gap"], 0.1, 0.3)
@@ -689,6 +692,7 @@ def DoublePeak_4peaks(*args):
                 if rt_min < river_turn_ratio < rt_max:  # リバーについて（リバー比）
                     take_position_flag = True
                     print("   ■■ダブルトップ完成")
+                    print("    Peak-latest", river['peak'], "-", flop3['peak'])
                 else:
                     print("   不成立(リバー関係) &　ターン発生")
             else:

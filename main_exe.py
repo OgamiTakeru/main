@@ -14,6 +14,7 @@ import fPeakLineInspection as p
 import fDoublePeaks as dp
 import fInspectionMain as im
 import making as ins
+import fRangeInspection as ri
 
 
 def order_line_send(class_order_arr, add_info):
@@ -94,21 +95,14 @@ def mode1():
     # orders_DoublePeak = dp.triplePeaks(gl_data5r_df)
 
     # ■TEST用(オーダーを取らないような物。プログラムが止まらないような記述も必要）■
-    range_ans = im.Inspection_main(gl_data5r_df)
-    if range_ans['line_strength'] != 0:
-        # LINEが発見された場合、LINEを更新する
-        if range_ans['direction'] == 1:
-            gl_upper_line = range_ans['line_price']
-        else:
-            gl_lower_line = range_ans['line_price']
-        latest_dir = range_ans['latest_peak_direction']
-        tk.line_send(range_ans)
-        orders = im.range_trid_make_order(gl_lower_line, gl_upper_line, range_ans['decision_price'], latest_dir)
-    else:
-        return 0
+
+    # ■
+    result_dic = im.Inspection_main(gl_data5r_df)
 
     # ■発注を実行する
-    if not orders['take_position_flag']:  # 発注がない場合は、終了
+    print(result_dic)
+    if not result_dic['take_position_flag'] or not(result_dic['take_position_flag']):
+        # 発注がない場合は、終了 (ポケ除け的な部分）
         return 0
 
     # 現在注文があるかを確認する
@@ -117,10 +111,10 @@ def mode1():
         print("  既存ポジションがあるため、解消してからオーダーを発行する")
     # 注文を実行する
     line_send = ""  # LINE送信用の注文結果の情報
-    for n in range(len(orders['exe_orders'])):
-        res_dic = classes[n].order_plan_registration(orders['exe_orders'][n])  #
+    for n in range(len(result_dic['exe_orders'])):
+        res_dic = classes[n].order_plan_registration(result_dic['exe_orders'][n])  #
         line_send = line_send + res_dic['order_name'] + \
-                    "(" + str(orders['exe_orders'][n]['target_price']) + "," + str(res_dic['order_id']) + "), "
+                    "(" + str(result_dic['exe_orders'][n]['target_price']) + "," + str(res_dic['order_id']) + "), "
     # 注文結果を送信する
     tk.line_send("★オーダー発行", line_send)
 
@@ -310,7 +304,7 @@ else:  # Live
 
 # ■ポジションクラスの生成
 classes = []
-for i in range(2):
+for i in range(5):
     # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
     # クラス名を確定し、クラスを生成する。
     new_name = "c" + str(i)

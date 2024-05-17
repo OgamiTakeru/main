@@ -14,14 +14,29 @@ import fPeakLineInspection as p
 
 # 調査として、DoubleやRange等の複数Inspectionを利用する場合、このファイルから呼び出す(一番下）
 
-# その他オーダーに必要な処理はここで記載する
+# 処理時間削減の為、data
 
+# その他オーダーに必要な処理はここで記載する
 def Inspection_main(df_r):
     """
     主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
-    引数は現状ローソク情報(逆順[直近が上の方にある＝時間降順])のみ。
-    :return:doublePeakの結果をまとめて、そのまま注文できるJsonの配列にして返却する
+    引数
+    "data": df_r ローソク情報(逆順[直近が上の方にある＝時間降順])のみ。
+    "use_in_range_inspection" :exeからexeの持っているLowLineやUpperLineを受け取る
+        "lower_line"と"upper_line"が含まれる
+
+    :return:
+    このリターンの値は、そのまま発注に使われる。（take_position_flagがTrueの場合、exe_orders(配列)のオーダーが入る
+        "take_position_flag": True or False
+        "exe_orders": オーダーの配列。オーダーについては
+        "lower_line": exeのLowerLineを書き換えるため
+        "upper_line": exeのupperLineを書き換えるため
+
     """
+    # パラメータから情報を取得する
+    flag_and_orders = {
+        "take_position_flag": False,
+    }
     # （０）データを取得する
     peaks_info = p.peaks_collect_main(df_r[:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
     peaks = peaks_info['all_peaks']
@@ -30,26 +45,40 @@ def Inspection_main(df_r):
     turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
     flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
     order_information = {"take_position_flag": False}  # ■何もなかった場合に返すもの（最低限の返却値）
-
     print("  <対象>:運用モード")
     print("  Latest", latest)
     print("  RIVER", river)
     print("  TURN ", turn)
     print("  FLOP3", flop3)
-    peaks_times = "◇River:" + \
-                  f.delYear(river['time']) + "-" + f.delYear(river['time_old']) + "(" + str(river['direction']) + ")" \
-                                                                                                                  "◇Turn:" + \
-                  f.delYear(turn['time']) + "-" + f.delYear(turn['time_old']) + "(" + str(turn['direction']) + ")" \
-                                                                                                               "◇FLOP三" + \
-                  f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
 
     if latest['count'] != 2:
-        return {"line_strength": 0}
+        return {"take_position_flag": 0}
 
-    print(" ここから")
-    ans = ri.test(df_r)
-    print("結果", ans)
-    return ans
+    # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
+    line_result = ri.find_lines(df_r)  # Lineが発見された場合には、['line_strength']が１以上になる
+    latest = line_result['latest_line']
+    if latest['line_strength'] != 0:
+        # 直近でLINEを発見した場合、オーダーを生成する
+        tk.line_send(" LINE発見", line_result)
+        orders = ri.range_trid_make_order(line_result)
+        flag_and_orders = {
+            "take_position_flag": True,
+            "exe_orders": orders,
+        }
+    else:
+        # LINEが発見されない場合は、LINEに関するオーダーは発行しない
+        # exe側の更新も行わない
+        pass
+
+    # （２）シンプルなダブルトップを見つける
+    doublePeak_ans = dp.DoublePeak_4peaks(df_r, peaks)
+    if doublePeak_ans['take_position_flag']:
+        print(" シンプルDT発見")
+        flag_and_orders = doublePeak_ans
+
+    # 【FINAL】
+    return flag_and_orders
+
     # ターンの直後かどうか
     # if peaks[0]['count'] != 2:
     #     print(" ターンから離れた状態。必要に応じて状態判別")

@@ -327,7 +327,7 @@ def make_trid_order(plan):
             order_result_arr.append(each_order)
 
             # 次のループへ
-            for_price = for_price + (plan['ask_bid'] * plan['grid'])
+            for_price = for_price + (plan['expected_direction'] * plan['grid'])
 
     return order_result_arr
 

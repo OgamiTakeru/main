@@ -173,6 +173,7 @@ class order_information:
         self.plan = plan  # 受け取ったプラン情報(そのままOrderできる状態が基本）
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
+        print(" classPositionTest", plan['target_price'])
         self.plan['price'] = plan['target_price']  # ターゲットプライス（注文価格）は、oandaClassではprice
         self.name = plan['name']  # 名前を入れる(クラス内の変更）
         self.trade_timeout = plan['trade_timeout']
