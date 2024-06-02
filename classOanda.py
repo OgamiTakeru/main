@@ -404,15 +404,20 @@ class Oanda:
             return open_df_dic
         else:
             open_df = open_df_dic['data']
+            print("OpeDF", open_df)
             for index, row in open_df.iterrows():
                 # たまに変わるため注意。23年１月現在、利確ロスカ注文はtype = STOP_LOSS TAKE_PROFIT
-                # 新規ポジション取得は、順張り逆張り問わず、MARKET_IF_TOUCHED
-                if row['type'] == 'MARKET_IF_TOUCHED' or row['type'] == 'STOP' or row['type'] == 'LIMIT':
+                # 新規ポジション取得は、逆張りの場合、MARKET_IF_TOUCHED
+                # 新規ポジション取得は、順張りの場合、STOP, LIMIT
+                # 既存ポジションの利確やロスカも、"STOP_LOSS" "TAKE_PROFIT"
+                if row['type'] == 'STOP_LOSS' or row['type'] == 'TAKE_PROFIT':  # or row['type'] == 'STOP' or row['type'] == 'LIMIT':
                     pass
                     # typeがMARKET_IF_TOUCHEDの場合（いわゆるポジションを取るための注文）
                     # cancel_res = self.OrderCancel_exe(row["id"])  # 【関数】単品をクローズする
                     # close_df = pd.concat([close_df , res_df])#新決済情報を縦結合
                 else:  # LIMIT注文、STOP注文の場合（ここでいうLIMITは利確、STOPはロスカ トレールもこっち
+                    cancel_res = self.OrderCancel_exe(row["id"])  # 【関数】単品をクローズする
+                    # close_df = pd.concat([close_df , res_df])#新決済情報を縦結合
                     pass
 
             return close_df
@@ -433,7 +438,9 @@ class Oanda:
             open_df = open_df_dic['data']
             for index, row in open_df.iterrows():
                 # たまに変わるため注意。23年１月現在、利確ロスカ注文はtype = STOP_LOSS TAKE_PROFIT
-                # 新規ポジション取得は、順張り逆張り問わず、MARKET_IF_TOUCHED
+                # 新規ポジション取得は、逆張りの場合、MARKET_IF_TOUCHED
+                # 新規ポジション取得は、順張りの場合、STOP, LIMIT
+                # 既存ポジションの利確やロスカは、"STOP_LOSS" "TAKE_PROFIT"
                 if row['type'] == 'MARKET_IF_TOUCHED' or row['type'] == 'STOP' or row['type'] == 'LIMIT':
                     count = count + 1
                 else:  # LIMIT注文、STOP注文の場合（ここでいうLIMITは利確、STOPはロスカ トレールもこっち

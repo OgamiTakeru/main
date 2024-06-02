@@ -96,19 +96,26 @@ def mode1():
 
     # ■TEST用(オーダーを取らないような物。プログラムが止まらないような記述も必要）■
 
-    # ■
-    result_dic = im.Inspection_main(gl_data5r_df)
+    # ■検証を実行し、結果を取得する
+    result_dic = im.Inspection_main2(gl_data5r_df)
 
-    # ■発注を実行する
+    # ■
     print(result_dic)
     if not result_dic['take_position_flag'] or not(result_dic['take_position_flag']):
         # 発注がない場合は、終了 (ポケ除け的な部分）
         return 0
 
-    # 現在注文があるかを確認する
-    if len(classPosition.position_check(classes)) >= 1:  # 現在、ポジションが１以上がある場合、解除。
-        classPosition.reset_all_position(classes)
-        print("  既存ポジションがあるため、解消してからオーダーを発行する")
+    # ■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
+    if classPosition.position_check(classes)['ans']:
+        # 既存のポジションがある場合。
+        tk.line_send("★ポジションありの為様子見",classPosition.position_check(classes), result_dic['memo'])
+        return 0
+        # classPosition.reset_all_position(classes)
+        print("  既存ポジションがあるため、オーダーは発行しない。")
+
+    # ■既存のオーダーがある場合（強制的に削除）
+    classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
+
     # 注文を実行する
     line_send = ""  # LINE送信用の注文結果の情報
     for n in range(len(result_dic['exe_orders'])):
@@ -116,7 +123,7 @@ def mode1():
         line_send = line_send + res_dic['order_name'] + \
                     "(" + str(result_dic['exe_orders'][n]['target_price']) + "," + str(res_dic['order_id']) + "), "
     # 注文結果を送信する
-    tk.line_send("★オーダー発行", line_send)
+    tk.line_send("★オーダー発行", result_dic['memo'], " 　　　",  line_send)
 
     print("MODE1 END")
     print("")
@@ -304,7 +311,7 @@ else:  # Live
 
 # ■ポジションクラスの生成
 classes = []
-for i in range(5):
+for i in range(6):
     # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
     # クラス名を確定し、クラスを生成する。
     new_name = "c" + str(i)

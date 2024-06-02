@@ -27,6 +27,12 @@ for i in range(3):
     classes.append(classPosition.order_information(new_name, oa))  # 順思想のオーダーを入れるクラス
 
 
+test = "j"
+
+if test:
+    print("not none")
+else:
+    print(" ttt")
 
 # data = {
 #     "decision_price": 150,

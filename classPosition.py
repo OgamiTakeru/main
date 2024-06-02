@@ -133,22 +133,6 @@ class order_information:
             print(" LIFE 終了", self.name)
             # self.output_res()  # 解析用にポジション情報を収集しておく
 
-    def order_and_make_trid(self, plan):
-        """
-        Trap and Repeat If Doneの注文専用
-        :param plan:
-            {
-                "units": 2,
-                "ask_bid": 1,
-                "start_price": 155.860,
-                "grid": 0.02,
-                "num": 3,  # numかend_priceのいずれかが必須。両方ある場合はNum優先
-                "end_price": 155.91,  # numかend_priceのいずれかが必須。両方ある場合はNum優先
-                "type": "STOP"
-            }
-        :return:
-        """
-
     def order_plan_registration(self, plan):
         """
         【最重要】
@@ -173,7 +157,6 @@ class order_information:
         self.plan = plan  # 受け取ったプラン情報(そのままOrderできる状態が基本）
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
-        print(" classPositionTest", plan['target_price'])
         self.plan['price'] = plan['target_price']  # ターゲットプライス（注文価格）は、oandaClassではprice
         self.name = plan['name']  # 名前を入れる(クラス内の変更）
         self.trade_timeout = plan['trade_timeout']
@@ -185,8 +168,12 @@ class order_information:
         self.plan['time'] = datetime.datetime.now()
 
         # (4)LC_Change情報を格納する
-        if "lc_change" in plan:
-            self.lc_change_dic = plan['lc_change']  # 辞書を丸ごと
+        self.lc_change_dic = [
+            {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},
+            {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.023}
+        ]
+        # if "lc_change" in plan:
+        #     self.lc_change_dic = plan['lc_change']  # 辞書を丸ごと
 
         # (5)カスケードクローズ情報を格納する
         if "cascade_close_map_arr" in plan:
@@ -223,13 +210,13 @@ class order_information:
         # (1)　ポジション数の確認
         position_num_dic = self.oa.TradeAllCount_exe()
         position_num = position_num_dic['data']  # 現在のオーダー数を取得
-        if position_num >= 6:
+        if position_num >= 10:
             # エラー等で大量のオーダーが入るのを防ぐ(６個以上のオーダーは防ぐ）
             tk.line_send(" 【注】大量ポジション入る可能性", position_num_dic)
             return {"order_name": "error", "order_id": 0}
         # (2)オーダー数の確認
         order_num = self.oa.OrderCount_All_exe()
-        if order_num >= 6:
+        if order_num >= 10:
             # エラー等で大量のオーダーが入るのを防ぐ
             tk.line_send(" 【注】大量オーダー入る可能性", order_num)
             return {"order_name": "error", "order_id": 0}
@@ -590,50 +577,47 @@ class order_information:
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
         ロスカット底上げを実施する。セルフとレールに近い
-        lc_change_dicに格納された情報を元に実施。
-        lc_change_dicはPlanと同時にクラスに渡される。
-        {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}
-        :return:
+        lc_change_dicは配列で、lc_change_dicはPlanと同時にクラスに渡される。
+        lc_change_dic =[{"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.1}]
+        なお、LCの変更が執行されると、"done":Trueが付与される
+        実行後
+        [{"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.1” ,"done": False}]
+        上記の辞書が、配列で渡される場合、配列全てで確認していく。
+        :return:         print(" ロスカ変更関数", self.lc_change_dic, self.t_pl_u,self.t_state)
         """
-        if len(self.lc_change_dic) == 0:
-            # 指定がない場合は実行しない。
-            return 0
         # print("  ★LC＿Change実行関数")
-        # コードの１行を短くするため、置きかておく
-        lc_exe = self.lc_change_dic['lc_change_exe']
-        lc_ensure_range = self.lc_change_dic['lc_ensure_range']
-        lc_trigger_range = self.lc_change_dic['lc_trigger_range']
-        e_price = self.t_execution_price
-
-        # 実行しない場合は何もせずに関数終了
-        if not lc_exe or self.t_state != "OPEN":
-            # エクゼフラグがFalse、または、Open以外の場合、「実行しない」
-            # print("    LC_Change実行無し @ lc_change", lc_exe, self.t_state)
+        if len(self.lc_change_dic) == 0 or self.t_state != "OPEN" or self.t_time_past < 60:
+            # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
             return 0
 
-        # ■実行処理
-        # 経過時間、または、プラス分に応じてLCの変更（主に底上げ）を実施する
-        if self.t_time_past > 60:  # N秒以上経過している場合、ロスカ引き上げ
-            # ボーダーラインを超えた場合
-            # print(" 変更確認", self.t_pl_u, ">=", lc_trigger_range, "を満たしたとき")
-            # if self.t_pl_u >= lc_trigger_range:
-            #     print("  変更OK")
-            # else:
-            #     print("  変更NG", self.t_pl_u, ">=", lc_trigger_range, type(self.t_pl_u), type(lc_trigger_range))
-            #     print("  FalseTrue", self.t_pl_u >= lc_trigger_range)
+        for i, item in enumerate(self.lc_change_dic):
+            # コードの１行を短くするため、置きかておく
+            lc_exe = item['lc_change_exe']
+            lc_ensure_range = item['lc_ensure_range']
+            lc_trigger_range = item['lc_trigger_range']
 
+            # このループで実行しない場合（フラグオフの場合、DoneがTrueの場合
+            if not lc_exe or 'done' in item:
+                # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
+                continue
+
+            # ボーダーラインを超えた場合
             if self.t_pl_u >= lc_trigger_range:
                 # print("　★変更確定")
+                print(" 変更対象", i, lc_ensure_range, lc_trigger_range, self.t_pl_u)
+                # これで配列の中の辞書って変更できるっけ？？
+                item['done'] = True
                 new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan['ask_bid']), 3)
                 data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
                 res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
                 if res['error'] == -1:
                     tk.line_send("    LC変更ミス＠lc_change")
                     return 0  # APIエラー時は終了
-                self.lc_change_dic['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
+                item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
                 tk.line_send("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
                              "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice", self.t_execution_price,
                              "予定価格", self.plan['price'])
+                break
 
 
 def error_end(info):

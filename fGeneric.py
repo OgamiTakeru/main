@@ -4,6 +4,75 @@ from plotly.subplots import make_subplots  # draw_graph
 import plotly.graph_objects as go  # draw_graph
 
 
+def draw_graph(mid_df):
+    """
+    ローソクチャーを表示する関数。
+    引数にはDataFrameをとり、最低限Open,hitg,low,Close,Time_jp,が必要。その他は任意。
+    """
+    order_num = 2  # 極値調査の粒度  gl['p_order']  ⇒基本は３。元プログラムと同じ必要がある（従来Globalで統一＝引数で渡したいけど。。）
+    fig = make_subplots(specs=[[{"secondary_y": True}]])  # 二軸の宣言
+    # ローソクチャートを表示する
+    graph_trace = go.Candlestick(x=mid_df["time_jp"], open=mid_df["open"], high=mid_df["high"],
+                                 low=mid_df["low"], close=mid_df["close"], name="OHLC")
+    fig.add_trace(graph_trace)
+
+    # PeakValley情報をグラフ化する
+    col_name = 'peak_' + str(order_num)
+    if col_name in mid_df:
+        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df['peak_' + str(order_num)], mode="markers",
+                               marker={"size": 10, "color": "red", "symbol": "circle"}, name="peak")
+        fig.add_trace(add_graph)
+    col_name = 'valley_' + str(order_num)
+    if col_name in mid_df:
+        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df['valley_' + str(order_num)], mode="markers",
+                               marker={"size": 10, "color": "blue", "symbol": "circle"}, name="valley")
+        fig.add_trace(add_graph)
+    # 移動平均線を表示する
+    col_name = "ema_l"
+    if col_name in mid_df:
+        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name], name=col_name)
+        fig.add_trace(add_graph)
+    col_name = "ema_s"
+    if col_name in mid_df:
+        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name], name=col_name)
+        fig.add_trace(add_graph)
+    col_name = "cross_price"
+    if col_name in mid_df:
+        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name],  mode="markers",
+                               marker={"size": 5, "color": "black", "symbol": "cross"}, name=col_name)
+        fig.add_trace(add_graph)
+    # ボリンジャーバンドを追加する
+    col_name = "bb_upper"
+    if col_name in mid_df:
+        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name], name=col_name)
+        fig.add_trace(add_graph)
+    col_name = "bb_lower"
+    if col_name in mid_df:
+        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name], name=col_name)
+        fig.add_trace(add_graph)
+    col_name = "bb_middle"
+    if col_name in mid_df:
+        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name], name=col_name)
+        fig.add_trace(add_graph)
+
+    fig.show()
+    # 参考＜マーカーの種類＞
+    # symbols = ('circle', 'circle-open', 'circle-dot', 'circle-open-dot','square', 'diamond', 'cross', 'triangle-up')
+
+
+def str_merge(*msg):
+    """
+    渡された文字列を結合して返却する
+    :return:
+    """
+    # 関数は可変複数のコンマ区切りの引数を受け付ける
+    message = ""
+    # 複数の引数を一つにする（数字が含まれる場合があるため、STRで文字化しておく）
+    for item in msg:
+        message = message + " " + str(item)
+    return message
+
+
 def str_to_time(str_time):
     """
     時刻（文字列 yyyy/mm/dd hh:mm:mm）をDateTimeに変換する。
@@ -149,7 +218,6 @@ def order_finalize(order_base):
     martinとTarget価格をいずれかの受け取り。両方受け取ると齟齬が発生する可能性があるため、片方のみとする
     :param order_base:必須
     order_base = {
-        "stop_or_limit": stop_or_limit,  # 必須 (1の場合順張り＝Stop,-1の場合逆張り＝Limit
         "expected_direction": river['direction'] * -1,  # 必須
         "decision_time": river['time'],  # 任意（アウトプットのエクセルの時に使う　それ以外は使わない）
         "decision_price": river['peak'],  # 必須
@@ -165,6 +233,9 @@ def order_finalize(order_base):
         "position_margin": position_margin,  # 検証で任意　運用で必須(複数Marginで再計算する可能性あり)
         "target_price": target_price,  # 検証で必須　運用で任意(複数Marginで再計算する可能性あり)
     }
+    # 注文方法は、Typeでもstop_or_limitでも可能
+        "stop_or_limit": stop_or_limit,  # 必須 (1の場合順張り＝Stop,-1の場合逆張り＝Limit
+        type = "STOP" "LIMIT" 等直接オーダーに使う文字列
     :return:　order_base = {
         "stop_or_limit": stop_or_limit,  # 任意（本番ではtype項目に置換して別途必要になる）
         "expected_direction": # 検証で必須（本番ではdirectionという名前で別途必須になる）
@@ -179,14 +250,29 @@ def order_finalize(order_base):
         "type":"STOP" or "LIMIT",# 最終的にオーダーに必須（OandaClass）
         "direction", # 最終的にオーダーに必須（OandaClass）
         "price":,  # 最終的にオーダーに必須（OandaClass）
+        "trade_timeout,　必須（ClassPosition）
+        "order_permission"  必須（ClassPosition）
     }
     """
     # ⓪必須項目がない場合、エラーとする
-    if not ('stop_or_limit' in order_base) or not ('expected_direction' in order_base) or \
-            not ('decision_price' in order_base):
-        print("　　　　エラー（項目不足)", 'stop_or_limit' in order_base, 'expected_direction' in order_base,
+    if not ('expected_direction' in order_base) or not ('decision_price' in order_base):
+        print("　　　　エラー（項目不足)", 'expected_direction' in order_base,
               'decision_price' in order_base, 'decision_time' in order_base)
         return -1  # エラー
+
+    # 0 注文方式を指定する
+    if not ('stop_or_limit' in order_base) and not ("type" in order_base):
+        print(" ★★オーダー方式が入力されていません")
+    else:
+        if 'type' in order_base:
+            if order_base['type'] == "STOP":
+                order_base['stop_or_limit'] = 1
+            elif order_base['type'] == "LIMIT":
+                order_base['stop_or_limit'] = -1
+            elif order_base['type'] == "MARKET":
+                pass
+        elif 'stop_or_limit' in order_base:
+            order_base['type'] = "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT"
 
     # ①TargetPriceを確実に取得する
     if not ('target' in order_base):
@@ -256,9 +342,10 @@ def order_finalize(order_base):
         order_base['lc_range'] = order_base['lc']
 
     # 最終的にオーダーで必要な情報を付与する(項目名を整えるためにコピーするだけ）。LimitかStopかを算出
-    order_base['type'] = "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT"
     order_base['direction'] = order_base['expected_direction']
     order_base['price'] = order_base['target_price']
+    order_base['trade_timeout'] = order_base['trade_timeout'] if 'trade_timeout' in order_base  else 60
+    order_base['order_permission'] = order_base['order_permission'] if 'order_permission' in order_base else True
 
     return order_base
 
@@ -310,7 +397,7 @@ def make_trid_order(plan):
         else:
             # 指定価格の設定
             each_order = order_finalize({  # オーダー２を作成
-                "name": "TRID" + str(i),
+                "name": "TRID" + str(plan['expected_direction']) + str(i),
                 "order_permission": True,
                 "decision_price": plan['decision_price'],  # ★
                 "target": for_price,  # 価格で指定する
@@ -331,61 +418,6 @@ def make_trid_order(plan):
 
     return order_result_arr
 
-
-def draw_graph(mid_df):
-    """
-    ローソクチャーを表示する関数。
-    引数にはDataFrameをとり、最低限Open,hitg,low,Close,Time_jp,が必要。その他は任意。
-    """
-    order_num = 2  # 極値調査の粒度  gl['p_order']  ⇒基本は３。元プログラムと同じ必要がある（従来Globalで統一＝引数で渡したいけど。。）
-    fig = make_subplots(specs=[[{"secondary_y": True}]])  # 二軸の宣言
-    # ローソクチャートを表示する
-    graph_trace = go.Candlestick(x=mid_df["time_jp"], open=mid_df["open"], high=mid_df["high"],
-                                 low=mid_df["low"], close=mid_df["close"], name="OHLC")
-    fig.add_trace(graph_trace)
-
-    # PeakValley情報をグラフ化する
-    col_name = 'peak_' + str(order_num)
-    if col_name in mid_df:
-        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df['peak_' + str(order_num)], mode="markers",
-                               marker={"size": 10, "color": "red", "symbol": "circle"}, name="peak")
-        fig.add_trace(add_graph)
-    col_name = 'valley_' + str(order_num)
-    if col_name in mid_df:
-        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df['valley_' + str(order_num)], mode="markers",
-                               marker={"size": 10, "color": "blue", "symbol": "circle"}, name="valley")
-        fig.add_trace(add_graph)
-    # 移動平均線を表示する
-    col_name = "ema_l"
-    if col_name in mid_df:
-        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name], name=col_name)
-        fig.add_trace(add_graph)
-    col_name = "ema_s"
-    if col_name in mid_df:
-        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name], name=col_name)
-        fig.add_trace(add_graph)
-    col_name = "cross_price"
-    if col_name in mid_df:
-        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name],  mode="markers",
-                               marker={"size": 5, "color": "black", "symbol": "cross"}, name=col_name)
-        fig.add_trace(add_graph)
-    # ボリンジャーバンドを追加する
-    col_name = "bb_upper"
-    if col_name in mid_df:
-        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name], name=col_name)
-        fig.add_trace(add_graph)
-    col_name = "bb_lower"
-    if col_name in mid_df:
-        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name], name=col_name)
-        fig.add_trace(add_graph)
-    col_name = "bb_middle"
-    if col_name in mid_df:
-        add_graph = go.Scatter(x=mid_df["time_jp"], y=mid_df[col_name], name=col_name)
-        fig.add_trace(add_graph)
-
-    fig.show()
-    # 参考＜マーカーの種類＞
-    # symbols = ('circle', 'circle-open', 'circle-dot', 'circle-open-dot','square', 'diamond', 'cross', 'triangle-up')
 
 
 
