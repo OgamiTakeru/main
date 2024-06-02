@@ -17,7 +17,27 @@ oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの�
 
 # 調査として、DoubleやRange等の複数Inspectionを利用する場合、このファイルから呼び出す(一番下）
 
+
 # 処理時間削減の為、data
+def order_information_add(finalized_order):
+    """
+    強制的に
+    カスケードロスカとトレールを入れる。このレンジインスペクションがメイン
+    :param finalized_order:
+    :return:
+    """
+
+    # カスケードロスカ
+    finalized_order['lc_change_dic'] = [
+            {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},
+            {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.023}
+        ]
+
+    # トレール注文を入れる
+    finalized_order['tr_range'] = 0.05
+
+    return finalized_order
+
 
 # その他オーダーに必要な処理はここで記載する
 def Inspection_main(df_r):
@@ -299,6 +319,13 @@ def Inspection_main2(df_r):
     order_merge = []  # 配列
     comment_now = ""
 
+    if line_result['latest_flag']:
+        # 直近のリバーが、抵抗ラインと判定された場合、即時、抵抗ラインから押し戻される方向にポジションを取る
+        comment_now = " 直近の抵抗ラインを発見" + str(line_result['line_direction'])
+        resistance_order ={"target": now_price, "expected_direction": line_result['line_direction'] * -1,
+                           "tp": 0.10, "lc": 0.04,
+                            "type": "MARKET", "units": 15, "decision_price": now_price, "name": "1over"}
+
     if line_result['found_upper'] and line_result['found_lower']:
         if lower_line < now_price < upper_line:
             # 現在価格がUpper以下Lower以上の範囲にいるかどうか
@@ -346,16 +373,16 @@ def Inspection_main2(df_r):
 
     # RangeOrder共通処理
     if len(upper_over_order):
-        order_merge.append(f.order_finalize(upper_over_order))
+        order_merge.append(order_information_add(f.order_finalize(upper_over_order)))
         take_position_flag = True
     if len(upper_in_order):
-        order_merge.append(f.order_finalize(upper_in_order))
+        order_merge.append(order_information_add(f.order_finalize(upper_in_order)))
         take_position_flag = True
     if len(lower_in_order):
-        order_merge.append(f.order_finalize(lower_in_order))
+        order_merge.append(order_information_add(f.order_finalize(lower_in_order)))
         take_position_flag = True
     if len(lower_over_order):
-        order_merge.append(f.order_finalize(lower_over_order))
+        order_merge.append(order_information_add(f.order_finalize(lower_over_order)))
         take_position_flag = True
 
     print("オーダー表示")

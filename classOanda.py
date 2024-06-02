@@ -207,7 +207,7 @@ class Oanda:
         """
         オーダーを発行する。以下の形式でInfo（辞書形式）を受け付ける。
         :param plan{
-            units: 購入するユニット数。大体1万とか。
+            units: 購入するユニット数。大体1万とか。必ずプラスの値で受け取る（ポジションの方向はask_bidで判別する）
             ask_bid: 1の場合買い(Ask)、-1の場合売り(Bid) 引数時は['direction']になってしまっている。
             price: 130.150のような小数点三桁で指定。（メモ：APIで渡す際は小数点３桁のStr型である必要がある。本関数内で自動変換）
                     成り行き注文であっても、LCやTPを設定する上では必要
@@ -242,7 +242,7 @@ class Oanda:
                 }
             }
             # UNITとTYPEの設定
-            data['order']['units'] = str(plan['units'] * plan['ask_bid'])  # 必須　units数 askはマイナス、bidはプラス値
+            data['order']['units'] = str(abs(plan['units']) * plan['ask_bid'])  # 必須　units数 askはマイナス、bidはプラス値
             data['order']['type'] = plan['type']  # 必須
             # PRICEの設定① 現在価格の取得(MARKET注文で利用するため）
             price_dic = self.NowPrice_exe("USD_JPY")  # 現在価格の取得用APIを叩く

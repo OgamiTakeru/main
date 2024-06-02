@@ -168,12 +168,12 @@ class order_information:
         self.plan['time'] = datetime.datetime.now()
 
         # (4)LC_Change情報を格納する
-        self.lc_change_dic = [
-            {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},
-            {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.023}
-        ]
-        # if "lc_change" in plan:
-        #     self.lc_change_dic = plan['lc_change']  # 辞書を丸ごと
+        # self.lc_change_dic = [
+        #     {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},
+        #     {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.023}
+        # ]
+        if "lc_change" in plan:
+            self.lc_change_dic = plan['lc_change']  # 辞書を丸ごと
 
         # (5)カスケードクローズ情報を格納する
         if "cascade_close_map_arr" in plan:
