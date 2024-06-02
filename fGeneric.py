@@ -220,10 +220,10 @@ def order_finalize(order_base):
     order_base = {
         "expected_direction": river['direction'] * -1,  # 必須
         "decision_time": river['time'],  # 任意（アウトプットのエクセルの時に使う　それ以外は使わない）
-        "decision_price": river['peak'],  # 必須
-        "target": 価格 or Range  # 80以上の値は価格とみなし、それ以外ならMarginとする
-        "tp": 価格 or Range,  # 80以上の値は価格とみなし、それ以外ならMarginとする
-        "lc": 価格　or Range  # 80以上の値は価格とみなし、それ以外ならMarginとする
+        "decision_price": river['peak'],  # 必須（targetの指定がRangeで与えられた場合に利用する）
+        "target": 価格 or Range で正の値  # 80以上の値は価格とみなし、それ以外ならMarginとする
+        "tp": 価格 or Rangeで正の値,  # 80以上の値は価格とみなし、それ以外ならMarginとする
+        "lc": 価格　or Rangeで正の値  # 80以上の値は価格とみなし、それ以外ならMarginとする
         #オプション
         ""
     }

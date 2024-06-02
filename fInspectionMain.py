@@ -11,7 +11,10 @@ import fDoublePeaks as dp
 import classPosition as classPosition
 import fRangeInspection as ri
 import fPeakLineInspection as p
+
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
+
+
 # now_price_dic = oa.NowPrice_exe("USD_JPY")['data']['mid']
 # now_price = now_price_dic['data']['mid']
 
@@ -29,9 +32,9 @@ def order_information_add(finalized_order):
 
     # カスケードロスカ
     finalized_order['lc_change_dic'] = [
-            {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},
-            {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.023}
-        ]
+        {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},
+        {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.023}
+    ]
 
     # トレール注文を入れる
     finalized_order['tr_range'] = 0.05
@@ -132,21 +135,27 @@ def Inspection_main(df_r):
                     if from_upper_ratio <= 0.30:
                         comment_now = "  割と上の方。この価格より下に、Lowerまでトラリピ追加"
                         upper_over_order = {"target": upper_line + 0.01, "expected_direction": -1, "tp": 0.02,
-                                            "lc": 0.04, "type": "LIMIT", "units": 11, "decision_price": now_price, "name":"1over"}
+                                            "lc": 0.04, "type": "LIMIT", "units": 11, "decision_price": now_price,
+                                            "name": "1over"}
                         upper_in_order = {"target": now_price - 0.012, "expected_direction": -1, "tp": line_gap * 0.8,
-                                          "lc": line_gap * 0.8, "type": "STOP", "units": 12, "decision_price": now_price, "name":"-1in"}
+                                          "lc": line_gap * 0.8, "type": "STOP", "units": 12,
+                                          "decision_price": now_price, "name": "-1in"}
                     elif from_upper_ratio >= 0.070:
                         comment_now = "  割と下の方。この価格より上に、Upperまでトラリピ追加"
                         lower_in_order = {"target": now_price + 0.012, "expected_direction": -1, "tp": 0.03,
-                                          "lc": 0.04, "type": "LIMIT", "units": 22, "decision_price": now_price, "name":"1in"}  # tp = line_gap * 0.8
+                                          "lc": 0.04, "type": "LIMIT", "units": 22, "decision_price": now_price,
+                                          "name": "1in"}  # tp = line_gap * 0.8
                         lower_over_order = {"target": lower_line - 0.01, "expected_direction": 1, "tp": 0.02,
-                                            "lc": 0.04, "type": "LIMIT", "units": 21, "decision_price": now_price, "name": "-1over"}
+                                            "lc": 0.04, "type": "LIMIT", "units": 21, "decision_price": now_price,
+                                            "name": "-1over"}
                     else:
                         comment_now = " 割とさまよっている状態"
                         upper_over_order = {"target": now_price + 0.01, "expected_direction": -1, "tp": upper_line,
-                                            "lc": lower_line, "type": "LIMIT", "units": 31, "decision_price": now_price, "name":"1over"}
+                                            "lc": lower_line, "type": "LIMIT", "units": 31, "decision_price": now_price,
+                                            "name": "1over"}
                         lower_over_order = {"target": now_price - 0.01, "expected_direction": 1, "tp": lower_line,
-                                            "lc": upper_line, "type": "LIMIT", "units": 32, "decision_price": now_price, "name":"-2over"}
+                                            "lc": upper_line, "type": "LIMIT", "units": 32, "decision_price": now_price,
+                                            "name": "-2over"}
             else:
                 # 現在価格がUpperとLowerの外側にある場合(直近の２足が凄く伸びている場合？？）
                 if now_price < lower_line:
@@ -156,9 +165,11 @@ def Inspection_main(df_r):
                     # inはlower側に戻るのを取るオーダー、overは初期のちょい折り返しを目指すオーダー
                     tp = f.cal_at_least(0.03, abs(lower_line - now_price))
                     lower_in_order = {"target": now_price + 0.012, "expected_direction": -1, "tp": tp * 1.2,
-                                      "lc": tp * 1.1, "type": "LIMIT", "units": 61, "decision_price": now_price, "name":"1in"}
+                                      "lc": tp * 1.1, "type": "LIMIT", "units": 61, "decision_price": now_price,
+                                      "name": "1in"}
                     lower_over_order = {"target": now_price - 0.012, "expected_direction": 1, "tp": tp,
-                                        "lc": lower_line, "type": "LIMIT", "units": 62, "decision_price": now_price, "name":"-1over"}
+                                        "lc": lower_line, "type": "LIMIT", "units": 62, "decision_price": now_price,
+                                        "name": "-1over"}
                     comment_now = "lower側に既に飛び出ている場合(latest_dirが１）"
                 elif now_price > upper_line:
                     #       /\ ←　この折返しで呼ばれる（line突破後なので強い？）ただlineまでは戻る可能性
@@ -167,9 +178,11 @@ def Inspection_main(df_r):
                     # inはlower側に戻るのを取るオーダー、overは初期のちょい折り返しを目指すオーダー
                     tp = abs(upper_line - now_price)
                     upper_over_order = {"target": now_price + 0.012, "expected_direction": -1, "tp": tp,
-                                        "lc": upper_line, "type": "LIMIT", "units": 71, "decision_price": now_price, "name":"1over"}
+                                        "lc": upper_line, "type": "LIMIT", "units": 71, "decision_price": now_price,
+                                        "name": "1over"}
                     upper_in_order = {"target": now_price - 0.012, "expected_direction": 1, "tp": tp * 1.2,
-                                      "lc": tp * 1.1, "type": "LIMIT", "units": 72, "decision_price": now_price, "name":"-1in"}
+                                      "lc": tp * 1.1, "type": "LIMIT", "units": 72, "decision_price": now_price,
+                                      "name": "-1in"}
                     comment_now = "upper側に既に飛び出ている場合(latest_dirが-１）"
 
 
@@ -187,14 +200,16 @@ def Inspection_main(df_r):
                     # 現在価格がUpperLineより上の場合（より上へ）
                     comment_now = "Upperのみ（現在価格がUpperより上。より上へ）"
                     upper_over_order = {"target": now_price + 0.01, "expected_direction": -1, "tp": 0.02,
-                                        "lc": 0.04, "type": "LIMIT", "units": 41, "decision_price": now_price, "name":"1over"}
+                                        "lc": 0.04, "type": "LIMIT", "units": 41, "decision_price": now_price,
+                                        "name": "1over"}
                     # upper_in_order = {"target": now_price - 0.012, "expected_direction": -1, "tp": 0.03,
                     #                   "lc": 0.4, "type": "STOP", "units": 42, "decision_price": now_price, "name":"t"}
                 else:
                     # 現在価格がUpperLineより下の場合（もう一度Upperに近づく）
                     comment_now = "Upperのみ（現在価格がUpperより下。再度Upperに近づく）"
                     upper_over_order = {"target": now_price + 0.01, "expected_direction": -1, "tp": 0.02,
-                                        "lc": 0.04, "type": "LIMIT", "units": 41, "decision_price": now_price, "name":"1over"}
+                                        "lc": 0.04, "type": "LIMIT", "units": 41, "decision_price": now_price,
+                                        "name": "1over"}
                     # upper_in_order = {"target": now_price - 0.012, "expected_direction": -1, "tp": 0.03,
                     #                   "lc": 0.4, "type": "STOP", "units": 42, "decision_price": now_price, "name":"t"}
             elif line_result['found_lower']:
@@ -203,14 +218,16 @@ def Inspection_main(df_r):
                     # 現在価格がLowerLineより下の場合
                     comment_now = "Lowerのみ(現在価格がLowerより下。より下へ。"
                     lower_in_order = {"target": now_price + 0.012, "expected_direction": -1, "tp": 0.03,
-                                      "lc": 0.04, "type": "LIMIT", "units": 51, "decision_price": now_price, "name": "-1in"}
+                                      "lc": 0.04, "type": "LIMIT", "units": 51, "decision_price": now_price,
+                                      "name": "-1in"}
                     # lower_over_order = {"target": lower_line - 0.01, "expected_direction": -1, "tp": 0.02,
                     #                     "lc": 0.04, "type": "STOP", "units": 52, "decision_price": now_price,
                     #                     "name": "t"}
                 else:
                     comment_now = "Lowerのみ(現在価格がLowerより上。再度Lowerに近づく方向へ"
                     lower_in_order = {"target": now_price + 0.01, "expected_direction": 1, "tp": 0.03,
-                                      "lc": 0.04, "type": "LIMIT", "units": 51, "decision_price": now_price, "name":"-1in"}
+                                      "lc": 0.04, "type": "LIMIT", "units": 51, "decision_price": now_price,
+                                      "name": "-1in"}
                     # lower_over_order = {"target": lower_line - 0.01, "expected_direction": -1, "tp": 0.02,
                     #                     "lc": 0.04, "type": "STOP", "units": 52, "decision_price": now_price, "name":"t"}
 
@@ -322,54 +339,46 @@ def Inspection_main2(df_r):
     if line_result['latest_flag']:
         # 直近のリバーが、抵抗ラインと判定された場合、即時、抵抗ラインから押し戻される方向にポジションを取る
         comment_now = " 直近の抵抗ラインを発見" + str(line_result['line_direction'])
-        resistance_order ={"target": now_price, "expected_direction": line_result['line_direction'] * -1,
-                           "tp": 0.10, "lc": 0.04,
-                            "type": "MARKET", "units": 15, "decision_price": now_price, "name": "1over"}
+        resistance_order = {"target": now_price, "expected_direction": line_result['line_direction'] * -1,
+                            "tp": 0.10, "lc": 0.04,
+                            "type": "MARKET", "units": 15, "decision_price": now_price, "name": "resistance"}
+        # 抵抗ラインを超えてしまった場合、大きく超える方向でオーダーを出す
+        afford = abs(now_price - line_result['line_result'])  # MARKETとセットでオーダーするので、設定額には余裕が必要
+        afford = f.cal_at_least(0.06, afford)  # 現在価格よりも最低0.06離れた位置にセットする
+        resistance_over_order = {"target": afford ,
+                                 "expected_direction": line_result['line_direction'],
+                                 "tp": 0.12, "lc": 0.06,
+                                 "type": "STOP", "units": 15, "decision_price": now_price, "name": "resistance_over"}
 
     if line_result['found_upper'] and line_result['found_lower']:
-        if lower_line < now_price < upper_line:
-            # 現在価格がUpper以下Lower以上の範囲にいるかどうか
-            comment_now = "  幅が狭いため、向かい合いオーダー"
-            upper_over_order = {"target": upper_line + 0.01, "expected_direction": 1, "tp": 0.02, "lc": 0.04,
-                                "type": "STOP", "units": 15, "decision_price": now_price, "name": "1over"}  #
-            upper_in_order = {"target": upper_line, "expected_direction": -1, "tp": 0.03,
-                              "lc": 0.04, "type": "LIMIT", "units": 10, "decision_price": now_price,
-                              "name": "-1in"}  # tp = line_gap * 0.8
-            lower_in_order = {"target": lower_line, "expected_direction": 1, "tp": 0.03,
-                              "lc": 0.04, "type": "LIMIT", "units": 20, "decision_price": now_price,
-                              "name": "1in"}
-            lower_over_order = {"target": lower_line - 0.01, "expected_direction": -1, "tp": 0.02, "lc": 0.04,
-                                "type": "STOP", "units": 25, "decision_price": now_price, "name": "-1over"}
-        elif now_price < lower_line:
-            comment_now = "  上下ラインありだが、現在価格がlower以下(さらに下がる方向）"
-            lower_over_order = {"target": lower_line - 0.01, "expected_direction": -1, "tp": 0.02, "lc": 0.04,
-                                "type": "STOP", "units": 25, "decision_price": now_price, "name": "-1over"}
-        elif now_price > upper_line:
-            comment_now = "  上下ラインありだが、現在価格がupper以上(さらに上がる方向）"
-            upper_over_order = {"target": upper_line + 0.01, "expected_direction": 1, "tp": 0.02, "lc": 0.04,
-                                "type": "STOP", "units": 15, "decision_price": now_price, "name": "1over"}
+        pass
+        # if lower_line < now_price < upper_line:
+        #     # 現在価格がUpper以下Lower以上の範囲にいるかどうか
+        #     comment_now = "  幅が狭いため、向かい合いオーダー"
+        #     upper_over_order = {"target": upper_line + 0.01, "expected_direction": 1, "tp": 0.02, "lc": 0.04,
+        #                         "type": "STOP", "units": 15, "decision_price": now_price, "name": "1over"}  #
+        #     upper_in_order = {"target": upper_line, "expected_direction": -1, "tp": 0.03,
+        #                       "lc": 0.04, "type": "LIMIT", "units": 10, "decision_price": now_price,
+        #                       "name": "-1in"}  # tp = line_gap * 0.8
+        #     lower_in_order = {"target": lower_line, "expected_direction": 1, "tp": 0.03,
+        #                       "lc": 0.04, "type": "LIMIT", "units": 20, "decision_price": now_price,
+        #                       "name": "1in"}
+        #     lower_over_order = {"target": lower_line - 0.01, "expected_direction": -1, "tp": 0.02, "lc": 0.04,
+        #                         "type": "STOP", "units": 25, "decision_price": now_price, "name": "-1over"}
+        # elif now_price < lower_line:
+        #     comment_now = "  上下ラインありだが、現在価格がlower以下(さらに下がる方向）"
+        #     lower_over_order = {"target": lower_line - 0.01, "expected_direction": -1, "tp": 0.02, "lc": 0.04,
+        #                         "type": "STOP", "units": 25, "decision_price": now_price, "name": "-1over"}
+        # elif now_price > upper_line:
+        #     comment_now = "  上下ラインありだが、現在価格がupper以上(さらに上がる方向）"
+        #     upper_over_order = {"target": upper_line + 0.01, "expected_direction": 1, "tp": 0.02, "lc": 0.04,
+        #                         "type": "STOP", "units": 15, "decision_price": now_price, "name": "1over"}
     elif not line_result['found_upper'] and line_result['found_lower']:
         # Lowerだけの発見の場合
-        if now_price < lower_line:
-            comment_now = "  下ラインのみ、現在価格がlower以下(さらに下がる方向）"
-            lower_over_order = {"target": lower_line - 0.01, "expected_direction": -1, "tp": 0.02, "lc": 0.04,
-                                "type": "STOP", "units": 25, "decision_price": now_price, "name": "-1over"}
-        else:
-            comment_now = "  下ラインのみ、現在価格がlower以上(LowerLine超えられず上昇に転じている）"
-            lower_in_order = {"target": lower_line, "expected_direction": 1, "tp": 0.03,
-                              "lc": 0.04, "type": "LIMIT", "units": 20, "decision_price": now_price,
-                              "name": "1in"}
+        pass
     elif line_result['found_upper'] and not line_result['found_lower']:
         # upperだけの発見の場合
-        if now_price > upper_line:
-            comment_now = "  上ラインのみ、現在価格がupper以上(さらに上がる方向）"
-            upper_over_order = {"target": upper_line + 0.01, "expected_direction": 1, "tp": 0.02, "lc": 0.04,
-                                "type": "STOP", "units": 15, "decision_price": now_price, "name": "1over"}
-        else:
-            comment_now = "  上ラインのみ、現在価格がupper以下(upperLine超えられえず、下落に転じている）"
-            upper_in_order = {"target": upper_line, "expected_direction": -1, "tp": 0.03,
-                              "lc": 0.04, "type": "LIMIT", "units": 10, "decision_price": now_price,
-                              "name": "-1in"}
+        pass
 
     # RangeOrder共通処理
     if len(upper_over_order):
@@ -384,15 +393,20 @@ def Inspection_main2(df_r):
     if len(lower_over_order):
         order_merge.append(order_information_add(f.order_finalize(lower_over_order)))
         take_position_flag = True
+    if len(resistance_order):
+        order_merge.append(order_information_add(f.order_finalize(resistance_order)))
+        take_position_flag = True
+    if len(resistance_over_order):
+        order_merge.append(order_information_add(f.order_finalize(resistance_over_order)))
+        take_position_flag = True
 
     print("オーダー表示")
 
     flag_and_orders = {
         "take_position_flag": take_position_flag,
         "exe_orders": order_merge,
-        "memo": f.str_merge("upper", upper_line, "lower", lower_line, "now",comment_now, now_price)
+        "memo": f.str_merge("upper", upper_line, "lower", lower_line, "now", comment_now, now_price)
     }
-
 
     # （２）シンプルなダブルトップを見つける
     # doublePeak_ans = dp.DoublePeak_4peaks(df_r, peaks)
