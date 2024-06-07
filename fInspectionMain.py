@@ -31,8 +31,8 @@ def order_information_add(finalized_order):
     """
 
     # カスケードロスカ
-    finalized_order['lc_change_dic'] = [
-        {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},
+    finalized_order['lc_change'] = [
+        {"lc_change_exe": True, "lc_trigger_range": 0.013, "lc_ensure_range": -0.03},
         {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.023}
     ]
 
@@ -284,9 +284,7 @@ def Inspection_main2(df_r):
     now_price = df_r.iloc[0]['open']
     # パラメータから情報を取得する
     take_position_flag = False
-    flag_and_orders = {
-        "take_position_flag": take_position_flag,
-    }
+    flag_and_orders = {"take_position_flag": take_position_flag,}
     # （０）Peakデータを取得する(データフレムは二時間半前くらいが良い？？）
     print(" Range調査対象")
     df_r_range = df_r[:35]
@@ -313,107 +311,105 @@ def Inspection_main2(df_r):
     print("結果")
     print(line_result)
 
-    # upperlineを取得
-    upper_line = 0
-    if line_result['found_upper']:
-        if line_result['upper_line']['line_strength'] >= 2:
-            upper_line = line_result['upper_line']['line_price']
-        else:
-            line_result['found_upper'] = False
-    # lowerLineを取得
-    lower_line = 0
-    if line_result['found_lower']:
-        if line_result['lower_line']['line_strength'] >= 2:
-            lower_line = line_result['lower_line']['line_price']
-        else:
-            line_result['found_lower']
-
-    # オーダー情報格納（仮）
-    upper_over_order = {}
-    upper_in_order = {}
-    lower_in_order = {}
-    lower_over_order = {}
+    # オーダー情報格納（仮
     order_merge = []  # 配列
-    comment_now = ""
-
-    if line_result['latest_flag']:
-        # 直近のリバーが、抵抗ラインと判定された場合、即時、抵抗ラインから押し戻される方向にポジションを取る
-        comment_now = " 直近の抵抗ラインを発見" + str(line_result['line_direction'])
-        resistance_order = {"target": now_price, "expected_direction": line_result['line_direction'] * -1,
-                            "tp": 0.10, "lc": 0.04,
-                            "type": "MARKET", "units": 15, "decision_price": now_price, "name": "resistance"}
-        # 抵抗ラインを超えてしまった場合、大きく超える方向でオーダーを出す
-        afford = abs(now_price - line_result['line_result'])  # MARKETとセットでオーダーするので、設定額には余裕が必要
-        afford = f.cal_at_least(0.06, afford)  # 現在価格よりも最低0.06離れた位置にセットする
-        resistance_over_order = {"target": afford ,
-                                 "expected_direction": line_result['line_direction'],
-                                 "tp": 0.12, "lc": 0.06,
-                                 "type": "STOP", "units": 15, "decision_price": now_price, "name": "resistance_over"}
-
-    if line_result['found_upper'] and line_result['found_lower']:
-        pass
-        # if lower_line < now_price < upper_line:
-        #     # 現在価格がUpper以下Lower以上の範囲にいるかどうか
-        #     comment_now = "  幅が狭いため、向かい合いオーダー"
-        #     upper_over_order = {"target": upper_line + 0.01, "expected_direction": 1, "tp": 0.02, "lc": 0.04,
-        #                         "type": "STOP", "units": 15, "decision_price": now_price, "name": "1over"}  #
-        #     upper_in_order = {"target": upper_line, "expected_direction": -1, "tp": 0.03,
-        #                       "lc": 0.04, "type": "LIMIT", "units": 10, "decision_price": now_price,
-        #                       "name": "-1in"}  # tp = line_gap * 0.8
-        #     lower_in_order = {"target": lower_line, "expected_direction": 1, "tp": 0.03,
-        #                       "lc": 0.04, "type": "LIMIT", "units": 20, "decision_price": now_price,
-        #                       "name": "1in"}
-        #     lower_over_order = {"target": lower_line - 0.01, "expected_direction": -1, "tp": 0.02, "lc": 0.04,
-        #                         "type": "STOP", "units": 25, "decision_price": now_price, "name": "-1over"}
-        # elif now_price < lower_line:
-        #     comment_now = "  上下ラインありだが、現在価格がlower以下(さらに下がる方向）"
-        #     lower_over_order = {"target": lower_line - 0.01, "expected_direction": -1, "tp": 0.02, "lc": 0.04,
-        #                         "type": "STOP", "units": 25, "decision_price": now_price, "name": "-1over"}
-        # elif now_price > upper_line:
-        #     comment_now = "  上下ラインありだが、現在価格がupper以上(さらに上がる方向）"
-        #     upper_over_order = {"target": upper_line + 0.01, "expected_direction": 1, "tp": 0.02, "lc": 0.04,
-        #                         "type": "STOP", "units": 15, "decision_price": now_price, "name": "1over"}
-    elif not line_result['found_upper'] and line_result['found_lower']:
-        # Lowerだけの発見の場合
-        pass
-    elif line_result['found_upper'] and not line_result['found_lower']:
-        # upperだけの発見の場合
-        pass
-
-    # RangeOrder共通処理
-    if len(upper_over_order):
-        order_merge.append(order_information_add(f.order_finalize(upper_over_order)))
-        take_position_flag = True
-    if len(upper_in_order):
-        order_merge.append(order_information_add(f.order_finalize(upper_in_order)))
-        take_position_flag = True
-    if len(lower_in_order):
-        order_merge.append(order_information_add(f.order_finalize(lower_in_order)))
-        take_position_flag = True
-    if len(lower_over_order):
-        order_merge.append(order_information_add(f.order_finalize(lower_over_order)))
-        take_position_flag = True
-    if len(resistance_order):
-        order_merge.append(order_information_add(f.order_finalize(resistance_order)))
-        take_position_flag = True
-    if len(resistance_over_order):
-        order_merge.append(order_information_add(f.order_finalize(resistance_over_order)))
-        take_position_flag = True
-
-    print("オーダー表示")
-
-    flag_and_orders = {
-        "take_position_flag": take_position_flag,
-        "exe_orders": order_merge,
-        "memo": f.str_merge("upper", upper_line, "lower", lower_line, "now", comment_now, now_price)
+    flag_and_orders = {"take_position_flag": False, "memo":""}
+    basic = {
+            "target": 0.01,
+            "type": "STOP",
+            "unit": 1000,
+            "expected_direction": line_result['latest_line']['line_direction'],
+            "tp": 0.10,
+            "lc": 0.04,
+            'priority': 0,
+            "decision_price": now_price,
+            "name": ""
     }
 
+    if line_result['latest_flag']:
+        # 注文に対する総括
+        take_position_flag = True
+        priority = line_result['latest_line']['line_strength']
+        if priority >= 2:
+            # プライオリティが最高ランクの場合、かなり強いラインと考え、レジスタンスを信じる
+            # ①本命のレジスタンス
+            basic2=basic.copy()
+            comment_now = "直近で強い" + str(line_result['latest_line']['line_direction']) + "方向の抵抗線" +\
+                          "" + str(line_result['latest_line']['line_price']) + "発見。"
+            print(basic2['target'])
+            basic2['lc'] = 0.1  # LCは広め
+            basic2['expected_direction'] = line_result['latest_line']['line_direction'] * -1
+            basic2['priority'] = priority
+            basic2['units'] = basic['unit'] * 2
+            basic2['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance"
+            # 注文を配列に追加
+            order_merge.append(order_information_add(f.order_finalize(basic2)))
+            # ②サブのレジスタンス突破オーダー
+            afford = abs(now_price - line_result['latest_line']['line_price'])  # MARKETとセットでオーダーするので、設定額には余裕が必要
+            afford = f.cal_at_least(0.08, afford)  # 現在価格よりも最低0.06離れた位置にセットする
+            basic['target'] = afford
+            basic['expected_direction'] = line_result['latest_line']['line_direction']
+            basic['name'] = str(line_result['latest_line']['line_strength']) + "resistance_over"
+            basic['units'] = 1000
+            order_merge.append(order_information_add(f.order_finalize(basic)))
+        else:
+            # プライオリティが最高ランク以外の場合（主に1.5の短期間のダブルトップの場合）、突破方向メインに取る。
+            basic2 = basic.copy()
+            comment_now = "直近で短期DTで" + str(line_result['latest_line']['line_direction']) + "方向の抵抗線" + \
+                          "" + str(line_result['latest_line']['line_price']) + "発見。"
+            # ①本命のレジスタンス
+            basic2['target'] = -0.05
+            basic2['lc'] = 0.05  # LCは少し狭目
+            basic2['expected_direction'] = line_result['latest_line']['line_direction'] * -1
+            basic2['priority'] = priority
+            basic2['units'] = 1000
+            basic2['name'] = str(line_result['latest_line']['line_strength']) + "resistance"
+            # 注文を配列に追加
+            order_merge.append(order_information_add(f.order_finalize(basic2)))
+
+            # ②サブのレジスタンス突破オーダー
+            afford = abs(now_price - line_result['latest_line']['line_price'])  # MARKETとセットでオーダーするので、設定額には余裕が必要
+            afford = f.cal_at_least(0.06, afford)  # 現在価格よりも最低0.06離れた位置にセットする
+            basic['target'] = 0.01
+            basic['lc'] = 0.09  # LCは少し狭目
+            basic['expected_direction'] = line_result['latest_line']['line_direction']
+            basic['name'] = str(line_result['latest_line']['line_strength']) + "Mainresistance_over"
+            basic['units'] = 1000 * 2
+            order_merge.append(order_information_add(f.order_finalize(basic)))
+
+
+
+        if line_result['found_upper'] and line_result['found_lower']:
+            # UpperとLowerが発見されている場合、
+            # 幅が狭すぎる場合、様子見？
+            # UpperがLatestの場合、
+            line_comment = "upper-Lower" + str(line_result['upper_line']['line_price']) + "-" + \
+                           str(line_result['lower_line']['line_price'])
+            if line_result['upper_line']['line_price'] - line_result['lower_line']['line_price'] <= 0.05:
+                print(" UpperLowerの幅狭すぎ")
+                take_position_flag = False
+        elif not line_result['found_upper'] and line_result['found_lower']:
+            # Lowerだけの発見の場合
+            line_comment = "LowerOnly" + str(line_result['lower_line']['line_price'])
+            pass
+        elif line_result['found_upper'] and not line_result['found_lower']:
+            # upperだけの発見の場合
+            line_comment = "upperOnly" + str(line_result['upper_line']['line_price'])
+            pass
+
+        flag_and_orders = {
+            "take_position_flag": take_position_flag,
+            "priority": priority,
+            "exe_orders": order_merge,
+            "memo": f.str_merge("ラインOrder", comment_now,line_comment)
+        }
+
     # （２）シンプルなダブルトップを見つける
-    # doublePeak_ans = dp.DoublePeak_4peaks(df_r, peaks)
-    # if doublePeak_ans['take_position_flag']:
-    #     print(" シンプルDT発見")
-    #     flag_and_orders = doublePeak_ans
-    #     flag_and_orders['memo'] = "DoubleTop4"
+    doublePeak_ans = dp.DoublePeak_4peaks(df_r, peaks)
+    if doublePeak_ans['take_position_flag']:
+        print(" シンプルDT発見")
+        # flag_and_orders = doublePeak_ans
+        flag_and_orders['memo'] = "DoubleTop4!! " + flag_and_orders['memo']
 
     # 【FINAL】
     return flag_and_orders

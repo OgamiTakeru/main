@@ -361,8 +361,8 @@ res = block_inspection_main(df_r[0:60])
 # print(tilts)
 # t = tilts[0]['tilt']
 # t_time = tilts[0]['tilt_combi']['latest_time']
-# t_time_past = round((f.str_to_time(latest_time) - f.str_to_time(t_time)).seconds / 60, 3)
-# print("  ", t, t_time, latest_time, t_time_past)
+# t_time_past_sec = round((f.str_to_time(latest_time) - f.str_to_time(t_time)).seconds / 60, 3)
+# print("  ", t, t_time, latest_time, t_time_past_sec)
 #
 #
 # print("BOTTOM")
@@ -370,8 +370,8 @@ res = block_inspection_main(df_r[0:60])
 # print(tilts)
 # t = tilts[0]['tilt']
 # t_time = tilts[0]['tilt_combi']['latest_time']
-# t_time_past = round((f.str_to_time(latest_time) - f.str_to_time(t_time)).seconds / 60, 3)
-# print("  ", t, t_time, latest_time, t_time_past)
+# t_time_past_sec = round((f.str_to_time(latest_time) - f.str_to_time(t_time)).seconds / 60, 3)
+# print("  ", t, t_time, latest_time, t_time_past_sec)
 # #
 
 # p.peaks_collect_main_del(df_r)

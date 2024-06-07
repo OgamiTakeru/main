@@ -546,7 +546,7 @@ def order_setting(class_order_arr, info_l):
         target_class.crcdo_border_by_time = order_info_temp['crcdo_border_by_time']  # 時間LC変更
         target_class.crcdo_max_lc_by_time = order_info_temp['crcdo_max_lc_by_time']  # 時間LC変更
         target_class.crcdo_target_lc_by_time = order_info_temp['crcdo_target_lc_by_time']  # 時間LC変更
-        target_class.order_timeout = order_info_temp['order_timeout']
+        target_class.order_timeout_min = order_info_temp['order_timeout_min']
         target_class.crcdo_self_trail_exe = order_info_temp["crcdo_self_trail_exe"]  # トレールは実施しない
 
     # 送信は一回だけにしておく。
@@ -615,7 +615,7 @@ def mode1():
             "crcdo_border_by_time": lc_change_time,  # ９分(540秒）を超えたらLC短縮対象と亜する
             "crcdo_max_lc_by_time": main_order['max_lc_range'],  # 最大許容のLC
             "crcdo_target_lc_by_time": 0.027,  # 時間経過後の少し小さなLC（LC以下の場合あり）
-            "order_timeout": 20,
+            "order_timeout_min": 20,
             "crcdo_trail_ratio": 0.5,  # トレール時、勝ちのN%ラインにトレールする
             "crcdo_self_trail_exe": True,  # トレールは実施有無（Trueは実施）
         }
@@ -651,7 +651,7 @@ def mode1():
         #     "crcdo_border_by_time": lc_change_time,  # ９分(540秒）を超えたらLC短縮対象と亜する
         #     "crcdo_max_lc_by_time": junc_order['max_lc'],  # 最大許容のLC
         #     "crcdo_target_lc_by_time": 0.027,  # 時間経過後の少し小さなLC（LC以下の場合あり）
-        #     "order_timeout": 20,
+        #     "order_timeout_min": 20,
         #     "crcdo_trail_ratio": 0.6,  # トレール時、勝ちのN%ラインにトレールする
         #     "crcdo_self_trail_exe": True,  # トレールは実施しない
         # }
@@ -694,7 +694,7 @@ def mode1():
             "crcdo_border_by_time": lc_change_time,  # ９分(540秒）を超えたらLC短縮対象と亜する
             "crcdo_max_lc_by_time": junc_order['max_lc_range'],  # 最大許容のLC
             "crcdo_target_lc_by_time": 0.027,  # 時間経過後の少し小さなLC（LC以下の場合あり）
-            "order_timeout": 20,
+            "order_timeout_min": 20,
             "crcdo_trail_ratio": 0.6,  # トレール時、勝ちのN%ラインにトレールする
             "crcdo_self_trail_exe": True,  # トレールは実施しない
         }
@@ -737,7 +737,7 @@ def mode1():
             "crcdo_border": 0.03,  # 0.05を超えたらCRCDOでcrcdo_guarantee
             "crcdo_guarantee": -0.02,
             "crcdo_trail_ratio": 0.7,  # トレール時、勝ちのN%ラインにトレールする
-            "order_timeout": 6,  # 分で指定
+            "order_timeout_min": 6,  # 分で指定
             "crcdo_self_trail_exe": True,  # トレールは実施しない
             "crcdo_border_by_time": lc_change_time,  # ９分(540秒）を超えたらLC短縮対象と亜する
             "crcdo_max_lc_by_time": result_turn2_orders['max_lc_range'],  # 最大許容のLC(短時間中の）

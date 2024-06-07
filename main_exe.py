@@ -79,7 +79,7 @@ def mode1():
         "units": 10,  # 〇
         "direction": order_base['expected_direction'],  # 〇　（ask_bidとなる）
         "type": "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT",　 # 〇
-        "trade_timeout": 1800,  # 〇
+        "trade_timeout_min": 1800,  # 〇
         "remark": "test",  # 任意
         "tr_range": 0,  # 〇
         "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}　任意
@@ -87,6 +87,7 @@ def mode1():
     :return: なし
     """
     print("  Mode1")
+    global gl_trade_num
     global gl_latest_trigger_time, gl_peak_memo
     global gl_upper_line, gl_lower_line  # RangeInspectionのみ
 
@@ -106,24 +107,37 @@ def mode1():
         return 0
 
     # ■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
-    if classPosition.position_check(classes)['ans']:
-        # 既存のポジションがある場合。
-        tk.line_send("★ポジションありの為様子見",classPosition.position_check(classes), result_dic['memo'])
-        return 0
-        # classPosition.reset_all_position(classes)
-        print("  既存ポジションがあるため、オーダーは発行しない。")
+    pInfo = classPosition.position_check(classes)
+    if pInfo['ans']:
+        # 既存のポジションがある場合、プライオリティ次第で注文を発行する
+        # ポジション後２５分以内の物は、いかなる場合も新ポジションは発行しない
+        if pInfo['max_position_time_sec'] < 1500:
+            tk.line_send("★ポジションありの為様子見", pInfo['max_position_time_sec'], classPosition.position_check(classes), result_dic['memo'])
+            return 0
+        # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
+        if result_dic['max_priority'] > pInfo['max_priority']:
+            tk.line_send("★ポジションありだが置換",classPosition.position_check(classes), result_dic['memo'])
 
     # ■既存のオーダーがある場合（強制的に削除）
     classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
 
     # 注文を実行する
+    gl_trade_num += 1
     line_send = ""  # LINE送信用の注文結果の情報
     for n in range(len(result_dic['exe_orders'])):
         res_dic = classes[n].order_plan_registration(result_dic['exe_orders'][n])  #
-        line_send = line_send + res_dic['order_name'] + \
-                    "(" + str(result_dic['exe_orders'][n]['target_price']) + "," + str(res_dic['order_id']) + "), "
-    # 注文結果を送信する
-    tk.line_send("★オーダー発行", result_dic['memo'], " 　　　",  line_send)
+        print(" オーダー結果")
+        print(res_dic)
+        # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
+        line_send = line_send + "◇" + res_dic['order_name'] + \
+                    "(指定価格:" + str(res_dic['order_result']['price']) + \
+                    ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
+                    ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
+                    ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
+                    ", OrderID:" + str(res_dic['order_id']) + \
+                    ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "), "
+    # 注文結果を送信す
+    tk.line_send("★オーダー発行", gl_trade_num, "回目: ", result_dic['memo'], " 　　　",  line_send)
 
     print("MODE1 END")
     print("")
@@ -134,15 +148,14 @@ def mode2():
     # print("MODE2")
     classPosition.all_update_information(classes)  # 情報アップデート
     if classPosition.life_check(classes):
-        # 表示用（１分に１回表示させたい）
+        # オーダー以上がある場合。表示用（１分に１回表示させたい）
         temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
         if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒と２秒)
-            classes_info = classPosition.position_info(classes)
+            have_position = classPosition.position_check(classes)
             print("■■■Mode2(いずれかポジション有)", f.now(), "これは１分に１回表示")
-            if classes_info == "":
-                pass  # Wだけの場合は表示しない（改行がうっとうしい）
-            else:
-                print("    ", classes_info)
+            if have_position['ans']:
+                # ポジションがある場合
+                classPosition.close_opposite_order(classes)
 
 
 def exe_manage():

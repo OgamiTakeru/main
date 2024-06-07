@@ -228,11 +228,6 @@ def order_finalize(order_base):
         ""
     }
     いずれかが必須
-    # ポジションマージンか、target_priceが必要。最終的に必要になるのは「ポジションマージン」　（targetは複数オーダー発行だと調整が入る）
-    {　
-        "position_margin": position_margin,  # 検証で任意　運用で必須(複数Marginで再計算する可能性あり)
-        "target_price": target_price,  # 検証で必須　運用で任意(複数Marginで再計算する可能性あり)
-    }
     # 注文方法は、Typeでもstop_or_limitでも可能
         "stop_or_limit": stop_or_limit,  # 必須 (1の場合順張り＝Stop,-1の場合逆張り＝Limit
         type = "STOP" "LIMIT" 等直接オーダーに使う文字列
@@ -250,7 +245,7 @@ def order_finalize(order_base):
         "type":"STOP" or "LIMIT",# 最終的にオーダーに必須（OandaClass）
         "direction", # 最終的にオーダーに必須（OandaClass）
         "price":,  # 最終的にオーダーに必須（OandaClass）
-        "trade_timeout,　必須（ClassPosition）
+        "trade_timeout_min,　必須（ClassPosition）
         "order_permission"  必須（ClassPosition）
     }
     """
@@ -280,16 +275,16 @@ def order_finalize(order_base):
         print("    ★★★target(Rangeか価格か）が入力されていません")
     elif order_base['target'] >= 80:
         # targetが８０以上の数字の場合、ターゲット価格が指定されたとみなす
-        # print("    target 価格指定")
         order_base['position_margin'] = abs(order_base['decision_price'] - order_base['target'])
         order_base['target_price'] = order_base['target']
+        # print("    ★★target 価格指定", order_base['target'], abs(order_base['decision_price']), order_base['target_price'])
     elif order_base['target'] < 80:
         # targetが80未満の数字の場合、PositionまでのMarginが指定されたとみなす
-        # print("    target Margin指定")
         order_base['position_margin'] = order_base['target']
         order_base['target_price'] = order_base['decision_price'] + \
                                      (order_base['target'] * order_base['expected_direction'] * order_base[
                                          'stop_or_limit'])
+        # print("    t★arget Margin指定", order_base['target'], abs(order_base['decision_price']), order_base['target_price'])
     else:
         print("     Target_price PositionMarginどっちも入っている")
 
@@ -344,7 +339,7 @@ def order_finalize(order_base):
     # 最終的にオーダーで必要な情報を付与する(項目名を整えるためにコピーするだけ）。LimitかStopかを算出
     order_base['direction'] = order_base['expected_direction']
     order_base['price'] = order_base['target_price']
-    order_base['trade_timeout'] = order_base['trade_timeout'] if 'trade_timeout' in order_base  else 60
+    order_base['trade_timeout_min'] = order_base['trade_timeout_min'] if 'trade_timeout_min' in order_base else 60
     order_base['order_permission'] = order_base['order_permission'] if 'order_permission' in order_base else True
 
     return order_base
@@ -407,7 +402,7 @@ def make_trid_order(plan):
                 "units": plan['units'],
                 "expected_direction": plan['expected_direction'],
                 "stop_or_limit": 1,  # ★順張り
-                "trade_timeout": 1800,
+                "trade_timeout_min": 1800,
                 "remark": "test",
             })
             # オーダーの蓄積

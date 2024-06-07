@@ -12,9 +12,10 @@ class order_information:
         self.oa = oa  # クラス変数でもいいが、LiveとPracticeの混在ある？　引数でもらう
         # リセ対象群
         self.name = name  # FwかRvかの表示用。引数でもらう
+        self.priority = 0  # このポジションのプライオリティ（登録されるプランのプライオリティが、既登録以上の物だったら入れ替え予定）
         self.life = False  # 有効かどうか（オーダー発行からポジションクローズまでがTrue）
         self.order_permission = True
-        self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout)
+        self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_json = {}
         self.o_id = 0
@@ -29,7 +30,7 @@ class order_information:
         self.t_initial_units = 0  # Planで代用可？少し意味異なる？
         self.t_current_units = 0
         self.t_time = 0
-        self.t_time_past = 0
+        self.t_time_past_sec = 0
         self.t_execution_price = 0  # 約定価格
         self.t_unrealize_pl = 0
         self.t_realize_pl = 0
@@ -37,33 +38,26 @@ class order_information:
         self.t_close_time = 0
         self.t_close_price = 0
         # 経過時間管理
-        self.order_timeout = 25  # 分単位で指定
-        self.trade_timeout = 25  # 分単位で指定
+        self.order_timeout_min = 25  # 分単位で指定
+        self.trade_timeout_min = 50  # 分単位で指定
         self.over_write_block = False
         # 勝ち負け情報更新用(一つの関数を使いまわすため、辞書化する）
         self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
-        self.win_hold_time = 0
-        self.lose_hold_time = 0
+        self.win_hold_time_sec = 0
+        self.lose_hold_time_sec = 0
         self.win_max_plu = 0
         self.lose_max_plu = 0
-        # 基準を超えている時間を計測する
-        self.over_border_time = {
-            "border_range": 0,
-            "over_hold_time": 0,
-            "under_hold_time": 0,
-            "limit_under_hold_time": 0,
-        }
+
         # ロスカット変更情報
         self.lc_change_dic = {}  # 空を持っておくだけ
-        # 部分決済マップ
-        self.cascade_close_map_arr = []
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
         print("    OrderClassリセット")
         self.name = ""
+        self.priority = 0  # このポジションのプライオリティ
         self.life = False
-        self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout)
+        self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_id = 0
         self.o_time = 0
@@ -76,7 +70,7 @@ class order_information:
         self.t_initial_units = 0  # Planで代用可？少し意味異なる？
         self.t_current_units = 0
         self.t_time = 0
-        self.t_time_past = 0
+        self.t_time_past_sec = 0
         self.t_execution_price = 0  # 約定価格
         self.t_unrealize_pl = 0
         self.t_realize_pl = 0
@@ -84,26 +78,18 @@ class order_information:
         self.t_close_time = 0
         self.t_close_price = 0
         # 経過時間管理
-        self.order_timeout = 25  # 分単位で指定
-        self.trade_timeout = 25
+        self.order_timeout_min = 25  # 分単位で指定
+        self.trade_timeout_min = 50
         self.over_write_block = False
         # 勝ち負け情報更新用
         self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
-        self.win_hold_time = 0
-        self.lose_hold_time = 0
+        self.win_hold_time_sec = 0
+        self.lose_hold_time_sec = 0
         self.win_max_plu = 0
         self.lose_max_plu = 0
-        # 基準を超えている時間を計測する
-        self.over_border_time = {
-            "border_range": 0,
-            "over_hold_time": 0,
-            "under_hold_time": 0,
-            "limit_under_hold_time": 0,
-        }
+
         # ロスカット変更情報
         self.lc_change_dic = {}  # 空を持っておくだけ
-        # 部分決済マップ
-        self.cascade_close_map_arr = []
 
     def print_info(self):
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
@@ -113,7 +99,7 @@ class order_information:
         print("   【plan】", self.plan)
         print("   【order1】", self.o_id, self.o_time, self.o_state, self.o_time_past)
         print("   【trade1】", self.t_id, self.t_execution_price, self.t_type, self.t_initial_units, self.t_current_units)
-        print("   【trade1】", self.t_time, self.t_time_past)
+        print("   【trade1】", self.t_time, self.t_time_past_sec)
         print("   【trade2】", self.t_state, self.t_realize_pl, self.t_close_time, self.t_close_price)
 
     def print_info_short(self):
@@ -122,7 +108,7 @@ class order_information:
         print("   【name】", self.name)
         print("   【order1】", self.o_id, self.o_time, self.o_state, self.o_time_past)
         print("   【trade1】", self.t_id, self.t_initial_units, self.t_current_units, self.t_execution_price)
-        print("   【trade1】", self.t_unrealize_pl, self.t_pl_u, self.t_time_past)
+        print("   【trade1】", self.t_unrealize_pl, self.t_pl_u, self.t_time_past_sec)
 
     def life_set(self, boo):
         self.life = boo
@@ -137,7 +123,7 @@ class order_information:
         """
         【最重要】
         【最初】オーダー計画情報をクラスに登録する（保存する）。名前やCDCRO情報があれば、その登録含めて行っていく。
-        :受け取る引数 planは、units,ask_bid,price,tp_range,lc_range,type,tr_range,order_timeout,
+        :受け取る引数 planは、units,ask_bid,price,tp_range,lc_range,type,tr_range,order_timeout_min,
                 order_permission(Boolean)は必須
 
         :OandaClass上で必要な情報
@@ -158,8 +144,11 @@ class order_information:
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
         self.plan['price'] = plan['target_price']  # ターゲットプライス（注文価格）は、oandaClassではprice
-        self.name = plan['name']  # 名前を入れる(クラス内の変更）
-        self.trade_timeout = plan['trade_timeout']
+        if 'priority' in plan:
+            self.priority = plan['priority']  # プラオリティを登録する
+        if 'trade_timeout_min' in plan:  # していない場合は初期値50分
+            self.trade_timeout_min = plan['trade_timeout_min']
+        self.name = plan['name'] + str(self.priority)  # 名前を入れる(クラス内の変更）
         # (2)各フラグを指定しておく
         self.order_permission = plan['order_permission']  # 即時のオーダー判断に利用する
         # (3-1) 付加情報１　各便利情報を格納しておく(直接Orderで使わない）
@@ -168,16 +157,9 @@ class order_information:
         self.plan['time'] = datetime.datetime.now()
 
         # (4)LC_Change情報を格納する
-        # self.lc_change_dic = [
-        #     {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},
-        #     {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.023}
-        # ]
         if "lc_change" in plan:
             self.lc_change_dic = plan['lc_change']  # 辞書を丸ごと
 
-        # (5)カスケードクローズ情報を格納する
-        if "cascade_close_map_arr" in plan:
-            self.cascade_close_map_arr = plan['cascade_close_map_arr']
 
         # (6)ポジションがある場合、強制上書き（他のポジションの）を許可するかどうか
         if "over_write_block" in plan:
@@ -187,19 +169,13 @@ class order_information:
         if "win_lose_border_range" in plan:
             self.win_lose_border_range = plan['win_lose_border_range']
 
-        # (8)ポジションがある基準を超えているかを計測する２
-        self.over_border_time['border_range'] = abs(float(plan['lc_range'])) / 2 * -1
-        self.over_border_time['limit_under_hold_time'] = 10 * 60  # 秒単位に直しておく
-        self.over_border_time['under_hold_time'] = 0  # 秒単位に直しておく
-        self.over_border_time['over_hold_time'] = 0  # 秒単位に直しておく
-
         # (Final)オーダーを発行する
         if self.order_permission:
             order_res = self.make_order()
         else:
             order_res = {"order_id": 0}  # 返り値を揃えるため、強引だが辞書型を入れておく
 
-        return {"order_name": self.name, "order_id": order_res['order_id']}
+        return {"order_name": self.name, "order_id": order_res['order_id'], "order_result": order_res['order_result']}
 
     def make_order(self):
         """
@@ -228,22 +204,6 @@ class order_information:
             tk.line_send(" 　Order不成立（今後ループの可能性）", self.name, order_ans['order_id'])
             return {"order_name": "error", "order_id": 0}
 
-        # (4)オーダー状況判断
-        # ①単純オーダー②単純オーダー即時取得③単純オーダー＋自身打ち消しクローズ④単純オーダー＋自身一部打ち消し&ポジション有
-        # if "orderCreateTransaction" in order_ans['json']:  # オーダー発行完了
-        # self.o_state = "PENDING"  # 更新
-        # if "orderFillTransaction" in order_ans['json']:  # オーダー即時約定時
-        #     self.o_state = "FILLED"  # 更新
-        #     if "tradeOpened" in order_ans['json']['orderFillTransaction']:
-        #         tk.line_send(" 　Order即時約定(Market等)", self.name, order_ans['order_id'])
-        #         # オーダーに対応するトレード情報を取得できる　⇒トレード情報に一部追加
-        #         self.t_id = order_ans['json']['orderFillTransaction']['tradeOpened']['tradeID']
-        #         self.t_execution_price = order_ans['json']['orderFillTransaction']['tradeOpened']['price']
-        #         self.t_current_units = order_ans['json']['orderFillTransaction']['tradeOpened']['units']
-        #     if "tradesClosed " in order_ans['json']['orderFillTransaction']:  # ④のケース(自分が他オーダーを完全に打ち消し）
-        #         # 他のトレードをクローズしているので、クローズライン送る？
-        #         pass
-
         # 必要な情報を登録する
         self.o_id = order_ans['order_id']
         self.o_time = order_ans['order_time']
@@ -251,7 +211,7 @@ class order_information:
         self.life_set(True)  # ★重要　LIFEのONはここでのみ実施
         print("    オーダー発行完了＠make_order", self.name, )
 
-        return {"order_name": "", "order_id": order_ans['order_id']}
+        return {"order_name": "", "order_id": order_ans['order_id'], "order_result": order_ans}
 
     def close_order(self):
         # オーダークローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -363,43 +323,6 @@ class order_information:
             price = res_json['orderFillTransaction']['tradeReduced']['price']
             tk.line_send("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL, "price", price)
 
-    def cascade_close(self):
-        """
-        self.cascade_close_map配列 を元に、部分決済（利確、LC）を行っておく
-        self.cascade_close_map配列はPlanと同時に渡される。
-        配列は辞書の配列で、辞書の中身は
-        {"range":0.01, "close_ratio": 0.1}
-        の辞書形式の配列で、添字０からrangeが小さく、添え字が大きくなるとrangeが大きくなるようにする
-        rangeはPLuが到達したら、InitialUnitsのclose_ratio分(割合指定）をクローズする。
-        close_ratioは配列内の合計は１以下であること。
-        :return:
-        """
-        if len(self.cascade_close_map_arr) == 0:
-            # 設定がない場合、カスケードクローズは実施しない
-            return 0
-
-        # self.cascade_close_map_arrに済フラグを付ける
-        # print("CASCAD CLOSE")
-        close_ratio = 0  # 初期値は０
-        for i in range(len(self.cascade_close_map_arr)):
-            if self.cascade_close_map_arr[i]['range'] <= self.t_pl_u:  # 今の価値額が基準マップのどこまで超えているかを確認。
-                # print("BIG", self.name ,self.cascade_close_map_arr[i]['range'], self.t_pl_u, self.cascade_close_map_arr[i])
-                if "done" in self.cascade_close_map_arr[i]:
-                    # 実施済の場合
-                    pass
-                else:
-                    # 実施していない場合、情報格納 & 実施済フラグ追加
-                    over_range = self.cascade_close_map_arr[i]['range']  # 超えた分
-                    close_ratio += self.cascade_close_map_arr[i]['close_ratio']  # 累積の割合
-                    self.cascade_close_map_arr[i]['done'] = "1"
-        # print(self.cascade_close_map_arr)
-        # Close実行
-        if close_ratio != 0:
-            # クローズ対象が０ではない場合、クローズを実施する
-            target_units = str(int(abs(float(self.t_initial_units)) * float(close_ratio)))
-            self.close_trade(target_units)
-        return 0
-
     def updateWinLoseTime(self, new_pl):
         """
         最新の勝ち負け情報（PLu)を渡される。
@@ -408,45 +331,24 @@ class order_information:
         """
         # (1)pip情報の推移を記録する(プラス域維持時間とマイナス維持時間を求める）
         if new_pl >= self.win_lose_border_range:  # 今回プラス域である場合
-            self.lose_hold_time = 0  # Lose継続時間は必ず０に初期化（すでに０の場合もあるけれど）
+            self.lose_hold_time_sec = 0  # Lose継続時間は必ず０に初期化（すでに０の場合もあるけれど）
             if self.t_pl_u <= 0:  # 前回がマイナスだった場合
-                self.win_hold_time = 0  # ０を入れるだけ（Win計測スタート地点）
+                self.win_hold_time_sec = 0  # ０を入れるだけ（Win計測スタート地点）
             else:
                 # 前回もプラスの場合
-                self.win_hold_time += 2  # 前回もプラスの場合、継続時間をプラスする（実行スパンが２秒ごとの為＋２）
+                self.win_hold_time_sec += 2  # 前回もプラスの場合、継続時間をプラスする（実行スパンが２秒ごとの為＋２）
         elif new_pl < self.win_lose_border_range:  # 今回マイナス域である場合
-            self.win_hold_time = 0  # Win継続時間は必ず０に初期化
+            self.win_hold_time_sec = 0  # Win継続時間は必ず０に初期化
             if self.t_pl_u >= 0:  # 前回がマイナスだった場合
-                self.lose_hold_time = 0  # ０を入れるだけ（Lose計測スタート地点）
+                self.lose_hold_time_sec = 0  # ０を入れるだけ（Lose計測スタート地点）
             else:
-                self.lose_hold_time += 2  # 前回もマイナスの場合、継続時間をプラスする（実行スパンが２秒ごとの為＋２）
+                self.lose_hold_time_sec += 2  # 前回もマイナスの場合、継続時間をプラスする（実行スパンが２秒ごとの為＋２）
 
         # (2)プラスマイナスの最大値情報を取得しておく
         if self.lose_max_plu > self.t_pl_u:  # 最小値更新時
             self.lose_max_plu = self.t_pl_u
         if self.win_max_plu < self.t_pl_u:  # 最大値更新時
             self.win_max_plu = self.t_pl_u
-
-    def updateOverBorderTime(self, new_pl, target_info):
-        """
-        指定のRangeを超えているか、その時間を計測する
-        :param new_pl:
-        :return:
-        """
-        # (1)pip情報の推移を記録する(プラス域維持時間とマイナス維持時間を求める）
-        if new_pl >= target_info['border_range']:  # 今回プラス域である場合
-            target_info['under_hold_time'] = 0  # Lose継続時間は必ず０に初期化（すでに０の場合もあるけれど）
-            if self.t_pl_u <= target_info['border_range']:  # 前回がマイナスだった場合
-                target_info['over_hold_time'] = 0  # ０を入れるだけ（Win計測スタート地点）
-            else:
-                # 前回もプラスの場合
-                target_info['over_hold_time'] += 2  # 前回もプラスの場合、継続時間をプラスする（実行スパンが２秒ごとの為＋２）
-        elif new_pl < target_info['border_range']:  # 今回マイナス域である場合
-            target_info['over_hold_time'] = 0  # Win継続時間は必ず０に初期化
-            if self.t_pl_u >= target_info['border_range']:  # 前回がマイナスだった場合
-                target_info['under_hold_time'] = 0  # ０を入れるだけ（Lose計測スタート地点）
-            else:
-                target_info['under_hold_time'] += 2  # 前回もマイナスの場合、継続時間をプラスする（実行スパンが２秒ごとの為＋２）
 
     def detect_change(self):
         """
@@ -471,46 +373,46 @@ class order_information:
             self.after_close_trade_function()
             return 0
 
-    def order_update(self):
+    def order_update_and_close(self):
         order_latest = self.o_json
         # 情報の更新
         self.o_state = order_latest['state']  # ここで初めて更新
         self.o_time_past = order_latest['time_past']
         # オーダーのクローズを検討する
         if order_latest['state'] == "PENDING":
-            # print("    時間的な解消を検討", self.o_time_past, self.o_state, "基準", self.order_timeout * 60)
-            if self.o_time_past > self.order_timeout * 60 and (self.o_state == "" or self.o_state == "PENDING"):
-                tk.line_send("   オーダー解消(時間)@", self.name, self.o_time_past, ",", self.order_timeout)
+            # print("    時間的な解消を検討", self.o_time_past, self.o_state, "基準", self.order_timeout_min * 60)
+            if self.o_time_past > self.order_timeout_min * 60 and (self.o_state == "" or self.o_state == "PENDING"):
+                tk.line_send("   オーダー解消(時間)@", self.name, self.o_time_past, ",", self.order_timeout_min)
                 self.close_order()
 
-    def trade_update(self):
-        trade_latest = self.t_json  # とりあえず入れ替え
-        # トレード情報
+    def trade_update_and_close(self):
+        trade_latest = self.t_json  # とりあえず入れ替え（update関数で取得した最新の情報）
+        # トレード情報の更新
         self.t_id = trade_latest['id']  # 既に１度入れているけど、念のため
         self.t_state = trade_latest['state']
         self.t_initial_units = trade_latest['initialUnits']  # 初回だけでよい？
         self.t_current_units = trade_latest['currentUnits']
         self.t_time = trade_latest['openTime']  # 初回だけでよい？
-        self.t_time_past = trade_latest['time_past']
+        self.t_time_past_sec = trade_latest['time_past']
         self.t_execution_price = trade_latest['price']  # 初回だけでよい？
         if trade_latest['state'] == "OPEN":
             self.t_unrealize_pl = trade_latest['unrealizedPL']
         elif trade_latest['state'] == "CLOSED":  # いる？
             self.t_realize_pl = trade_latest['realizedPL']
         self.t_pl_u = trade_latest['PLu']
+
         # tradeのクローズを検討する
         if trade_latest['state'] == "OPEN":
             # 規定時間を過ぎ、マイナス継続時間も１分程度ある場合は、もう強制ロスカットにする
-            if self.t_time_past > self.trade_timeout * 60 and self.lose_hold_time > 60:
-                tk.line_send("   Trade解消(時間)@", self.name, "PastTime", self.t_time_past, ",LoseHold", self.lose_hold_time)
+            if self.t_time_past_sec > self.trade_timeout_min * 60 and self.lose_hold_time_sec > 60:
+                tk.line_send("   Trade解消(マイナス×時間)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold", self.lose_hold_time_sec)
                 self.close_trade(None)
-        if trade_latest['state'] == "OPEN":
-            # 規定価格を規定秒数切っていたら、
-            # print(self.over_border_time)
-            if self.over_border_time['under_hold_time'] > self.over_border_time['limit_under_hold_time'] and self.lose_hold_time > 60:
-                tk.line_send("   Trade解消(Losehost)@", self.name, "Range", self.over_border_time['boder_range'], ",LoseHold",
-                             self.over_border_time['under_hold_time'])
-                self.close_trade(None)
+            # 規定時間を過ぎ、大きくプラスもなくふらふらしている場合
+            if self.t_time_past_sec > self.trade_timeout_min * 60:  # 時間が経過している
+                if self.win_max_plu <= 0.05 and self.t_pl_u <= 0.03:
+                    tk.line_send("   Trade解消(微プラス膠着)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold",
+                                 self.win_max_plu, self.t_pl_u)
+                    self.close_trade(None)
 
     def update_information(self):  # orderとpositionを両方更新する
         """
@@ -541,38 +443,20 @@ class order_information:
             # print("    トレード not detect", self.t_id)
             self.t_id = 0
             # tradeが０の場合、オーダーの更新のみ行う。
-            self.order_update()
+            self.order_update_and_close()
             return 0
 
         # (2) 【以下トレードありが前提】変化点を確認する order_update,trade_update yori mae niarukoto
         self.detect_change()
 
         # (3)情報をUpdate and Closeする
-        self.order_update()
-        self.trade_update()
+        self.order_update_and_close()
+        self.trade_update_and_close()
 
         # 変化による情報（勝ち負けの各最大値、継続時間等の取得）
         self.updateWinLoseTime(trade_latest['PLu'])  # PLU(realizePL / Unit)の推移を記録する
-        # 変化による情報（規定ボーダー）
-        self.updateOverBorderTime(trade_latest['PLu'], self.over_border_time)
-
-        # print("  検証用ClassPosition")
-        # self.print_info_short()
-
+        # LCの変更を検討する
         self.lc_change()
-
-        # # ポジションに対する時間的な解消を行う
-        # if "W" in self.name:  # ウォッチ用のポジションは時間で消去。ただしCRCDOはしない
-        #     if self.t_time_past > 1200 and self.t_state == "OPEN":
-        #         # tk.line_send("   W-Position時間解消", self.name, self.o_time_past)
-        #         self.close_trade(None)
-        # else:
-        #     # LCの底上げを行う
-        #     self.lc_change()
-        #     # 部分解消を行う
-        #     self.cascade_close()
-        #     # トレールの実施を行う
-        #     # self.trail()
 
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
@@ -586,7 +470,7 @@ class order_information:
         :return:         print(" ロスカ変更関数", self.lc_change_dic, self.t_pl_u,self.t_state)
         """
         # print("  ★LC＿Change実行関数")
-        if len(self.lc_change_dic) == 0 or self.t_state != "OPEN" or self.t_time_past < 60:
+        if len(self.lc_change_dic) == 0 or self.t_state != "OPEN" or self.t_time_past_sec < 60:
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
             return 0
 
@@ -679,12 +563,19 @@ def position_check(classes):
     """
     open_positions = []
     not_open_positions = []
+    max_priority = 0
+    max_position_time_sec = 0
+    summary_diretcion = 1
     for item in classes:
-        if "W" in item.name or "未遂":  # Wと未遂は除外
-            if item.t_state == "OPEN":
-                open_positions.append(item.name)  # OPENの物を格納
-            else:
-                not_open_positions.append(item.name)
+        if item.t_state == "OPEN":
+            open_positions.append({"name":item.name, "priority": item.priority})
+            # 方向だけ取得（ポジションを持った時に、反対側のオーダーを消しあ
+            if item.priority > max_priority:
+                max_priority = item.priority  # ポジションの有る最大のプライオリティを取得する
+            if item.t_time_past_sec > max_position_time_sec:
+                max_position_time_sec = item.t_time_past_sec  # 何分間持たれているポジションか
+        else:
+            not_open_positions.append(item.name)
     # 結果の集約
     if len(open_positions) != 0 :
         ans = True  # ポジションが一つでもOpenになっている場合は、True
@@ -694,48 +585,35 @@ def position_check(classes):
     return {
         "ans": ans,
         "open_positions": open_positions,
+        "max_priority": max_priority,
+        "max_position_time_sec": max_position_time_sec
     }
 
 
-def new_order_permission(classes):
-    """
-    新規のオーダーを発行しても良いかどうかの判断（Trueの場合発行可能）
-    ポジション有Andブロック有(True)が１でも存在している場合、許可されない。
-    :param classes:
-    :return:
-    """
-    not_accept_positions = []
-    accept_order = []
+def close_opposite_order(classes):
+    # 現在のポジションの方向を確認（基本的に同方向のポジションしかない前提）
+    position_direction = 0
+    position_count = 0
+    lives = 0  # オーダーとポジションの合計（＝ライフの合計）
     for item in classes:
-        if "W" in item.name or "未遂":  # Wと未遂は除外
-            if item.t_state == "OPEN" and item.over_write_block:
-                not_accept_positions.append(item.name)  # OPENで、上書き許可あり
-            else:
-                accept_order.append(item.name)
-    # 結果の集約
-    if len(not_accept_positions) == 0:
-        ans = True
-    else:
-        ans = False
-
-    return {
-        "ans": ans,  # 上書き許可Falseの場合は、オーダーしない。
-        "open_positions": not_accept_positions,
-    }
-
-
-def positions_time_past_info(classes):
-    """
-    W、ターン未遂以外のオーダーが存在するかを確認する.
-    :param classes:
-    :return:
-    """
-    mes = ""
-    for item in classes:
+        # print("  item_info", item.name, item.life)
+        if item.t_state == "OPEN":
+            position_count += 1
+            position_direction = item.plan['direction']
         if item.life:
-            mes = mes + item.name + ":" + str(item.t_time_past) + ","
+            lives += 1
+    # 逆方向のオーダーを解除する
+    for item in classes:
+        if lives > 1:  # ライフオンが１以上（自分以外のオーダー等がある）
+            # print(" ★CloseTarget", item.name, item.plan)
+            if len(item.plan) != 0:  # 空のItemも存在している
+                if item.plan['expected_direction'] != position_direction:
+                    item.close_order()
+                    # print("  CloseOppsite実行")
+    # print("   CloseOppsit", position_direction, position_count, lives)
 
-    return mes
+
+
 
 
 def position_info(classes):
@@ -753,8 +631,8 @@ def position_info(classes):
             if item.life:
                 # 文章生成
                 temp = "@:" + item.name + "," + item.t_state + ",pl:" + str(round(float(item.t_unrealize_pl), 2)) + "円,"
-                temp = temp + str(item.t_pl_u) + " PLu," + "ID" + str(item.t_id) + " "
-                temp = temp + str(item.t_time_past) + "  "
+                temp = temp + str(item.t_pl_u) + " PLu," + "ID:" + str(item.t_id) + " "
+                temp = temp + str(item.t_time_past_sec) + "秒経過"
                 if count == 0:  # 初回のみ
                     pass
                 else:

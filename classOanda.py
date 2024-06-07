@@ -329,8 +329,7 @@ class Oanda:
                     data['order']['trailingStopLossOnFill']['distance'] = str(round(plan['tr_range'], 3))  # ロスカット
                     data['order']['trailingStopLossOnFill']['timeInForce'] = "GTC"
 
-            print(data['order'])
-
+            # print(data['order'])
             # ★★実行
             ep = OrderCreate(accountID=self.accountID, data=data)  #
             res_json = eval(json.dumps(self.api.request(ep), indent=2))

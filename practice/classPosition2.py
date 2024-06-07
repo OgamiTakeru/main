@@ -17,7 +17,7 @@ class order_information:
         self.name = name  # FwかRvかの表示用。引数でもらう
         self.life = False  # 有効かどうか（オーダー発行からポジションクローズまでがTrue）
         self.order_permission = True
-        self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout)
+        self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_id = 0
         self.o_time = 0
@@ -69,7 +69,7 @@ class order_information:
         """
         【最重要】
         【最初】オーダー計画情報をクラスに登録する（保存する）。名前やCDCRO情報があれば、その登録含めて行っていく。
-        :param plan:units,ask_bid,price,tp_range,lc_range,type,tr_range は必須。order_timeout,は任意。
+        :param plan:units,ask_bid,price,tp_range,lc_range,type,tr_range は必須。order_timeout_min,は任意。
         :return:
         """
         self.reset()  # 一旦リセットする
@@ -395,7 +395,7 @@ class order_information:
 #         self.pip_lose_hold_time = 0
 #
 #         # リセット対象外（規定値がある物）
-#         self.order_timeout = 20  # リセ無。分で指定。この時間が過ぎたらオーダーをキャンセルする
+#         self.order_timeout_min = 20  # リセ無。分で指定。この時間が過ぎたらオーダーをキャンセルする
 #         self.position_timeout = 15
 #         self.lc_border = 0.03  # リセ無。プラス値でプラス域でロスカットを実施 マイナス値でその分のマイナスを許容する Default=0.03
 #         self.tp_border = 0.1  # リセ無。プラス値でプラス域でロスカットを実施 マイナス値でその分のマイナスを許容する Default=0.03
@@ -423,7 +423,7 @@ class order_information:
 #         self.changedLcPrice = 0  # ロスカ変更後のLCライン
 #         self.pips_win_max = 0  # 最高プラスが額を記録
 #         self.pips_lose_max = 0  # 最低のマイナス額を記録
-#         self.order_timeout = 20  # リセ無。分で指定。この時間が過ぎたらオーダーをキャンセルす
+#         self.order_timeout_min = 20  # リセ無。分で指定。この時間が過ぎたらオーダーをキャンセルす
 #         self.input_initial_info()
 #
 #     def input_initial_info(self):
@@ -469,8 +469,8 @@ class order_information:
 #
 #         self.plan['time'] = datetime.datetime.now()
 #
-#         if 'order_timeout' in plan:
-#             self.order_timeout = plan['order_timeout']
+#         if 'order_timeout_min' in plan:
+#             self.order_timeout_min = plan['order_timeout_min']
 #
 #         if 'crcdo' in plan:
 #             p = plan['crcdo']
@@ -727,9 +727,9 @@ class order_information:
 #                 # トレールの実施を行う
 #                 self.trail()
 #                 # 時間による解消を行う（オーダー状態）
-#                 if self.order['time_past'] > self.order_timeout * 60 and self.order['state'] == "PENDING":
+#                 if self.order['time_past'] > self.order_timeout_min * 60 and self.order['state'] == "PENDING":
 #                     print("   時間解消@")
-#                     tk.line_send("   時間解消@", self.name, self.order['time_past'], self.order_timeout)
+#                     tk.line_send("   時間解消@", self.name, self.order['time_past'], self.order_timeout_min)
 #                     self.close_order()
 #         else:
 #             # LifeがFalseの場合、Update処理を行わない
