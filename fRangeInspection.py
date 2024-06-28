@@ -335,12 +335,9 @@ def find_latest_line(*args):
      →単発で実行する場合のみ
 
      <調査の対象について＞
-     パターン①　直近のLatestを考慮する場合（直近ピークで考慮したい場合（ターンが無くてもLINEを超えた瞬間に入れたい、等）
-     　　　　　　latestのpeak['count']が２以外の場合等で活用するかも？ ターン成立直後ではない可能性が高い。
-     パターン②　直近のlatestは無視し、Riverのピークを対象にする場合　メインはこっち。
-      \   ↓　ここを対象にするのが①→途中のターゲットを０にする
-       \/\/
-         ↑ここを対象にするのが②→途中のターゲットを１にする
+      \　　↓ここが対象となる（=river)
+       \  /\←これがLatestとして扱われるもの 　
+        \/  \ ←この部分が２の場合に検出する（ここはLatestではない。２の場合＝１つ出来立ての足は省くので、このPeakは無いと同義）
     :return:
     """
     # 準備部分（表示や、ピークスの算出を行う）
@@ -358,21 +355,30 @@ def find_latest_line(*args):
         # ■ループの際、数が少ないとエラーの原因になる。３個切る場合ば終了（最低３個必要）
         return {"line_strength": 0}
 
+
     # (1) LINE探索する
-    # ①探索準備
+    # ⓪探索準備
     target_p = 0  # riverのピークを採択（１がRiverの添え字）。
     latest_peak = peaks_all[target_p]['peak']
     latest_dir = peaks_all[target_p]['direction']
+    latest_gap = peaks_all[target_p]['gap']
     latest_time = peaks_all[target_p]['time']
     river_peak = peaks_all[1]['peak']  # riverのピークを求める（これがライン検索の基準となる）
     river_peak_time = peaks_all[1]['time']
     river_dir = peaks_all[1]['direction']
+    river_gap = peaks_all[1]['gap']
+    river_count = peaks_all[1]['count']
+    turn_count = peaks_all[2]['count']
+    flop3_count = peaks_all[3]['count']
     # 平均のピークGapを計算する
     sum = 0
     for item in peaks_all:
         sum += item['gap']
     ave = sum / len(peaks_all)
     # print("　　平均ピーク", ave)
+
+    # ①LatestとRiverの関係を求める（latestが大きいケースが、外しているケースが多い）Riverの0.4倍以下程度あってほしい
+    lr_ratio = latest_gap / river_gap
 
     # ②探索開始
     line_strength = 0  # LINE強度の初期値を入れる
@@ -406,7 +412,7 @@ def find_latest_line(*args):
             gap_time_min = f.seek_time_gap_seconds(river_peak_time, item['time']) / 60
             # 方向に関する判定
             if item['direction'] == river_dir:
-                print(" Between確認", between_num, item['time'])
+                # print("    Between確認", between_num, item['time'])
                 same_dir = True
                 # print("　　　　同方向の近似ピーク（≒ダブルピークの素）", item['time'], near_point_gap)
                 same_list.append({"time": item['time'],
@@ -455,9 +461,10 @@ def find_latest_line(*args):
                 #  /  \/\/
                 #     　 ↑ depth
                 #  ↑全てプラス値          ↑　near値が－値、depth値がプラス値（これはマイナスにはならない気がする）
+                # print(" are????", river_peak, item['peak'], item['time'])
                 peak_gap = river_peak - item['peak']  # プラスの場合上の絵。
             # 計算
-            if item['direction'] != latest_dir:
+            if item['direction'] != river_dir:
                 # 方向が異なるピークの場合→Depthの方
                 # 深さの値を取得する
                 if peak_gap > depth_point_gap:
@@ -470,7 +477,7 @@ def find_latest_line(*args):
                     depth_minus_count += 1
                 else:
                     depth_plus_count += 1
-            if item['direction'] == latest_dir:
+            if item['direction'] == river_dir:
                 # 同じピークの場合→Nearの方
                 # ニアの方の深さの値を取得する
                 if peak_gap < near_point_gap:
@@ -479,17 +486,17 @@ def find_latest_line(*args):
                     near_point = item['peak']
                     near_point_time = item['time']
                 # マイナスプラスをカウントする
+                # print(" nearPointGap", peak_gap, item['time'])
                 if peak_gap <= 0:
                     near_minus_count += 1
                 else:
                     near_plus_count += 1
     # 同価格リスト
+    print("")
     print("同価格リスト", "base", river_peak, river_peak_time, river_peak - range_yen, "<r<",river_peak + range_yen )
     f.print_arr(same_list)
-    # print("　　　個数的には", counter, "回同等のぴーくが発生")
-    # print("　　　対象ピークは", latest_peak, latest_dir)
 
-    # ■同価格リストの結果をもとに、谷があるかを判定する
+    # ■LineStrengthを決定するため、同価格リストの結果をもとに、谷があるかを判定する
     minus_counter = 0  # 初期値
     if len(same_list) > 0:
         # 同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
@@ -525,10 +532,10 @@ def find_latest_line(*args):
         # パターン３の処理（シンプルダブルトップ）
         if info['between_num'] == 2:
             if info['gap_time_min'] <= 20:  # 20分いないのダブルトップは、信頼度低（単なるギザギザの可能性）
-                print("初回短すぎ・・？")
+                # print("初回短すぎ・・？")
                 line_strength = 1.5  # 割とLineを突破することが多い気がするが。。。
             else:
-                print("適正？")
+                # print("適正？")
                 line_strength = 2  # ただ、depthの深さによって変るのでは？
 
         # パターン２の処理
@@ -536,12 +543,13 @@ def find_latest_line(*args):
             # nearマイナスの数が、nearの数の半分以上の場合
             all_near_num = info['between_num'] / 2 -1  # nearの数はこう求める
             minus_ratio = info['near_minus_count'] / all_near_num
+            # print("    参考：マイナス比率", minus_ratio, info['near_minus_count'], all_near_num)
             if minus_ratio >= 0.4:
                 line_strength = 0.5
             elif minus_ratio > 0:
                 line_strength = 1.5
             else:
-                line_strength = 2
+                line_strength = 3
 
         # ②同一価格が２個以上ある場合は、他も同号して検討する
         # print("　　　　複数のSamePriceあり。強いLINEではあるが、当たってきてる回数が多いので、抜ける可能性大？")
@@ -563,6 +571,14 @@ def find_latest_line(*args):
     else:
         pass
 
+    # ただし、ぐちゃぐちゃしている場合（riverもturnもflop3もカウントが合計値が7以下（どれも２程度）の場合）LineStrengthを下げる
+    if river_count + turn_count + flop3_count <= 7:
+        # print(peaks_all[1])
+        # print(peaks_all[2])
+        # print(peaks_all[3])
+        # print(river_count, turn_count, flop3_count)
+        print("   ◇◇ごちゃごちゃしている状態の為、ストレングスを解消", line_strength ,"を０に", peaks_all[1]['count'], peaks_all[2]['count'], peaks_all[3]['count'])
+        # line_strength = 0
 
     return_dic = {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "line_strength": line_strength,
@@ -607,7 +623,7 @@ def find_lines(df_r):
     latest_lower = {"line_strength": 0}
     # 探索する
     for i in range(30):
-        # 探索(peaksをひとつづつ減らしていく。df_rは減らさない)
+        # 探索(peaksをひとつづつ減らしていく=最大３０個のピークを確認する。df_rは減らさない)
         range_result = find_latest_line(df_r, peaks_all[i:])  # 引数二つ渡しで関数を呼ぶ（無効ではPeaks_allのみ利用）
         # if range_result['line_strength'] != 0:  # 発見された場合
         #     print(" ★", i, range_result)
@@ -637,7 +653,7 @@ def find_lines(df_r):
                         # 既に発見されている場合、過去に発見された物と比較する（strength信頼度が高いほうを採択？価格が低いほうを採択？）
                         # if lower_information['line_strength'] < range_result['line_strength']:
                         #       新たに発見した方(range_result)がlowerとしてふさわしい場合（Line_strengthが強い）は、入れ替え
-                        if lower_information['lineprice'] > range_result['line_price']:
+                        if lower_information['line_price'] > range_result['line_price']:
                             # 新たに発見した方(range_result)がlowerとしてふさわしい場合（Line_priceが低い）は、入れ替え
                             lower_information = range_result
                     else:
@@ -694,6 +710,12 @@ def find_lines_mm(df_r):
     peaks_info = p.peaks_collect_main(df_r, 12)
     peaks_all = peaks_info["all_peaks"]
 
+    # （０）LINE以外の値を算出する。Latestのサイズ感や、最高値等
+    latest_gap = peaks_all[0]['gap']
+    river_gap = peaks_all[1]['gap']
+    # LatestとRiverの関係を求める（latestが大きいケースが、外しているケースが多い）Riverの0.4倍以下程度あってほしい
+    lr_ratio = latest_gap / river_gap
+
     # river~flop3までの最大値、最小値を求める
     high_peak = 0
     low_peak = 9999
@@ -707,7 +729,7 @@ def find_lines_mm(df_r):
             elif item['peak'] < low_peak:
                 low_peak = item['peak']
 
-    # 探索する（latestのupperとLow、信頼度が最も高いランクのUpperとLowerを取得する）
+    # (1)探索する（latestのupperとLow、信頼度が最も高いランクのUpperとLowerを取得する）
     lines = []
     latest_flag = False
     latest_upper_flag = False
@@ -726,8 +748,8 @@ def find_lines_mm(df_r):
             # Lineを発見出来ない場合は特に何もしない
             continue
 
-        # ■Lineを判定していく
-        # latest_upper or lower
+        # ■Lineの最大値や最小値を判定していく
+        # 初回のアッパーラインとロアラインを取得する(latestは、latest_upperかlatest_lowerと同値）
         if not latest_upper_flag and range_result['line_direction'] == 1:
             # Upperの場合(アッパー最初フラグがない　かつ、アッパーの場合）
             latest_upper_flag = True
@@ -738,8 +760,7 @@ def find_lines_mm(df_r):
             latest_lower_flag = True
             latest_lower_line = range_result
             lower_line = range_result
-
-        # LineとしてのUpperとLowerを検証する
+        # UpperとLowerを検証を更新していく
         if 'line_price' in upper_line and range_result['line_price'] > upper_line['line_price'] and range_result['line_direction'] == 1:
             # 今回のラインプライスがアッパーラインを超えた場合
             upper_line = range_result
@@ -750,15 +771,17 @@ def find_lines_mm(df_r):
     # 一覧の結果に対して、処理を実施する
     # latest(直近のリバーピーク）が、Lineかどうかを判定する
     if latest_line['line_strength'] >= 1.5:
-        # ストレングスが２以上の場合に採用する(latestupper or upper)
-        if latest_line['line_direction'] == 1:
-           if latest_upper_line['line_price'] - 0.03 <= latest_line['line_price'] <= latest_upper_line['line_price'] + 0.03:
-                # 上限（上値抵抗）ラインとみなせる場合、
-                latest_flag = True
-        if latest_line['line_direction'] == -1:
-            if latest_lower_line['line_price'] - 0.03 <= latest_line['line_price'] <= latest_lower_line['line_price'] + 0.03:
-                # 上限（上値抵抗）ラインとみなせる場合、
-                latest_flag = True
+        latest_flag = True
+
+        # （以下、なんだっけ？？）ストレングスが２以上の場合に採用する(latestupper or upper)
+        # if latest_line['line_direction'] == 1:
+        #    if latest_upper_line['line_price'] - 0.03 <= latest_line['line_price'] <= latest_upper_line['line_price'] + 0.03:
+        #         # 上限（上値抵抗）ラインとみなせる場合、
+        #         latest_flag = True
+        # if latest_line['line_direction'] == -1:
+        #     if latest_lower_line['line_price'] - 0.03 <= latest_line['line_price'] <= latest_lower_line['line_price'] + 0.03:
+        #         # 上限（上値抵抗）ラインとみなせる場合、
+        #         latest_flag = True
 
     return_dic = {
         "latest_flag": latest_flag,
@@ -769,6 +792,7 @@ def find_lines_mm(df_r):
         "found_lower": latest_lower_flag,
         "latest_lower_line": latest_lower_line,
         "lower_line": lower_line,
+        "latest_size_ratio": round(lr_ratio, 3),
         "latest_direction": peaks_all[0]['direction']
     }
 

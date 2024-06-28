@@ -2,7 +2,7 @@ import pandas as pd
 import threading  # 定時実行用
 import time
 import datetime
-import fTurnInspection as t  # とりあえずの関数集
+import fBlockInspection as t  # とりあえずの関数集
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as classOanda
 import making as mk
@@ -22,7 +22,7 @@ oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの�
 
 
 # 処理時間削減の為、data
-def order_information_add(finalized_order):
+def order_information_add_maji(finalized_order):
     """
     強制的に
     カスケードロスカとトレールを入れる。このレンジインスペクションがメイン
@@ -32,7 +32,27 @@ def order_information_add(finalized_order):
 
     # カスケードロスカ
     finalized_order['lc_change'] = [
-        {"lc_change_exe": True, "lc_trigger_range": 0.013, "lc_ensure_range": -0.03},
+        {"lc_change_exe": True, "lc_trigger_range": 0.013, "lc_ensure_range": -0.05},
+        {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.023}
+    ]
+
+    # トレール注文を入れる
+    finalized_order['tr_range'] = 0.05
+
+    return finalized_order
+
+
+def order_information_add_small(finalized_order):
+    """
+    強制的に
+    カスケードロスカとトレールを入れる。このレンジインスペクションがメイン
+    :param finalized_order:
+    :return:
+    """
+
+    # カスケードロスカ
+    finalized_order['lc_change'] = [
+        {"lc_change_exe": True, "lc_trigger_range": 0.016, "lc_ensure_range": 0.013},
         {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.023}
     ]
 
@@ -303,8 +323,18 @@ def Inspection_main2(df_r):
     print("  FLOP3", flop3)
 
     if latest['count'] != 2:
-        print(" COUNT2以外")
+        print(" latestがCOUNT2以外")
         return {"take_position_flag": 0}
+
+    # (0)ここ数時間の最高値等を取得する また　riverとLatestの割合等を求める
+    time_range = 35
+    max_price_body = df_r[:time_range]['inner_high'].max()
+    max_price = df_r[:time_range]['high'].max()
+    min_price_body = df_r[:time_range]['inner_low'].min()
+    min_price = df_r[:time_range]['low'].min()
+    price_gap = f.str_merge("max-body_max", max_price, max_price_body,":min-min_body", min_price_body, min_price, "gap", max_price - min_price, " ")
+    print("max_min information",price_gap)
+
 
     # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
     line_result = ri.find_lines_mm(df_r[:35])  # Lineが発見された場合には、['line_strength']が１以上になる
@@ -317,7 +347,7 @@ def Inspection_main2(df_r):
     basic = {
             "target": 0.01,
             "type": "STOP",
-            "unit": 1000,
+            "units": 100,
             "expected_direction": line_result['latest_line']['line_direction'],
             "tp": 0.10,
             "lc": 0.04,
@@ -326,6 +356,7 @@ def Inspection_main2(df_r):
             "name": ""
     }
 
+
     if line_result['latest_flag']:
         # 注文に対する総括
         take_position_flag = True
@@ -333,39 +364,59 @@ def Inspection_main2(df_r):
         if priority >= 2:
             # プライオリティが最高ランクの場合、かなり強いラインと考え、レジスタンスを信じる
             # ①本命のレジスタンス
-            basic2=basic.copy()
             comment_now = "直近で強い" + str(line_result['latest_line']['line_direction']) + "方向の抵抗線" +\
-                          "" + str(line_result['latest_line']['line_price']) + "発見。"
-            print(basic2['target'])
-            basic2['lc'] = 0.1  # LCは広め
-            basic2['expected_direction'] = line_result['latest_line']['line_direction'] * -1
-            basic2['priority'] = priority
-            basic2['units'] = basic['unit'] * 2
-            basic2['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance"
+                          "" + str(line_result['latest_line']['line_price']) + "発見　lr:" + str(line_result['latest_size_ratio']) +\
+                            " ," + str(line_result['latest_line']['line_strength'])
+            # MainOrder
+            main_order=basic.copy()
+            main_order['lc'] = 0.1  # LCは広め
+            main_order['expected_direction'] = line_result['latest_line']['line_direction'] * -1
+            main_order['priority'] = priority
+            main_order['units'] = basic['units'] * 2
+            main_order['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance"
             # 注文を配列に追加
-            order_merge.append(order_information_add(f.order_finalize(basic2)))
+            order_merge.append(order_information_add_maji(f.order_finalize(main_order)))
+
+            # SmallOrder
+            main_small_order=main_order.copy()  # 狭めたオーダー
+            main_small_order['lc'] = 0.02  # LCは広め
+            main_small_order['tp'] = 0.040
+            main_small_order['units'] = basic['units'] * 1.5
+            main_small_order['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance_S"
+            # 注文を配列に追加
+            order_merge.append(order_information_add_small(f.order_finalize(main_small_order)))
+
             # ②サブのレジスタンス突破オーダー
             afford = abs(now_price - line_result['latest_line']['line_price'])  # MARKETとセットでオーダーするので、設定額には余裕が必要
             afford = f.cal_at_least(0.08, afford)  # 現在価格よりも最低0.06離れた位置にセットする
-            basic['target'] = afford
-            basic['expected_direction'] = line_result['latest_line']['line_direction']
-            basic['name'] = str(line_result['latest_line']['line_strength']) + "resistance_over"
-            basic['units'] = 1000
-            order_merge.append(order_information_add(f.order_finalize(basic)))
+            # mainのオーダー
+            main_over_order = basic.copy()
+            main_over_order['target'] = afford
+            main_over_order['expected_direction'] = line_result['latest_line']['line_direction']
+            main_over_order['name'] = str(line_result['latest_line']['line_strength']) + "resistance_over"
+            order_merge.append(order_information_add_maji(f.order_finalize(main_over_order)))
+            # mainのスモールオーダー
+            main_small_over_order = main_over_order.copy()
+            main_small_over_order['name'] = str(line_result['latest_line']['line_strength']) + "resistance_overS"
+            main_small_over_order['tp'] = 0.012
+            main_small_over_order['units'] = main_over_order['units'] * 1.5
+            order_merge.append(order_information_add_small(f.order_finalize(main_small_over_order)))
+
         else:
             # プライオリティが最高ランク以外の場合（主に1.5の短期間のダブルトップの場合）、突破方向メインに取る。
-            basic2 = basic.copy()
-            comment_now = "直近で短期DTで" + str(line_result['latest_line']['line_direction']) + "方向の抵抗線" + \
-                          "" + str(line_result['latest_line']['line_price']) + "発見。"
+            main_order = basic.copy()
+            comment_now = "直近で短期DTで" + str(line_result['latest_line']['line_direction']) + "方向の抵抗線(overのみ)" + \
+                          "" + str(line_result['latest_line']['line_price']) + "発見　lr:" + str(line_result['latest_size_ratio']) + \
+                          " ," + str(line_result['latest_line']['line_strength'])
             # ①本命のレジスタンス
-            basic2['target'] = -0.05
-            basic2['lc'] = 0.05  # LCは少し狭目
-            basic2['expected_direction'] = line_result['latest_line']['line_direction'] * -1
-            basic2['priority'] = priority
-            basic2['units'] = 1000
-            basic2['name'] = str(line_result['latest_line']['line_strength']) + "resistance"
-            # 注文を配列に追加
-            order_merge.append(order_information_add(f.order_finalize(basic2)))
+            # main_order['target'] = -0.05
+            # main_order['lc'] = 0.05  # LCは少し狭目
+            # main_order['expected_direction'] = line_result['latest_line']['line_direction'] * -1
+            # main_order['priority'] = priority
+            # main_order['units'] = 1000
+            # main_order['name'] = str(line_result['latest_line']['line_strength']) + "resistance"
+            # # 注文を配列に追加
+            # order_merge.append(order_information_add_maji(f.order_finalize(main_order)))
 
             # ②サブのレジスタンス突破オーダー
             afford = abs(now_price - line_result['latest_line']['line_price'])  # MARKETとセットでオーダーするので、設定額には余裕が必要
@@ -374,8 +425,8 @@ def Inspection_main2(df_r):
             basic['lc'] = 0.09  # LCは少し狭目
             basic['expected_direction'] = line_result['latest_line']['line_direction']
             basic['name'] = str(line_result['latest_line']['line_strength']) + "Mainresistance_over"
-            basic['units'] = 1000 * 2
-            order_merge.append(order_information_add(f.order_finalize(basic)))
+            basic['units'] = basic['units'] * 2
+            order_merge.append(order_information_add_maji(f.order_finalize(basic)))
 
 
 

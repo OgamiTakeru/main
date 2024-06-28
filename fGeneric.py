@@ -279,7 +279,10 @@ def order_finalize(order_base):
         order_base['target_price'] = order_base['target']
         # print("    ★★target 価格指定", order_base['target'], abs(order_base['decision_price']), order_base['target_price'])
     elif order_base['target'] < 80:
-        # targetが80未満の数字の場合、PositionまでのMarginが指定されたとみなす
+        # targetが80未満の数字の場合、PositionまでのMarginが指定されたとみなす（負の数は受け入れない）
+        if order_base['target'] < 0:
+            print("   targetに負のRangeが指定されています。ABSで使用します（正の値を計算で調整）")
+            order_base['target'] = abs(order_base['target'])
         order_base['position_margin'] = order_base['target']
         order_base['target_price'] = order_base['decision_price'] + \
                                      (order_base['target'] * order_base['expected_direction'] * order_base[

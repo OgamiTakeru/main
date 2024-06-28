@@ -8,15 +8,8 @@ import os
 # import requests
 import pandas as pd
 # 自作ファイルインポート
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
-import programs.fTurnInspection as t  # とりあえずの関数集
-import programs.tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
-import programs.classOanda as oanda_class
-import programs.fGeneric as f
-from time import sleep
-import pytz
-from dateutil import tz
+import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
+import classOanda as oanda_class
 
 # ★必須。Tokenの設定、クラスの実体化⇒これ以降、oa.関数名で呼び出し可能
 print("Start")

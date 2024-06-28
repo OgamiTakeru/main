@@ -4,105 +4,105 @@ import classOanda as classOanda
 import fGeneric as f
 
 
-def turn_each_support(data_df, direction, ans_info):
-    """
-    形状の詳細を判定する。ここでは不要。
-    ここでのデータは、０行目が最新データ
-    :param data_df:
-    :param direction:
-    :param ans_info:
-    :return:
-    """
-    # パターン買いの一部
-    ratio = 0.6
-    back_slash = ans_info['gap'] * ratio  # トリガとなる戻り分を算出
+# def turn_each_support(data_df, direction, ans_info):
+#     """
+#     形状の詳細を判定する。ここでは不要。
+#     ここでのデータは、０行目が最新データ
+#     :param data_df:
+#     :param direction:
+#     :param ans_info:
+#     :return:
+#     """
+#     # パターン買いの一部
+#     ratio = 0.6
+#     back_slash = ans_info['gap'] * ratio  # トリガとなる戻り分を算出
+#
+#     if len(data_df) == 2:
+#         # (1) latestのパターンを計算
+#         if direction == 1:  # プラスの連荘＝谷の場合　（折り返し部のみの話）
+#             if data_df.iloc[1]['body'] >= 0 and data_df.iloc[0]['body'] >= 0:
+#                 pattern_comment = "afterV:UpUp"
+#                 pattern = 10
+#                 order_line = round(ans_info['latest_image_price'], 3)
+#                 type = "LIMIT"  # 順張りか逆張りかに注意　"LIMIT"  "STOP"
+#             elif data_df.iloc[1]['body'] >= 0 and data_df.iloc[0]['body'] <= 0:
+#                 pattern_comment = "afterV:UpDownss"
+#                 pattern = 11
+#                 order_line = round(ans_info['oldest_image_price'], 3)
+#                 type = "LIMIT"  # 逆張り
+#             elif data_df.iloc[1]['body'] <= 0 and data_df.iloc[0]['body'] >= 0:
+#                 pattern_comment = "afterV:DownUp"
+#                 pattern = 12
+#                 order_line = round(ans_info['latest_image_price'], 3)  # - back_slash, 3)
+#                 type = "LIMIT"  # 逆張り
+#             else:
+#                 pattern_comment = "afterV:Error"
+#                 pattern = 13
+#                 order_line = type = 999
+#
+#         elif direction == -1:  # マイナスの連荘＝山の場合　（折り返し部の話）
+#             if data_df.iloc[1]['body'] <= 0 and data_df.iloc[0]['body'] <= 0:
+#                 pattern_comment = "afterM:DownDown"
+#                 pattern = -10
+#                 order_line = round(ans_info['latest_image_price'], 3)
+#                 type = "LIMIT"  # 順張り
+#             elif data_df.iloc[1]['body'] <= 0 and data_df.iloc[0]['body'] >= 0:
+#                 pattern_comment = "afterM:DownUpss"
+#                 pattern = -11
+#                 order_line = round(ans_info['latest_image_price'], 3)
+#                 type = "LIMIT"  # 逆張り
+#             elif data_df.iloc[1]['body'] >=0 and data_df.iloc[0]['body'] <=0:
+#                 pattern_comment = "afterM:UpDown"
+#                 pattern = -12
+#                 order_line = round(ans_info['latest_image_price'], 3)  # + back_slash, 3)
+#                 type = "LIMIT"  # 順張り
+#             else:
+#                 pattern_comment = "afterM:Error"
+#                 pattern = -13
+#                 order_line = type = 999
+#
+#         # （２）latestの中のoldとlatestどっちがサイズが大きいかの判別
+#         older = data_df.iloc[1]['body_abs']
+#         later = data_df.iloc[0]['body_abs']
+#         if older <= later:
+#             range_expected = 1  # レンジの予感
+#         else:
+#             range_expected = 0
+#
+#
+#     else:
+#         # ここは全部を網羅しておくこと（初期値的に）
+#         pattern = -99
+#         pattern_comment = "NoComment2足分以上"
+#         order_line = type = 999
+#         range_expected = 0
+#
+#     # LCrangeを計算する(MAX7pips, Min 3pips)
+#     lc_range = round(ans_info['gap'] / 2, 3)
+#     if lc_range > 0.07:
+#         lc_range = 0.07
+#     elif lc_range < 0.03:
+#         lc_range = 0.03
+#
+#     # Body長、移動長の平均値を算出する
+#     body_ave = data_df["body_abs"].mean()
+#     move_ave = data_df["moves"].mean()
+#
+#     return {
+#         "pattern_comment": pattern_comment,
+#         "pattern_num": pattern,
+#         "order_line": round(order_line,3),
+#         "order_type": type,
+#         "back_slash": back_slash,
+#         "lc_range": lc_range,
+#         "gap": ans_info['gap'],
+#         'body_ave': body_ave,
+#         "move_abs": move_ave,
+#         "range_expected": range_expected
+#     }
 
-    if len(data_df) == 2:
-        # (1) latestのパターンを計算
-        if direction == 1:  # プラスの連荘＝谷の場合　（折り返し部のみの話）
-            if data_df.iloc[1]['body'] >= 0 and data_df.iloc[0]['body'] >= 0:
-                pattern_comment = "afterV:UpUp"
-                pattern = 10
-                order_line = round(ans_info['latest_image_price'], 3)
-                type = "LIMIT"  # 順張りか逆張りかに注意　"LIMIT"  "STOP"
-            elif data_df.iloc[1]['body'] >= 0 and data_df.iloc[0]['body'] <= 0:
-                pattern_comment = "afterV:UpDownss"
-                pattern = 11
-                order_line = round(ans_info['oldest_image_price'], 3)
-                type = "LIMIT"  # 逆張り
-            elif data_df.iloc[1]['body'] <= 0 and data_df.iloc[0]['body'] >= 0:
-                pattern_comment = "afterV:DownUp"
-                pattern = 12
-                order_line = round(ans_info['latest_image_price'], 3)  # - back_slash, 3)
-                type = "LIMIT"  # 逆張り
-            else:
-                pattern_comment = "afterV:Error"
-                pattern = 13
-                order_line = type = 999
 
-        elif direction == -1:  # マイナスの連荘＝山の場合　（折り返し部の話）
-            if data_df.iloc[1]['body'] <= 0 and data_df.iloc[0]['body'] <= 0:
-                pattern_comment = "afterM:DownDown"
-                pattern = -10
-                order_line = round(ans_info['latest_image_price'], 3)
-                type = "LIMIT"  # 順張り
-            elif data_df.iloc[1]['body'] <= 0 and data_df.iloc[0]['body'] >= 0:
-                pattern_comment = "afterM:DownUpss"
-                pattern = -11
-                order_line = round(ans_info['latest_image_price'], 3)
-                type = "LIMIT"  # 逆張り
-            elif data_df.iloc[1]['body'] >=0 and data_df.iloc[0]['body'] <=0:
-                pattern_comment = "afterM:UpDown"
-                pattern = -12
-                order_line = round(ans_info['latest_image_price'], 3)  # + back_slash, 3)
-                type = "LIMIT"  # 順張り
-            else:
-                pattern_comment = "afterM:Error"
-                pattern = -13
-                order_line = type = 999
-
-        # （２）latestの中のoldとlatestどっちがサイズが大きいかの判別
-        older = data_df.iloc[1]['body_abs']
-        later = data_df.iloc[0]['body_abs']
-        if older <= later:
-            range_expected = 1  # レンジの予感
-        else:
-            range_expected = 0
-
-
-    else:
-        # ここは全部を網羅しておくこと（初期値的に）
-        pattern = -99
-        pattern_comment = "NoComment2足分以上"
-        order_line = type = 999
-        range_expected = 0
-
-    # LCrangeを計算する(MAX7pips, Min 3pips)
-    lc_range = round(ans_info['gap'] / 2, 3)
-    if lc_range > 0.07:
-        lc_range = 0.07
-    elif lc_range < 0.03:
-        lc_range = 0.03
-
-    # Body長、移動長の平均値を算出する
-    body_ave = data_df["body_abs"].mean()
-    move_ave = data_df["moves"].mean()
-
-    return {
-        "pattern_comment": pattern_comment,
-        "pattern_num": pattern,
-        "order_line": round(order_line,3),
-        "order_type": type,
-        "back_slash": back_slash,
-        "lc_range": lc_range,
-        "gap": ans_info['gap'],
-        'body_ave': body_ave,
-        "move_abs": move_ave,
-        "range_expected": range_expected
-    }
-
-
-def turn_each_inspection(data_df_origin):
+def each_block_inspection(data_df_origin):
     """
     渡された範囲で、何連続で同方向に進んでいるかを検証する
     :param data_df_origin: 直近が上側（日付降順/リバース）のデータを利用
@@ -229,7 +229,7 @@ def turn_each_inspection(data_df_origin):
     return ans_dic
 
 
-def turn_each_inspection_skip(data_df_origin):
+def each_block_inspection_skip(data_df_origin):
     """
     渡された範囲で、何連続で同方向に進んでいるかを検証する
     ただし方向が異なる１つ（N個）を除去しても方向が変わらない場合、延長する
@@ -259,7 +259,8 @@ def turn_each_inspection_skip(data_df_origin):
             "body_ave": 0.000001,
             "move_abs": 0.00001,
             "memo_time": 0,
-            "support_info":{}
+            "support_info": {},
+            "latest2_dir": 0,  # 直近二つのローソクの方向を二桁であらわす.
         }
         # 返却用（シンプルでデータフレームがないものを作成する）
         ans_dic_simple = ans_dic.copy()
@@ -370,6 +371,21 @@ def turn_each_inspection_skip(data_df_origin):
     else:
         gap = gap
 
+    body_pattern = 0
+    if counter+1 == 2:
+        # 直近のボディーの方向、
+        if data_df.iloc[0]['body'] <= 0:
+            # マイナスの場合、１０の位は１
+            body_pattern = 10
+        else:
+            body_pattern = 20
+        # 直近から２番目のボディーの方向
+        if data_df.iloc[1]['body'] <= 0:
+            # マイナスの場合、１の位は１
+            body_pattern += 1
+        else:
+            body_pattern += 2
+
     # ■　一旦格納する
     # 表示等で利用する用（機能としては使わない
     memo_time = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
@@ -393,7 +409,8 @@ def turn_each_inspection_skip(data_df_origin):
         "gap_close": gap_close,
         "body_ave": body_ave,
         "move_abs": move_ave,
-        "memo_time": memo_time
+        "memo_time": memo_time,
+        "latest2_dir": body_pattern,
     }
     # 返却用（シンプルでデータフレームがないものを作成する）
     ans_dic_simple = ans_dic.copy()
@@ -489,80 +506,80 @@ def turn_each_inspection_skip(data_df_origin):
 #     return ans_current
 
 
-def turn_merge_inspection(figure_condition):
-    """
-    old区間4,latest区間2の場合のジャッジメント
-    :param oldest_ans:第一引数がOldestであること。直近部より前の部分が、どれだけ同一方向に進んでいるか。
-    :param latest_ans:第二引数がLatestであること。直近部がどれだけ連続で同一方向に進んでいるか
-    :param now_price: 途中で追加した機能（現在の価格を取得し、成り行きに近いようなオーダーを出す）　230105追加
-    :param figure_condition
-    :return:
-    """
-    #
-    # ■直近データの形状の解析
-    data_r = figure_condition['data_r']  # データを格納
-    ignore = figure_condition['ignore']  # ignore=1の場合、タイミング次第では自分を入れずに探索する（正）
-    dr_latest_n = figure_condition['latest_n']  # 2
-    dr_oldest_n = figure_condition['oldest_n']  # 10 ⇒30
-    max_return_ratio = figure_condition['return_ratio']
-    # now_price = inspection_condition['now_price']
-
-    # 各DFを解析
-    latest_df = data_r[ignore: dr_latest_n + ignore]  # 直近のn個を取得
-    oldest_df = data_r[dr_latest_n + ignore - 1: dr_latest_n + dr_oldest_n + ignore - 1]  # 前半と１行をラップさせる。
-    latest_ans = turn_each_inspection(latest_df)  # 何連続で同じ方向に進んでいるか（直近-1まで）# Latestの期間を検証する(主に個のみ）
-    oldest_ans_normal = turn_each_inspection(oldest_df)  # 何連続で同じ方向に進んでいるか（前半部分）# Oldestの期間を検証する（MAIN）
-    oldest_ans = turn_each_inspection_skip(oldest_df)  # 何連続で同じ方向に進んでいるか（前半部分）# Oldestの期間を検証する（MAIN）
-
-    # 表示用がメインの情報まとめ
-    # print("  ", oldest_ans['oldest_time_jp'], latest_ans['latest_time_jp'], oldest_ans['oldest_price'],"@fig_ins")
-    # print("  ", oldest_ans_normal['oldest_time_jp'], latest_ans['latest_time_jp'], oldest_ans_normal['oldest_price'], "@fig_ins")
-    memo_time = f.str_to_time_hms(oldest_ans['oldest_time_jp']) + "_" + \
-                f.str_to_time_hms(oldest_ans['latest_time_jp']) + "_" + \
-                f.str_to_time_hms(latest_ans['latest_time_jp'])
-    memo_price = "(" + str(oldest_ans['oldest_price']) + "_" + str(oldest_ans['latest_image_price']) + \
-                 "_" + str(latest_ans['latest_price']) + "," + str(oldest_ans['direction'])
-    memo_all = memo_time + memo_price
-
-    # 初期値があった方がいいもの（エラー対策）
-    return_ratio = 0
-    # 判定処理
-    if latest_ans['direction'] != oldest_ans['direction']:  # 違う方向だった場合 (想定ケース）
-        if latest_ans['count'] == latest_ans['data_size'] and oldest_ans['count'] >= 3:  # 行数確認(old区間はt直接指定！）
-            # 戻しのパーセンテージを確認
-            return_ratio = round((latest_ans['gap_close'] / oldest_ans['gap']) * 100, 3)
-            print("  return_ratio", return_ratio, latest_ans['gap_close'], oldest_ans['gap'])
-            if return_ratio < max_return_ratio:
-                if oldest_ans['gap'] > 0.03:
-                    turn_ans = 1  # 達成
-                    memo = "★達成"
-                else:
-                    turn_ans = 0
-                    memo = "Old小未達" + str(oldest_ans['gap'])
-            else:
-                turn_ans = 0  # 未達
-                memo = "戻大" + str(return_ratio)
-        else:
-            turn_ans = 0  # 未達
-            memo = "カウント未達 latest" + str(latest_ans['count']) + "," + str(oldest_ans['count'])
-    else:
-        turn_ans = 0  # 未達
-        memo = "同方向"
-
-    memo_info = "\n" + "  【ターン】戻り率" + str(return_ratio) + ",向き(old):" + str(oldest_ans['direction']) + ",縦幅(old):" + str(oldest_ans['gap'])
-    memo_info = memo_info + ",Body平均Old-Late:" + str(oldest_ans['body_ave']) + "," +str(latest_ans['body_ave'])
-    memo_all = memo_all + memo_info + "," + memo
-    print("   ", memo_all)
-
-    return{
-        "oldest_ans": oldest_ans,
-        "latest_ans": latest_ans,
-        "memo_all": memo_all,
-        "return_ratio": return_ratio,
-        "turn_peak": latest_ans["oldest_image_price"],  # ターンの底値（
-        "turn_peak_bigin": oldest_ans['oldest_image_price'],  # ターン開始の価格
-        "turn_ans": turn_ans
-    }
+# def turn_merge_inspection(figure_condition):
+#     """
+#     old区間4,latest区間2の場合のジャッジメント
+#     :param oldest_ans:第一引数がOldestであること。直近部より前の部分が、どれだけ同一方向に進んでいるか。
+#     :param latest_ans:第二引数がLatestであること。直近部がどれだけ連続で同一方向に進んでいるか
+#     :param now_price: 途中で追加した機能（現在の価格を取得し、成り行きに近いようなオーダーを出す）　230105追加
+#     :param figure_condition
+#     :return:
+#     """
+#     #
+#     # ■直近データの形状の解析
+#     data_r = figure_condition['data_r']  # データを格納
+#     ignore = figure_condition['ignore']  # ignore=1の場合、タイミング次第では自分を入れずに探索する（正）
+#     dr_latest_n = figure_condition['latest_n']  # 2
+#     dr_oldest_n = figure_condition['oldest_n']  # 10 ⇒30
+#     max_return_ratio = figure_condition['return_ratio']
+#     # now_price = inspection_condition['now_price']
+#
+#     # 各DFを解析
+#     latest_df = data_r[ignore: dr_latest_n + ignore]  # 直近のn個を取得
+#     oldest_df = data_r[dr_latest_n + ignore - 1: dr_latest_n + dr_oldest_n + ignore - 1]  # 前半と１行をラップさせる。
+#     latest_ans = turn_each_inspection(latest_df)  # 何連続で同じ方向に進んでいるか（直近-1まで）# Latestの期間を検証する(主に個のみ）
+#     oldest_ans_normal = turn_each_inspection(oldest_df)  # 何連続で同じ方向に進んでいるか（前半部分）# Oldestの期間を検証する（MAIN）
+#     oldest_ans = turn_each_inspection_skip(oldest_df)  # 何連続で同じ方向に進んでいるか（前半部分）# Oldestの期間を検証する（MAIN）
+#
+#     # 表示用がメインの情報まとめ
+#     # print("  ", oldest_ans['oldest_time_jp'], latest_ans['latest_time_jp'], oldest_ans['oldest_price'],"@fig_ins")
+#     # print("  ", oldest_ans_normal['oldest_time_jp'], latest_ans['latest_time_jp'], oldest_ans_normal['oldest_price'], "@fig_ins")
+#     memo_time = f.str_to_time_hms(oldest_ans['oldest_time_jp']) + "_" + \
+#                 f.str_to_time_hms(oldest_ans['latest_time_jp']) + "_" + \
+#                 f.str_to_time_hms(latest_ans['latest_time_jp'])
+#     memo_price = "(" + str(oldest_ans['oldest_price']) + "_" + str(oldest_ans['latest_image_price']) + \
+#                  "_" + str(latest_ans['latest_price']) + "," + str(oldest_ans['direction'])
+#     memo_all = memo_time + memo_price
+#
+#     # 初期値があった方がいいもの（エラー対策）
+#     return_ratio = 0
+#     # 判定処理
+#     if latest_ans['direction'] != oldest_ans['direction']:  # 違う方向だった場合 (想定ケース）
+#         if latest_ans['count'] == latest_ans['data_size'] and oldest_ans['count'] >= 3:  # 行数確認(old区間はt直接指定！）
+#             # 戻しのパーセンテージを確認
+#             return_ratio = round((latest_ans['gap_close'] / oldest_ans['gap']) * 100, 3)
+#             print("  return_ratio", return_ratio, latest_ans['gap_close'], oldest_ans['gap'])
+#             if return_ratio < max_return_ratio:
+#                 if oldest_ans['gap'] > 0.03:
+#                     turn_ans = 1  # 達成
+#                     memo = "★達成"
+#                 else:
+#                     turn_ans = 0
+#                     memo = "Old小未達" + str(oldest_ans['gap'])
+#             else:
+#                 turn_ans = 0  # 未達
+#                 memo = "戻大" + str(return_ratio)
+#         else:
+#             turn_ans = 0  # 未達
+#             memo = "カウント未達 latest" + str(latest_ans['count']) + "," + str(oldest_ans['count'])
+#     else:
+#         turn_ans = 0  # 未達
+#         memo = "同方向"
+#
+#     memo_info = "\n" + "  【ターン】戻り率" + str(return_ratio) + ",向き(old):" + str(oldest_ans['direction']) + ",縦幅(old):" + str(oldest_ans['gap'])
+#     memo_info = memo_info + ",Body平均Old-Late:" + str(oldest_ans['body_ave']) + "," +str(latest_ans['body_ave'])
+#     memo_all = memo_all + memo_info + "," + memo
+#     print("   ", memo_all)
+#
+#     return{
+#         "oldest_ans": oldest_ans,
+#         "latest_ans": latest_ans,
+#         "memo_all": memo_all,
+#         "return_ratio": return_ratio,
+#         "turn_peak": latest_ans["oldest_image_price"],  # ターンの底値（
+#         "turn_peak_bigin": oldest_ans['oldest_image_price'],  # ターン開始の価格
+#         "turn_ans": turn_ans
+#     }
 
 
 # def turn2_cal(inspection_condition):

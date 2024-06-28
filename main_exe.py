@@ -8,7 +8,7 @@ import pandas as pd
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as classOanda
 import classPosition as classPosition  # とりあえずの関数集
-import fTurnInspection as t  # とりあえずの関数集
+import fBlockInspection as t  # とりあえずの関数集
 import fGeneric as f
 import fPeakLineInspection as p
 import fDoublePeaks as dp

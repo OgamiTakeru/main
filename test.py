@@ -2,7 +2,7 @@ import pandas as pd
 import threading  # 定時実行用
 import time
 import datetime
-import fTurnInspection as t  # とりあえずの関数集
+import fBlockInspection as t  # とりあえずの関数集
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as classOanda
 import making as mk

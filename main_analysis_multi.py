@@ -1,6 +1,6 @@
 import pandas as pd
 import datetime
-import fTurnInspection as f  # とりあえずの関数集
+import fBlockInspection as f  # とりあえずの関数集
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
 import making as mk

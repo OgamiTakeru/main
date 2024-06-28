@@ -420,7 +420,7 @@ gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 6, 6, 1, 15, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2024, 6, 28, 12, 30, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定      datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
 gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 

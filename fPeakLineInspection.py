@@ -1,7 +1,7 @@
 import datetime  # 日付関係
 import json
 import numpy as np
-import fTurnInspection as fTurn
+import fBlockInspection as fTurn
 import fGeneric as f
 
 
@@ -48,7 +48,7 @@ def peaks_collect_all(*args):
         if len(df_r) == 0:
             break
         # answers = fTurn.turn_each_inspection(df_r)
-        answers = fTurn.turn_each_inspection_skip(df_r)
+        answers = fTurn.each_block_inspection_skip(df_r)
         ans = answers['ans_dic']  # 返り値には色々な値があるので、指定の返却値を取る（簡易版ではない）
         df_r = df_r[ans['count']-1:]
         if ans['direction'] == 1:
@@ -70,6 +70,7 @@ def peaks_collect_all(*args):
             'body_ave': ans['body_ave'],
             'count': len(ans["data"]),
             'gap': round(abs(peak_latest-peak_oldest), 3),
+            "latest2_dir": ans['latest2_dir'],
             'ans': ans,
         }
         if len(peaks) != 0:
@@ -152,6 +153,8 @@ def peaks_collect_separate(peaks):
 
 
 #########↑ここまでは頻発
+
+
 def peaks_collect_main_del(df_r):
     """
     ピークを集めるが、一部条件に合わないピークを削除する
