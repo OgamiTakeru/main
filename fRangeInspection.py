@@ -328,10 +328,10 @@ def latest_move_type(df_r):
 
 def find_latest_line(*args):
     """
-    :param *args: 複数の引数を取る可能性があるが、２パターン.
-    ①二つの引数がある場合 args[0] = df_r、args[1] = peaks
+    :param *dic_args: 複数の引数を取る可能性があるが、２パターン.
+    ①二つの引数がある場合 dic_args[0] = df_r、dic_args[1] = peaks
     　→ループ等で呼び出される場合がメイン。df_rは基本参考値で、peaksで実施するのが理想（計算量削減の為）
-    ②一つだけの引数がある場合 args[0] = de_r
+    ②一つだけの引数がある場合 dic_args[0] = de_r
      →単発で実行する場合のみ
 
      <調査の対象について＞

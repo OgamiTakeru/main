@@ -40,15 +40,15 @@ def analysis_part(df_r):
     # return dp.stairsPeak(df_r)
     # return dp.now_position(df_r)
     # prac.turn_inspection_main(df_r)
-    # return dp.DoublePeak(df_r)
+    return dp.DoublePeak({"df_r": df_r})
     # return dp.DoublePeakBreak(df_r)
     # return dp.DoublePeak_4peaks(df_r)
     # return dp.triplePeaks_pattern(df_r)
     # print(ri.find_lines(df_r))
     # return ri.latest_move_type(df_r)
     # return im.Inspection_main(df_r)
-    test = im.Inspection_main2(df_r)
-    return test
+    # test = im.Inspection_main2(df_r)
+    # return test
 
 
 # 検証パート
@@ -272,9 +272,9 @@ def confirm_part(df_r, ana_ans):
 def check_main(df_r):
     """
     受け取ったデータフレームを解析部と結果部に分割し、それぞれの結果をマージする
-    :param args:    通常の解析と、ループの解析で利用する。
-    通常の解析の場合、*argsは1つ、データフレームのみ。args[0]はdf_rとして扱う。
-    ループ解析(別ファイルの関数)の場合、*argsはargs[0]はdf_r。args[1]はparams(パラメータ[個])
+    :param dic_args:    通常の解析と、ループの解析で利用する。
+    通常の解析の場合、*argsは1つ、データフレームのみ。dic_args[0]はdf_rとして扱う。
+    ループ解析(別ファイルの関数)の場合、*argsはargs[0]はdf_r。dic_args[1]はparams(パラメータ[個])
 
     :return:
     """
@@ -323,7 +323,7 @@ def main():
     メイン関数　全てここからスタートする。ここではデータを取得する
     通常の解析と、ループの解析で利用する。
     通常の解析の場合、*argsは０個。
-    ループ解析(別ファイルの関数)の場合、*argsはargs[0]はparams(パラメータ集)、args[1]はパメータ番号(表示用）
+    ループ解析(別ファイルの関数)の場合、*argsはargs[0]はparams(パラメータ集)、dic_args[1]はパメータ番号(表示用）
     :return:
     """
 
@@ -420,7 +420,7 @@ gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 6, 28, 12, 30, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2024, 7, 9, 17, 15, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定      datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
 gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 

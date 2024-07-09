@@ -27,30 +27,10 @@ for i in range(3):
     classes.append(classPosition.order_information(new_name, oa))  # 順思想のオーダーを入れるクラス
 
 
-test = "j"
+dic1 = None
+dic2 = {'age': 15,"named": 'y', }
 
-if test:
-    print("not none")
+if not dic1:
+    print("sonzai")
 else:
-    print(" ttt")
-
-# data = {
-#     "decision_price": 150,
-#     "units": 2,
-#     "expected_direction": 1,
-#     "ask_bid": 1,
-#     "start_price": 155.950,
-#     "grid": 0.02,
-#     "num": 3,
-#     "end_price": 156.0,
-#     "type": "STOP"
-# }
-#
-# print("test")
-# ans = dp.make_trid_order(data)
-# f.print_arr(ans['exe_orders'])
-# print(" オーダー実行")
-# for n in range(len(ans['exe_orders'])):
-#     print(" No." + str(n))
-#     res_dic = classes[n].order_plan_registration(ans['exe_orders'][n])  #
-#
+    print("No")

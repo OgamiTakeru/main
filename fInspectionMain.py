@@ -455,12 +455,5 @@ def Inspection_main2(df_r):
             "memo": f.str_merge("ラインOrder", comment_now,line_comment)
         }
 
-    # （２）シンプルなダブルトップを見つける
-    doublePeak_ans = dp.DoublePeak_4peaks(df_r, peaks)
-    if doublePeak_ans['take_position_flag']:
-        print(" シンプルDT発見")
-        # flag_and_orders = doublePeak_ans
-        flag_and_orders['memo'] = "DoubleTop4!! " + flag_and_orders['memo']
-
     # 【FINAL】
     return flag_and_orders

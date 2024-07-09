@@ -225,48 +225,50 @@ def each_block_inspection(data_df_origin):
         # 返却用（シンプルでデータフレームがないものを作成する）
         ans_dic_simple = ans_dic.pop('data')
         ans_dic_simple = ans_dic_simple.pop('data_remain')
-    # ■　形状からターゲットラインを求める。
+
+    # 返却する
     return ans_dic
 
 
-def each_block_inspection_skip(data_df_origin):
+def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
     """
     渡された範囲で、何連続で同方向に進んでいるかを検証する
     ただし方向が異なる１つ（N個）を除去しても方向が変わらない場合、延長する
     :param data_df_origin: 直近が上側（日付降順/リバース）のデータを利用
-    :return: Dict形式のデータを返伽
+    :return: Dict形式のデータを返却　（冒頭で定義）
     """
     # コピーウォーニングのための入れ替え
     data_df = data_df_origin.copy()
-    if len(data_df) < 1:  # データが存在してい無ければ、仮のデータを入れて終了
-        # 返却用
-        ans_dic = {
-            "direction": 1,
-            "count": 0,  # 最新時刻からスタートして同じ方向が何回続いているか
-            "data": data_df,  # 対象となるデータフレーム（元のデータフレームではない）
-            "data_remain": data_df,  # 対象以外の残りのデータフレーム
-            "data_size": len(data_df),  # (注)元のデータサイズ
-            "latest_image_price": 0,
-            "oldest_image_price": 0,
-            "oldest_time_jp": 0,
-            "latest_time_jp": 0,
-            "latest_price": 0,
-            "oldest_price": 0,
-            "latest_peak_price": 0,
-            "oldest_peak_price": 0,
-            "gap": 0.0001,
-            "gap_close": 0.00001,
-            "body_ave": 0.000001,
-            "move_abs": 0.00001,
-            "memo_time": 0,
-            "support_info": {},
-            "latest2_dir": 0,  # 直近二つのローソクの方向を二桁であらわす.
-        }
+    # 返却値の設定
+    ans_format = {
+        "direction": 1,
+        "count": 0,  # 最新時刻からスタートして同じ方向が何回続いているか
+        "data": data_df,  # 対象となるデータフレーム（元のデータフレームではない）
+        "data_remain": data_df,  # 対象以外の残りのデータフレーム
+        "data_size": len(data_df),  # (注)元のデータサイズ
+        "latest_image_price": 0,
+        "oldest_image_price": 0,
+        "oldest_time_jp": 0,
+        "latest_time_jp": 0,
+        "latest_price": 0,
+        "oldest_price": 0,
+        "latest_peak_price": 0,
+        "oldest_peak_price": 0,
+        "gap": 0.0001,
+        "gap_close": 0.00001,
+        "body_ave": 0.000001,
+        "move_abs": 0.00001,
+        "memo_time": 0,
+        "latest2_dir": 0,  # 直近二つのローソクの方向を二桁であらわす.
+    }
+
+    # 処理
+    if len(data_df) < 1:  # ■異常処理。データが存在してい無ければ、仮のデータを入れて終了
         # 返却用（シンプルでデータフレームがないものを作成する）
-        ans_dic_simple = ans_dic.copy()
-        ans_dic_simple.pop('data')
-        ans_dic_simple.pop('data_remain')
-        return {"ans_dic": ans_dic, "ans_dic_simple": ans_dic_simple}
+        # ans_dic_simple = ans_dic.copy()
+        # ans_dic_simple.pop('data')
+        # ans_dic_simple.pop('data_remain')
+        return ans_format
 
     # 通常の処理
     base_direction = 0
@@ -391,7 +393,7 @@ def each_block_inspection_skip(data_df_origin):
     memo_time = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
         ans_df.iloc[0]["time_jp"])
     # 返却用(Simple データを持たない表示用)
-    ans_dic = {
+    ans = {
         "direction": base_direction,
         "count": counter+1,  # 最新時刻からスタートして同じ方向が何回続いているか
         "data": ans_df,  # 対象となるデータフレーム（元のデータフレームではない）
@@ -412,17 +414,12 @@ def each_block_inspection_skip(data_df_origin):
         "memo_time": memo_time,
         "latest2_dir": body_pattern,
     }
-    # 返却用（シンプルでデータフレームがないものを作成する）
-    ans_dic_simple = ans_dic.copy()
-    ans_dic_simple.pop('data')
-    ans_dic_simple.pop('data_remain')
 
-    # ■　形状を判定する（テスト）
-    # type_info_dic = turn_each_support(ans_df, base_direction, ans_dic)  # 対象のデータフレームと、方向を渡す
-    # ans_dic["support_info"] = type_info_dic  # あくまでメイン解析の要素の一つとして渡す
-
-    # ■　形状からターゲットラインを求める。
-    return {"ans_dic": ans_dic, "ans_dic_simple": ans_dic_simple}
+    # 返却する
+    if f.dict_compare(ans_format, ans):
+        return ans
+    else:
+        print("★返却値異常")
 
 
 # def turn_each_inspection_skip_sub(df_r):

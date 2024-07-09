@@ -348,6 +348,25 @@ def order_finalize(order_base):
     return order_base
 
 
+def dict_compare(dic1, dic2):
+    """
+    引数の辞書型の中身の項目が同じかどうかを確認する。
+    （入れ子になっている場合はそこまで確認しない）
+    目的は、関数の返り値を、関数で共通化したい。
+    その為、各関数の先頭で返却値の辞書を空で定義し、return直前に過不足ないかを確認する。その際にこの関数を利用する
+    :param dic1:
+    :param dic2:
+    :return:
+    """
+    # print(dic1,dic2)
+    if list(sorted(dic1)) == list(sorted(dic2)):
+        # print(" 完全一致")
+        return True
+    else:
+        # print(" 不完全一致")
+        return False
+
+
 def make_trid_order(plan):
     """
     トラップ&リピートイフダンの注文を入れる

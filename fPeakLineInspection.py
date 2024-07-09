@@ -48,8 +48,8 @@ def peaks_collect_all(*args):
         if len(df_r) == 0:
             break
         # answers = fTurn.turn_each_inspection(df_r)
-        answers = fTurn.each_block_inspection_skip(df_r)
-        ans = answers['ans_dic']  # 返り値には色々な値があるので、指定の返却値を取る（簡易版ではない）
+        ans = fTurn.each_block_inspection_skip(df_r)
+        # ans = answers # 返り値には色々な値があるので、指定の返却値を取る（簡易版ではない）
         df_r = df_r[ans['count']-1:]
         if ans['direction'] == 1:
             # 上向きの場合
