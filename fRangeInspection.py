@@ -336,8 +336,8 @@ def find_latest_line(*args):
 
      <調査の対象について＞
       \　　↓ここが対象となる（=river)
-       \  /\←これがLatestとして扱われるもの 　
-        \/  \ ←この部分が２の場合に検出する（ここはLatestではない。２の場合＝１つ出来立ての足は省くので、このPeakは無いと同義）
+       \  /\←　この部分が２の場合に検出する（ここはLatestではない。２の場合＝１つ出来立ての足は省くので、このPeakは無いと同義）
+        \/  \ ←これがLatestとして扱われるもの
     :return:
     """
     # 準備部分（表示や、ピークスの算出を行う）
@@ -383,7 +383,7 @@ def find_latest_line(*args):
     # ②探索開始
     line_strength = 0  # LINE強度の初期値を入れる
     counter = 0  # 何回同等の値が出現したかを把握する
-    range_yen = f.cal_at_least_most(0.01, round(ave * 0.1, 3), 0.035)  # * 0.38?  # 元々0.06の固定値。ただレンジのサイズ感によって変るべき
+    range_yen = f.cal_at_least_most(0.01, round(ave * 0.153, 3), 0.035)  #0.153倍が一番よかった(大きすぎないレベル）。。
     depth_point_gap = 0  # 今のピークと一番離れている値、かつ、逆方向のポイント（同価格発見のタイミングでリセット）
     depth_point = 0
     depth_point_time = 0
@@ -493,8 +493,10 @@ def find_latest_line(*args):
                     near_plus_count += 1
     # 同価格リスト
     print("")
-    print("同価格リスト", "base", river_peak, river_peak_time, river_peak - range_yen, "<r<",river_peak + range_yen )
+    print("同価格リスト", "base", river_peak, river_peak_time, river_peak - range_yen, "<r<",river_peak + range_yen,
+          "許容ギャップ", range_yen , "方向", river_dir, " 平均ピークGap", ave)
     f.print_arr(same_list)
+    print(" ↑ここまで")
 
     # ■LineStrengthを決定するため、同価格リストの結果をもとに、谷があるかを判定する
     minus_counter = 0  # 初期値
@@ -600,94 +602,8 @@ def find_latest_line(*args):
     #     print(return_dic)
     #     # f.print_json(return_dic)
     # print(" --")
+    print(" 結果",line_strength)
     return return_dic
-
-
-def find_lines(df_r):
-    """
-    find_latest_lineを繰り返し呼び出し、
-    直近のUpperLineとLowerLineが発見されるまで繰り返す
-    :param df_r:
-    :return:
-    """
-    found_upper = False
-    found_lower = False
-    upper_information = {"line_strength": 0}
-    lower_information = {"line_strength": 0}
-    # まずピークスを求める
-    peaks_info = p.peaks_collect_main(df_r, 15)
-    peaks_all = peaks_info["all_peaks"]
-    # 直近のUpperとLowerの取得用
-    latest_line = {"line_strength": 0}
-    latest_upper = {"line_strength": 0}
-    latest_lower = {"line_strength": 0}
-    # 探索する
-    for i in range(30):
-        # 探索(peaksをひとつづつ減らしていく=最大３０個のピークを確認する。df_rは減らさない)
-        range_result = find_latest_line(df_r, peaks_all[i:])  # 引数二つ渡しで関数を呼ぶ（無効ではPeaks_allのみ利用）
-        # if range_result['line_strength'] != 0:  # 発見された場合
-        #     print(" ★", i, range_result)
-        if i == 0:
-            # latestで発見した場合(どうしよう？　当面は無視）
-            pass
-        elif i <= 3:
-            # <0latest> 1river 2turn 3flop3 は強制的に実施。
-            # ただし発見した場合は発見フラグは立てる
-            if range_result['line_strength'] != 0:  # 発見された場合
-                if not found_upper and not found_lower:  # 初めての発見の場合
-                    latest_line = range_result  # latest に入れておく（一番最初の発見は特別。使い方は今後検討）
-                if range_result['line_direction'] == 1:  # upper方向の場合
-                    if found_upper:
-                        # 既に発見されている場合、過去に発見された物と比較する（strength信頼度が高いほうを採択？価格が高いほうを採択？）
-                        # if upper_information['line_strength'] < range_result['line_strength']:
-                        #   新たに発見した方(range_result)がUpperとしてふさわしい場合（Line_strengthが強い）は、入れ替え
-                        if upper_information['line_price'] < range_result['line_price']:
-                            # 新たに発見した方(range_result)がupperとしてふさわしい場合（Line_priceが高い）は、入れ替え
-                            upper_information = range_result
-                    else:
-                        # 初めての発見の場合、シンプルに記録しておく
-                        found_upper = True  # 繰り返し防止の為、フラグを立てる
-                        upper_information = range_result
-                elif range_result['line_direction'] == -1:  # loweer方向の場合
-                    if found_lower:
-                        # 既に発見されている場合、過去に発見された物と比較する（strength信頼度が高いほうを採択？価格が低いほうを採択？）
-                        # if lower_information['line_strength'] < range_result['line_strength']:
-                        #       新たに発見した方(range_result)がlowerとしてふさわしい場合（Line_strengthが強い）は、入れ替え
-                        if lower_information['line_price'] > range_result['line_price']:
-                            # 新たに発見した方(range_result)がlowerとしてふさわしい場合（Line_priceが低い）は、入れ替え
-                            lower_information = range_result
-                    else:
-                        # 初めての発見の場合、シンプルに記録しておく
-                        found_lower = True  # 繰り返し防止の為、フラグを立てる
-                        lower_information = range_result
-        else:
-            # flop3より前（flop2以下）は、
-            # ・river,turn.flop3で、UpperかLowerLineのいずれかが見つかった場合、もう片方を探索
-            # ・両方発見されている場合は、何もせず
-            if found_upper and found_lower:  # 両方発見されている場合
-                # print("　　　　両方発見→FIN")
-                break
-            elif not found_upper and not found_lower:  # 両方発見されていない場合
-                break
-            else:
-                # river,turn.flop3で、UpperかLowerLineのいずれかが見つかった場合、探索モード
-                if range_result['line_strength'] != 0:
-                    # LINEが発見された場合
-                    if range_result['line_direction'] == 1 and not found_upper:
-                        found_upper = True
-                        upper_information = range_result
-                    elif range_result['line_direction'] == -1 and not found_lower:
-                        found_lower = True
-                        lower_information = range_result
-    # 返却する
-    return {
-        "latest_line": latest_line,
-        "found_upper": found_upper,
-        "upper_info": upper_information,
-        "found_lower": found_lower,
-        "lower_info": lower_information,
-        "latest_direction": peaks_all[0]['direction']
-    }
 
 
 def find_lines_mm(df_r):
@@ -709,6 +625,7 @@ def find_lines_mm(df_r):
     # まずピークスを求める
     peaks_info = p.peaks_collect_main(df_r, 12)
     peaks_all = peaks_info["all_peaks"]
+    # print("全ピークス", peaks_all)
 
     # （０）LINE以外の値を算出する。Latestのサイズ感や、最高値等
     latest_gap = peaks_all[0]['gap']
@@ -768,20 +685,27 @@ def find_lines_mm(df_r):
             # 今回のラインプライスがロアラインを超えた場合
             lower_line = range_result
 
-    # 一覧の結果に対して、処理を実施する
-    # latest(直近のリバーピーク）が、Lineかどうかを判定する
+    # フラグの更新
     if latest_line['line_strength'] >= 1.5:
         latest_flag = True
 
-        # （以下、なんだっけ？？）ストレングスが２以上の場合に採用する(latestupper or upper)
-        # if latest_line['line_direction'] == 1:
-        #    if latest_upper_line['line_price'] - 0.03 <= latest_line['line_price'] <= latest_upper_line['line_price'] + 0.03:
-        #         # 上限（上値抵抗）ラインとみなせる場合、
-        #         latest_flag = True
-        # if latest_line['line_direction'] == -1:
-        #     if latest_lower_line['line_price'] - 0.03 <= latest_line['line_price'] <= latest_lower_line['line_price'] + 0.03:
-        #         # 上限（上値抵抗）ラインとみなせる場合、
-        #         latest_flag = True
+    # latestのラインと、最高最低のラインがほぼ同じ数字の場合、フラグを立てておく
+    if 'line_price' in latest_upper_line:
+        if latest_upper_line['line_price'] > upper_line['line_price'] - 0.02:
+            # latest_upperlineがほぼ最高Lineの場合。（Upperの方が上にあり、少し下がったとこより上側にLatestがいる場合）
+            latest_upper_is_upper = True
+        else:
+            latest_upper_is_upper = False
+    else:
+        latest_upper_is_upper = False
+
+    if 'line_price' in latest_lower_line:
+        if latest_lower_line['line_price'] < lower_line['line_price'] + 0.02:
+            latest_lower_is_lower = True
+        else:
+            latest_lower_is_lower = False
+    else:
+        latest_lower_is_lower = False
 
     return_dic = {
         "latest_flag": latest_flag,
@@ -789,12 +713,16 @@ def find_lines_mm(df_r):
         "found_upper": latest_upper_flag,
         "latest_upper_line": latest_upper_line,
         "upper_line": upper_line,
+        "latest_upper_is_upper": latest_upper_is_upper,
         "found_lower": latest_lower_flag,
         "latest_lower_line": latest_lower_line,
         "lower_line": lower_line,
+        "latest_lower_is_lower": latest_lower_is_lower,
         "latest_size_ratio": round(lr_ratio, 3),
         "latest_direction": peaks_all[0]['direction']
     }
+
+    f.print_json(return_dic)
 
     # 返却する
     return return_dic

@@ -389,7 +389,7 @@ class order_information:
         trade_latest = self.t_json  # とりあえず入れ替え（update関数で取得した最新の情報）
         # トレード情報の更新
         self.t_id = trade_latest['id']  # 既に１度入れているけど、念のため
-        self.t_state = trade_latest['state']
+        self.t_state = trade_latest['state']  # Openとかそういう物
         self.t_initial_units = trade_latest['initialUnits']  # 初回だけでよい？
         self.t_current_units = trade_latest['currentUnits']
         self.t_time = trade_latest['openTime']  # 初回だけでよい？
@@ -568,6 +568,7 @@ def position_check(classes):
     summary_diretcion = 1
     for item in classes:
         if item.t_state == "OPEN":
+            print(" ★★★", item.t_id)
             open_positions.append({"name":item.name, "priority": item.priority})
             # 方向だけ取得（ポジションを持った時に、反対側のオーダーを消しあ
             if item.priority > max_priority:

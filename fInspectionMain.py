@@ -457,3 +457,11 @@ def Inspection_main2(df_r):
 
     # 【FINAL】
     return flag_and_orders
+
+
+def Inspection_main3(df_r):
+    # ダブルピーク系（ダブルピークの芽と、ギザギザ移行の初動を掴む）
+    dp.peakPatternMain(df_r)
+    return {'take_position_flag': False}
+
+    # riverPeakが、過去３時間でのピーク値かどうか。また、抵抗線かどうか

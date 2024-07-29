@@ -95,12 +95,9 @@ def size_compare(after_change, before_change, min_range, max_range):
     }
 
 
-def judge_list_or_data_frame(dic_args):
+def fix_args(dic_args):
     """
     各解析関数から呼ばれる。各解析関数が検証から呼ばれているか、本番から呼ばれているかを判定する
-    [0]=df_r データフレーム
-    [1]=peaks　または　パラメータ
-
     第二引数存在し、かつそれがpeaks辞書の配列ではない場合、パラメータモードとする
     :param dic_args: 最大３種類
         df_r : 必ず来る。対象のデータ振れむ
@@ -109,10 +106,15 @@ def judge_list_or_data_frame(dic_args):
         inspection_params: 検証用のパラメータ
         参考
         params = [
-        {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2}
-        {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2}
-    ]
+            {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2}
+            {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2}
+        ]
+        inspection_params = [
+            {""}
+        ]
+
     :return: {"peaks":peaks, "df_r": df_r, "params": パラメータList or None}
+         注　Peakが渡された場合は、そのままを返却するする。（上書きしないため、渡されたdf_rと齟齬がある可能性も０ではない）
     """
     print(" 引数整流化")
 
@@ -125,6 +127,7 @@ def judge_list_or_data_frame(dic_args):
         params = None
 
     if "peaks" in dic_args:  # Peakの算出等を行う
+        print(" Peaks既存")
         peaks = dic_args["peaks"]
     else:
         peaks_info = p.peaks_collect_main(dic_args['df_r'][:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
@@ -172,7 +175,7 @@ def DoublePeak(dic_args):
     print("  ■ダブルピーク判定")
     # (1)ピークスを取得（引数か処理）。この関数ではPeaksの情報を元にし、Dfは使わない。
     # ①必要最低限の項目たちを取得する
-    mode_judge = judge_list_or_data_frame(dic_args)  # ピークスを確保。モードを問わない共通処理。dic_args[0]はデータフレームまたはPeaksList。
+    mode_judge = fix_args(dic_args)  # ピークスを確保。モードを問わない共通処理。dic_args[0]はデータフレームまたはPeaksList。
     peaks = mode_judge['peaks']
     river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
@@ -182,35 +185,44 @@ def DoublePeak(dic_args):
 
     # (2)パラメータ指定。
     # ①　パラメータを設定する(検証用。売買に関するパラメータ）
+    # inspection_params = {"margin": 0.01, "d": 1}
     if inspection_params:
-        # 売買に関するパラメータがある場合、各値を入れていく（１つ入れるなら全て設定する必要あり）
+        # 売買に関するパラメータがある場合(Noneでない場合）、各値を入れていく（１つ入れるなら全て設定する必要あり）
         position_margin = inspection_params['margin']
-        d = params['d']  # 売買の方向。リバーの方向に対し、同方向の場合１（ライン突破）．逆方向の場合ー１(ラインで抵抗）
-        target = turn['peak'] + (position_margin * river['direction'] * d)  # 抵抗側
+        d = inspection_params['d']  # 売買の方向。リバーの方向に対し、同方向の場合１（ライン突破）．逆方向の場合ー１(ラインで抵抗）
+        sl = inspection_params['sl']  # Stop or Limit
         tp = f.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
         lc = f.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
-        stop_or_limit = params['sl']# マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
     else:
         # 売買に関してのパラメータ無し（ダブルトップで折り返しの方向で、固定のマージンやTP/LCで取得する）
         position_margin = 0.01
         d = -1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
-        target = turn['peak'] + (position_margin * river['direction'] * -1)
+        sl = 1
         tp = f.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
         lc = f.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
-        stop_or_limit = 1  # マージンの方向(+値は期待方向に対して取得猶予を取る場合(順張り),－値は期待と逆の場合は逆張り）
 
     # ②　パラメータを設定する（対象の形状目標を変更できるようなパラメータ）
+    # params = {"tf_ratio_max": 0.65, "rt_ratio_min": 0.4, "rt_ratio_max": 1, "t_count": 2, "f3_count": 5}
     if params:
+        # paramsが入っている場合（Noneでない場合）
+        tf_min = params['tf_ratio_min']
         tf_max = params['tf_ratio_max']  # ターンは、フロップの６割値度
         rt_min = params['rt_ratio_min']  # リバーは、ターンの最低４割程度
         rt_max = params['rt_ratio_max']  # リバーは、ターンの最高でも６割程度
-        t_count = 2  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
+        f3_count = params['f3_count']
+        t_count_min = params['t_count_min']  #
+        t_count_max = params['t_count_max']  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
+        r_count = params['r_count']
     else:
         # パラメータがない場合、一番スタンダート（最初）の物で実施する
+        tf_min = 0.3
         tf_max = 0.65  # ターンは、フロップの６割値度
         rt_min = 0.4  # リバーは、ターンの最低４割程度
         rt_max = 1.0  # リバーは、ターンの最高でも６割程度
-        t_count = 2  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
+        f3_count = 4
+        t_count_min = 2  #
+        t_count_max = 3  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
+        r_count = 2
 
     # (3)★★判定部
     take_position_flag = False  # ポジションフラグを初期値でFalseにする
@@ -223,27 +235,30 @@ def DoublePeak(dic_args):
     # ①形状の判定
     # ①-1 各ブロックのサイズについて
     const_flag = False
-    if flop3['count'] >= 4:
-        if turn['gap'] >= 0.011 and turn['count'] >= t_count:
-            const_flag = True
-            c = "サイズ感は成立"
+    if river['count'] == r_count:
+        if flop3['count'] >= f3_count:
+            if turn['gap'] >= 0.011 and t_count_min <= turn['count'] <= t_count_max:
+                const_flag = True
+                c = f.str_merge("サイズ感は成立", flop3['count'], turn['count'], river['count'], turn['gap'])
+            else:
+                c = f.str_merge("turnのサイズ、カウントが規定値以下", turn['count'], turn['gap'])
         else:
-            c = "turnのサイズ、カウントが規定値以下"
+            c = f.str_merge("flop3のカウントが規定値以下", flop3['count'])
     else:
-        c = "flop3のカウントが規定値以下"
+        c= f.str_merge("riverのカウントが規定値以下", river['count'])
 
     # ①-2 各ブロック同士のサイズ感の比率について
     turn_ratio_based_flop3 = round(turn['gap'] / flop3['gap'], 3)
     river_ratio_based_turn = round(river['gap'] / turn['gap'], 3)
     compare_flag = False
-    if turn_ratio_based_flop3 < tf_max:
+    if tf_min < turn_ratio_based_flop3 < tf_max:
         if rt_min < river_ratio_based_turn < rt_max:
             compare_flag = True
-            cr = "サイズ割合は成立"
+            cr = f.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
         else:
-            cr = "riverが範囲外"
+            cr = f.str_merge("riverが範囲外", river_ratio_based_turn)
     else:
-        cr = "turnが大きすぎる"
+        cr = f.str_merge("turnがflop3に対して大きすぎる", turn_ratio_based_flop3)
 
     # ①-3 両方成立する場合、TakePositionフラグがOnになる
     print("  DoubleTop結果", c, cr)
@@ -251,29 +266,21 @@ def DoublePeak(dic_args):
         take_position_flag = True
 
     # (4)オーダーの作成と返却
-    # オーダーベースの組み立て（何に使ってるか不明）
-    order_base = f.order_finalize({"stop_or_limit": stop_or_limit,
-                                 "expected_direction": river['direction'] * d,
-                                 "decision_time": river['time'],
-                                 "decision_price": river['peak'],  # フラグ成立時の価格（先頭[0]列のOpen価格）
-                                 "target": target,  # turn['peak'] + (0.01 * river['direction']),  # 価格かマージンかを入れることが出来る
-                                 "lc": lc,
-                                 "tp": tp,  # tp,
-                                 })
     if take_position_flag:
         # オーダーの可能性がある場合、オーダーを正確に作成する
         exe_orders = [
             f.order_finalize({  # オーダー２を作成
                 "name": "DoublePeak(ダブル抵抗）",
                 "order_permission": True,
-                "decision_price": river['peak'],  # ★
-                "target": turn['peak'] + (0.01 * river['direction'] * -1),  # 価格でする
+                "decision_price": river['latest_price'],  # ['peak']か['latest_price']だが、後者の方が適切か？
+                "target": round(river['latest_price'] + (position_margin * river['direction'] * d * sl), 3),  # 価格でする
+                "peak_price": river['peak'],
                 "decision_time": 0,  #
                 "tp": 0.10,
                 "lc": 0.03,
                 "units": 10,
-                "expected_direction": river['direction'] * -1,
-                "stop_or_limit": 1,  # ★順張り
+                "expected_direction": d * river['direction'],
+                "stop_or_limit": sl,
                 "trade_timeout": 1800,
                 "remark": "test",
                 "tr_range": 0.05,
@@ -288,10 +295,6 @@ def DoublePeak(dic_args):
         return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
             "take_position_flag": False,  # take_position_flagの値と同様だが、わかりやすいようにあえてFalseで書いている
         }
-
-
-
-
     # # ②判定部2(過去数個のピークの中で、フロップのピークが頂点かどうか(フロップが傾きマイナスなら最低値、逆なら最高値か）
     # peak_of_peak = peak_of_peak_judgement(peaks[3:10], flop3, df_r)
     #
@@ -356,6 +359,42 @@ def DoublePeak(dic_args):
     #     "records": records  # 記録軍。CSV保存時に出力して解析ができるように。
     # }
 
+
+def peakPatternMain(df_r):
+    # peaksを算出しておく
+    peaks_info = p.peaks_collect_main(df_r[:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
+    peaks = peaks_info['all_peaks']
+    print("  <対象>")
+    print("  RIVER", peaks[0])
+    print("  TURN ", peaks[1])
+    print("  FLOP3", peaks[2])
+
+    # 初期構想のDoubleTopを検討する
+    inspection_params = {"margin": 0.05, "d": -1, "sl": -1}  # d=expected_direction, sl=Stop(1)orLimit(-1)
+    params = {"tf_ratio_min": 0, "tf_ratio_max": 0.45, "rt_ratio_min": 0.4, "rt_ratio_max": 1,
+              "f3_count": 5, "t_count_min": 2, "t_count_max": 4, "r_count": 2}
+    double_top_ans = DoublePeak({"df_r": df_r, "inspection_params": inspection_params, "params": params, "peaks": peaks})
+    if double_top_ans['take_position_flag']:
+        print(double_top_ans['exe_orders'])
+
+    # ガタガタと進んでいくケース
+    inspection_params = {"margin": 0.05, "d": -1, "sl": -1}  # d=expected_direction, sl=Stop(1)orLimit(-1)
+    params = {"tf_ratio_min": 0.55, "tf_ratio_max": 1, "rt_ratio_min": 0.4, "rt_ratio_max": 1.2,
+              "f3_count": 5, "t_count_min": 3, "t_count_max": 5, "r_count": 3}
+    jagged_move_ans = DoublePeak({"df_r": df_r, "inspection_params": inspection_params, "params": params, "peaks": peaks})
+    if jagged_move_ans['take_position_flag']:
+        print(jagged_move_ans['exe_orders'])
+
+    if double_top_ans['take_position_flag'] or jagged_move_ans['take_position_flag']:
+        print("  ★どちらかが成立",double_top_ans['take_position_flag'], jagged_move_ans['take_position_flag'])
+        if double_top_ans['take_position_flag']:
+            order = double_top_ans['exe_orders']
+            print(" ダブルトップが成立", double_top_ans['take_position_flag'])
+            tk.line_send("ダブルトップが成立", order)
+        else:
+            order = jagged_move_ans['exe_orders']
+            print(" ジグザグムーブが成立", jagged_move_ans['exe_orders'])
+            tk.line_send("ジグザグムーブが成立", order)
 
 # def triplePeaks_pattern(*dic_args):
 #     """

@@ -215,9 +215,9 @@ class Oanda:
                       方向を持って渡される場合もあるが、一旦絶対値を取ってから計算する（＝渡される際の方向は不問）
             lc_range: Option.ロスカの幅を、0.01(1pips)単位で指定。 0.06　のように指定する（負号を付ける必要はない）。指定しない場合０。　
             　　　　　　方向を持って渡される場合もあるが、一旦絶対値を取ってから計算する（＝渡される際の方向は不問）
-            tp_price: Option　価格を直接指定する場合。利確に関して、tp_rangeかどちらかが必要。両方ある場合、tp_priceを採用
+                tp_price: Option　Ⅿｍ。利確に関して、tp_rangeかどちらかが必要。両方ある場合、tp_priceを採用
             lc_price: Option  価格を直接指定する場合。ロスカに関して、lc_rangeかどちらかが必要。両方ある場合、lc_priceを採用。
-            type: 下記参照
+            type: 下記参照（ここでは数字ではなく文字で指定する）
             tr_range: トレール幅を指定。0.01単位で指定。OANDAの仕様上0.05以上必須。指定しない場合は０を渡す
             remark: 今は使っていないが、引数としては残してある。何かしら文字列をテキトーに渡す。
         :return: 上記の情報をまとめてDic形式で返却。オーダーミス発生(オーダー入らず)した場合は、辞書内cancelがTrueとなる。
@@ -244,6 +244,7 @@ class Oanda:
             # UNITとTYPEの設定
             data['order']['units'] = str(abs(plan['units']) * plan['ask_bid'])  # 必須　units数 askはマイナス、bidはプラス値
             data['order']['type'] = plan['type']  # 必須
+
             # PRICEの設定① 現在価格の取得(MARKET注文で利用するため）
             price_dic = self.NowPrice_exe("USD_JPY")  # 現在価格の取得用APIを叩く
             if price_dic['error'] == -1:  # APIエラーの場合はスキップ

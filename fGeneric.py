@@ -220,7 +220,7 @@ def order_finalize(order_base):
     order_base = {
         "expected_direction": river['direction'] * -1,  # 必須
         "decision_time": river['time'],  # 任意（アウトプットのエクセルの時に使う　それ以外は使わない）
-        "decision_price": river['peak'],  # 必須（targetの指定がRangeで与えられた場合に利用する）
+        "decision_price": river['peak'],  # 必須（特に、targetの指定がRangeで与えられた場合に利用する）
         "target": 価格 or Range で正の値  # 80以上の値は価格とみなし、それ以外ならMarginとする
         "tp": 価格 or Rangeで正の値,  # 80以上の値は価格とみなし、それ以外ならMarginとする
         "lc": 価格　or Rangeで正の値  # 80以上の値は価格とみなし、それ以外ならMarginとする
@@ -232,7 +232,7 @@ def order_finalize(order_base):
         "stop_or_limit": stop_or_limit,  # 必須 (1の場合順張り＝Stop,-1の場合逆張り＝Limit
         type = "STOP" "LIMIT" 等直接オーダーに使う文字列
     :return:　order_base = {
-        "stop_or_limit": stop_or_limit,  # 任意（本番ではtype項目に置換して別途必要になる）
+        "stop_or_limit": stop_or_limit,  # 任意（本番ではtype項目に置換して別途必要になる。計算に便利なように数字で。）
         "expected_direction": # 検証で必須（本番ではdirectionという名前で別途必須になる）
         "decision_time": # 任意
         "decision_price": # 検証で任意

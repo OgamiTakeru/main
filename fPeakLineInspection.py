@@ -70,6 +70,7 @@ def peaks_collect_all(*args):
             'body_ave': ans['body_ave'],
             'count': len(ans["data"]),
             'gap': round(abs(peak_latest-peak_oldest), 3),
+            'latest_price': ans['latest_price'],
             "latest2_dir": ans['latest2_dir'],
             'ans': ans,
         }
