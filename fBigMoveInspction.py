@@ -35,4 +35,5 @@ def big_move(df_r):
     ri.find_lines_mm(df_r_min)
 
     # 最高値と最安値を求める
+    print("test")
 
