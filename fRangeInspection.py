@@ -383,7 +383,7 @@ def find_latest_line(*args):
     # ②探索開始
     line_strength = 0  # LINE強度の初期値を入れる
     counter = 0  # 何回同等の値が出現したかを把握する
-    range_yen = f.cal_at_least_most(0.01, round(ave * 0.153, 3), 0.035)  #0.153倍が一番よかった(大きすぎないレベル）。。
+    range_yen = f.cal_at_least_most(0.01, round(ave * 0.153, 3), 0.041)  #0.153倍が一番よかった(大きすぎないレベル）。。
     depth_point_gap = 0  # 今のピークと一番離れている値、かつ、逆方向のポイント（同価格発見のタイミングでリセット）
     depth_point = 0
     depth_point_time = 0
@@ -617,10 +617,6 @@ def find_lines_mm(df_r):
     """
     # 初期値の設定
     target_df = df_r[:36]  # ３時間分
-    high_price = target_df["inner_high"].max()
-    low_price = target_df["inner_low"].min()
-    high_ave = target_df["inner_high"].mean()
-    low_ave = target_df["inner_low"].mean()
 
     # まずピークスを求める
     peaks_info = p.peaks_collect_main(df_r, 12)

@@ -101,6 +101,30 @@ def str_to_time_hms(str_time):
     return time_str
 
 
+def cal_str_time_gap(time_str_1, time_str_2):
+    """
+    データフレームのtime_jp同士の時間の差を求める。
+    引数で渡された日時のどちらか大きいか（Later）か判断し、差分を正の値で産出する。
+    """
+    time1 = str_to_time(time_str_1)
+    time2 = str_to_time(time_str_2)
+
+    if time1 > time2:
+        later_time = time1
+        older_time = time2
+    else:
+        later_time = time2
+        older_time = time1
+
+    gap_abs = later_time - older_time  # 正の値が保証された差分
+    # gap = time1 - time2  # 渡されたものをそのまま引き算（これエラーになりそうだから消しておく）
+
+    return {
+        "gap_abs": gap_abs
+    }
+
+
+
 def seek_time_gap_seconds(time1, time2):
     """
     time1 と　time2の時間差を求める（time1とtime2の大小はこの関数で確認する）

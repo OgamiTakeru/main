@@ -34,7 +34,7 @@ def analysis_part(df_r):
     "expect_direction": peak_turn['direction'] * -1,  # ターン部分の方向
     :param df_r:
     :return:
-        "oeder_base"と"records"が必須。recordsは条件等の辞書型
+        "oeder_base"が必須
     """
     # モードによる引数の差分を処理
     # return dp.turn1Rule(df_r)
@@ -44,8 +44,10 @@ def analysis_part(df_r):
     # return dp.peakPatternMain(df_r)
     # return ri.find_latest_line(df_r)
     # return ri.find_lines_mm(df_r)
-    return bm.big_move(df_r)
+    # return bm.big_move(df_r)
+    # return ri.find_lines_mm((df_r))
     # return test
+    return im.Inspection_test_one_function(df_r)
 
 
 # 検証パート
@@ -53,8 +55,8 @@ def confirm_part(df_r, ana_ans):
     """
 
     :param df_r: 検証用のデータフレーム（関数内で5S足のデータを別途取得する場合は利用しない）
-    :param ana_ans: 解析の結果、どの価格でポジションを取得するか等の情報
-    order_base = {
+    :param ana_ans: 解析の結果、どの価格でポジションを取得するか等の情報を「辞書形式」で（単品）
+    ana_ans = order_base = {
         "stop_or_limit": stop_or_limit,  # 〇
         "expected_direction": expected_direction,  # 〇
         "decision_time": river['time'],  # 〇
@@ -266,12 +268,23 @@ def confirm_part(df_r, ana_ans):
 
 
 # チェック関数のメイン用(検証と確認を呼び出す）
-def check_main(df_r):
+def inspection_and_confirm(df_r):
     """
-    受け取ったデータフレームを解析部と結果部に分割し、それぞれの結果をマージする
-    :param dic_args:    通常の解析と、ループの解析で利用する。
-    通常の解析の場合、*argsは1つ、データフレームのみ。dic_args[0]はdf_rとして扱う。
-    ループ解析(別ファイルの関数)の場合、*argsはargs[0]はdf_r。dic_args[1]はparams(パラメータ[個])
+    ・この関数は、解析と検証をセットで行う場合に呼び出される（解析のみの場合は、別の関数を利用する）
+    ・受け取ったデータフレームを解析部と結果部に分割し、それぞれの結果をマージし、CSVに吐き出す。
+    　その際、
+    :param df_r:    通常の解析と、ループの解析で利用する。
+    【検証と解析の境目は以下の通り】
+        # データフレームの切り分け
+        # 解析の都合上、１行ラップさせる
+        # <検証データ>
+        # 2024/1/1 1:35:00
+        # 2024/1/1 1:30:00  ←解析トとラップしている行。この行が出来た瞬間（Open）以降は、検証パートの出番。
+        # <解析データ＞
+        # 2024/1/1 1:30:00   ←この行は通常解析では使わない。2行目の1:25:00が確約した瞬間を取りたいため、足が出来た瞬間を狙うため（Openの瞬間）
+        # 2024/1/1 1:25:00   ←事実上の解析開始対象
+        # 2024/1/1 1:20:00
+    【検証で必要なもの】
 
     :return:
     """
@@ -281,17 +294,7 @@ def check_main(df_r):
     # 各数の定義
     res_part_low = 15  # 結果解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])
-
-    # データフレームの切り分け
-    # 解析の都合上、１行ラップさせる
-    # <検証データ>
-    # 2024/1/1 1:35:00
-    # 2024/1/1 1:30:00  ←解析トとラップしている行。この行が出来た瞬間（Open）以降は、検証パートの出番。
-    # <解析データ＞
-    # 2024/1/1 1:30:00   ←この行は通常解析では使わない。2行目の1:25:00が確約した瞬間を取りたいため、足が出来た瞬間を狙うため（Openの瞬間）
-    # 2024/1/1 1:25:00   ←事実上の解析開始対象
-    # 2024/1/1 1:20:00
-    res_part_df = df_r[: res_part_low + 1]  # 終わりは１行ラップさせる
+    res_part_df = df_r[: res_part_low + 1]  # 終わりは１行ラップさせる(理由は上記で説明）
     analysis_part_df = df_r[res_part_low: res_part_low + analysis_part_low]
     print("　結果照合パート用データ")
     print(res_part_df.head(2))
@@ -300,15 +303,15 @@ def check_main(df_r):
     print(analysis_part_df.head(2))
     print(analysis_part_df.tail(2))
 
-    # 解析パート　todo
+    # ■解析パート　todo
     analysis_result = analysis_part(analysis_part_df)  # ana_ans={"ans": bool(結果照合要否必須）, "price": }
     print(analysis_result)
-    for_export_results = (analysis_result['order_base'] | analysis_result['records'])  # 解析結果を格納
+    for_export_results = analysis_result['order_base'] # (analysis_result['order_base'] | analysis_result['records'])  # 解析結果を格納
     for_export_results["take_position_flag"] = analysis_result['take_position_flag']
-    # 検証パート todo
+    # ■検証パート todo
     if analysis_result['take_position_flag']:  # ポジション判定ある場合のみ
         # 検証と結果の関係性の確認　todo
-        conf_ans = confirm_part(res_part_df, analysis_result['order_base'])  # 対象のDataFrame,ポジション取得価格/時刻等,ロスカ/利確幅が必要
+        conf_ans = confirm_part(res_part_df, analysis_result['order_base'])  # 対象のDataFrame,ポジション取得価格単品/時刻等,ロスカ/利確幅が必要
         # 検証結果と確認結果の結合
         for_export_results = (for_export_results|conf_ans)
 
@@ -373,7 +376,7 @@ def main():
     for i in range(len(df_r)):
         print("■■■", i, i + need_analysis_num, len(df_r))
         if i + need_analysis_num <= len(df_r):  # 検証用の行数が確保できていれば,検証へ進む
-            ans = check_main(df_r[i: i+need_analysis_num])  # ★チェック関数呼び出し
+            ans = inspection_and_confirm(df_r[i: i + need_analysis_num])  # ★チェック関数呼び出し
             all_ans.append(ans)
         else:
             print("　終了", i + need_analysis_num, "<=", len(df_r))
@@ -412,14 +415,14 @@ def main():
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 215
+gl_count = 500
 gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
-gl_now_time = True  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 7, 23, 7, 10, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
+gl_target_time = datetime.datetime(2024, 8, 2, 14, 25, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定      datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
-gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
 # Mainスタート
 main()

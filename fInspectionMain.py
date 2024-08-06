@@ -63,6 +63,97 @@ def order_information_add_small(finalized_order):
 
 
 # その他オーダーに必要な処理はここで記載する
+def Inspection_test_one_function(df_r):
+    """
+    主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
+    引数
+    "data": df_r ローソク情報(逆順[直近が上の方にある＝時間降順])のみ。
+    "use_in_range_inspection" :exeからexeの持っているLowLineやUpperLineを受け取る
+        "lower_line"と"upper_line"が含まれる
+
+    :return:
+    このリターンの値は、そのまま発注に使われる。（take_position_flagがTrueの場合、exe_orders(配列)のオーダーが入る
+        "take_position_flag": True or False
+        "exe_orders": オーダーの配列。オーダーについては
+        "lower_line": exeのLowerLineを書き換えるため
+        "upper_line": exeのupperLineを書き換えるため
+
+    """
+    # 現在価格を取得する
+    now_price = oa.NowPrice_exe("USD_JPY")['data']['mid']
+    now_price = df_r.iloc[0]['open']
+    take_position_flag = False  # 初期値を設定する
+
+    # 返却値を設定しておく
+    # テストでは、Orderは配列で渡し、中身はBasicの中身をfinalizeしたものを利用する）
+    order_merge = []  # 配列
+    basic = {
+            "target": 0.00,
+            "type": "STOP",
+            "units": 100,
+            "expected_direction": 1,
+            "tp": 0.10,
+            "lc": 0.04,
+            'priority': 0,
+            "decision_price": now_price,
+            "name": ""
+    }
+    flag_and_orders = {"take_position_flag": False, "order_base": basic}
+
+    # （０）Peakデータを取得する(データフレムは二時間半前くらいが良い？？）
+    print(" Range調査対象")
+    df_r_range = df_r[:35]
+    print(df_r_range.head(1))
+    print(df_r_range.tail(1))
+    peaks_info = p.peaks_collect_main(df_r[:35], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+    peaks = peaks_info['all_peaks']
+    latest = peaks[0]
+    river = peaks[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
+    flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
+    print("  <対象>:運用モード")
+    print("  Latest", latest)
+    print("  RIVER", river)
+    print("  TURN ", turn)
+    print("  FLOP3", flop3)
+
+    if latest['count'] != 2:
+        print(" latestがCOUNT2以外")
+        return flag_and_orders
+
+
+
+    # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
+    line_result = ri.find_lines_mm(df_r[:35])  # Lineが発見された場合には、['line_strength']が１以上になる
+    print("結果")
+    print(line_result)
+
+    if line_result['latest_flag'] and line_result['latest_line']['line_strength'] > 1:
+        # 抵抗ラインが強い場合、
+        # 戻ってくるオーダー
+        main_order = basic.copy()
+        main_order['lc'] = 0.1  # LCは広め
+        main_order['expected_direction'] = line_result['latest_line']['line_direction'] * -1
+        main_order['priority'] = line_result['latest_line']['line_strength']
+        main_order['units'] = basic['units'] * 2
+        main_order['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance"
+        # 注文を配列に追加
+        order_merge.append(order_information_add_maji(f.order_finalize(main_order)))
+        flag_and_orders = {
+            "take_position_flag": True,
+            "order_base": f.order_finalize(main_order),
+            # "exe_orders": f.order_finalize(main_order),
+        }
+        return flag_and_orders
+    else:
+        # 検証では、CSV出力時に項目がずれないように、ポジションフラグがない場合でもオーダーベースは残す
+        flag_and_orders = {
+            "take_position_flag": take_position_flag,
+            "order_base": f.order_finalize(basic),
+            # "exe_orders": f.order_finalize(main_order),
+        }
+        return flag_and_orders
+
 def Inspection_main(df_r):
     """
     主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
@@ -109,7 +200,7 @@ def Inspection_main(df_r):
         return {"take_position_flag": 0}
 
     # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
-    line_result = ri.find_lines(df_r[:35])  # Lineが発見された場合には、['line_strength']が１以上になる
+    line_result = ri.find_lines_mm(df_r[:35])  # Lineが発見された場合には、['line_strength']が１以上になる
     latest = line_result['latest_line']
     latest_line = line_result['latest_line']['line_price'] if line_result['latest_line']['line_strength'] != 0 else 0
     upper_line = line_result['upper_info']['line_price'] if line_result['found_upper'] else 0
@@ -302,9 +393,8 @@ def Inspection_main2(df_r):
     # 現在価格を取得する
     now_price = oa.NowPrice_exe("USD_JPY")['data']['mid']
     now_price = df_r.iloc[0]['open']
-    # パラメータから情報を取得する
-    take_position_flag = False
-    flag_and_orders = {"take_position_flag": take_position_flag,}
+    take_position_flag = False  # 初期値を設定する
+
     # （０）Peakデータを取得する(データフレムは二時間半前くらいが良い？？）
     print(" Range調査対象")
     df_r_range = df_r[:35]
@@ -324,31 +414,17 @@ def Inspection_main2(df_r):
 
     if latest['count'] != 2:
         print(" latestがCOUNT2以外")
-        return {"take_position_flag": 0}
+        return {"take_position_flag": take_position_flag}
 
-    # (0)ここ数時間の最高値等を取得する また　riverとLatestの割合等を求める
-    time_range = 35
-    max_price_body = df_r[:time_range]['inner_high'].max()
-    max_price = df_r[:time_range]['high'].max()
-    min_price_body = df_r[:time_range]['inner_low'].min()
-    min_price = df_r[:time_range]['low'].min()
-    price_gap = f.str_merge("max-body_max", max_price, max_price_body,":min-min_body", min_price_body, min_price, "gap", max_price - min_price, " ")
-    print("max_min information",price_gap)
-
-
-    # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
-    line_result = ri.find_lines_mm(df_r[:35])  # Lineが発見された場合には、['line_strength']が１以上になる
-    print("結果")
-    print(line_result)
-
-    # オーダー情報格納（仮
+    # (0)　オーダー格納情報
+    # オーダー情報格納（仮)
     order_merge = []  # 配列
-    flag_and_orders = {"take_position_flag": False, "memo":""}
+    flag_and_orders = {"take_position_flag": False, "memo": ""}
     basic = {
             "target": 0.01,
             "type": "STOP",
             "units": 100,
-            "expected_direction": line_result['latest_line']['line_direction'],
+            "expected_direction": 1,
             "tp": 0.10,
             "lc": 0.04,
             'priority': 0,
@@ -356,6 +432,10 @@ def Inspection_main2(df_r):
             "name": ""
     }
 
+    # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
+    line_result = ri.find_lines_mm(df_r[:35])  # Lineが発見された場合には、['line_strength']が１以上になる
+    print("結果")
+    print(line_result)
 
     if line_result['latest_flag']:
         # 注文に対する総括
@@ -376,47 +456,12 @@ def Inspection_main2(df_r):
             main_order['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance"
             # 注文を配列に追加
             order_merge.append(order_information_add_maji(f.order_finalize(main_order)))
-
-            # SmallOrder
-            main_small_order=main_order.copy()  # 狭めたオーダー
-            main_small_order['lc'] = 0.02  # LCは広め
-            main_small_order['tp'] = 0.040
-            main_small_order['units'] = basic['units'] * 1.5
-            main_small_order['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance_S"
-            # 注文を配列に追加
-            order_merge.append(order_information_add_small(f.order_finalize(main_small_order)))
-
-            # ②サブのレジスタンス突破オーダー
-            afford = abs(now_price - line_result['latest_line']['line_price'])  # MARKETとセットでオーダーするので、設定額には余裕が必要
-            afford = f.cal_at_least(0.08, afford)  # 現在価格よりも最低0.06離れた位置にセットする
-            # mainのオーダー
-            main_over_order = basic.copy()
-            main_over_order['target'] = afford
-            main_over_order['expected_direction'] = line_result['latest_line']['line_direction']
-            main_over_order['name'] = str(line_result['latest_line']['line_strength']) + "resistance_over"
-            order_merge.append(order_information_add_maji(f.order_finalize(main_over_order)))
-            # mainのスモールオーダー
-            main_small_over_order = main_over_order.copy()
-            main_small_over_order['name'] = str(line_result['latest_line']['line_strength']) + "resistance_overS"
-            main_small_over_order['tp'] = 0.012
-            main_small_over_order['units'] = main_over_order['units'] * 1.5
-            order_merge.append(order_information_add_small(f.order_finalize(main_small_over_order)))
-
         else:
             # プライオリティが最高ランク以外の場合（主に1.5の短期間のダブルトップの場合）、突破方向メインに取る。
             main_order = basic.copy()
             comment_now = "直近で短期DTで" + str(line_result['latest_line']['line_direction']) + "方向の抵抗線(overのみ)" + \
                           "" + str(line_result['latest_line']['line_price']) + "発見　lr:" + str(line_result['latest_size_ratio']) + \
                           " ," + str(line_result['latest_line']['line_strength'])
-            # ①本命のレジスタンス
-            # main_order['target'] = -0.05
-            # main_order['lc'] = 0.05  # LCは少し狭目
-            # main_order['expected_direction'] = line_result['latest_line']['line_direction'] * -1
-            # main_order['priority'] = priority
-            # main_order['units'] = 1000
-            # main_order['name'] = str(line_result['latest_line']['line_strength']) + "resistance"
-            # # 注文を配列に追加
-            # order_merge.append(order_information_add_maji(f.order_finalize(main_order)))
 
             # ②サブのレジスタンス突破オーダー
             afford = abs(now_price - line_result['latest_line']['line_price'])  # MARKETとセットでオーダーするので、設定額には余裕が必要
@@ -427,8 +472,6 @@ def Inspection_main2(df_r):
             basic['name'] = str(line_result['latest_line']['line_strength']) + "Mainresistance_over"
             basic['units'] = basic['units'] * 2
             order_merge.append(order_information_add_maji(f.order_finalize(basic)))
-
-
 
         if line_result['found_upper'] and line_result['found_lower']:
             # UpperとLowerが発見されている場合、
