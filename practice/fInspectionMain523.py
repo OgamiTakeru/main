@@ -9,8 +9,8 @@ import making as mk
 import fGeneric as f
 import fDoublePeaks as dp
 import classPosition as classPosition
-import fRangeInspection as ri
-import fPeakLineInspection as p
+import fResistanceLineInspection as ri
+import fPeakInspection as p
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 # now_price_dic = oa.NowPrice_exe("USD_JPY")['data']['mid']
 # now_price = now_price_dic['data']['mid']

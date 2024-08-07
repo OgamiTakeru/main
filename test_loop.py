@@ -9,7 +9,7 @@ import classOanda as classOanda
 import classPosition as classPosition  # とりあえずの関数集
 
 import fGeneric as f
-import fPeakLineInspection as p
+import fPeakInspection as p
 
 import fInspectionMain as im
 

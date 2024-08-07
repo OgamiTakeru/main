@@ -10,11 +10,11 @@ import classOanda as classOanda
 import classPosition as classPosition  # とりあえずの関数集
 import fBlockInspection as t  # とりあえずの関数集
 import fGeneric as f
-import fPeakLineInspection as p
+import fPeakInspection as p
 import fDoublePeaks as dp
 import fInspectionMain as im
 import making as ins
-import fRangeInspection as ri
+import fResistanceLineInspection as ri
 
 
 def order_line_send(class_order_arr, add_info):

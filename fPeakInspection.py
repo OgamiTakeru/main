@@ -16,7 +16,7 @@ def peaks_collect_main(*args):
     :return:
     """
     if len(args)==2:
-        # print(" peaks数指定あり")
+        print(" peaks数指定あり", args[1])
         all_peaks = peaks_collect_all(args[0], args[1])
     else:
         # print(" peaks数指定なし")

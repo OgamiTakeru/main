@@ -3,7 +3,7 @@ import json
 import numpy as np
 import fBlockInspection as fTurn
 import fGeneric as f
-import fRangeInspection as ri
+import fResistanceLineInspection as ri
 
 
 def inspection_df(df_r) -> dict:

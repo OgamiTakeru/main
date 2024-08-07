@@ -4,7 +4,7 @@ import tokens as tk  # Token等、各自環境の設定ファイル（git対象�
 import classOanda as oanda_class
 import making as mk
 import fDoublePeaks as dp
-import fRangeInspection as ri
+import fResistanceLineInspection as ri
 import fInspectionMain as im
 import fGeneric as f
 import test as t
@@ -126,6 +126,7 @@ def confirm_part(df_r, ana_ans):
     max_lower_time_all_time = 0
     max_lower_past_sec_all_time = 0
     end_time_of_inspection = 0
+    pl = 0
     for i, item in df.iterrows():
         if position:
             # ■　ポジションがある場合の処理
@@ -133,6 +134,13 @@ def confirm_part(df_r, ana_ans):
             upper = item['high'] - position_target_price if position_target_price < item['high'] else 0
             lower = position_target_price - item['low'] if position_target_price > item['low'] else 0
             end_time_of_inspection = item['time_jp']  # 最後に検証した時刻を、検証終了時刻として保管（ループを全て行う場合）
+
+            # 現状プラスかどうか？(クローズ価格で判断）
+            if expected_direction == 1:  # 買い方向を想定した場合
+                pl = item['close'] - position_target_price  # qlがプラスの場合は、勝ち（買いの場合、価格が取得価格より大きければOK）
+            else:
+                pl = position_target_price - item['close']
+
 
             # ②最大値や最小値を求めていく
             if lc_out or tp_out:
@@ -150,7 +158,7 @@ def confirm_part(df_r, ana_ans):
                     max_lower_time_all_time = item['time_jp']
                     max_lower_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
             else:
-                # ②-2 利確またはロスカが既に入っている場合
+                # ②-2 利確またはロスカが入っていない場合
                 if upper > max_upper:
                     max_upper = upper # 最大値入れ替え
                     max_upper_time = item['time_jp']
@@ -182,7 +190,7 @@ def confirm_part(df_r, ana_ans):
                         if lc_out:
                             pass
                             # # LC Range成立時でもTPと並立カウントするか、上書きとする場合（このブロックをコメントイン）
-                            # print(" 　TP★", item['time_jp'], tp_range)
+                            # printf(" 　TP★", item['time_jp'], tp_range)
                             # tp_out = True
                             # tp_time = item['time_jp']
                             # tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
@@ -264,6 +272,7 @@ def confirm_part(df_r, ana_ans):
         "max_minus_all_time": max_minus_all_time,
         "max_minus_time_all_time": max_minus_time_all_time,
         "max_minus_past_time_all_time": max_minus_past_sec_all_time,
+        "pl": pl,  # TPやLCに至らない場合でも、検証区間の最終Closeでプラスかマイナスかを取得する
     }
 
 
@@ -272,7 +281,8 @@ def inspection_and_confirm(df_r):
     """
     ・この関数は、解析と検証をセットで行う場合に呼び出される（解析のみの場合は、別の関数を利用する）
     ・受け取ったデータフレームを解析部と結果部に分割し、それぞれの結果をマージし、CSVに吐き出す。
-    　その際、
+    　そのCSV作成時は、FlagがFalseについてもデータを残す仕様にしているため、
+    　FlagがFalseであっても、InspectionMain(解析側から）オーダーベースは必ず返却してもらう必要がある。
     :param df_r:    通常の解析と、ループの解析で利用する。
     【検証と解析の境目は以下の通り】
         # データフレームの切り分け
@@ -292,7 +302,7 @@ def inspection_and_confirm(df_r):
 
 
     # 各数の定義
-    res_part_low = 15  # 結果解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]
+    res_part_low = 25  # 結果解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])
     res_part_df = df_r[: res_part_low + 1]  # 終わりは１行ラップさせる(理由は上記で説明）
     analysis_part_df = df_r[res_part_low: res_part_low + analysis_part_low]
@@ -329,7 +339,7 @@ def main():
 
     # （０）環境の準備
     # ■■調査用のDFの行数の指定
-    res_part_low = 15  # 解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]。check_mainと同値であること。
+    res_part_low = 25  # 解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]。check_mainと同値であること。
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
@@ -405,8 +415,9 @@ def main():
 
     print("maxPlus", fd_forview['max_plus'].sum())
     print("maxMinus", fd_forview['max_minus'].sum())
-    print("realPlus", fd_forview['tp_res'].sum())
-    print("realMinus", fd_forview['lc_res'].sum())
+    print("realTP_Plus", fd_forview['tp_res'].sum())
+    print("realLC_Minus", fd_forview['lc_res'].sum())
+    print("realAllPL",  fd_forview['pl'].sum())
     # 回数
     print("TotalTakePositionFlag", len(fd_forview))
     print("TotalTakePosition", len(fd_forview[fd_forview["position"] == True]))
@@ -415,12 +426,12 @@ def main():
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 500
-gl_times = 1  # Count(最大5000件）を何セット取るか
+gl_count = 2250
+gl_times = 4  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 8, 2, 14, 25, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2024, 2, 23, 15, 55, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定      datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
 gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 

@@ -1,4 +1,4 @@
-import fPeakLineInspection as p  # とりあえずの関数集
+import fPeakInspection as p  # とりあえずの関数集
 import fGeneric as f
 import fDoublePeaks as dp
 import pandas as pd
@@ -335,6 +335,7 @@ def find_latest_line(*args):
      →単発で実行する場合のみ
 
      <調査の対象について＞
+     図で書くと、直近のターンポイント(river_peak)が、Lineとなっているかを確認する関数。
       \　　↓ここが対象となる（=river)
        \  /\←　この部分が２の場合に検出する（ここはLatestではない。２の場合＝１つ出来立ての足は省くので、このPeakは無いと同義）
         \/  \ ←これがLatestとして扱われるもの
@@ -586,7 +587,7 @@ def find_latest_line(*args):
         "line_strength": line_strength,
         "line_price": river_peak,
         "line_direction": river_dir,  # 1の場合UpperLine（＝上値抵抗）
-        "latest_direction": latest_dir,  # lineDirectionとは異なる(基本は逆にな\\る）
+        "latest_direction": latest_dir,  # lineDirectionとは異なる(基本は逆になる）
         "line_base_time": river_peak_time,  # 調査の開始対象となったLINE価格の元になる時刻
         "latest_foot_gap":  99 if len(same_list) == 0 else same_list[0]['count_foot_gap'],
         "latest_time": peaks_all[0]['time'],  # 実際の最新時刻
@@ -619,9 +620,9 @@ def find_lines_mm(df_r):
     target_df = df_r[:36]  # ３時間分
 
     # まずピークスを求める
-    peaks_info = p.peaks_collect_main(df_r, 12)
+    peaks_info = p.peaks_collect_main(df_r, 15)
     peaks_all = peaks_info["all_peaks"]
-    # print("全ピークス", peaks_all)
+    print("全ピークス", peaks_all)
 
     # （０）LINE以外の値を算出する。Latestのサイズ感や、最高値等
     latest_gap = peaks_all[0]['gap']
@@ -662,7 +663,7 @@ def find_lines_mm(df_r):
             continue
 
         # ■Lineの最大値や最小値を判定していく
-        # 初回のアッパーラインとロアラインを取得する(latestは、latest_upperかlatest_lowerと同値）
+        # 初回のアッパーラインとロアラインを取得する(latestは、latest_upperかlatest_lowerと同値）抵抗
         if not latest_upper_flag and range_result['line_direction'] == 1:
             # Upperの場合(アッパー最初フラグがない　かつ、アッパーの場合）
             latest_upper_flag = True

@@ -9,8 +9,8 @@ import making as mk
 import fGeneric as f
 import fDoublePeaks as dp
 import classPosition as classPosition
-import fPeakLineInspection as p
-import fRangeInspection as ri
+import fPeakInspection as p
+import fResistanceLineInspection as ri
 
 # グローバルでの宣言
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義

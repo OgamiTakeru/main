@@ -9,8 +9,8 @@ import making as mk
 import fGeneric as f
 import fDoublePeaks as dp
 import classPosition as classPosition
-import fRangeInspection as ri
-import fPeakLineInspection as p
+import fResistanceLineInspection as ri
+import fPeakInspection as p
 
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
@@ -93,7 +93,7 @@ def Inspection_test_one_function(df_r):
             "units": 100,
             "expected_direction": 1,
             "tp": 0.10,
-            "lc": 0.04,
+            "lc": 0.10,
             'priority': 0,
             "decision_price": now_price,
             "name": ""
@@ -102,11 +102,13 @@ def Inspection_test_one_function(df_r):
 
     # （０）Peakデータを取得する(データフレムは二時間半前くらいが良い？？）
     print(" Range調査対象")
-    df_r_range = df_r[:35]
+    df_r_range = df_r[:100]  #  35
     print(df_r_range.head(1))
     print(df_r_range.tail(1))
-    peaks_info = p.peaks_collect_main(df_r[:35], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+    peaks_info = p.peaks_collect_main(df_r[:60], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
     peaks = peaks_info['all_peaks']
+    print("PEAKS")
+    f.print_arr(peaks)
     latest = peaks[0]
     river = peaks[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
@@ -132,8 +134,10 @@ def Inspection_test_one_function(df_r):
         # 抵抗ラインが強い場合、
         # 戻ってくるオーダー
         main_order = basic.copy()
-        main_order['lc'] = 0.1  # LCは広め
-        main_order['expected_direction'] = line_result['latest_line']['line_direction'] * -1
+        main_order['target'] = 0.01  # LCは広め
+        main_order['lc'] = 0.09  # LCは広め
+        main_order['lc'] = 0.09  # LCは広め
+        main_order['expected_direction'] = line_result['latest_line']['line_direction']
         main_order['priority'] = line_result['latest_line']['line_strength']
         main_order['units'] = basic['units'] * 2
         main_order['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance"

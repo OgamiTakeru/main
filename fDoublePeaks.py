@@ -1,7 +1,7 @@
 import fBlockInspection as t  # とりあえずの関数集
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
-import fPeakLineInspection as p  # とりあえずの関数集
+import fPeakInspection as p  # とりあえずの関数集
 import fGeneric as f
 import statistics
 import pandas as pd
