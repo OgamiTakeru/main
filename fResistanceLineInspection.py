@@ -500,6 +500,7 @@ def find_latest_line(*args):
     print(" ↑ここまで")
 
     # ■LineStrengthを決定するため、同価格リストの結果をもとに、谷があるかを判定する
+    line_strength = 0.1
     minus_counter = 0  # 初期値
     if len(same_list) > 0:
         # 同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
@@ -683,7 +684,7 @@ def find_lines_mm(df_r):
             lower_line = range_result
 
     # フラグの更新
-    if latest_line['line_strength'] >= 1.5:
+    if latest_line['line_strength'] != 0:  # >= 1.5:
         latest_flag = True
 
     # latestのラインと、最高最低のラインがほぼ同じ数字の場合、フラグを立てておく

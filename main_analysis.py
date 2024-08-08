@@ -143,20 +143,22 @@ def confirm_part(df_r, ana_ans):
                 pl = position_target_price - item['close']
             # ただし、TPやLCを超えている場合はそこまでの上限とするものも計算しておく
             # プラス域（plが正の値はプラス）
-            if pl >= 0 and pl >= abs(tp_range):
-                # プラス域であり、TPRangeを超えている場合は、TPを適応する
-                pl_tp_lc_include = tp_range
+            if pl >= 0:
+                # プラス域の場合
+                if abs(pl) >= abs(tp_range):
+                    # プラス域であり、TPRangeを超えている場合は、TPを適応する
+                    pl_tp_lc_include = tp_range
+                else:
+                    # TP以下の場合は変動分をそのまま記載
+                    pl_tp_lc_include = pl
             else:
-                # TP以下の場合は変動分をそのまま記載
-                pl_tp_lc_include = pl
-            # マイナス域（plがマイナスの値の場合は負け）
-            if pl <= 0 and abs(pl) >= abs(lc_range):
-                # プラス域であり、TPRangeを超えている場合は、TPを適応する
-                pl_tp_lc_include = lc_range * -1  # rangeは正の数指定されている。ここでは累積を今後計算するため、負けはマイナスで格納。
-            else:
-                # TP以下の場合は変動分をそのまま記載
-                pl_tp_lc_include = pl  # plはもともと正負で表現されるため、マイナス１をかける必要はない。
-
+                # マイナス域の場合
+                if abs(pl) >= abs(lc_range):
+                    # プラス域であり、TPRangeを超えている場合は、TPを適応する
+                    pl_tp_lc_include = lc_range * -1# rangeは正の数指定されている。ここでは累積を今後計算するため、負けはマイナスで格納。
+                else:
+                    # TP以下の場合は変動分をそのまま記載
+                    pl_tp_lc_include = pl
 
             # ②最大値や最小値を求めていく
             if lc_out or tp_out:
@@ -444,8 +446,8 @@ def main():
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 225 + 2000
-gl_times = 2  # Count(最大5000件）を何セット取るか
+gl_count = 225 + 5
+gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。

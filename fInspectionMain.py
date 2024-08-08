@@ -130,14 +130,14 @@ def Inspection_test_one_function(df_r):
     print("結果")
     print(line_result)
 
-    if line_result['latest_flag'] and line_result['latest_line']['line_strength'] > 1:
+    if line_result['latest_flag'] and line_result['latest_line']['line_strength'] <= 1:
         # 抵抗ラインが強い場合、
         # 戻ってくるオーダー
         main_order = basic.copy()
         main_order['target'] = 0.01  # LCは広め
+        main_order['tp'] = 0.05  # LCは広め
         main_order['lc'] = 0.05  # LCは広め
-        main_order['lc'] = 0.05  # LCは広め
-        main_order['expected_direction'] = line_result['latest_line']['line_direction']
+        main_order['expected_direction'] = line_result['latest_line']['line_direction']  # * -1
         main_order['priority'] = line_result['latest_line']['line_strength']
         main_order['units'] = basic['units'] * 2
         main_order['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance"
