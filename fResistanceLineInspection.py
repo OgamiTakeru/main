@@ -725,81 +725,9 @@ def find_lines_mm(df_r):
     return return_dic
 
 
-def range_trid_make_order(line_result):
+def wrap_up_resistance_line(df_r):
     """
-    直近にLINEが発生した状態で呼び出される（必ずオーダーを入れる状態）
-    低いラインと高いラインを受け取り、
-    ・範囲外に対する、順張り
-    ・範囲内に対する、順張り
-    のトラリピを入れていく。
-    ただしエラー防止の為、トラリピの数は最大１０個にする
-    :param line_result: 詳細はfind_lines関数の戻り値参照。
-        latest_line:直近のLINE情報
-        upper_infoとfoundUpper
-        lower_infoとfoundLower
-    :return:orderの配列 [{オーダー１},{オーダー２}]
+    抵抗線を用いた解析のまとめ。
+    基本的に,InspectionMain関数から、抵抗線のみを用いた解析の場合はここで計算を行い、オーダー候補を返却する。
+
     """
-    # 範囲外へのオーダーを入れる
-    # lowerが
-    if line_result['found_lower']:
-        # lowerが発見されている場合（直近かどうかはわからないが）
-        lower_line = line_result['lower_info']
-        lower_orders_arr = f.make_trid_order({
-            "decision_price": lower_line['decision_price'],
-            "units": 2,
-            "expected_direction": -1,
-            "start_price": lower_line['line_price'] - 0.01,
-            "grid": 0.02,
-            "num": 2,
-            # "end_price": 156.0,
-            "type": "STOP"
-        })
-    else:
-        # 型だけ準備
-        lower_orders_arr = []  # 空の配列
-
-    # upper
-    if line_result['found_upper'] != 0:
-        # upperが発見されている場合（直近かどうかわからないが）
-        upper_line = line_result['upper_info']
-        upper_orders_arr = f.make_trid_order({
-            "decision_price": upper_line['decision_price'],
-            "units": 3,
-            "expected_direction": 1,
-            "start_price": upper_line['line_price'] + 0.01,
-            "grid": 0.02,
-            "num": 2,
-            # "end_price": 156.0,
-            "type": "STOP"
-        })
-    else:
-        upper_orders_arr = []
-
-    # 間に対してのオーダー発行
-    # if upper_line !=0 and lower_line != 0:
-    #     # 両端が決まっている場合のみ実施する
-    #     pass
-
-    # オーダーを結合する（
-    orders_arr = lower_orders_arr + upper_orders_arr
-    # 一時、結合が空だとできなかった　配列の結合は、空には結合不可の為、場合分けした）
-    # if len(lower_orders_arr) == 0 and len(upper_orders_arr) == 0:
-    #     # 実際この選択肢になることは無い（注文前提の為）
-    #     print(" かなり変なこと発生")
-    #     return {"take_position_flag": False}
-    # elif len(lower_orders_arr) == 0:
-    #     orders_arr = upper_orders_arr
-    # elif len(upper_orders_arr) == 0:
-    #     orders_arr = upper_orders_arr
-    # else:
-    #     print("lo")
-    #     print(type(lower_orders_arr))
-    #     print(" Lower")
-    #     f.print_arr(lower_orders_arr)
-    #     print(" upper")
-    #     print(type(upper_orders_arr))
-    #     f.print_arr(upper_orders_arr)
-    #     print("↑")
-    #     orders_arr = [] + upper_orders_arr
-
-    return orders_arr

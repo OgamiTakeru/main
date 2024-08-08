@@ -135,8 +135,8 @@ def Inspection_test_one_function(df_r):
         # 戻ってくるオーダー
         main_order = basic.copy()
         main_order['target'] = 0.01  # LCは広め
-        main_order['lc'] = 0.09  # LCは広め
-        main_order['lc'] = 0.09  # LCは広め
+        main_order['lc'] = 0.05  # LCは広め
+        main_order['lc'] = 0.05  # LCは広め
         main_order['expected_direction'] = line_result['latest_line']['line_direction']
         main_order['priority'] = line_result['latest_line']['line_strength']
         main_order['units'] = basic['units'] * 2
