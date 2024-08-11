@@ -105,12 +105,12 @@ def confirm_part(df_r, ana_ans):
         position = False
 
     # 検証する
-    max_upper = 0
-    max_lower = 0
-    max_upper_time = 0
-    max_upper_past_sec = 0
-    max_lower_time = 0
-    max_lower_past_sec = 0
+    max_plus = 0
+    max_minus = 0
+    max_plus_time = 0
+    max_plus_past_sec = 0
+    max_minus_time = 0
+    max_minus_past_sec = 0
     lc_executed = False
     tp_executed = False
     lc_time = 0
@@ -119,123 +119,77 @@ def confirm_part(df_r, ana_ans):
     tp_time = 0
     tp_time_past = 0
     tp_res = 0
-    max_upper_all_time = 0
-    max_lower_all_time = 0
-    max_upper_time_all_time = 0
-    max_upper_past_sec_all_time = 0
-    max_lower_time_all_time = 0
-    max_lower_past_sec_all_time = 0
+    max_plus_all_time = 0
+    max_minus_all_time = 0
+    max_plus_time_all_time = 0
+    max_plus_past_sec_all_time = 0
+    max_minus_time_all_time = 0
+    max_minus_past_sec_all_time = 0
     end_time_of_inspection = 0
     pl = 0
     pl_tp_lc_include = 0
     for i, item in df.iterrows():
         if position:
             # ■　ポジションがある場合の処理
-            # ①共通　スタートよりも最高値が高い場合、それはアッパー域。逆にロア域分（プラス域、マイナス域には最後に変換）
-            upper = item['high'] - position_target_price if position_target_price < item['high'] else 0
-            lower = position_target_price - item['low'] if position_target_price > item['low'] else 0
+            # ①-1 共通
             end_time_of_inspection = item['time_jp']  # 最後に検証した時刻を、検証終了時刻として保管（ループを全て行う場合）
-
-            # 変動を確認している間（TPやLCが行われていない状態）
-            if not tp_executed and not lc_executed:
-                # 現状プラスかどうか？(クローズ価格で判断）
-                if expected_direction == 1:  # 買い方向を想定した場合
-                    # print(" こっち", item['high'] - position_target_price, item['high'], position_target_price)
-                    pl = item['close'] - position_target_price  # qlがプラスの場合は、勝ち（買いの場合、価格が取得価格より大きければOK）
-                    # この足でTPかLCかに触れていないかを検討するする（両方触れている場合はLC優先）
-                    if position_target_price - item['low'] > abs(lc_range):
-                        # LCに引っかかっている場合、LCrangeを適応
-                        pl = abs(lc_range) * -1  # マイナス値にして渡す
-                    elif item['high'] - position_target_price > abs(tp_range):
-                        # TPに引っかかっている場合、TPRangeを適応
-                        pl = abs(tp_range)
-                else:
-                    pl = position_target_price - item['close']
-                    if item['high'] - position_target_price > abs(lc_range):
-                        # LCに引っかかっている場合
-                        pl = abs(lc_range) * -1
-                    elif position_target_price - item['low'] > abs(tp_range):
-                        pl = abs(tp_range)
-                # ただし、TPやLCを超えている場合はそこまでの上限とするものも計算しておく
-                # print(" ★★PL", pl)
-                # プラス域（plが正の値はプラス）
-                if pl >= 0:
-                    # プラス域の場合
-                    if abs(pl) >= abs(tp_range):
-                        # プラス域であり、TPRangeを超えている場合は、TPを適応する
-                        pl_tp_lc_include = tp_range
-                    else:
-                        # TP以下の場合は変動分をそのまま記載
-                        pl_tp_lc_include = pl
-                else:
-                    # マイナス域の場合
-                    if abs(pl) >= abs(lc_range):
-                        # プラス域であり、TPRangeを超えている場合は、TPを適応する
-                        pl_tp_lc_include = lc_range * -1# rangeは正の数指定されている。ここでは累積を今後計算するため、負けはマイナスで格納。
-                    else:
-                        # TP以下の場合は変動分をそのまま記載
-                        pl_tp_lc_include = pl
-
-            # ②最大値や最小値を求めていく
-            if lc_executed or tp_executed:
-                # 一回ポジション取得⇒LCかTPありの状態（既にポジションが解消されているような状態）
-                # 注意！position変数は、集計に利用するため、一度TrueにしたらFalseにはしないようにする
-                # ②-1 利確orロスカが既に入っている場合は、ループは最後まで回し、全期間での最大最小を求める（24/2/14まではBreakしていた）
-                if upper > max_upper_all_time:
-                    # 全期間でも取得する
-                    max_upper_all_time = upper  # 最大値入れ替え
-                    max_upper_time_all_time = item['time_jp']
-                    max_upper_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                if lower > max_lower_all_time:
-                    # 全期間でも取得する
-                    max_lower_all_time = lower  # 最小値入れ替え
-                    max_lower_time_all_time = item['time_jp']
-                    max_lower_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
+            # ①-2 プラス、マイナスに変換する（ポジションの方向ごとに異なる）
+            if expected_direction == 1:
+                # 買い方向の場合
+                plus = item['high'] - position_target_price
+                minus = (position_target_price - item['low']) * -1  # 負の値で表現
             else:
-                # ②-2 利確またはロスカが入っていない場合
-                if upper > max_upper:
-                    max_upper = upper # 最大値入れ替え
-                    max_upper_time = item['time_jp']
-                    max_upper_past_sec = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                    # 全期間でも取得する
-                    max_upper_all_time = upper
-                    max_upper_time_all_time = item['time_jp']
-                    max_upper_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                if lower > max_lower:
-                    max_lower = lower  # 最小値入れ替え
-                    max_lower_time = item['time_jp']
-                    max_lower_past_sec = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                    # 全期間でも取得する
-                    max_lower_all_time = lower
-                    max_lower_time_all_time = item['time_jp']
-                    max_lower_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                # ロスカ分を検討する(一つの足が長い場合、両方成立の可能性あり。仕様を変えたいけど、、）
+                # 売りの方向の場合
+                plus = position_target_price - item['low']
+                minus = (item['high'] - position_target_price) * -1  # 負の値で表現
+            # ①-3 全区間で調査する項目を調査する（TP/LC後でも関係なく更新していく）
+            if plus > max_plus_all_time:
+                # 全区間でPlusを更新する場合、記録する
+                max_plus_all_time = plus
+                max_plus_time_all_time = item['time_jp']
+                max_plus_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
+            elif abs(minus) > abs(max_minus_all_time):
+                # 全区間でminusを更新する場合、記録する
+                max_minus_all_time = minus  # 最小値入れ替え
+                max_minus_time_all_time = item['time_jp']
+                max_minus_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
+
+            # ■■通常のPositionの管理。Positionがあり、TPやLCがない、通常のポジション状態を記録していく
+            if not lc_executed and not tp_executed:
+                # ■■■情報を更新する
+                if plus > max_plus:
+                    # 全区間でPlusを更新する場合、記録する
+                    max_plus = plus
+                    max_plus_time = item['time_jp']
+                    max_plus_past_sec = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                elif abs(minus) > abs(max_minus):
+                    # 全区間でminusを更新する場合、記録する
+                    max_minus = minus  # 最小値入れ替え
+                    max_minus_time = item['time_jp']
+                    max_minus_past_sec = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                # ■■■PLを更新する（これはポジション所持中のみの実行）
+                if expected_direction == 1:
+                    # 買い方向の場合
+                    pl = item['close'] - position_target_price  # 足クローズ時点の含み損益（損はマイナス値、益はプラス値）
+                    pl_tp_lc_include = pl  # 暫定的に入れておく（この足でTP/LCに当たった場合は、後でTPに差し替える）
+                else:
+                    # 売りの方向の場合
+                    pl = position_target_price - item['close']  # 足クローズ時点の含み損益（損はマイナス値、益はプラス値）
+                    pl_tp_lc_include = pl  # 暫定的に入れておく（この足でTP/LCに当たった場合は、後でTPに差し替える）
+                # ■■■TP/LCを判定する　position_flag はtrueを維持する（TP.LC後もFalseには変更しない）
                 if lc_range != 0:  # ロスカ設定ありの場合、ロスカに引っかかるかを検討
-                    lc_jd = lower if expected_direction == 1 else upper  # 方向が買(expect=1)の場合、LCはLower方向。
-                    if lc_jd > lc_range:  # ロスカが成立する場合
+                    if abs(minus) > lc_range:  # ロスカが成立する場合(lc_rangeは正の数で指定されているのでabs不要)
                         print(" 　LC★", item['time_jp'], lc_range)
                         lc_executed = True
                         lc_time = item['time_jp']
                         lc_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
                         lc_res = lc_range
+                        pl_tp_lc_include = lc_range * -1  # LCにかかった瞬間を取るため。（pcは正負で考慮するため、lc_rangeは*-1)
                 if tp_range != 0:  # TP設定あるの場合、利確に引っかかるかを検討
-                    tp_jd = upper if expected_direction == 1 else lower  # 方向が買(expect=1)の場合、LCはLower方向。
-                    if tp_jd > tp_range:
+                    if plus > tp_range:
                         if lc_executed:
-                            # LC成立時は何もしない（LCの数字を優先する）
+                            # LC成立時は何もしない（LCの数字を優先し、TPを入力しない）
                             pass
-                            # # LC Range成立時でもTPと並立カウントするか、上書きとする場合（このブロックをコメントイン）
-                            # printf(" 　TP★", item['time_jp'], tp_range)
-                            # tp_out = True
-                            # tp_time = item['time_jp']
-                            # tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
-                            # tp_res = tp_range
-                            # # LCを取り下げる場合は以下をコメントイン
-                            # print(" 　LC★", item['time_jp'], lc_range)
-                            # lc_out = False
-                            # lc_time = 0
-                            # lc_time_past = 0
-                            # lc_res = 0
                         else:
                             # LCが成立してなければ、TPを成立させる
                             print(" 　TP★", item['time_jp'], tp_range)
@@ -243,6 +197,7 @@ def confirm_part(df_r, ana_ans):
                             tp_time = item['time_jp']
                             tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
                             tp_res = tp_range
+                            pl_tp_lc_include = tp_range  # LCにかかった瞬間を取るため。
         else:
             # ■ポジションがない場合の動き(ポジションを取得する）
             if item['low'] < position_target_price < item['high']:
@@ -250,35 +205,6 @@ def confirm_part(df_r, ana_ans):
                 position_time = item['time_jp']
                 print(" 　取得★", item['time_jp'], position_target_price)
 
-    # 情報整理＠ループ終了後（directionに対してLow値をHigh値が、金額的にプラスかマイナスかを変更する）
-    if expected_direction == 1:  # 買い方向を想定した場合
-        max_minus = round(max_lower, 3)
-        max_minus_time = max_lower_time
-        max_minus_past_sec = max_lower_past_sec
-        max_plus = round(max_upper, 3)
-        max_plus_time = max_upper_time
-        max_plus_past_sec = max_upper_past_sec
-        # 検証の全期間
-        max_minus_all_time = round(max_lower_all_time, 3)
-        max_minus_time_all_time = max_lower_time_all_time
-        max_minus_past_sec_all_time = max_lower_past_sec_all_time
-        max_plus_all_time = round(max_upper_all_time, 3)
-        max_plus_time_all_time = max_upper_time_all_time
-        max_plus_past_sec_all_time = max_upper_past_sec_all_time
-    else:
-        max_minus = round(max_upper, 3)
-        max_minus_time = max_upper_time
-        max_minus_past_sec = max_upper_past_sec
-        max_plus = round(max_lower, 3)
-        max_plus_time = max_lower_time
-        max_plus_past_sec = max_lower_past_sec
-        # 検証の全期間
-        max_minus_all_time = round(max_upper_all_time, 3)
-        max_minus_time_all_time = max_upper_time_all_time
-        max_minus_past_sec_all_time = max_upper_past_sec_all_time
-        max_plus_all_time = round(max_lower_all_time, 3)
-        max_plus_time_all_time = max_lower_time_all_time
-        max_plus_past_sec_all_time = max_lower_past_sec_all_time
 
     print("   買い方向", expected_direction, "最大プラス", max_plus, max_plus_time,  "最大マイナス", max_minus, max_minus_time)
 
@@ -459,15 +385,15 @@ def main():
     print("検証期間", df_r.iloc[0]['time_jp'], "-", df_r.iloc[-1]['time_jp'])
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 225 + 2000
-gl_times = 4  # Count(最大5000件）を何セット取るか
+gl_count = 225 + 1
+gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2023, 8, 6, 16, 35, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
-# gl_target_time = datetime.datetime(2024, 8, 10, 0, 15, 6)  # テスト用（ダブルトップあり）
-# ダブルトップありの例の時間　datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
-# 結構負ける時間　datetime.datetime(2023, 8, 6, 16, 35, 6)
+gl_target_time = datetime.datetime(2024, 8, 9, 19, 10, 6)   # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+# datetime.datetime(2024, 8, 10, 0, 15, 6)  # テスト用（ダブルトップあり）
+# datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
+# datetime.datetime(2023, 8, 6, 16, 35, 6) 結構負ける時間　
 
 # ■■方法の指定
 gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
