@@ -726,9 +726,10 @@ def find_lines_mm(df_r):
     return return_dic
 
 
-def wrap_up_resistance_line(df_r):
+def make_orders_resistance_line(df_r):
     """
     抵抗線を用いた解析のまとめ。
-    基本的に,InspectionMain関数から、抵抗線のみを用いた解析の場合はここで計算を行い、オーダー候補を返却する。
-
+    基本的に,InspectionMain関数から呼ばれ、オーダー候補を返却する。
+    ただし、ほかの解析と複合する場合は少し微妙の場合もあるため、
+    抵抗線のみを用いた解析（このファイル内の単品解析）の場合はここで計算を行う方向
     """

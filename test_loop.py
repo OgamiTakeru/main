@@ -9,20 +9,41 @@ import classOanda as classOanda
 import classPosition as classPosition  # とりあえずの関数集
 
 import fGeneric as f
-import fPeakInspection as p
 
-import fInspectionMain as im
-
-
+def order_for_test():
+    """
+    このループテストにのみ記載されている関数。
+    ループテストはポジションクラスの調整がメイン。
+    そのため、調整を行うためのオーダーを実行する関数(
+    """
+    ### オーダーする（テスト用）
+    print(" オーダー実行")
+    exe_orders_arr = []  # 配列の初期化
+    basic = {
+            "target": 0.00,
+            "type": "STOP",
+            "units": 100,
+            "expected_direction": 1,
+            "tp": 0.10,
+            "lc": 0.10,
+            'priority': 0,
+            "decision_price": gl_now_price_mid,
+            "name": ""
+    }
+    exe_orders_arr.append(f.order_finalize(basic))
+    for n in range(len(exe_orders_arr)):  # ここ（正規実行）では「配列」でOrder情報を受け取る（testでは辞書単品で受け取る）　
+        res_dic = classes[n].order_plan_registration(exe_orders_arr[n])
 
 def mode1():
     """
     低頻度モード（ローソクを解析し、注文を行う関数）
     :return: なし
     """
+    print("MODE1 ", gl_first_exe)
     pass
 
 def mode2():
+    print("MODE2")
     pass
 
 
@@ -40,16 +61,17 @@ def exe_manage():
     global gl_midnight_close_flag, gl_now_price_mid, gl_data5r_df, gl_first_exe, gl_first_time, gl_latest_exe_time
 
     # ■土日は実行しない（ループにはいるが、API実行はしない）
-    if gl_now.weekday() >= 5:
-        # print("■土日の為API実行無し")
-        return 0
+    # if gl_now.weekday() >= 5:
+    #     # print("■土日の為API実行無し")
+    #     return 0
 
     # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
     if 3 <= time_hour <= 6:
-        if gl_midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
-            classPosition.reset_all_position(classes)
-            tk.line_send("■深夜のポジション・オーダー解消を実施")
-            gl_midnight_close_flag = 1  # 実施済みフラグを立てる
+        pass
+        # if gl_midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
+        #     classPosition.reset_all_position(classes)
+        #     tk.line_send("■深夜のポジション・オーダー解消を実施")
+        #     gl_midnight_close_flag = 1  # 実施済みフラグを立てる
 
     # ■実行を行う
     else:
@@ -123,6 +145,7 @@ def exe_manage():
 
             gl_data5r_df = d5_df.sort_index(ascending=False)  # 対象となるデータフレーム（直近が上の方にある＝時間降順）をグローバルに
             d5_df.to_csv(tk.folder_path + 'main_data5.csv', index=False, encoding="utf-8")  # 直近保存用
+            order_for_test()  # 初回だけオーダーを実行する
             mode1()
 
 
@@ -151,7 +174,7 @@ def exe_loop(interval, fun, wait=True):
 
 # ■グローバル変数の宣言等
 # 変更なし群
-gl_arrow_spread = 0.011  # 実行を許容するスプレッド　＠ここ以外で変更なし
+gl_arrow_spread = 0.05  # 実行を許容するスプレッド　＠ここ以外で変更なし
 gl_first_exe = 0  # 初回のみ実行する内容があるため、初回フラグを準備しておく
 # 変更あり群
 gl_now = 0  # 現在時刻（ミリ秒無し） @exe_loopのみで変更あり
@@ -208,6 +231,5 @@ print(classes[0].name)
 
 # ■処理の開始
 classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
-tk.line_send("■■新規スタート", gl_live)
 # main()
 exe_loop(1, exe_manage)  # exe_loop関数を利用し、exe_manage関数を1秒ごとに実行

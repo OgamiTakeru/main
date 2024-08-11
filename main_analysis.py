@@ -47,7 +47,7 @@ def analysis_part(df_r):
     # return bm.big_move(df_r)
     # return ri.find_lines_mm((df_r))
     # return test
-    return im.Inspection_test_one_function(df_r)
+    return im.Inspection_test(df_r)
 
 
 # 検証パート
@@ -56,7 +56,7 @@ def confirm_part(df_r, ana_ans):
 
     :param df_r: 検証用のデータフレーム（関数内で5S足のデータを別途取得する場合は利用しない）
     :param ana_ans: 解析の結果、どの価格でポジションを取得するか等の情報を「辞書形式」で（単品）
-    ana_ans = order_base = {
+    ana_ans = exe_order = {
         "stop_or_limit": stop_or_limit,  # 〇
         "expected_direction": expected_direction,  # 〇
         "decision_time": river['time'],  # 〇
@@ -335,12 +335,12 @@ def inspection_and_confirm(df_r):
     # ■解析パート　todo
     analysis_result = analysis_part(analysis_part_df)  # ana_ans={"ans": bool(結果照合要否必須）, "price": }
     print(analysis_result)
-    for_export_results = analysis_result['order_base'] # (analysis_result['order_base'] | analysis_result['records'])  # 解析結果を格納
+    for_export_results = analysis_result['exe_order'] # (analysis_result['order_base'] | analysis_result['records'])  # 解析結果を格納
     for_export_results["take_position_flag"] = analysis_result['take_position_flag']
     # ■検証パート todo
     if analysis_result['take_position_flag']:  # ポジション判定ある場合のみ
         # 検証と結果の関係性の確認　todo
-        conf_ans = confirm_part(res_part_df, analysis_result['order_base'])  # 対象のDataFrame,ポジション取得価格単品/時刻等,ロスカ/利確幅が必要
+        conf_ans = confirm_part(res_part_df, analysis_result['exe_order'])  # 対象のDataFrame,ポジション取得価格単品/時刻等,ロスカ/利確幅が必要
         # 検証結果と確認結果の結合
         for_export_results = (for_export_results|conf_ans)
 
@@ -443,15 +443,16 @@ def main():
     print("TotalTakePosition", len(fd_forview[fd_forview["position"] == True]))
     print("tpTimes", len(fd_forview[fd_forview["tp"] == True]))
     print("lcTimes", len(fd_forview[fd_forview["lc"] == True]))
+    tk.line_send("■■inspection fin", )
 
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 225 + 5
-gl_times = 1  # Count(最大5000件）を何セット取るか
+gl_count = 225 + 2000
+gl_times = 4  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 8, 6, 16, 35, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2023, 8, 6, 16, 35, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定      datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
 gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 

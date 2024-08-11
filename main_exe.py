@@ -105,8 +105,9 @@ def mode1():
     if not result_dic['take_position_flag'] or not(result_dic['take_position_flag']):
         # 発注がない場合は、終了 (ポケ除け的な部分）
         return 0
-    return 0 #　テストモード（動かすがオーダーは入れない）の場合、このリターンをコメントインすし終了させるとオーダーしない。。
+    # return 0  # テストモード（動かすがオーダーは入れない）の場合、このリターンをコメントインすし終了させるとオーダーしない。。
 
+    # 以下はオーダー処理となる
     # ■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
     pInfo = classPosition.position_check(classes)
     if pInfo['ans']:
@@ -125,7 +126,7 @@ def mode1():
     # 注文を実行する
     gl_trade_num += 1
     line_send = ""  # LINE送信用の注文結果の情報
-    for n in range(len(result_dic['exe_orders'])):
+    for n in range(len(result_dic['exe_orders'])):  # ここ（正規実行）では「配列」でOrder情報を受け取る（testでは辞書単品で受け取る）　
         res_dic = classes[n].order_plan_registration(result_dic['exe_orders'][n])  #
         print(" オーダー結果")
         print(res_dic)
