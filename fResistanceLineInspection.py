@@ -326,6 +326,294 @@ def latest_move_type(df_r):
     #     print("  オーダー入れることが出来る動き", max_peak_count)
 
 
+def search_latest_line(*args):
+    """
+    基本的にはfind_latest_lineと似ている動き。
+    find_latest_lineは指定されたDFからlatest_lineを産出するが、
+    この関数は、想定される範囲で、Lineが生成される可能性があるかを計算するもの
+       \　 ↓river peak
+       \  /\←latest　
+        \/
+     ↓
+    　\　　
+       \  /\　
+        \/  \/ ←こうなると予想されるポイントを探す
+    latestが伸びていって、折り返したことを想定し、
+    latestがriverとなり、latest_count＝２になったときに折り返す
+    """
+    # 準備部分（表示や、ピークスの算出を行う）
+    if len(args) == 2:
+        # 引数が二個の場合は、Peaksが来ている為、ピークスを求める必要なし
+        target_df = args[0]
+        peaks_all = args[1]
+    else:
+        # 引数が１つの場合（df_rのみ）、ピークスを求める必要あり
+        target_df = args[0][0:40]
+        peaks_info = p.peaks_collect_main(target_df, 12)
+        peaks_all = peaks_info["all_peaks"]
+    # 状況に応じた、ピークポイントの指定  # 添え字は0=latest, 1=river, 2=turn, 3=flop3
+    if len(peaks_all) < 4:
+        # ■ループの際、数が少ないとエラーの原因になる。３個切る場合ば終了（最低３個必要）
+        return {"line_strength": 0}
+
+    # 各変数の設定
+    now_latest_dir = peaks_all[0]['direction']  # 現在のLatest_dir。近い将来river_dirとなるはずのもの。
+    expected_latest_dir = now_latest_dir * -1  # 折り返し直後の部分（今までcount=2で判定した部分の方向)
+    search_min_price = 146.550  # 探索する最低値。
+    search_max_price = 146.614  # 探索する最高値
+    grid = 0.01  # 探索する幅（細かすぎると、、計算遅くなる？）
+    target_price = search_min_price  # 最初はMinからスタートする
+    next_river_peak_time = peaks_all[0]['time']  # 将来riverになるもの
+
+    while target_price < search_max_price:
+        # 平均のピークGapを計算する
+        sum = 0
+        for item in peaks_all:
+            sum += item['gap']
+        ave = sum / len(peaks_all)
+
+        # ②探索開始
+        target_dir = now_latest_dir  # 現在のLatestの方向（後のriverになる方向）
+        counter = 0  # 何回同等の値が出現したかを把握する
+        range_yen = f.cal_at_least_most(0.01, round(ave * 0.153, 3), 0.041)  # 0.153倍が一番よかった(大きすぎないレベル）。。
+        depth_point_gap = 0  # 今のピークと一番離れている値、かつ、逆方向のポイント（同価格発見のタイミングでリセット）
+        depth_point = 0
+        depth_point_time = 0
+        depth_minus_count = depth_plus_count = 0
+        near_point_gap = 100  # 同価格ではないが、一番近い値、かつ、同方向のポイント(同価格を発見のタイミングでリセットされる）
+        near_point = 0
+        near_point_time = 0
+        near_minus_count = near_plus_count = 0
+        same_list = []
+        between_num = 0  # 間に何個のピークがあったか。最短ダブルトップのの場合は2(自分自身をカウントするため）
+        # print("　　　　ダブルトップ判定閾値", range_yen)
+        for i, item in enumerate(peaks_all):
+            # print("   target:", river_peak, " pair", item['peak'], item['time'], i, river_peak - range_yen <= item['peak'] <= river_peak + range_yen
+            #       , item['direction'])
+            # if i < 1 + target_p:
+            #     # 自分自身の場合は探索せず。ただし自分自身は0ではなく１
+            #     continue
+
+            # 判定を行う
+            if target_price - range_yen <= item['peak'] <= target_price + range_yen:
+                # 同価格を発見した場合。
+                # print("　　　　同等のピーク発見", item['time'], abs(item['peak']-latest_peak))
+                counter += 1
+
+                # 何分前に発生した物かを計算（９０分以内なら、色々考えないとなぁ）
+                gap_time_min = f.seek_time_gap_seconds(next_river_peak_time, item['time']) / 60
+                # 方向に関する判定
+                if item['direction'] == target_dir:
+                    # print("    Between確認", between_num, item['time'])
+                    same_dir = True
+                    # print("　　　　同方向の近似ピーク（≒ダブルピークの素）", item['time'], near_point_gap)
+                    same_list.append({"time": item['time'],
+                                      "peak": item['peak'],
+                                      "same_dir": same_dir,
+                                      "gap_time_min": gap_time_min,
+                                      "count_foot_gap": i,
+                                      "depth_point_gap": round(depth_point_gap, 3),
+                                      'depth_point': depth_point,
+                                      "depth_point_time": depth_point_time,
+                                      "depth_minus_count": depth_minus_count,
+                                      "depth_plus_count": depth_plus_count,
+                                      "near_point_gap": round(near_point_gap, 3),
+                                      "near_point": near_point,
+                                      "near_point_time": near_point_time,
+                                      'near_minus_count': near_minus_count,
+                                      'near_plus_count': near_plus_count,
+                                      "between_num": between_num,
+                                      "i": i  # 何個目か
+                                      })
+                    # 通過したピーク情報を初期化する
+                    depth_point_gap = 0
+                    near_point_gap = 100
+                    between_num = 0
+                else:
+                    pass
+                    # same_dir = False
+                    # print("　　　逆方向の近似ピーク(= 踊り場的な扱い)")
+
+            else:
+                # 通過するピーク（同価格ではない）の場合、記録を残す。
+                # print(" 　　スルーカウント", item['time'], abs(item['peak']-latest_peak), depth_point_gap, near_point_gap, between_num + 1)
+                between_num += 1
+                # 条件分岐
+                if expected_latest_dir == 1:
+                    # 想定されるlatestが上向き＝riverが下ピークの場合
+                    #       ↓depth
+                    # \  /\/\　
+                    #  \/ ↑  \/ ←latest(direction)
+                    # 　　near ↑target_price(ライン検索値)
+                    peak_gap = item['peak'] - target_price  # プラス値の場合は上の図の通り。－値の場合は三尊形状（ライン越え）
+                else:
+                    # latestが下向きの場合　＝　riverが上向き
+                    #         ↓riverpeak(Lineの対象）
+                    #   /\    /\ ←latest
+                    #  /  \/\/
+                    #     　 ↑ depth
+                    #  ↑全てプラス値          ↑　near値が－値、depth値がプラス値（これはマイナスにはならない気がする）
+                    # print(" are????", target_price, item['peak'], item['time'])
+                    peak_gap = target_price - item['peak']  # プラスの場合上の絵。
+                # 計算
+                if item['direction'] != target_dir:
+                    # 方向が異なるピークの場合→Depthの方
+                    # 深さの値を取得する
+                    if peak_gap > depth_point_gap:
+                        # 最大深度を更新する場合
+                        depth_point_gap = peak_gap
+                        depth_point = item['peak']
+                        depth_point_time = item['time']
+                    # マイナスプラスをカウントする
+                    if peak_gap <= 0:
+                        depth_minus_count += 1
+                    else:
+                        depth_plus_count += 1
+                if item['direction'] == target_dir:
+                    # 同じピークの場合→Nearの方
+                    # ニアの方の深さの値を取得する
+                    if peak_gap < near_point_gap:
+                        # 最も近い価格を超える（かつ逆方向）場合
+                        near_point_gap = peak_gap
+                        near_point = item['peak']
+                        near_point_time = item['time']
+                    # マイナスプラスをカウントする
+                    # print(" nearPointGap", peak_gap, item['time'])
+                    if peak_gap <= 0:
+                        near_minus_count += 1
+                    else:
+                        near_plus_count += 1
+        # 同価格リスト
+        print("")
+        print("同価格リスト", "base", target_price, next_river_peak_time, target_price - range_yen, "<r<",
+              target_price + range_yen,
+              "許容ギャップ", range_yen, "方向", target_dir, " 平均ピークGap", ave)
+        f.print_arr(same_list)
+        print(" ↑ここまで")
+
+        # ■LineStrengthを決定するため、同価格リストの結果をもとに、谷があるかを判定する
+        line_strength = 0.01
+        minus_counter = 0  # 初期値
+        if len(same_list) > 0:
+            # 同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
+            # ①まずは直近のSamePriceに関しての調査
+            # print("　　　　SamePriceが１つあり→　調査する")
+            # 同一価格の発見が１つの場合、
+            # ＊パターン１　同一価格の間のピーク数が４個(丁度）の場合は、そのラインは強いライン
+            #    以下の２パターンがあるが、どちらも強いラインの形（三尊、カルデラ）
+            # 　   \/\  /\/
+            # 　      \/  ↑river peak
+            # 　      ↑Near
+            # 　     ↓
+            # 　   /\/\
+            # 　 \/    \/
+            #      　　　↑river_peak
+            #  ＊パターン２　同一価格間のピーク数が４個よりも多い場合
+            # 　    /\/\/\
+            # 　  \/      \/
+            #             ↑　river_peak
+            #    near が半分以上マイナス値（ラインを割っている）の場合、信頼度が下がる
+            #
+            #   *パターン３　シンプルなダブルトップ系
+            #    /\/\
+            #   /
+            #    betweenが２の場合のみ
+
+            info = same_list[0]  # 同一価格が１つだけが成立（その情報を取得する）
+            # print("Between", info['between_num'])
+            # パターン１の処理
+            if info['between_num'] == 4:
+                line_strength = 2  # 強いラインとみなす
+
+            # パターン３の処理（シンプルダブルトップ）
+            if info['between_num'] == 2:
+                if info['gap_time_min'] <= 20:  # 20分いないのダブルトップは、信頼度低（単なるギザギザの可能性）
+                    # print("初回短すぎ・・？")
+                    line_strength = 1.5  # 割とLineを突破することが多い気がするが。。。
+                else:
+                    # print("適正？")
+                    line_strength = 2  # ただ、depthの深さによって変るのでは？
+
+            # パターン２の処理
+            if info['between_num'] > 4:
+                # nearマイナスの数が、nearの数の半分以上の場合
+                all_near_num = info['between_num'] / 2 - 1  # nearの数はこう求める
+                minus_ratio = info['near_minus_count'] / all_near_num
+                # print("    参考：マイナス比率", minus_ratio, info['near_minus_count'], all_near_num)
+                if minus_ratio >= 0.4:
+                    line_strength = 0.5
+                elif minus_ratio > 0:
+                    line_strength = 1.5
+                else:
+                    line_strength = 3
+
+            # ②同一価格が２個以上ある場合は、他も同号して検討する
+            # print("　　　　複数のSamePriceあり。強いLINEではあるが、当たってきてる回数が多いので、抜ける可能性大？")
+            if len(same_list) >= 2:
+                for i in range(len(same_list)):
+                    if same_list[i]['near_point_gap'] < 0:
+                        minus_counter += 1  # マイナスはLINEを超えた回数
+                if minus_counter > len(same_list) * 0.5:
+                    # LINE越えが過半数の場合、LINEの信頼度つぃては高くない
+                    line_strength = 0.5
+                    # print("　　　　複数時　弱強度", minus_counter, len(same_list))
+                elif minus_counter >= 1:
+                    line_strength = 1
+                    # print("　　　　複数時　１つ以上LINE越えあり", minus_counter)
+                else:
+                    # LINE越えがない為、LINEの信頼度が比較的高い
+                    line_strength = 3
+                    # print("　　　　複数時　強強度", minus_counter, len(same_list))
+        else:
+            pass
+
+        return_dic = {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
+            "line_strength": line_strength,
+            "line_price": target_price,
+            "line_direction": target_dir,  # 1の場合UpperLine（＝上値抵抗）
+            "latest_direction": target_dir * -1,  # lineDirectionとは異なる(基本は逆になる）
+            "line_base_time": target_df.iloc[0]['time'],  # 推定のため、これは算出不可（テキトーな値にする）
+            "latest_foot_gap": 99 if len(same_list) == 0 else same_list[0]['count_foot_gap'],
+            "latest_time": peaks_all[0]['time'],  # 実際の最新時刻
+            "line_on_num": len(same_list),
+            "minus_counter": minus_counter,
+            "decision_price": target_df.iloc[0]['close'],
+            "between_num": between_num,
+            "same_time_latest": 0 if len(same_list) == 0 else same_list[0]['time']  # 一番近い同一価格と判断した時刻
+        }
+
+        # 判断する
+        if return_dic['line_strength'] > 1.5:
+            # 1.5以上のストレングスのピークが形成できる折り返し価格が発見された場合
+            print(" この価格で、Lineを形成するピークができる可能性", target_price)
+            return {
+                "latest_flag": True,
+                "latest_line": return_dic
+            }
+        else:
+            print("  ★ダメでした", target_price)
+
+        target_price =+ target_price + grid  # ★ループへ
+    # ダメな場合の返却
+    return {
+            "latest_flag": False,
+            "latest_line": {
+                "line_strength": 0.01,
+                "line_price": target_price,
+                "line_direction": 1,  # 1の場合UpperLine（＝上値抵抗）
+                "latest_direction": 0,  # lineDirectionとは異なる(基本は逆になる）
+                "line_base_time": target_df.iloc[0]['time'],  # 推定のため、これは算出不可（テキトーな値にする）
+                "latest_foot_gap": 0,
+                "latest_time": peaks_all[0]['time'],  # 実際の最新時刻
+                "line_on_num": 0,
+                "minus_counter": 0,
+                "decision_price": target_df.iloc[0]['close'],
+                "between_num": 0,
+                "same_time_latest": 0   # 一番近い同一価格と判断した時刻
+            }
+        }
+
+
 def find_latest_line(*args):
     """
     :param *dic_args: 複数の引数を取る可能性があるが、２パターン.
@@ -359,7 +647,7 @@ def find_latest_line(*args):
 
     # (1) LINE探索する
     # ⓪探索準備
-    target_p = 0  # riverのピークを採択（１がRiverの添え字）。
+    target_p = 0  # riverのピークを採択（０がRiverの添え字）。
     latest_peak = peaks_all[target_p]['peak']
     latest_dir = peaks_all[target_p]['direction']
     latest_gap = peaks_all[target_p]['gap']
@@ -382,7 +670,8 @@ def find_latest_line(*args):
     lr_ratio = latest_gap / river_gap
 
     # ②探索開始
-    line_strength = 0  # LINE強度の初期値を入れる
+    target_price = river_peak  # ★ 将来的に、想定価格で探す可能性があるため。
+    target_dir = river_dir
     counter = 0  # 何回同等の値が出現したかを把握する
     range_yen = f.cal_at_least_most(0.01, round(ave * 0.153, 3), 0.041)  #0.153倍が一番よかった(大きすぎないレベル）。。
     depth_point_gap = 0  # 今のピークと一番離れている値、かつ、逆方向のポイント（同価格発見のタイミングでリセット）
@@ -404,7 +693,7 @@ def find_latest_line(*args):
             continue
 
         # 判定を行う
-        if i > 2 and river_peak - range_yen <= item['peak'] <= river_peak + range_yen:
+        if i > 2 and target_price - range_yen <= item['peak'] <= target_price + range_yen:
             # 同価格を発見した場合。
             # print("　　　　同等のピーク発見", item['time'], abs(item['peak']-latest_peak))
             counter += 1
@@ -412,7 +701,7 @@ def find_latest_line(*args):
             # 何分前に発生した物かを計算（９０分以内なら、色々考えないとなぁ）
             gap_time_min = f.seek_time_gap_seconds(river_peak_time, item['time']) / 60
             # 方向に関する判定
-            if item['direction'] == river_dir:
+            if item['direction'] == target_dir:
                 # print("    Between確認", between_num, item['time'])
                 same_dir = True
                 # print("　　　　同方向の近似ピーク（≒ダブルピークの素）", item['time'], near_point_gap)
@@ -453,8 +742,8 @@ def find_latest_line(*args):
                 #       ↓depth
                 # \  /\/\　
                 #  \/ ↑  \/ ←latest(direction)
-                #　　near ↑river_peak(ライン検索値)
-                peak_gap = item['peak'] - river_peak  # プラス値の場合は上の図の通り。－値の場合は三尊形状（ライン越え）
+                #　　near ↑target_price(ライン検索値)
+                peak_gap = item['peak'] - target_price  # プラス値の場合は上の図の通り。－値の場合は三尊形状（ライン越え）
             else:
                 # latestが下向きの場合　＝　riverが上向き
                 #         ↓riverpeak(Lineの対象）
@@ -462,10 +751,10 @@ def find_latest_line(*args):
                 #  /  \/\/
                 #     　 ↑ depth
                 #  ↑全てプラス値          ↑　near値が－値、depth値がプラス値（これはマイナスにはならない気がする）
-                # print(" are????", river_peak, item['peak'], item['time'])
-                peak_gap = river_peak - item['peak']  # プラスの場合上の絵。
+                # print(" are????", target_price, item['peak'], item['time'])
+                peak_gap = target_price - item['peak']  # プラスの場合上の絵。
             # 計算
-            if item['direction'] != river_dir:
+            if item['direction'] != target_dir:
                 # 方向が異なるピークの場合→Depthの方
                 # 深さの値を取得する
                 if peak_gap > depth_point_gap:
@@ -478,7 +767,7 @@ def find_latest_line(*args):
                     depth_minus_count += 1
                 else:
                     depth_plus_count += 1
-            if item['direction'] == river_dir:
+            if item['direction'] == target_dir:
                 # 同じピークの場合→Nearの方
                 # ニアの方の深さの値を取得する
                 if peak_gap < near_point_gap:
@@ -494,13 +783,13 @@ def find_latest_line(*args):
                     near_plus_count += 1
     # 同価格リスト
     print("")
-    print("同価格リスト", "base", river_peak, river_peak_time, river_peak - range_yen, "<r<",river_peak + range_yen,
-          "許容ギャップ", range_yen , "方向", river_dir, " 平均ピークGap", ave)
+    print("同価格リスト", "base", target_price, river_peak_time, river_peak - range_yen, "<r<",river_peak + range_yen,
+          "許容ギャップ", range_yen , "方向", target_dir, " 平均ピークGap", ave)
     f.print_arr(same_list)
     print(" ↑ここまで")
 
     # ■LineStrengthを決定するため、同価格リストの結果をもとに、谷があるかを判定する
-    line_strength = 0.1
+    line_strength = 0.01
     minus_counter = 0  # 初期値
     if len(same_list) > 0:
         # 同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
@@ -586,8 +875,8 @@ def find_latest_line(*args):
 
     return_dic = {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "line_strength": line_strength,
-        "line_price": river_peak,
-        "line_direction": river_dir,  # 1の場合UpperLine（＝上値抵抗）
+        "line_price": target_price,
+        "line_direction": target_dir,  # 1の場合UpperLine（＝上値抵抗）
         "latest_direction": latest_dir,  # lineDirectionとは異なる(基本は逆になる）
         "line_base_time": river_peak_time,  # 調査の開始対象となったLINE価格の元になる時刻
         "latest_foot_gap":  99 if len(same_list) == 0 else same_list[0]['count_foot_gap'],
@@ -604,7 +893,7 @@ def find_latest_line(*args):
     #     print(return_dic)
     #     # f.print_json(return_dic)
     # print(" --")
-    print(" 結果",line_strength)
+    print(" 結果", line_strength, return_dic)
     return return_dic
 
 

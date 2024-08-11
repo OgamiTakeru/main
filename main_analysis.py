@@ -37,17 +37,10 @@ def analysis_part(df_r):
         "oeder_base"が必須
     """
     # モードによる引数の差分を処理
-    # return dp.turn1Rule(df_r)
-    # return dp.stairsPeak(df_r)
-    # return dp.now_position(df_r)
-    # prac.turn_inspection_main(df_r)
-    # return dp.peakPatternMain(df_r)
-    # return ri.find_latest_line(df_r)
-    # return ri.find_lines_mm(df_r)
-    # return bm.big_move(df_r)
-    # return ri.find_lines_mm((df_r))
-    # return test
-    return im.Inspection_test(df_r)
+    # est = ri.search_latest_line(df_r)
+    # print("結果これやで", est)
+    # return est
+    return im.Inspection_test_predict_line(df_r)
 
 
 # 検証パート
@@ -204,7 +197,6 @@ def confirm_part(df_r, ana_ans):
                 position = True  # 集計に利用するため、一度TrueにしたらFalseにはしないようにする
                 position_time = item['time_jp']
                 print(" 　取得★", item['time_jp'], position_target_price)
-
 
     print("   買い方向", expected_direction, "最大プラス", max_plus, max_plus_time,  "最大マイナス", max_minus, max_minus_time)
 
@@ -385,18 +377,19 @@ def main():
     print("検証期間", df_r.iloc[0]['time_jp'], "-", df_r.iloc[-1]['time_jp'])
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 225 + 1
+gl_count = 225 + 2000
 gl_times = 1  # Count(最大5000件）を何セット取るか
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 8, 9, 19, 10, 6)   # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2023, 8, 6, 16, 35, 6)   # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # datetime.datetime(2024, 8, 10, 0, 15, 6)  # テスト用（ダブルトップあり）
 # datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
 # datetime.datetime(2023, 8, 6, 16, 35, 6) 結構負ける時間　
+# datetime.datetime(2024, 8, 9, 23, 55, 6) # 予測テスト用
 
 # ■■方法の指定
-gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
+gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず） False
 
 # Mainスタート
 main()

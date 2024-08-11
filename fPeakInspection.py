@@ -22,6 +22,17 @@ def peaks_collect_main(*args):
         # print(" peaks数指定なし")
         all_peaks = peaks_collect_all(args[0])
     separated_peaks = peaks_collect_separate(all_peaks)
+    # 表示用
+    peaks = separated_peaks['all_peaks']
+    latest = peaks[0]
+    river = peaks[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
+    flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
+    print("  <対象>:運用モード")
+    print("  Latest", latest)
+    print("  RIVER", river)
+    print("  TURN ", turn)
+    print("  FLOP3", flop3)
     return separated_peaks
 
 
