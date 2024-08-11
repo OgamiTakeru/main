@@ -84,7 +84,7 @@ def Inspection_test(df_r):
     """
     # 現在価格を取得する
     # now_price = oa.NowPrice_exe("USD_JPY")['data']['mid']
-    now_price = df_r.iloc[0]['close']
+    now_price = df_r.iloc[0]['open']  # LatestがのOpen価格が現実的には一番直近の額となる
     take_position_flag = False  # 初期値を設定する
 
     # 返却値を設定しておく
@@ -128,10 +128,10 @@ def Inspection_test(df_r):
 
     # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
     line_result = ri.find_lines_mm(df_r[:35])  # Lineが発見された場合には、['line_strength']が１以上になる
-    print("結果")
-    print(line_result)
+    print("結果", line_result['latest_flag'])
+    # print(line_result)
 
-    if line_result['latest_flag'] and line_result['latest_line']['line_strength'] > 1.5:# >= 1.5 < 1
+    if line_result['latest_flag'] and line_result['latest_line']['line_strength'] > 1:# >= 1.5 < 1
         # 抵抗ラインが強い場合、
         # 戻ってくるオーダー
         main_order = basic.copy()
@@ -144,6 +144,9 @@ def Inspection_test(df_r):
         main_order['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance"
         # 注文を配列に追加
         exe_orders_arr.append(f.order_finalize(main_order))
+        print(" ★★ORDER PRINT")
+        print(exe_orders_arr)
+        print(exe_orders_arr[0])
         flag_and_orders = {
             "take_position_flag": True,
             "exe_orders": exe_orders_arr,  # 本番用の、辞書の配列

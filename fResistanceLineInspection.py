@@ -719,9 +719,6 @@ def find_lines_mm(df_r):
         "latest_size_ratio": round(lr_ratio, 3),
         "latest_direction": peaks_all[0]['direction']
     }
-
-    f.print_json(return_dic)
-
     # 返却する
     return return_dic
 

@@ -111,8 +111,8 @@ def confirm_part(df_r, ana_ans):
     max_upper_past_sec = 0
     max_lower_time = 0
     max_lower_past_sec = 0
-    lc_out = False
-    tp_out = False
+    lc_executed = False
+    tp_executed = False
     lc_time = 0
     lc_time_past = 0
     lc_res = 0
@@ -136,32 +136,48 @@ def confirm_part(df_r, ana_ans):
             lower = position_target_price - item['low'] if position_target_price > item['low'] else 0
             end_time_of_inspection = item['time_jp']  # 最後に検証した時刻を、検証終了時刻として保管（ループを全て行う場合）
 
-            # 現状プラスかどうか？(クローズ価格で判断）
-            if expected_direction == 1:  # 買い方向を想定した場合
-                pl = item['close'] - position_target_price  # qlがプラスの場合は、勝ち（買いの場合、価格が取得価格より大きければOK）
-            else:
-                pl = position_target_price - item['close']
-            # ただし、TPやLCを超えている場合はそこまでの上限とするものも計算しておく
-            # プラス域（plが正の値はプラス）
-            if pl >= 0:
-                # プラス域の場合
-                if abs(pl) >= abs(tp_range):
-                    # プラス域であり、TPRangeを超えている場合は、TPを適応する
-                    pl_tp_lc_include = tp_range
+            # 変動を確認している間（TPやLCが行われていない状態）
+            if not tp_executed and not lc_executed:
+                # 現状プラスかどうか？(クローズ価格で判断）
+                if expected_direction == 1:  # 買い方向を想定した場合
+                    # print(" こっち", item['high'] - position_target_price, item['high'], position_target_price)
+                    pl = item['close'] - position_target_price  # qlがプラスの場合は、勝ち（買いの場合、価格が取得価格より大きければOK）
+                    # この足でTPかLCかに触れていないかを検討するする（両方触れている場合はLC優先）
+                    if position_target_price - item['low'] > abs(lc_range):
+                        # LCに引っかかっている場合、LCrangeを適応
+                        pl = abs(lc_range) * -1  # マイナス値にして渡す
+                    elif item['high'] - position_target_price > abs(tp_range):
+                        # TPに引っかかっている場合、TPRangeを適応
+                        pl = abs(tp_range)
                 else:
-                    # TP以下の場合は変動分をそのまま記載
-                    pl_tp_lc_include = pl
-            else:
-                # マイナス域の場合
-                if abs(pl) >= abs(lc_range):
-                    # プラス域であり、TPRangeを超えている場合は、TPを適応する
-                    pl_tp_lc_include = lc_range * -1# rangeは正の数指定されている。ここでは累積を今後計算するため、負けはマイナスで格納。
+                    pl = position_target_price - item['close']
+                    if item['high'] - position_target_price > abs(lc_range):
+                        # LCに引っかかっている場合
+                        pl = abs(lc_range) * -1
+                    elif position_target_price - item['low'] > abs(tp_range):
+                        pl = abs(tp_range)
+                # ただし、TPやLCを超えている場合はそこまでの上限とするものも計算しておく
+                # print(" ★★PL", pl)
+                # プラス域（plが正の値はプラス）
+                if pl >= 0:
+                    # プラス域の場合
+                    if abs(pl) >= abs(tp_range):
+                        # プラス域であり、TPRangeを超えている場合は、TPを適応する
+                        pl_tp_lc_include = tp_range
+                    else:
+                        # TP以下の場合は変動分をそのまま記載
+                        pl_tp_lc_include = pl
                 else:
-                    # TP以下の場合は変動分をそのまま記載
-                    pl_tp_lc_include = pl
+                    # マイナス域の場合
+                    if abs(pl) >= abs(lc_range):
+                        # プラス域であり、TPRangeを超えている場合は、TPを適応する
+                        pl_tp_lc_include = lc_range * -1# rangeは正の数指定されている。ここでは累積を今後計算するため、負けはマイナスで格納。
+                    else:
+                        # TP以下の場合は変動分をそのまま記載
+                        pl_tp_lc_include = pl
 
             # ②最大値や最小値を求めていく
-            if lc_out or tp_out:
+            if lc_executed or tp_executed:
                 # 一回ポジション取得⇒LCかTPありの状態（既にポジションが解消されているような状態）
                 # 注意！position変数は、集計に利用するため、一度TrueにしたらFalseにはしないようにする
                 # ②-1 利確orロスカが既に入っている場合は、ループは最後まで回し、全期間での最大最小を求める（24/2/14まではBreakしていた）
@@ -198,14 +214,15 @@ def confirm_part(df_r, ana_ans):
                     lc_jd = lower if expected_direction == 1 else upper  # 方向が買(expect=1)の場合、LCはLower方向。
                     if lc_jd > lc_range:  # ロスカが成立する場合
                         print(" 　LC★", item['time_jp'], lc_range)
-                        lc_out = True
+                        lc_executed = True
                         lc_time = item['time_jp']
                         lc_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
                         lc_res = lc_range
                 if tp_range != 0:  # TP設定あるの場合、利確に引っかかるかを検討
                     tp_jd = upper if expected_direction == 1 else lower  # 方向が買(expect=1)の場合、LCはLower方向。
                     if tp_jd > tp_range:
-                        if lc_out:
+                        if lc_executed:
+                            # LC成立時は何もしない（LCの数字を優先する）
                             pass
                             # # LC Range成立時でもTPと並立カウントするか、上書きとする場合（このブロックをコメントイン）
                             # printf(" 　TP★", item['time_jp'], tp_range)
@@ -220,9 +237,9 @@ def confirm_part(df_r, ana_ans):
                             # lc_time_past = 0
                             # lc_res = 0
                         else:
-                            # LC成立時はLCを優先する（厳しめ）
+                            # LCが成立してなければ、TPを成立させる
                             print(" 　TP★", item['time_jp'], tp_range)
-                            tp_out = True
+                            tp_executed = True
                             tp_time = item['time_jp']
                             tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
                             tp_res = tp_range
@@ -276,11 +293,11 @@ def confirm_part(df_r, ana_ans):
         "max_minus": max_minus,
         "max_minus_time": max_minus_time,
         "max_minus_past_time": max_minus_past_sec,
-        "lc": lc_out,
+        "lc": lc_executed,
         "lc_time": lc_time,
         "lc_time_past": lc_time_past,
         "lc_res": lc_res,
-        "tp": tp_out,
+        "tp": tp_executed,
         "tp_time": tp_time,
         "tp_time_past": tp_time_past,
         "tp_res": tp_res,
@@ -403,7 +420,7 @@ def main():
     all_ans = []
     print("ループ処理")
     for i in range(len(df_r)):
-        print("■■■", i, i + need_analysis_num, len(df_r))
+        print("■■■■■■■■■■■■", i, i + need_analysis_num, len(df_r))
         if i + need_analysis_num <= len(df_r):  # 検証用の行数が確保できていれば,検証へ進む
             ans = inspection_and_confirm(df_r[i: i + need_analysis_num])  # ★チェック関数呼び出し
             all_ans.append(ans)
@@ -423,28 +440,23 @@ def main():
 
 
     # 結果の簡易表示用
+    tk.line_send("■■inspection fin", )  # LINEは先に送っておく（ログの最終行に表示されないように、先に表示）
     print("★★★RESULT★★★")
     fin_time = datetime.datetime.now()
     fd_forview = ans_df[ans_df["take_position_flag"] == True]  # 取引有のみを抽出
     if len(fd_forview) == 0:
         return 0
-    print("startTime", gl_start_time)
-    print("finTime", fin_time)
-    print("検証期間", df_r.iloc[0]['time_jp'], "-", df_r.iloc[-1]['time_jp'])
 
-    print("maxPlus", fd_forview['max_plus'].sum())
-    print("maxMinus", fd_forview['max_minus'].sum())
-    print("realTP_Plus", fd_forview['tp_res'].sum())
-    print("realLC_Minus", fd_forview['lc_res'].sum())
-    print("realAllPL",  fd_forview['pl'].sum())
-    print("realAllPL_includeTPLC", fd_forview['pl_tp_lc_include'].sum())
+    print("maxPlus", fd_forview['max_plus'].sum(), "maxMinus", fd_forview['max_minus'].sum())
+    print("realTP_Plus", fd_forview['tp_res'].sum(), "realLC_Minus", fd_forview['lc_res'].sum())
     # 回数
-    print("TotalTakePositionFlag", len(fd_forview))
-    print("TotalTakePosition", len(fd_forview[fd_forview["position"] == True]))
-    print("tpTimes", len(fd_forview[fd_forview["tp"] == True]))
-    print("lcTimes", len(fd_forview[fd_forview["lc"] == True]))
-    tk.line_send("■■inspection fin", )
+    print("startTime", gl_start_time , "finTime", fin_time)
+    print("TakePositionFlag", len(fd_forview), "TakePosition", len(fd_forview[fd_forview["position"] == True]))
+    print("tpTimes", len(fd_forview[fd_forview["tp"] == True]),"lcTimes", len(fd_forview[fd_forview["lc"] == True]))
+    print("realAllPL",  round(fd_forview['pl'].sum(), 3),
+          "realAllPL_includeTPLC", round(fd_forview['pl_tp_lc_include'].sum(), 3))
 
+    print("検証期間", df_r.iloc[0]['time_jp'], "-", df_r.iloc[-1]['time_jp'])
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
 gl_count = 225 + 2000
@@ -453,7 +465,11 @@ gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
 gl_target_time = datetime.datetime(2023, 8, 6, 16, 35, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
-# ■■方法の指定      datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
+# gl_target_time = datetime.datetime(2024, 8, 10, 0, 15, 6)  # テスト用（ダブルトップあり）
+# ダブルトップありの例の時間　datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
+# 結構負ける時間　datetime.datetime(2023, 8, 6, 16, 35, 6)
+
+# ■■方法の指定
 gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）
 
 # Mainスタート
