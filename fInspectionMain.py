@@ -100,7 +100,7 @@ def Inspection_test(df_r):
             'priority': 0,
             "decision_price": now_price,
             "name": "",
-            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.01}
+            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.01}
     }
     flag_and_orders = {"take_position_flag": False, "exe_order": basic, "exe_orders": []}
 
@@ -196,7 +196,8 @@ def Inspection_test_predict_line(df_r):
             'priority': 0,
             "decision_price": now_price,
             "decision_time": df_r.iloc[0]['time_jp'],
-            "name": ""
+            "name": "",
+        "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012}
     }
     flag_and_orders = {"take_position_flag": False, "exe_order": basic, "exe_orders": []}
 
