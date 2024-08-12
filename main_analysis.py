@@ -256,7 +256,7 @@ def inspection_and_confirm(df_r):
 
 
     # 各数の定義
-    res_part_low = 25  # 結果解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]
+    res_part_low = 26  # 結果解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]  必要な行が２５行なら、＋１のあたい（２６とする）
     analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])
     res_part_df = df_r[: res_part_low + 1]  # 終わりは１行ラップさせる(理由は上記で説明）
     analysis_part_df = df_r[res_part_low: res_part_low + analysis_part_low]
@@ -378,18 +378,18 @@ def main():
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
 gl_count = 225 + 2000
-gl_times = 1  # Count(最大5000件）を何セット取るか
+gl_times = 10  # Count(最大5000件）を何セット取るか  大体2225×３で１か月位。　
 gl_gr = "M5"  # 取得する足の単位
 # ■■取得時間の指定
-gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2023, 8, 6, 16, 35, 6)   # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_now_time = True  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
+gl_target_time = datetime.datetime(2024, 8, 9, 0, 15, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # datetime.datetime(2024, 8, 10, 0, 15, 6)  # テスト用（ダブルトップあり）
 # datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
 # datetime.datetime(2023, 8, 6, 16, 35, 6) 結構負ける時間　
 # datetime.datetime(2024, 8, 9, 23, 55, 6) # 予測テスト用
 
 # ■■方法の指定
-gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず） False
+gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。
 
 # Mainスタート
 main()

@@ -194,7 +194,8 @@ class Oanda:
             ep = instruments.InstrumentsCandles(instrument=instrument, params=params)
             res_json = self.api.request(ep)  # 結果をjsonで取得
             data_df = pd.DataFrame(res_json['candles'])  # Jsonの一部(candles)をDataframeに変換
-            data_df['time_jp'] = data_df.apply(lambda x: iso_to_jstdt(x, 'time'), axis=1)  # 日本時刻の表示
+            data_df.insert(0, 'time_jp', data_df.apply(lambda x: iso_to_jstdt(x, 'time'), axis=1))
+            # data_df['time_jp'] = data_df.apply(lambda x: iso_to_jstdt(x, 'time'), axis=1)  # 日本時刻の表示
             # 返却
             return {"error": 0, "data": data_df}
 

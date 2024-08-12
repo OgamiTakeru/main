@@ -98,11 +98,11 @@ def mode1():
     # ■TEST用(オーダーを取らないような物。プログラムが止まらないような記述も必要）■
 
     # ■検証を実行し、結果を取得する
-    result_dic = im.Inspection_main3(gl_data5r_df)
+    result_dic = im.wrap_up_Inspection_orders(gl_data5r_df)
 
     # ■ オーダーフラグがない場合は、ここでこの関数は教師終了
     print(result_dic)
-    if not result_dic['take_position_flag'] or not(result_dic['take_position_flag']):
+    if not result_dic['take_position_flag']:
         # 発注がない場合は、終了 (ポケ除け的な部分）
         return 0
     # return 0  # テストモード（動かすがオーダーは入れない）の場合、このリターンをコメントインすし終了させるとオーダーしない。。
