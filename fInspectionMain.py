@@ -100,7 +100,7 @@ def Inspection_test(df_r):
             'priority': 0,
             "decision_price": now_price,
             "name": "",
-            "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.01}
+            "lc_change": []
     }
     flag_and_orders = {"take_position_flag": False, "exe_order": basic, "exe_orders": []}
 
@@ -133,10 +133,13 @@ def Inspection_test(df_r):
         main_order['target'] = 0.01  # LCは広め
         main_order['tp'] = 0.05  # LCは広め
         main_order['lc'] = 0.05  # LCは広め
-        main_order['expected_direction'] = line_result['latest_line']['line_direction'] * 1  # -
+        main_order['expected_direction'] = line_result['latest_line']['line_direction'] * -1  # -
         main_order['priority'] = line_result['latest_line']['line_strength']
         main_order['units'] = basic['units'] * 2
         main_order['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance"
+        main_order["lc_change"] = [
+            {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.01}
+        ]
         # 注文を配列に追加
         exe_orders_arr.append(f.order_finalize(main_order))
         print(" ★★ORDER PRINT")
@@ -186,18 +189,18 @@ def Inspection_test_predict_line(df_r):
     # 返却値を設定しておく
     # テストでは、Orderは配列で渡し、中身はBasicの中身をfinalizeしたものを利用する）
     exe_orders_arr = []  # 配列
-    basic = {
+    basic = {  # 探索のほうだよ
             "target": 0.00,
-            "type": "STOP",
-            "units": 100,
+            "type": "LIMIT",
+            "units": 150,
             "expected_direction": 1,
             "tp": 0.10,
-            "lc": 0.10,
+            "lc": 0.05,
             'priority': 0,
             "decision_price": now_price,
             "decision_time": df_r.iloc[0]['time_jp'],
             "name": "",
-        "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012}
+            "lc_change": []
     }
     flag_and_orders = {"take_position_flag": False, "exe_order": basic, "exe_orders": []}
 
@@ -224,16 +227,23 @@ def Inspection_test_predict_line(df_r):
     print("結果", line_result['latest_flag'])
     # print(line_result)
 
-    if line_result['latest_line']['line_strength'] > 1:  # >= 1.5 < 1
-        # 直近がLINEを形成し、さらにそれが強いラインの場合。 これはLINE探索の方！！！！
+    if line_result['latest_line']['line_strength'] >= 2:  # >= 1.5 < 1
+        # 直近がLINEを形成し、さらにそれが強いラインの場合。 これは★LINE探索の方！！！！
         main_order = basic.copy()
         main_order['target'] = line_result['latest_line']['line_price']  # LCは広め
-        main_order['tp'] = 0.09  # LCは広め
-        main_order['lc'] = 0.09  # LCは広め
-        main_order['expected_direction'] = line_result['latest_line']['line_direction'] * 1  # -
+        main_order['tp'] = 0.07  # LCは広め
+        main_order['lc'] = 0.07  # LCは広め
+        main_order['tr_range'] = 0.10  # 要検討
+        main_order['expected_direction'] = line_result['latest_line']['latest_direction'] * -1  # -
         main_order['priority'] = line_result['latest_line']['line_strength']
-        main_order['units'] = basic['units'] * 2
-        main_order['name'] = str(line_result['latest_line']['line_strength']) + "Main_resistance"
+        main_order['units'] = basic['units'] * 3
+        main_order['name'] = str(line_result['latest_line']['line_strength']) + "LINE探索"
+        main_order['test_latest_direction'] = line_result['latest_line']["latest_direction"]
+        main_order['lc_change'] = [
+            {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.05},
+            {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012},
+            {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08}
+        ]
         # 注文を配列に追加
         exe_orders_arr.append(f.order_finalize(main_order))
         print(" ★★ORDER PRINT")
@@ -272,11 +282,11 @@ def wrap_up_Inspection_orders(df_r):
 
     # 今(上記二つの解析)は明確にタイミングが異なり、同時の成立がないため、独立して返却が可能
     if res['take_position_flag']:
-        tk.line_send("通常Flag成立")
+        # tk.line_send("通常Flag成立")
         for_res = res
     elif res_predict_line['take_position_flag']:
         tk.line_send("予測値あり", res_predict_line['exe_order']['target'], res_predict_line['exe_order']['expected_direction'],
-                     "LINE_STRENGTH:", res_predict_line['line_strength'])
+                     "LINE_STRENGTH:", res_predict_line['line_strength'], "latest_dir:", res_predict_line['latest_line']['latest_direction'])
         for_res = res_predict_line
 
     return for_res

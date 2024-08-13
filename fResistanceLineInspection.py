@@ -359,16 +359,26 @@ def search_latest_line(*args):
     # 各変数の設定
     now_latest_dir = peaks_all[0]['direction']  # 現在のLatest_dir。近い将来river_dirとなるはずのもの。
     expected_latest_dir = now_latest_dir * -1  # 折り返し直後の部分（今までcount=2で判定した部分の方向)
+    # ★探索モード（MAX⇒MINかMIN⇒MAXか）の変更
+    max_to_min_search = True  # Latestが上昇方向の場合、Maxから降りるように調査する＝加工の場合はMinから上るように調査(Falseで逆になる)
+
     if now_latest_dir == 1:
         # latestが登り方向の場合
         search_min_price = peaks_all[0]['peak']  # 探索する最低値。
         search_max_price = peaks_all[0]['peak'] + 0.1  # 探索する最高値
-        target_price = search_max_price  # MAX側から調査
+        if max_to_min_search:
+            # 簡単に切り替えられるように（変更点が複数あるため、一括で変更できるようにした）
+            target_price = search_max_price  # MAX側から調査（登りの場合、上から調査）
+        else:
+            target_price = search_min_price  # 登りの場合でもMinからスタート
     else:
         # latestが下り方向の場合
         search_min_price = peaks_all[0]['peak'] - 0.1  # 探索する最低値。
         search_max_price = peaks_all[0]['peak']  # 探索する最高値
-        target_price = search_min_price  # 下（Min）からスタート
+        if max_to_min_search:
+            target_price = search_min_price  # 下（Min）からスタート
+        else:
+            target_price = search_max_price  # 下りの場合でもMAXからスタート
     grid = 0.01  # 探索する幅（細かすぎると、、計算遅くなる？）
     next_river_peak_time = peaks_all[0]['time']  # 将来riverになるもの
 
@@ -572,7 +582,7 @@ def search_latest_line(*args):
             "line_strength": line_strength,
             "line_price": target_price,
             "line_direction": target_dir,  # 1の場合UpperLine（＝上値抵抗）
-            "latest_direction": target_dir * -1,  # lineDirectionとは異なる(基本は逆になる）
+            "latest_direction": target_dir,  # latestの方向（近々Riverになるもの）
             "line_base_time": target_df.iloc[0]['time'],  # 推定のため、これは算出不可（テキトーな値にする）
             "latest_foot_gap": 99 if len(same_list) == 0 else same_list[0]['count_foot_gap'],
             "latest_time": peaks_all[0]['time'],  # 実際の最新時刻
@@ -593,12 +603,18 @@ def search_latest_line(*args):
             }
         else:
             print("  ★ダメでした", target_price)
-        # ★ループ処理
+        # ★ループ処理 （この処理は訳363行目当たりで宣言される、max_to_min_searchを基にする）
         if now_latest_dir == 1:
             # latestが登り方向の場合
-            target_price = + target_price - grid
+            if max_to_min_search:
+                target_price = - grid  # 登りの場合は、上から探していく
+            else:
+                target_price = + grid  # 登りの場合でも、下から探していく。(初期思想とは逆）
         else:
-            target_price = + target_price + grid
+            if max_to_min_search:
+                target_price = + grid  # 下りの場合は、下から探していく
+            else:
+                target_price = - grid  # 下りの場合でも、上から探していく ( 初期思想とは逆）
     # ダメな場合の返却
     return {
         "latest_flag": False,

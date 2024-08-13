@@ -98,11 +98,11 @@ def mode1():
     # ■TEST用(オーダーを取らないような物。プログラムが止まらないような記述も必要）■
 
     # ■検証を実行し、結果を取得する
-    result_dic = im.wrap_up_Inspection_orders(gl_data5r_df)
+    inspection_result_dic = im.wrap_up_Inspection_orders(gl_data5r_df)
 
     # ■ オーダーフラグがない場合は、ここでこの関数は教師終了
-    print(result_dic)
-    if not result_dic['take_position_flag']:
+    print(inspection_result_dic)
+    if not inspection_result_dic['take_position_flag']:
         # 発注がない場合は、終了 (ポケ除け的な部分）
         return 0
     # return 0  # テストモード（動かすがオーダーは入れない）の場合、このリターンをコメントインすし終了させるとオーダーしない。。
@@ -114,11 +114,11 @@ def mode1():
         # 既存のポジションがある場合、プライオリティ次第で注文を発行する
         # ポジション後２５分以内の物は、いかなる場合も新ポジションは発行しない
         if pInfo['max_position_time_sec'] < 1500:
-            tk.line_send("★ポジションありの為様子見", pInfo['max_position_time_sec'], classPosition.position_check(classes), result_dic['memo'])
+            tk.line_send("★ポジションありの為様子見", pInfo['max_position_time_sec'], classPosition.position_check(classes))
             return 0
         # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
-        if result_dic['max_priority'] > pInfo['max_priority']:
-            tk.line_send("★ポジションありだが置換",classPosition.position_check(classes), result_dic['memo'])
+        if inspection_result_dic['max_priority'] > pInfo['max_priority']:
+            tk.line_send("★ポジションありだが置換",classPosition.position_check(classes))
 
     # ■既存のオーダーがある場合（強制的に削除）
     classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
@@ -126,21 +126,24 @@ def mode1():
     # 注文を実行する
     gl_trade_num += 1
     line_send = ""  # LINE送信用の注文結果の情報
-    for n in range(len(result_dic['exe_orders'])):  # ここ（正規実行）では「配列」でOrder情報を受け取る（testでは辞書単品で受け取る）　
-        res_dic = classes[n].order_plan_registration(result_dic['exe_orders'][n])  #
+    for n in range(len(inspection_result_dic['exe_orders'])):  # ここ（正規実行）では「配列」でOrder情報を受け取る（testでは辞書単品で受け取る）　
+        res_dic = classes[n].order_plan_registration(inspection_result_dic['exe_orders'][n])  #
         print(" オーダー結果")
         print(res_dic)
         # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
+        # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
         line_send = line_send + "◇" + res_dic['order_name'] + \
-                    "(指定価格:" + str(res_dic['order_result']['price']) + \
+                    "(指定価格:" + str(res_dic['order_result']['price']) + ")"+\
                     ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
                     ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
+                    "(" + round(abs(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price'] - res_dic['order_result']['price']), 2) + ")" + \
                     ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
+                    "(" + round(abs(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price'] - res_dic['order_result']['price']), 2)  + ")" + \
                     ", OrderID:" + str(res_dic['order_id']) + \
                     ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "), "
     # 注文結果を送信す
-    tk.line_send("★オーダー発行", gl_trade_num, "回目: ", result_dic['memo'], " 　　　",  line_send)
-
+    tk.line_send("★オーダー発行", gl_trade_num, "回目: ",  " 　　　",  line_send)
+    #tk.line_send("★オーダー発行", gl_trade_num, "回目: ", inspection_result_dic['memo'], " 　　　", line_send)
     print("MODE1 END")
     print("")
 
