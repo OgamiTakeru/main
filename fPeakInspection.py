@@ -10,17 +10,19 @@ def peaks_collect_main(*args):
     """
     引数は、
     第一引数は、データフレームとする（dr_f)
-    第二引数は任意で、ピークの必要最低個数を受け取る（max_peak_num)　これはループ時間の削減が目的。
+    第二引数は任意で、ピークの最低必要個数を受け取る（max_peak_num)　これはループ時間の削減が目的。
     これらは配列として受け取る。(ちなみに辞書で受け取る場合は**argsで受け取る必要あり
     :param agrs:
     :return:
     """
+    # peaksを求める
     if len(args)==2:
         print(" peaks数指定あり", args[1])
         all_peaks = peaks_collect_all(args[0], args[1])
     else:
         # print(" peaks数指定なし")
         all_peaks = peaks_collect_all(args[0])
+    # UpperとLowerでセパレートしておく（念のため）
     separated_peaks = peaks_collect_separate(all_peaks)
     # 表示用
     peaks = separated_peaks['all_peaks']

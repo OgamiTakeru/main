@@ -2,13 +2,9 @@ import pandas as pd
 import datetime
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
-import making as mk
-import fDoublePeaks as dp
-import fResistanceLineInspection as ri
-import fInspectionMain as im
+import fInspection_order_Main as im
 import fGeneric as f
-import test as t
-import fBigMoveInspction as bm
+import fResistanceLineInspection as ri
 
 # グローバルでの宣言
 oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
@@ -17,8 +13,6 @@ gl_start_time = datetime.datetime.now()
 gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
 gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
             str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + "_" + str(gl_now.second).zfill(2)
-
-
 
 # 解析パート
 def analysis_part(df_r):
@@ -40,7 +34,10 @@ def analysis_part(df_r):
     # est = ri.search_latest_line(df_r)
     # print("結果これやで", est)
     # return est
-    return im.Inspection_test_predict_line(df_r)
+    # return im.test(df_r)
+    # return im.inspection_river_line_make_order(df_r)
+    return im.wrap_up_inspection_orders(df_r)
+    # return im.Inspection_test(df_r)
 
 
 # 検証パート
@@ -377,18 +374,18 @@ def main():
     print("検証期間", df_r.iloc[0]['time_jp'], "-", df_r.iloc[-1]['time_jp'])
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
-gl_count = 225 + 2000
-gl_times = 3  # Count(最大5000件）を何セット取るか  大体2225×３で１か月位。　
-gl_gr = "M5"  # 取得する足の単位
-# ■■取得時間の指定
-gl_now_time = True  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 8, 9, 0, 15, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # datetime.datetime(2024, 8, 10, 0, 15, 6)  # テスト用（ダブルトップあり）
 # datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
 # datetime.datetime(2023, 8, 6, 16, 35, 6) 結構負ける時間　
 # datetime.datetime(2024, 8, 9, 23, 55, 6) # 予測テスト用
-
+gl_gr = "M5"  # 取得する足の単位
+gl_count = 225 + 2000
+gl_times = 3  # Count(最大5000件）を何セット取るか  大体2225×３で１か月位。　
+# ■■取得時間の指定
+gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
+gl_target_time = datetime.datetime(2024, 8, 18, 15, 00, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定
+gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。
 gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。
 
 # Mainスタート

@@ -191,7 +191,7 @@ def print_arr(arr):
     """
     for i in range(len(arr)):
         # print("ー",  i,"ーーーーーーーーーーーーーーーーー")
-        print(i, arr[i])
+        print("    ", i, arr[i])
     # print("↑ーーーーーーーーーーーーーーーーーーーーーーー")
 
 
@@ -234,6 +234,25 @@ def cal_at_least_most(min_value, now_value, most_value):
 
 def print_json(dic):
     print(json.dumps(dic, indent=2, ensure_ascii=False))
+
+
+def order_base(now_prie):
+    """
+    引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
+    従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
+    """
+    return {
+            "target": 0.00,
+            "type": "STOP",
+            "units": 100,
+            "expected_direction": 1,
+            "tp": 0.10,
+            "lc": 0.10,
+            'priority': 0,
+            "decision_price": now_prie,
+            "name": "",
+            "lc_change": []
+    }
 
 
 def order_finalize(order_base):

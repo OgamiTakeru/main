@@ -12,7 +12,7 @@ import fBlockInspection as t  # とりあえずの関数集
 import fGeneric as f
 import fPeakInspection as p
 import fDoublePeaks as dp
-import fInspectionMain as im
+import fInspection_order_Main as im
 import making as ins
 import fResistanceLineInspection as ri
 
@@ -98,7 +98,7 @@ def mode1():
     # ■TEST用(オーダーを取らないような物。プログラムが止まらないような記述も必要）■
 
     # ■検証を実行し、結果を取得する
-    inspection_result_dic = im.wrap_up_Inspection_orders(gl_data5r_df)
+    inspection_result_dic = im.wrap_up_inspection_orders(gl_data5r_df)
 
     # ■ オーダーフラグがない場合は、ここでこの関数は教師終了
     print(inspection_result_dic)
@@ -136,9 +136,9 @@ def mode1():
                     "(指定価格:" + str(res_dic['order_result']['price']) + ")"+\
                     ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
                     ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
-                    "(" + round(abs(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price'] - res_dic['order_result']['price']), 2) + ")" + \
+                    "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
                     ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
-                    "(" + round(abs(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price'] - res_dic['order_result']['price']), 2)  + ")" + \
+                    "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
                     ", OrderID:" + str(res_dic['order_id']) + \
                     ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "), "
     # 注文結果を送信す
@@ -246,15 +246,17 @@ def exe_manage():
             else:
                 d5_df = d5_df['data']
             # ↓時間指定
-            # jp_time = datetime.datetime(2023, 9, 20, 12, 39, 0)
-            # euro_time_datetime = jp_time - datetime.timedelta(hours=9)
-            # euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-            # param = {"granularity": "M5", "count": 50, "to": euro_time_datetime_iso}
-            # d5_df = oa.InstrumentsCandles_exe("USD_JPY", param)
-            d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)
+            jp_time = datetime.datetime(2024, 8, 14, 8, 20, 0)
+            euro_time_datetime = jp_time - datetime.timedelta(hours=9)
+            euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
+            param = {"granularity": "M5", "count": 50, "to": euro_time_datetime_iso}
+            d5_df = oa.InstrumentsCandles_exe("USD_JPY", param)
+            # ↑時間指定
+            # ↓現在時刻
+            # d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)
+            # ↑現在時刻
             d5_df = d5_df['data']
             print(d5_df.head(5))
-            # ↑時間指定
 
             gl_data5r_df = d5_df.sort_index(ascending=False)  # 対象となるデータフレーム（直近が上の方にある＝時間降順）をグローバルに
             d5_df.to_csv(tk.folder_path + 'main_data5.csv', index=False, encoding="utf-8")  # 直近保存用
@@ -303,7 +305,7 @@ gl_live = "Pra"
 gl_first_time = ""  # 初回の時間を抑えておく（LINEで見やすくするためだけ）
 gl_latest_exe_time = 0  # 実行タイミングに幅を持たせる（各５の倍数分の６秒~３０秒で１回実行）に利用する
 gl_latest_trigger_time = datetime.datetime.now() + datetime.timedelta(minutes=-6)  # 新規オーダーを入れてよいかの確認用
-gl_peak_memo = {"memo_latest_past":"", "memo_mini_gap_past": "", "memo_para": ""}
+gl_peak_memo = {"memo_latest_past": "", "memo_mini_gap_past": "", "memo_para": ""}
 
 # 倍率関係
 unit_mag = 10 # 基本本番環境で動かす。unitsを低めに設定している為、ここで倍率をかけれる。

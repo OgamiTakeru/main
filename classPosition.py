@@ -5,7 +5,11 @@ import fGeneric as f
 
 class order_information:
     total_yen = 0  # トータルの円
+    total_yen_max = 0
+    total_yen_min = 900000000
     total_PLu = 0  # PL/Unitの累計値
+    total_PLu_max = 0
+    total_PLu_min = 900000000
     position_num = 0  # 何個のポジションを持ったか
 
     def __init__(self, name, oa):
@@ -251,8 +255,18 @@ class order_information:
         self.life_set(False)
         # （１）
         if trade_latest['state'] == "CLOSED":
+            # Totalの円を求める
             order_information.total_yen = round(order_information.total_yen + float(trade_latest['realizedPL']), 2)
+            if order_information.total_yen > order_information.total_yen_max:
+                order_information.total_yen_max = order_information.total_yen  # 過去の勝ちの最大値を取得しておく(気分的に）
+            elif order_information.total_yen < order_information.total_yen_min:
+                order_information.total_yen_min = order_information.total_yen
+            # TotalのPLuを求める
             order_information.total_PLu = round(order_information.total_PLu + trade_latest['PLu'], 3)
+            if order_information.total_PLu > order_information.total_PLu_max:
+                order_information.total_PLu_max = order_information.total_PLu
+            elif order_information.total_PLu < order_information.total_PLu_min:
+                order_information.total_PLu_min = order_information.total_PLu
         else:
             # 価格情報の更新
             order_information.total_yen = round(order_information.total_yen + float(trade_latest['unrealizedPL']), 2)
@@ -267,8 +281,10 @@ class order_information:
             res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past'])
             res4 = "【今回結果】" + str(trade_latest['PLu']) + "," + str(trade_latest['realizedPL']) + "円\n"
             res5 = "【合計】計" + str(order_information.total_PLu) + ",計" + str(order_information.total_yen) + "円"
+            res6 = "【合計】累積最大円:" + str(order_information.total_yen_max) + ",最小円:" + str(order_information.total_yen_min)
+            res7 = "【合計】累計最大PL:" + str(order_information.total_PLu_max) + ",最小PL:" + str(order_information.total_PLu_min)
             tk.line_send(" ▲解消:", self.name, '\n', f.now(), '\n',
-                         res4, res5, res1, id_info, res2, res3)
+                         res4, res5, res1, id_info, res2, res3, res6, res7)
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
             res1 = "強制Close【Unit】" + str(trade_latest['initialUnits'])
@@ -278,8 +294,13 @@ class order_information:
             res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past'])
             res4 = "【今回結果】" + str(trade_latest['PLu']) + "," + str(trade_latest['unrealizedPL']) + "円\n"
             res5 = "【合計】計" + str(order_information.total_PLu) + ",計" + str(order_information.total_yen) + "円"
+            res6 = "【合計】累積最大円" + str(order_information.total_yen_max) + ",最小円" + str(
+                order_information.total_yen_min)
+            res7 = "【合計】累計最大PL" + str(order_information.total_PLu_max) + ",最小PL" + str(
+                order_information.total_PLu_min)
+
             tk.line_send(" ▲解消:", self.name, '\n', f.now(), '\n',
-                         res4, res5, res1, id_info, res2, res3)
+                         res4, res5, res1, id_info, res2, res3, res6, res7)
 
     def close_trade(self, units):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -565,20 +586,22 @@ def position_check(classes):
     not_open_positions = []
     max_priority = 0
     max_position_time_sec = 0
-    summary_diretcion = 1
+    total_pl = 0
     for item in classes:
         if item.t_state == "OPEN":
-            print(" ★★★", item.t_id)
-            open_positions.append({"name":item.name, "priority": item.priority})
+            open_positions.append({"name": item.name, "priority": item.priority})
             # 方向だけ取得（ポジションを持った時に、反対側のオーダーを消しあ
             if item.priority > max_priority:
                 max_priority = item.priority  # ポジションの有る最大のプライオリティを取得する
             if item.t_time_past_sec > max_position_time_sec:
                 max_position_time_sec = item.t_time_past_sec  # 何分間持たれているポジションか
+            # トータルの含み損益を表示する
+            total_pl = total_pl + float(item.t_unrealize_pl)
+            print("  ポジション状態", item.t_id, ",PL:", total_pl)
         else:
             not_open_positions.append(item.name)
     # 結果の集約
-    if len(open_positions) != 0 :
+    if len(open_positions) != 0:
         ans = True  # ポジションが一つでもOpenになっている場合は、True
     else:
         ans = False
@@ -587,7 +610,8 @@ def position_check(classes):
         "ans": ans,
         "open_positions": open_positions,
         "max_priority": max_priority,
-        "max_position_time_sec": max_position_time_sec
+        "max_position_time_sec": max_position_time_sec,
+        "total_pl": total_pl,
     }
 
 
