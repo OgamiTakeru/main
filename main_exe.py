@@ -98,6 +98,7 @@ def mode1():
     # ■TEST用(オーダーを取らないような物。プログラムが止まらないような記述も必要）■
 
     # ■検証を実行し、結果を取得する
+    # なお{"take_position_flag":Boo, "exe_orders":[], "exe_order":{}}が返却値の予定
     inspection_result_dic = im.wrap_up_inspection_orders(gl_data5r_df)
 
     # ■ オーダーフラグがない場合は、ここでこの関数は教師終了
@@ -117,8 +118,8 @@ def mode1():
             tk.line_send("★ポジションありの為様子見", pInfo['max_position_time_sec'], classPosition.position_check(classes))
             return 0
         # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
-        if inspection_result_dic['max_priority'] > pInfo['max_priority']:
-            tk.line_send("★ポジションありだが置換",classPosition.position_check(classes))
+        # if inspection_result_dic['max_priority'] > pInfo['max_priority']:
+        #     tk.line_send("★ポジションありだが置換", classPosition.position_check(classes))
 
     # ■既存のオーダーがある場合（強制的に削除）
     classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う

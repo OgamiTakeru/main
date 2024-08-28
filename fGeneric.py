@@ -4,6 +4,25 @@ from plotly.subplots import make_subplots  # draw_graph
 import plotly.graph_objects as go  # draw_graph
 
 
+def order_base(now_prie):
+    """
+    引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
+    従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
+    """
+    return {
+            "target": 0.00,
+            "type": "STOP",
+            "units": 1000,
+            "expected_direction": 1,
+            "tp": 0.10,
+            "lc": 0.10,
+            'priority': 0,
+            "decision_price": now_prie,
+            "name": "",
+            "lc_change": []
+    }
+
+
 def draw_graph(mid_df):
     """
     ローソクチャーを表示する関数。
@@ -124,7 +143,6 @@ def cal_str_time_gap(time_str_1, time_str_2):
     }
 
 
-
 def seek_time_gap_seconds(time1, time2):
     """
     time1 と　time2の時間差を求める（time1とtime2の大小はこの関数で確認する）
@@ -234,25 +252,6 @@ def cal_at_least_most(min_value, now_value, most_value):
 
 def print_json(dic):
     print(json.dumps(dic, indent=2, ensure_ascii=False))
-
-
-def order_base(now_prie):
-    """
-    引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
-    従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
-    """
-    return {
-            "target": 0.00,
-            "type": "STOP",
-            "units": 100,
-            "expected_direction": 1,
-            "tp": 0.10,
-            "lc": 0.10,
-            'priority': 0,
-            "decision_price": now_prie,
-            "name": "",
-            "lc_change": []
-    }
 
 
 def order_finalize(order_base):

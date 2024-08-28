@@ -3,7 +3,7 @@ import datetime
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
 import fInspection_order_Main as im
-import fGeneric as f
+import fGeneric as gene
 import fResistanceLineInspection as ri
 
 # グローバルでの宣言
@@ -35,10 +35,10 @@ def analysis_part(df_r):
     # print("結果これやで", est)
     # return est
     # return im.test(df_r)
-    # return im.inspection_river_line_make_order(df_r)
-    return im.wrap_up_inspection_orders(df_r)
-    # return im.Inspection_test(df_r)
-
+    # return ri.find_predict_line_based_latest(df_r)
+    # return im.wrap_up_inspection_orders(df_r)
+    # return ri.find_latest_line_based_river(df_r)
+    return im.inspection_predict_line_make_order(df_r)
 
 # 検証パート
 def confirm_part(df_r, ana_ans):
@@ -137,12 +137,12 @@ def confirm_part(df_r, ana_ans):
                 # 全区間でPlusを更新する場合、記録する
                 max_plus_all_time = plus
                 max_plus_time_all_time = item['time_jp']
-                max_plus_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                max_plus_past_sec_all_time = gene.seek_time_gap_seconds(item['time_jp'], start_time)
             elif abs(minus) > abs(max_minus_all_time):
                 # 全区間でminusを更新する場合、記録する
                 max_minus_all_time = minus  # 最小値入れ替え
                 max_minus_time_all_time = item['time_jp']
-                max_minus_past_sec_all_time = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                max_minus_past_sec_all_time = gene.seek_time_gap_seconds(item['time_jp'], start_time)
 
             # ■■通常のPositionの管理。Positionがあり、TPやLCがない、通常のポジション状態を記録していく
             if not lc_executed and not tp_executed:
@@ -151,12 +151,12 @@ def confirm_part(df_r, ana_ans):
                     # 全区間でPlusを更新する場合、記録する
                     max_plus = plus
                     max_plus_time = item['time_jp']
-                    max_plus_past_sec = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                    max_plus_past_sec = gene.seek_time_gap_seconds(item['time_jp'], start_time)
                 elif abs(minus) > abs(max_minus):
                     # 全区間でminusを更新する場合、記録する
                     max_minus = minus  # 最小値入れ替え
                     max_minus_time = item['time_jp']
-                    max_minus_past_sec = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                    max_minus_past_sec = gene.seek_time_gap_seconds(item['time_jp'], start_time)
                 # ■■■PLを更新する（これはポジション所持中のみの実行）
                 if expected_direction == 1:
                     # 買い方向の場合
@@ -172,7 +172,7 @@ def confirm_part(df_r, ana_ans):
                         print(" 　LC★", item['time_jp'], lc_range)
                         lc_executed = True
                         lc_time = item['time_jp']
-                        lc_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                        lc_time_past = gene.seek_time_gap_seconds(item['time_jp'], start_time)
                         lc_res = lc_range
                         pl_tp_lc_include = lc_range * -1  # LCにかかった瞬間を取るため。（pcは正負で考慮するため、lc_rangeは*-1)
                 if tp_range != 0:  # TP設定あるの場合、利確に引っかかるかを検討
@@ -185,7 +185,7 @@ def confirm_part(df_r, ana_ans):
                             print(" 　TP★", item['time_jp'], tp_range)
                             tp_executed = True
                             tp_time = item['time_jp']
-                            tp_time_past = f.seek_time_gap_seconds(item['time_jp'], start_time)
+                            tp_time_past = gene.seek_time_gap_seconds(item['time_jp'], start_time)
                             tp_res = tp_range
                             pl_tp_lc_include = tp_range  # LCにかかった瞬間を取るため。
         else:
@@ -228,8 +228,9 @@ def confirm_part(df_r, ana_ans):
 
 
 # チェック関数のメイン用(検証と確認を呼び出す）
-def inspection_and_confirm(df_r):
+def inspection_and_confirm(df_r, i):
     """
+    ・第二期引数には、今何回目の処理かを受け取る（何回目かを表示したかったため）
     ・この関数は、解析と検証をセットで行う場合に呼び出される（解析のみの場合は、別の関数を利用する）
     ・受け取ったデータフレームを解析部と結果部に分割し、それぞれの結果をマージし、CSVに吐き出す。
     　そのCSV作成時は、FlagがFalseについてもデータを残す仕様にしているため、
@@ -249,12 +250,10 @@ def inspection_and_confirm(df_r):
 
     :return:
     """
-    # モードによる引数の差分を処理
-
-
     # 各数の定義
-    res_part_low = 26  # 結果解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]  必要な行が２５行なら、＋１のあたい（２６とする）
-    analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])
+    global gl_inspection_start_time, gl_inspection_end_time
+    res_part_low = gl_res_part_low + 1  # 結果解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]  必要な行が２５行なら、＋１のあたい（２６とする）
+    analysis_part_low = gl_analysis_part_low  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])
     res_part_df = df_r[: res_part_low + 1]  # 終わりは１行ラップさせる(理由は上記で説明）
     analysis_part_df = df_r[res_part_low: res_part_low + analysis_part_low]
     print("　結果照合パート用データ")
@@ -263,6 +262,15 @@ def inspection_and_confirm(df_r):
     print("　解析パート用データ")
     print(analysis_part_df.head(2))
     print(analysis_part_df.tail(2))
+
+    #■ 検証の開始時刻（データ上）と終了時刻を保存しておく（表示用）
+    print(i ,"i")
+    if i == 0:
+        print(" 初回")
+        gl_inspection_start_time = analysis_part_df.iloc[0]['time_jp']
+    else:
+        print("　それ以外")
+        gl_inspection_end_time = analysis_part_df.iloc[0]['time_jp']
 
     # ■解析パート　todo
     analysis_result = analysis_part(analysis_part_df)  # ana_ans={"ans": bool(結果照合要否必須）, "price": }
@@ -290,8 +298,8 @@ def main():
 
     # （０）環境の準備
     # ■■調査用のDFの行数の指定
-    res_part_low = 25  # 解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]。check_mainと同値であること。
-    analysis_part_low = 200  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
+    res_part_low = gl_res_part_low  # 解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]。check_mainと同値であること。
+    analysis_part_low = gl_analysis_part_low  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
     need_analysis_num = res_part_low + analysis_part_low  # 検証パートと結果参照パートの合計。count<=need_analysis_num。
     # ■■取得する足数
     count = gl_count  # 5000
@@ -336,8 +344,9 @@ def main():
     print("ループ処理")
     for i in range(len(df_r)):
         print("■■■■■■■■■■■■", i, i + need_analysis_num, len(df_r))
+        # 処理開始
         if i + need_analysis_num <= len(df_r):  # 検証用の行数が確保できていれば,検証へ進む
-            ans = inspection_and_confirm(df_r[i: i + need_analysis_num])  # ★チェック関数呼び出し
+            ans = inspection_and_confirm(df_r[i: i + need_analysis_num], i)  # ★チェック関数呼び出し
             all_ans.append(ans)
         else:
             print("　終了", i + need_analysis_num, "<=", len(df_r))
@@ -371,7 +380,7 @@ def main():
     print("realAllPL",  round(fd_forview['pl'].sum(), 3),
           "realAllPL_includeTPLC", round(fd_forview['pl_tp_lc_include'].sum(), 3))
 
-    print("検証期間", df_r.iloc[0]['time_jp'], "-", df_r.iloc[-1]['time_jp'])
+    print("検証期間", gl_inspection_end_time, "-", gl_inspection_start_time)
 
 # 条件の設定（スマホからいじる時、変更場所の特定が手間なのであえてグローバルで一番下に記載）
 # datetime.datetime(2024, 8, 10, 0, 15, 6)  # テスト用（ダブルトップあり）
@@ -379,14 +388,21 @@ def main():
 # datetime.datetime(2023, 8, 6, 16, 35, 6) 結構負ける時間　
 # datetime.datetime(2024, 8, 9, 23, 55, 6) # 予測テスト用
 gl_gr = "M5"  # 取得する足の単位
-gl_count = 225 + 2000
-gl_times = 3  # Count(最大5000件）を何セット取るか  大体2225×３で１か月位。　
+gl_inspection_start_time = 0
+gl_inspection_end_time = 0
+
+# 解析と検証に必要な行数
+gl_res_part_low = 25  # 解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]。check_mainと同値であること。
+gl_analysis_part_low = 84  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
+# 取得する行数(1回のテストをしたい場合、指定でもres_part_low + analysis_part_lowが必要）
+gl_count = gl_res_part_low + gl_analysis_part_low + 120
+gl_times = 1  # Count(最大5000件）を何セット取るか  大体2225×３で１か月位。　10時間は120足 1時間は12
 # ■■取得時間の指定
 gl_now_time = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 8, 18, 15, 00, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2024, 8, 27, 8, 30, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定
 gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。
-gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。
+# gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。
 
 # Mainスタート
 main()

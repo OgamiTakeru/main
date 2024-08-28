@@ -1,8 +1,9 @@
+import copy
 import datetime  # 日付関係
 import json
 import numpy as np
 import fBlockInspection as fTurn
-import fGeneric as f
+import fGeneric as gene
 
 
 #　ピーク一覧作成&分割
@@ -16,26 +17,80 @@ def peaks_collect_main(*args):
     :return:
     """
     # peaksを求める
-    if len(args)==2:
-        print(" peaks数指定あり", args[1])
+    if len(args) == 2:
+        print("    (pi)peaks数指定あり", args[1])
         all_peaks = peaks_collect_all(args[0], args[1])
     else:
         # print(" peaks数指定なし")
         all_peaks = peaks_collect_all(args[0])
-    # UpperとLowerでセパレートしておく（念のため）
-    separated_peaks = peaks_collect_separate(all_peaks)
-    # 表示用
-    peaks = separated_peaks['all_peaks']
-    latest = peaks[0]
-    river = peaks[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-    turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
-    flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
-    print("  <対象>:運用モード")
-    print("  Latest", latest)
-    print("  RIVER", river)
-    print("  TURN ", turn)
-    print("  FLOP3", flop3)
-    return separated_peaks
+
+    # all_peaksから大きなデータ（計算に使ったものを付与したもの）を除去しておく
+    for i in range(len(all_peaks)):
+        del all_peaks[i]['ans']
+
+    # 各ピークに、時間的に次のピークの情報を追加していく（ただし入れ子(next(next())になってしまった、入れ替えていくことにする）
+    all_peaks_include_around = []
+    for i in range(len(all_peaks)):
+        # print("現在", all_peaks[i])
+        all_peaks_include_around_base = copy.deepcopy(all_peaks[i])
+        if i == 0:
+            # latestは次がない
+            all_peaks_include_around_base['next'] = {}
+            all_peaks_include_around_base['previous'] = copy.deepcopy(all_peaks[i+1])#['time']
+        elif i == len(all_peaks) - 1:
+            # 最後は前がない
+            all_peaks_include_around_base['next'] = copy.deepcopy(all_peaks[i-1])#['time']
+            all_peaks_include_around_base['previous'] = {}
+        else:
+            # print(" Next", all_peaks[i - 1])
+            # print(" previous", all_peaks[i + 1]['time'])
+            all_peaks_include_around_base['next'] = copy.deepcopy(all_peaks[i-1])#['time']
+            all_peaks_include_around_base['previous'] = copy.deepcopy(all_peaks[i+1])#['time']
+        # 累積して、all_peaksと同様のものを作成する（中身にnextとpreviousがついただけ）
+        all_peaks_include_around.append(all_peaks_include_around_base)
+        # print(" 追加分", all_peaks_include_around_base)
+
+    # ピークの強度を求め、追記しておく（前後が長く、自身が極端に短い場合、一瞬の折り返しとみて強度が弱いこととする）
+    for i in range(len(all_peaks_include_around)):
+        item = all_peaks_include_around[i]
+        curr_gap = item['gap']
+        prev_gap = item['previous'].get('gap', 0)  # previousがある場合はその値と、ない場合は０を返す）
+        next_gap = item['next'].get('gap', 0)  # nextがある場合はその値、ない場合は０を返す
+        # print("  PeakInfoMaking（previous_now(1)_next)", round(prev_gap/curr_gap, 1), 1, round(next_gap/curr_gap, 1),
+        # item['time'])
+        if (prev_gap != 0 and next_gap != 0) and (prev_gap/curr_gap > 3 and next_gap/curr_gap > 3):
+            # どちらかがおかしい場合は、ちょっと除外
+            print("      (pi)強度の低いPeak発見", item['time'])
+            item['peak_strength'] = 1
+        else:
+            # 自身が問題なくても、Nextに除外すべきPeak（Strengthが1）を持つ場合、自身もStrengthを1にする。（previousではない）
+            # if i != 0 and all_peaks_include_around[i-1]['peak_strength'] == 1: この書き方だと、以降全部 strength=1となる。。
+            # そのため一つ前が、上記と同じ条件を満たす場合、とする
+            if i != 0:
+                temp_item = all_peaks_include_around[i-1]
+                curr_gap_t = temp_item['gap']
+                prev_gap_t = temp_item['previous'].get('gap', 0)  # previousがある場合はその値と、ない場合は０を返す）
+                next_gap_t = temp_item['next'].get('gap', 0)  # nextがある場合はその値、ない場合は０を返す
+                if (prev_gap_t != 0 and next_gap_t != 0) and (prev_gap_t/curr_gap_t > 3 and next_gap_t/curr_gap_t > 3):
+                    # 時間的に次のPeakが、除外すべきpeakとなる場合は、自身も１
+                    item['peak_strength'] = 1
+                else:
+                    item['peak_strength'] = 2
+            else:
+                item['peak_strength'] = 2
+
+    latest = all_peaks_include_around[0]
+    river = all_peaks_include_around[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    turn = all_peaks_include_around[2]  # 注目するポイント（ターンと呼ぶ）
+    flop3 = all_peaks_include_around[3]  # レンジ判定用（プリフロップと呼ぶ）
+    print("  (pi)<対象>:運用モード")
+    print("  (pi)Latest", latest)
+    print("  (pi)RIVER", river)
+    print("  (pi)TURN ", turn)
+    print("  (pi)FLOP3", flop3)
+    return {
+        "all_peaks": all_peaks_include_around
+    }
 
 
 # ピーク一覧を作成（求める範囲もここで指定する）
@@ -51,10 +106,10 @@ def peaks_collect_all(*args):
     df_r = df_r[1:]
 
     # ループの場合時間がかかるので、何個のPeakを取得するかを決定する(引数で指定されている場合は引数から受け取る）
-    if len(args)==2:
+    if len(args) == 2:
         max_peak_num = args[1]
     else:
-        max_peak_num = 8  # 9個のピークを取得する
+        max_peak_num = 15  # N個のピークを取得する
 
     peaks = []  # 結果格納用
     for i in range(222):
@@ -68,7 +123,6 @@ def peaks_collect_all(*args):
             # 上向きの場合
             peak_latest = ans['data'].iloc[0]["inner_high"]
             peak_oldest = ans['data'].iloc[-1]["inner_low"]
-
         else:
             # 下向きの場合
             peak_latest = ans['data'].iloc[0]["inner_low"]
@@ -103,113 +157,119 @@ def peaks_collect_all(*args):
 
 
 # ピーク一覧で作成したものを、TopとBottomに分割する
-def peaks_collect_separate(peaks):
-    """
-    peaks_collect_allで生成された情報（ピーク一覧）を、
-    山と谷に分割する
-    :param peaks:
-    :return:
-    """
-    # 一番先頭[0]に格納されたピークは、現在＝自動的にピークになる物となるため、
-    # print(peaks)
-    # print(peaks[1:])
-    # 直近のピークまでのカウント（足数）を求める
-    # print("■■渡されたもの", len(peaks))
-    # f.print_arr(peaks)
-    # print("■■渡されたものここまで")
-
-    from_last_peak = peaks[0]
-    # 最新のは除外しておく（余計なことになる可能性もあるため）
-    # peaks = peaks[1:]
-    # 上、下のピークをグルーピングする
-    top_peaks = []
-    bottom_peaks = []
-    for i in range(len(peaks)):
-        if peaks[i]['direction'] == 1:
-            # TopPeakの場合
-            top_peaks.append(peaks[i])  # 新規に最後尾に追加する
-        else:
-            # bottomPeakの場合
-            bottom_peaks.append(peaks[i])
-
-    # 直近のピークがどっち向きなのか、
-    if from_last_peak['direction'] == 1:
-        latest_peak_group = bottom_peaks  # 最新を含む方向性が上向きの場合、直近のピークは谷方向となる
-        second_peak_group = top_peaks
-    else:
-        latest_peak_group = top_peaks
-        second_peak_group = bottom_peaks
-
-    # 軽量版のデータも作っておく
-    top_peaks_right = top_peaks.copy()
-    for i in range(len(top_peaks_right)):
-        del top_peaks_right[i]['ans']
-    bottom_peaks_light = bottom_peaks.copy()
-    for i in range(len(bottom_peaks_light)):
-        del bottom_peaks_light[i]['ans']
-
-    # 表示用
-    # print("TOPS")
-    # f.print_arr(top_peaks_right)
-    # print("BOTTOMS")
-    # f.print_arr(bottom_peaks_light)
-
-    return {
-        "all_peaks": peaks,
-        "tops": top_peaks,
-        "bottoms": bottom_peaks,
-        "from_last_peak":  from_last_peak,  # 最後のPeakから何分経っているか(自身[最新]を含み、lastPeakを含まない）
-        "latest_peak_group": latest_peak_group,  # 直近からみて直近のグループ
-        "second_peak_group": second_peak_group,
-        "tops_light": top_peaks_right,
-        "bottoms_light": bottom_peaks_light
-    }
+# def peaks_collect_separate(peaks):
+#     """
+#     peaks_collect_allで生成された情報（ピーク一覧）を、
+#     山と谷に分割する
+#     :param peaks:
+#     :return:
+#     """
+#     # 一番先頭[0]に格納されたピークは、現在＝自動的にピークになる物となるため、
+#     # print(peaks)
+#     # print(peaks[1:])
+#     # 直近のピークまでのカウント（足数）を求める
+#     # print("■■渡されたもの", len(peaks))
+#     # f.print_arr(peaks)
+#     # print("■■渡されたものここまで")
+#     print(" セパレート関数")
+#     print(peaks)
+#
+#     from_last_peak = peaks[0]
+#     # 最新のは除外しておく（余計なことになる可能性もあるため）
+#     # peaks = peaks[1:]
+#     # 上、下のピークをグルーピングする
+#     top_peaks = []
+#     bottom_peaks = []
+#     for i in range(len(peaks)):
+#         if peaks[i]['direction'] == 1:
+#             # TopPeakの場合
+#             top_peaks.append(peaks[i])  # 新規に最後尾に追加する
+#         else:
+#             # bottomPeakの場合
+#             bottom_peaks.append(peaks[i])
+#
+#     # 直近のピークがどっち向きなのか、
+#     if from_last_peak['direction'] == 1:
+#         latest_peak_group = bottom_peaks  # 最新を含む方向性が上向きの場合、直近のピークは谷方向となる
+#         second_peak_group = top_peaks
+#     else:
+#         latest_peak_group = top_peaks
+#         second_peak_group = bottom_peaks
+#
+#
+#     # 軽量版のデータも作っておく
+#     top_peaks_right = top_peaks.copy()
+#     for i in range(len(top_peaks_right)):
+#         del top_peaks_right[i]['ans']
+#     bottom_peaks_light = bottom_peaks.copy()
+#     for i in range(len(bottom_peaks_light)):
+#         del bottom_peaks_light[i]['ans']
+#     print(" セパレート関数最後")
+#     print(peaks)
+#
+#     # 表示用
+#     # print("TOPS")
+#     # f.print_arr(top_peaks_right)
+#     # print("BOTTOMS")
+#     # f.print_arr(bottom_peaks_light)
+#
+#
+#     return {
+#         "all_peaks": peaks,
+#         "tops": top_peaks,
+#         "bottoms": bottom_peaks,
+#         "from_last_peak":  from_last_peak,  # 最後のPeakから何分経っているか(自身[最新]を含み、lastPeakを含まない）
+#         "latest_peak_group": latest_peak_group,  # 直近からみて直近のグループ
+#         "second_peak_group": second_peak_group,
+#         "tops_light": top_peaks_right,
+#         "bottoms_light": bottom_peaks_light
+#     }
 
 
 #########↑ここまでは頻発
 
 
-def peaks_collect_main_del(df_r):
-    """
-    ピークを集めるが、一部条件に合わないピークを削除する
-    :param df_r:
-    :return:
-    """
-    all_peaks = peaks_collect_all(df_r)
-    del_target = []
-    for i in range(len(all_peaks)):
-        b = all_peaks[i]
-        if i == 0:
-            # 先頭の場合はスキップ
-            pass
-        elif i == len(all_peaks) - 1:
-            # 最終の場合もスキップ
-            pass
-        else:
-            l = all_peaks[i-1]
-            o = all_peaks[i+1]
-            # 除外検討
-            if b['gap'] < l['gap'] * 0.2 and b['gap'] < o['gap'] * 0.2:
-                print("除外対象",b['gap'], b['time'], o['time'])
-                del_target.append(b)
-                del_target.append(o)
-            if b['gap'] < 0.01:
-                print("除外対象小さい",b['gap'], b['time'],o['time'])
-                del_target.append(b)
-                del_target.append(o)
-    # print("削除対象")
-    # 削除を行う
-    new_ans = all_peaks.copy()
-    for i in range(len(del_target)):
-        del_t = del_target[i]
-        new_ans = [s for s in new_ans if s != del_t]
-    # 回答を生成する
-    sep = peaks_collect_separate(new_ans)
-    print("TOPS")
-    f.print_arr(sep['tops_light'])
-    print('BOTTOMS')
-    f.print_arr(sep['bottoms_light'])
-    return sep
+# def peaks_collect_main_del(df_r):
+#     """
+#     ピークを集めるが、一部条件に合わないピークを削除する
+#     :param df_r:
+#     :return:
+#     """
+#     all_peaks = peaks_collect_all(df_r)
+#     del_target = []
+#     for i in range(len(all_peaks)):
+#         b = all_peaks[i]
+#         if i == 0:
+#             # 先頭の場合はスキップ
+#             pass
+#         elif i == len(all_peaks) - 1:
+#             # 最終の場合もスキップ
+#             pass
+#         else:
+#             l = all_peaks[i-1]
+#             o = all_peaks[i+1]
+#             # 除外検討
+#             if b['gap'] < l['gap'] * 0.2 and b['gap'] < o['gap'] * 0.2:
+#                 print("除外対象",b['gap'], b['time'], o['time'])
+#                 del_target.append(b)
+#                 del_target.append(o)
+#             if b['gap'] < 0.01:
+#                 print("除外対象小さい",b['gap'], b['time'],o['time'])
+#                 del_target.append(b)
+#                 del_target.append(o)
+#     # print("削除対象")
+#     # 削除を行う
+#     new_ans = all_peaks.copy()
+#     for i in range(len(del_target)):
+#         del_t = del_target[i]
+#         new_ans = [s for s in new_ans if s != del_t]
+#     # 回答を生成する
+#     sep = peaks_collect_separate(new_ans)
+#     print("TOPS")
+#     f.print_arr(sep['tops_light'])
+#     print('BOTTOMS')
+#     f.print_arr(sep['bottoms_light'])
+#     return sep
 
 
 def peaks_only_big_mountain(df_r):
@@ -293,7 +353,7 @@ def one_peak_inspection(same_peaks_group):
         if i + 1 >= len(same_peaks_group):  # 範囲を指定
             pass
         else:
-            time_gap = round((f.str_to_time(same_peaks_group[i]['time']) - f.str_to_time(same_peaks_group[i+1]['time'])).seconds / 60, 3)
+            time_gap = round((gene.str_to_time(same_peaks_group[i]['time']) - gene.str_to_time(same_peaks_group[i + 1]['time'])).seconds / 60, 3)
         # 情報を蓄積する
         if min_time_gap_minute > time_gap:  # 最小値の場合、確保
             min_time_gap_minute = time_gap
@@ -322,10 +382,10 @@ def calChangeFromPeaks(same_peaks_group):
     target_time = same_peaks_group[0]['time']
     print("target_peak:", target_peak, target_time)
     # (1)直近二つのピークの情報
-    f.delYear(target_time)
+    gene.delYear(target_time)
     gap_latest2 = round(target_peak - same_peaks_group[1]['peak'], 3)  # 直近二つのピークの上下差(変化後＝０＝最新　ー　直前）
-    time_gap_latest2 = round((f.str_to_time(target_time) - f.str_to_time(same_peaks_group[1]['time'])).seconds /60, 3)
-    memo_latest = f.delYear(target_time) + "-" + f.delYear(same_peaks_group[1]['time']) + \
+    time_gap_latest2 = round((gene.str_to_time(target_time) - gene.str_to_time(same_peaks_group[1]['time'])).seconds / 60, 3)
+    memo_latest = gene.delYear(target_time) + "-" + gene.delYear(same_peaks_group[1]['time']) + \
                   "[" + str(target_peak) + "-" + str(same_peaks_group[1]['peak']) + "]" + \
                   "方向" + str(same_peaks_group[0]['direction']) + " GAP" + str(gap_latest2)
     print(memo_latest)
@@ -333,7 +393,7 @@ def calChangeFromPeaks(same_peaks_group):
     # （２）直近のピークと、一番上下方向が近い同方向のピークを検索（３個分）
     comp_target = same_peaks_group[:3]  # 出来れば近いほうがいいので直近３個分の同方向ピークにする
     min_gap = 100  # とりあえず大きな値
-    max_gap_time_gap = f.str_to_time(target_time) + datetime.timedelta(minutes=1)
+    max_gap_time_gap = gene.str_to_time(target_time) + datetime.timedelta(minutes=1)
     skip_peaks = []
     index = 1  # 1からスタート
     for i in range(len(comp_target)):
@@ -345,7 +405,7 @@ def calChangeFromPeaks(same_peaks_group):
             if abs(target_peak - comp_item['peak']) < min_gap:
                 ans_dic = comp_item  # Gap最小場所の更新
                 min_gap = target_peak - comp_item['peak']  # peakGapの更新
-                max_gap_time_gap = round((f.str_to_time(target_time) - f.str_to_time(comp_item['time'])).seconds /60, 3)
+                max_gap_time_gap = round((gene.str_to_time(target_time) - gene.str_to_time(comp_item['time'])).seconds / 60, 3)
                 index = i
             else:
                 skip_peaks.append(comp_item)
@@ -353,8 +413,8 @@ def calChangeFromPeaks(same_peaks_group):
     gap_min = round(abs(ans_dic['peak'] - target_peak), 3)
     price_min = ans_dic['peak']
     time_min = ans_dic['time']
-    gap_time = f.str_to_time(target_time) - f.str_to_time(time_min)
-    memo_mini_gap = f.delYear(target_time) + "-" + f.delYear(time_min) + \
+    gap_time = gene.str_to_time(target_time) - gene.str_to_time(time_min)
+    memo_mini_gap = gene.delYear(target_time) + "-" + gene.delYear(time_min) + \
                     "[" + str(target_peak) + "-" + str(price_min) + "]" + \
                     "方向" + str(same_peaks_group[0]['direction']) + " GAP" + str(gap_min) + " TimeGap" + str(gap_time)
 
@@ -539,21 +599,21 @@ def current_position_with_horizon_line(df_r):
     print(df_r.tail(3))
     peak_information = peaks_collect_main_del(df_r)
     print("TOP情報")
-    f.print_arr(peak_information['tops_right'])
+    gene.print_arr(peak_information['tops_right'])
     top_ave = horizon_line_detect(peak_information['tops'])
     print("tops-ave", top_ave['ave'])
     print(top_ave['info'])
     if top_ave['ave'][0] != 0:
-        latest_peak_minute = round((datetime.datetime.now() - f.str_to_time(top_ave['info'][0]['all'][0]['time'])).seconds /60, 0)
+        latest_peak_minute = round((datetime.datetime.now() - gene.str_to_time(top_ave['info'][0]['all'][0]['time'])).seconds / 60, 0)
         print(latest_peak_minute, "前")
 
     print("BOTTOM情報")
-    f.print_arr(peak_information['bottoms_right'])
+    gene.print_arr(peak_information['bottoms_right'])
     bottom_ave = horizon_line_detect(peak_information['bottoms'])
     print("bottoms_ave", bottom_ave['ave'])
     print(bottom_ave['info'])
     if bottom_ave['ave'][0] != 0:
-        latest_peak_minute = round((datetime.datetime.now() - f.str_to_time(bottom_ave['info'][0]['all'][0]['time'])).seconds /60, 0)
+        latest_peak_minute = round((datetime.datetime.now() - gene.str_to_time(bottom_ave['info'][0]['all'][0]['time'])).seconds / 60, 0)
         print(latest_peak_minute, "前")
 
     # 現在価格
@@ -619,7 +679,7 @@ def line_tilt_arr_detect(same_peaks_group):
             # print("  Target", peak_prices[y])
             if i < y:  # 組み合わせなので範囲を絞る
                 pips_zouka_y = (peak_prices[i]['price'] - peak_prices[y]['price']) * 100  # 縦軸の変化（時後ー時前）
-                time_zouka_x = round((f.str_to_time(peak_prices[i]['time']) - f.str_to_time(peak_prices[y]['time'])).seconds / 60, 3)
+                time_zouka_x = round((gene.str_to_time(peak_prices[i]['time']) - gene.str_to_time(peak_prices[y]['time'])).seconds / 60, 3)
                 tilt = round(pips_zouka_y / time_zouka_x, 3)  # 傾き
                 tilt_combi = {
                     "latest_price": peak_prices[i]['price'],
@@ -634,8 +694,8 @@ def line_tilt_arr_detect(same_peaks_group):
                         "tilt_combi": tilt_combi
                      }
                 )
-    f.print_arr(tilt_arr)
-    f.print_arr(tilt_info_arr)
+    gene.print_arr(tilt_arr)
+    gene.print_arr(tilt_info_arr)
     return tilt_info_arr
 
 
