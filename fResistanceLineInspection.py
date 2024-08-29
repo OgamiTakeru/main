@@ -382,21 +382,21 @@ def judge_line_strength_based_same_price_list_2(same_price_list, peaks):
                 line_strength = 3
                 print("    (ri)特に傾向性のある上昇なし。レンジとみなせる。")
         else:
-            # ■■■直近の同価格ピークがLower側だった場合の、反対のPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
+            # ■■■直近の同価格ピークがLower側だった場合の、反対のUpperPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
             opposite_peaks = [item for item in peaks if item["direction"] == 1]  # 利用するのは、Upper側
             # 直近の一番下の値と何番目のピークだったかを求める
             max_index, max_info = max(enumerate(opposite_peaks), key=lambda x: x[1]["peak"])
-            print("    (ri)最小値とそのインデックス", max_info['peak'], max_index)
+            print("    (ri)最大値とそのインデックス", max_info['peak'], max_index)
             # そのMinを原点として、直近Peakまでの直線の傾きを算出する(座標で言うx軸は秒単位）
             # yの増加量(価格の差分)　/ xの増加量(時間の差分)
-            x_change_sec = gene.cal_str_time_gap(max_info['time'], opposite_peaks[0]['time'])['gap_abs'].seconds
+            x_change_sec = gene.cal_at_least(1, gene.cal_str_time_gap(max_info['time'], opposite_peaks[0]['time'])['gap_abs'].seconds)
             tilt = (opposite_peaks[0]['peak'] - max_info['peak']) / x_change_sec  # こちらはマイナスが期待される（下りのため）
             if tilt >= 0:
                 print("    (ri)tiltがプラス値。広がっていく価格でこちらは想定外")
             else:
                 print("    (ri)tiltがマイナス値。Upperが上から降りてくる、フラッグ形状")
             # 集計用の変数を定義する
-            total_peaks_num = max_index  # 母数になるPeaksの個数(最小値の場所そのもの）
+            total_peaks_num = max_index + 1  # 母数になるPeaksの個数(最小値の場所そのもの）０の可能性があるため、個数を表現するために＋１
             clear_peaks_num = failed_peaks_num = 0  # 上側にある（＝合格）と下側にある（＝不合格）の個数
             on_line = 0  # 線上にあるものもカウントし、よりフラッグ形状であることを示したい
             # 各要素がその直線（0.05pipsの切片分だけ余裕をとる）より上にあるかを確認する
@@ -673,7 +673,6 @@ def find_predict_line_based_latest(*args):
         for each_predict_line_info in predict_line_info_list:
             each_same_price_list = each_predict_line_info['same_price_list']
             print("    (rip)強度確認へ", each_same_price_list)
-            print(" ★★★")
             gene.print_arr(each_same_price_list)
             strength_info = judge_line_strength_based_same_price_list_2(each_same_price_list, peaks)
             each_predict_line_info['strength_info'] = strength_info

@@ -197,9 +197,9 @@ def inspection_predict_line_make_order(df_r):
     gene.print_arr(peaks)
     latest = peaks[0]
 
-    # if latest['count'] != 3:  # 予測なので、LatestがN個続いたときに実行してみる
-    #     print(" latestがCOUNTが３以外の場合は終了")
-    #     return flag_and_orders
+    if latest['count'] != 2:  # 予測なので、LatestがN個続いたときに実行してみる
+        print(" latestがCOUNTが３以外の場合は終了")
+        return flag_and_orders
 
     # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
     predict_line_info_list = ri.find_predict_line_based_latest(df_r[:])  # Lineが発見された場合には、['line_strength']が１以上になる
@@ -264,7 +264,42 @@ def inspection_predict_line_make_order(df_r):
             # ただしこれは存在しない見込み（SamePriceが存在する＝オーダーを入れる）
             pass
 
-    print(flag_and_orders)
+    # (3) 設定されるLINEが遠すぎる場合、そこには到達するだろう、という見込みで現在価格からそこへ向かうオーダーを追加する
+    if len(predict_line_info_list)>0:
+        # predictLineが存在する場合のみ実行
+        if latest['direction'] == 1:
+            # 直近が上向きの場合（それよりも上側にオーダーLINEが設定されているオーダーリストの先頭が一番高い）
+            farthest_line = predict_line_info_list[0]['line_base_info']['line_base_price']
+            farthest_gap = farthest_line - now_price
+            nearest_line = predict_line_info_list[-1]['line_base_info']['line_base_price']
+            nearest_gap = nearest_line - now_price
+        else:
+            # 直近が下向きの場合　（それよりも下側にオーダーLINEが設定されている。オーダーリストの先頭が一番低い。Latestによって
+            farthest_line = predict_line_info_list[0]['line_base_info']['line_base_price']
+            farthest_gap = farthest_line - now_price
+            nearest_line = predict_line_info_list[-1]['line_base_info']['line_base_price']
+            nearest_gap = nearest_line - now_price
+        if nearest_gap >= 0.15:
+            # 近くてもGapが15Pips以上ある場合、Latestがそのまま延長して、そのLineまで頑張ると想定する。
+            main_order = copy.deepcopy(order_base_info)  # オーダーの生成
+            main_order['target'] = 0.015  # 少しだけ余裕を見て設定
+            main_order['tp'] = 0.09  # LCは広め
+            main_order['lc'] = 0.07  # LCは広め
+            main_order['type'] = 'STOP'  # Latestに対して、順張り
+            # main_order['tr_range'] = 0.10  # 要検討
+            main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し
+            main_order['priority'] = 1
+            main_order['units'] = order_base_info['units'] * 1.2
+            main_order['name'] = "Line遠(Latest延長)" + str(1)
+            main_order['lc_change'] = [
+                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.05},
+                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012},
+                {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08}
+            ]
+            # オーダーが来た場合は、フラグをあげ、オーダーを追加する
+            flag_and_orders['take_position_flag'] = True
+            flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
+            flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
 
     return flag_and_orders
 

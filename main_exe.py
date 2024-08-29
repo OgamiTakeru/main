@@ -99,7 +99,7 @@ def mode1():
 
     # ■検証を実行し、結果を取得する
     # なお{"take_position_flag":Boo, "exe_orders":[], "exe_order":{}}が返却値の予定
-    inspection_result_dic = im.wrap_up_inspection_orders(gl_data5r_df)
+    inspection_result_dic = im.inspection_predict_line_make_order(gl_data5r_df)
 
     # ■ オーダーフラグがない場合は、ここでこの関数は教師終了
     print(inspection_result_dic)
@@ -127,7 +127,10 @@ def mode1():
     # 注文を実行する
     gl_trade_num += 1
     line_send = ""  # LINE送信用の注文結果の情報
+    print(" オーダー数", len(inspection_result_dic['exe_orders']))
     for n in range(len(inspection_result_dic['exe_orders'])):  # ここ（正規実行）では「配列」でOrder情報を受け取る（testでは辞書単品で受け取る）　
+        print("　オーダー要求(単一)")
+        print(inspection_result_dic['exe_orders'][n])
         res_dic = classes[n].order_plan_registration(inspection_result_dic['exe_orders'][n])  #
         print(" オーダー結果")
         print(res_dic)
@@ -254,7 +257,7 @@ def exe_manage():
             d5_df = oa.InstrumentsCandles_exe("USD_JPY", param)
             # ↑時間指定
             # ↓現在時刻
-            # d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)
+            d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)
             # ↑現在時刻
             d5_df = d5_df['data']
             print(d5_df.head(5))

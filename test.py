@@ -26,11 +26,10 @@ for i in range(3):
     new_name = "c" + str(i)
     classes.append(classPosition.order_information(new_name, oa))  # 順思想のオーダーを入れるクラス
 
-
-dic1 = None
-dic2 = {'age': 15,"named": 'y', }
-
-if not dic1:
-    print("sonzai")
+#  一般的なテストはここいかに書く
+test = float('inf')
+print(test)
+if test > 7:
+    print("正解です")
 else:
-    print("No")
+    print("testは７より大きいです")

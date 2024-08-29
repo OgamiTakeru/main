@@ -5,11 +5,11 @@ import fGeneric as f
 
 class order_information:
     total_yen = 0  # トータルの円
-    total_yen_max = 0
-    total_yen_min = 900000000
+    total_yen_max = float('-inf')
+    total_yen_min = float('inf')
     total_PLu = 0  # PL/Unitの累計値
-    total_PLu_max = 0
-    total_PLu_min = 900000000
+    total_PLu_max = float('-inf')
+    total_PLu_min = float('inf')
     position_num = 0  # 何個のポジションを持ったか
 
     def __init__(self, name, oa):
@@ -152,7 +152,7 @@ class order_information:
             self.priority = plan['priority']  # プラオリティを登録する
         if 'trade_timeout_min' in plan:  # していない場合は初期値50分
             self.trade_timeout_min = plan['trade_timeout_min']
-        self.name = plan['name'] + str(self.priority)  # 名前を入れる(クラス内の変更）
+        self.name = plan['name'] + "(" + str(self.priority) + ")"  # 名前を入れる(クラス内の変更）
         # (2)各フラグを指定しておく
         self.order_permission = plan['order_permission']  # 即時のオーダー判断に利用する
         # (3-1) 付加情報１　各便利情報を格納しておく(直接Orderで使わない）
@@ -163,7 +163,6 @@ class order_information:
         # (4)LC_Change情報を格納する
         if "lc_change" in plan:
             self.lc_change_dic = plan['lc_change']  # 辞書を丸ごと
-
 
         # (6)ポジションがある場合、強制上書き（他のポジションの）を許可するかどうか
         if "over_write_block" in plan:
@@ -589,7 +588,13 @@ def position_check(classes):
     total_pl = 0
     for item in classes:
         if item.t_state == "OPEN":
-            open_positions.append({"name": item.name, "priority": item.priority})
+            open_positions.append({
+                "name": item.name,
+                "life": item.life,
+                "priority": item.priority,
+                "o_state": item.o_state,
+                "t_state": item.t_state
+            })
             # 方向だけ取得（ポジションを持った時に、反対側のオーダーを消しあ
             if item.priority > max_priority:
                 max_priority = item.priority  # ポジションの有る最大のプライオリティを取得する
@@ -599,7 +604,17 @@ def position_check(classes):
             total_pl = total_pl + float(item.t_unrealize_pl)
             print("  ポジション状態", item.t_id, ",PL:", total_pl)
         else:
-            not_open_positions.append(item.name)
+            not_open_positions.append({
+                "name": item.name,
+                "life": item.life,
+                "priority": item.priority,
+                "o_state": item.o_state,
+                "t_state": item.t_state
+            })
+    print(" ★★★★★一時テスト（classPosition)")
+    print(open_positions)
+    print(not_open_positions)
+    print("ここまで")
     # 結果の集約
     if len(open_positions) != 0:
         ans = True  # ポジションが一つでもOpenになっている場合は、True
@@ -609,6 +624,7 @@ def position_check(classes):
     return {
         "ans": ans,
         "open_positions": open_positions,
+        "not_open_positions": not_open_positions,
         "max_priority": max_priority,
         "max_position_time_sec": max_position_time_sec,
         "total_pl": total_pl,
