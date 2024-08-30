@@ -275,6 +275,7 @@ def order_finalize(order_base):
         type = "STOP" "LIMIT" 等直接オーダーに使う文字列
     :return:　order_base = {
         "stop_or_limit": stop_or_limit,  # 任意（本番ではtype項目に置換して別途必要になる。計算に便利なように数字で。）
+        "type":"STOP" or "LIMIT",# 最終的にオーダーに必須（OandaClass）
         "expected_direction": # 検証で必須（本番ではdirectionという名前で別途必須になる）
         "decision_time": # 任意
         "decision_price": # 検証で任意
@@ -284,7 +285,6 @@ def order_finalize(order_base):
         "tp_range": # 検証と本番で必須
         "tp_price": # 任意
         "lc_price": # 任意
-        "type":"STOP" or "LIMIT",# 最終的にオーダーに必須（OandaClass）
         "direction", # 最終的にオーダーに必須（OandaClass）
         "price":,  # 最終的にオーダーに必須（OandaClass）
         "trade_timeout_min,　必須（ClassPosition）
@@ -478,5 +478,13 @@ def make_trid_order(plan):
     return order_result_arr
 
 
+def time_to_euro_iso(jp_time):
+    """
+    JPtimeを受け取り、それをユーロタイムのISO形式に変換する
+    OandaAPIでデータを抜き取れる形
+    """
+    euro_time = jp_time - datetime.timedelta(hours=9)
+    euro_time_iso = str(euro_time.isoformat()) + ".000000000Z"
 
+    return euro_time_iso
 

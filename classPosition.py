@@ -5,17 +5,17 @@ import fGeneric as f
 
 class order_information:
     total_yen = 0  # トータルの円
-    total_yen_max = float('-inf')
+    total_yen_max = 0  # これは０以上を検出したいので、float(-inf)ではNG
     total_yen_min = float('inf')
     total_PLu = 0  # PL/Unitの累計値
-    total_PLu_max = float('-inf')
+    total_PLu_max = 0  # これは０以上を検出したいので、float(-inf)ではNG
     total_PLu_min = float('inf')
     position_num = 0  # 何個のポジションを持ったか
 
     def __init__(self, name, oa):
         self.oa = oa  # クラス変数でもいいが、LiveとPracticeの混在ある？　引数でもらう
         # リセ対象群
-        self.name = name  # FwかRvかの表示用。引数でもらう
+        self.name = name  #
         self.priority = 0  # このポジションのプライオリティ（登録されるプランのプライオリティが、既登録以上の物だったら入れ替え予定）
         self.life = False  # 有効かどうか（オーダー発行からポジションクローズまでがTrue）
         self.order_permission = True

@@ -61,7 +61,7 @@ def peaks_collect_main(*args):
         if (prev_gap != 0 and next_gap != 0) and (prev_gap/curr_gap > 3 and next_gap/curr_gap > 3):
             # どちらかがおかしい場合は、ちょっと除外
             print("      (pi)強度の低いPeak発見", item['time'])
-            item['peak_strength'] = 1
+            item['peak_strength'] = 0.5
         else:
             # 自身が問題なくても、Nextに除外すべきPeak（Strengthが1）を持つ場合、自身もStrengthを1にする。（previousではない）
             # if i != 0 and all_peaks_include_around[i-1]['peak_strength'] == 1: この書き方だと、以降全部 strength=1となる。。
@@ -73,11 +73,11 @@ def peaks_collect_main(*args):
                 next_gap_t = temp_item['next'].get('gap', 0)  # nextがある場合はその値、ない場合は０を返す
                 if (prev_gap_t != 0 and next_gap_t != 0) and (prev_gap_t/curr_gap_t > 3 and next_gap_t/curr_gap_t > 3):
                     # 時間的に次のPeakが、除外すべきpeakとなる場合は、自身も１
-                    item['peak_strength'] = 1
+                    item['peak_strength'] = 0.5
                 else:
-                    item['peak_strength'] = 2
+                    item['peak_strength'] = 1
             else:
-                item['peak_strength'] = 2
+                item['peak_strength'] = 1
 
     latest = all_peaks_include_around[0]
     river = all_peaks_include_around[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）

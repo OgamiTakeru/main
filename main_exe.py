@@ -253,7 +253,7 @@ def exe_manage():
             jp_time = datetime.datetime(2024, 8, 14, 8, 20, 0)
             euro_time_datetime = jp_time - datetime.timedelta(hours=9)
             euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-            param = {"granularity": "M5", "count": 50, "to": euro_time_datetime_iso}
+            param = {"granularity": "M5", "count": 85, "to": euro_time_datetime_iso}
             d5_df = oa.InstrumentsCandles_exe("USD_JPY", param)
             # ↑時間指定
             # ↓現在時刻

@@ -150,6 +150,7 @@ class Oanda:
     # (3)キャンドルデータを取得(5000行以上/現在から/指定簡単（現在USD固定）)
     def InstrumentsCandles_multi_exe(self, pair, params, roop):
         """
+        【注意】paramでFromを使うことはできない。toとcountの組み合わせのみMultiを有効に活用できる
         呼び出し方：oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 30}, 1)
         過去情報をまとめて持ってくる【基本的にはこれを呼び出して過去の情報を取得する。InstrumentsCandles_exeとセット利用】
         なお、基本的にはMidの価格を取得する。AskやBidがほしい場合、
