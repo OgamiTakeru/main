@@ -59,9 +59,13 @@ def peaks_collect_main(*args):
         # print("  PeakInfoMaking（previous_now(1)_next)", round(prev_gap/curr_gap, 1), 1, round(next_gap/curr_gap, 1),
         # item['time'])
         if (prev_gap != 0 and next_gap != 0) and (prev_gap/curr_gap > 3 and next_gap/curr_gap > 3):
-            # どちらかがおかしい場合は、ちょっと除外
-            print("      (pi)強度の低いPeak発見", item['time'])
-            item['peak_strength'] = 0.5
+            # どちらかがおかしい場合は、ちょっと除外したい。ただし、ピークが5pips超えている場合は一つとみなす（★★5分足の場合）
+            if curr_gap >= 0.05:
+                print("      (pi)強度の低いPeak発見したがスルー（比率的に弱いが、5pips以上あり)", item['time'])
+                item['peak_strength'] = 1
+            else:
+                print("      (pi)強度の低いPeak発見", item['time'])
+                item['peak_strength'] = 0.5
         else:
             # 自身が問題なくても、Nextに除外すべきPeak（Strengthが1）を持つ場合、自身もStrengthを1にする。（previousではない）
             # if i != 0 and all_peaks_include_around[i-1]['peak_strength'] == 1: この書き方だと、以降全部 strength=1となる。。

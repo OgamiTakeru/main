@@ -91,12 +91,6 @@ def mode1():
     global gl_latest_trigger_time, gl_peak_memo
     global gl_upper_line, gl_lower_line  # RangeInspectionのみ
 
-    # ■取得可能タイミング化の調査を行う
-    # orders = im.Inspection_main(gl_data5r_df)  # 調査結果を受け取る（結果の一つが取得フラグ。一部情報をオーダーとして次行で整理）
-    # orders_DoublePeak = dp.triplePeaks(gl_data5r_df)
-
-    # ■TEST用(オーダーを取らないような物。プログラムが止まらないような記述も必要）■
-
     # ■検証を実行し、結果を取得する
     # なお{"take_position_flag":Boo, "exe_orders":[], "exe_order":{}, "max_priority":(int) }が返却値の予定
     inspection_result_dic = im.inspection_predict_line_make_order(gl_data5r_df)
@@ -108,7 +102,7 @@ def mode1():
         return 0
     # return 0  # テストモード（動かすがオーダーは入れない）の場合、このリターンをコメントインすし終了させるとオーダーしない。。
 
-    # ■■既存のオーダーやポジションとの兼ね合いの検証
+    # ■既存のオーダーやポジションとの兼ね合いの検証
     pInfo = classPosition.position_check(classes)  # 現在の情報を取得
     # ■■■既存オーダーとの兼ね合い
     if pInfo['order_exist']:
@@ -134,7 +128,7 @@ def mode1():
     # ■既存のオーダーがある場合（強制的に削除）
     classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
 
-    # 注文を実行する
+    # ■注文を実行する
     gl_trade_num += 1
     line_send = ""  # LINE送信用の注文結果の情報
     print("  オーダー数", len(inspection_result_dic['exe_orders']))
@@ -157,7 +151,6 @@ def mode1():
                     ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "), "
     # 注文結果を送信す
     tk.line_send("★オーダー発行", gl_trade_num, "回目: ",  " 　　　",  line_send)
-    #tk.line_send("★オーダー発行", gl_trade_num, "回目: ", inspection_result_dic['memo'], " 　　　", line_send)
     print("MODE1 END")
     print("")
 

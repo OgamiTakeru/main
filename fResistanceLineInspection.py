@@ -612,7 +612,7 @@ def find_predict_line_based_latest(*args):
     target_dir = peaks[0]['direction']  # Lineの方向
     grid = 0.01  # 調査の細かさ
     # 各変数の設定（動的な値）
-    min_max_search_range = 5
+    min_max_search_range = 6
     max_index, max_peak_info_in_latest4 = max(enumerate(peaks[:min_max_search_range]), key=lambda x: x[1]["peak"])
     min_index, min_peak_info_in_latest4 = min(enumerate(peaks[:min_max_search_range]), key=lambda x: x[1]["peak"])
     print("    (rip)最大最小値検索範囲")

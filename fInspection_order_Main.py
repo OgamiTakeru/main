@@ -197,9 +197,9 @@ def inspection_predict_line_make_order(df_r):
     gene.print_arr(peaks)
     latest = peaks[0]
 
-    # if latest['count'] != 2:  # 予測なので、LatestがN個続いたときに実行してみる
-    #     print(" latestがCOUNTが３以外の場合は終了")
-    #     return flag_and_orders
+    if latest['count'] != 2:  # 予測なので、LatestがN個続いたときに実行してみる
+        print(" latestがCOUNTが３以外の場合は終了")
+        return flag_and_orders
 
     # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
     predict_line_info_list = ri.find_predict_line_based_latest(df_r[:])  # Lineが発見された場合には、['line_strength']が１以上になる
