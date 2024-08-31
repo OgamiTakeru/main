@@ -115,7 +115,8 @@ def mode1():
         # 既存のポジションがある場合、プライオリティ次第で注文を発行する
         # ポジション後２５分以内の物は、いかなる場合も新ポジションは発行しない
         if pInfo['max_position_time_sec'] < 1500:
-            tk.line_send("★ポジションありの為様子見", pInfo['max_position_time_sec'], classPosition.position_check(classes))
+            tk.line_send("★ポジションありの為様子見", pInfo['max_position_time_sec'])
+            # classPosition.position_check(classes) で各ポジションの状態を確認可能
             return 0
         # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
         # if inspection_result_dic['max_priority'] > pInfo['max_priority']:
@@ -127,12 +128,12 @@ def mode1():
     # 注文を実行する
     gl_trade_num += 1
     line_send = ""  # LINE送信用の注文結果の情報
-    print(" オーダー数", len(inspection_result_dic['exe_orders']))
+    print("  オーダー数", len(inspection_result_dic['exe_orders']))
     for n in range(len(inspection_result_dic['exe_orders'])):  # ここ（正規実行）では「配列」でOrder情報を受け取る（testでは辞書単品で受け取る）　
-        print("　オーダー要求(単一)")
+        print("  要求されたオーダー(each)")
         print(inspection_result_dic['exe_orders'][n])
         res_dic = classes[n].order_plan_registration(inspection_result_dic['exe_orders'][n])  #
-        print(" オーダー結果")
+        print("  オーダー結果")
         print(res_dic)
         # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
         # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。

@@ -290,8 +290,25 @@ def judge_line_strength_based_same_price_list_2(same_price_list, peaks):
                 line_strength = 0.5  #1.5
             else:
                 line_strength = 1  # 3
-    elif len(same_price_list) == 2:
-        # ■■同一価格が２個ある場合
+    # elif len(same_price_list) == 2:
+    #     # ■■同一価格が２個ある場合
+    #     for i in range(len(same_price_list)):
+    #         if same_price_list[i]['near_point_gap'] < 0:
+    #             minus_counter += 1  # マイナスはLINEを超えた回数
+    #     if minus_counter > len(same_price_list) * 0.5:
+    #         # LINE越えが過半数の場合、LINEの信頼度つぃては高くない
+    #         line_strength = 0.1
+    #         # print("　　　　複数時　弱強度", minus_counter, len(same_list))
+    #     elif minus_counter >= 1:
+    #         line_strength = 0.3
+    #         # print("　　　　複数時　１つ以上LINE越えあり", minus_counter)
+    #     else:
+    #         # LINE越えがない為、LINEの信頼度が比較的高い
+    #         line_strength = 1
+    #         # print("　　　　複数時　強強度", minus_counter, len(same_list))
+    elif len(same_price_list) >= 2:
+        # ■■同一価格が2個以上ある場合 (もともとフラッグを探すのは3個以上だったが、2個でもある場合もあったため、2個以上に変更）
+        # ■■■まず、シンプルなトップの形状のみで判断
         for i in range(len(same_price_list)):
             if same_price_list[i]['near_point_gap'] < 0:
                 minus_counter += 1  # マイナスはLINEを超えた回数
@@ -306,8 +323,7 @@ def judge_line_strength_based_same_price_list_2(same_price_list, peaks):
             # LINE越えがない為、LINEの信頼度が比較的高い
             line_strength = 1
             # print("　　　　複数時　強強度", minus_counter, len(same_list))
-    elif len(same_price_list) >= 2:
-        # ■■同一価格が3個以上ある場合、反対側のピークが上昇（下降）似ないかを確認する
+        # ■■■フラッグ形状が見つかった場合は、ストレングスをマイナスに上書きする
         if same_price_list[0]['direction'] == 1:
             # ■■■直近の同価格ピークがUpper側だった場合の、反対のLowerのPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
             opposite_peaks = [item for item in peaks if item["direction"] == -1]  # 利用するのは、Lower側
@@ -371,12 +387,10 @@ def judge_line_strength_based_same_price_list_2(same_price_list, peaks):
                     line_strength = -1
                     tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出")
                 else:
-                    print("    (ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり")
-                    line_strength = 1
+                    print("    (ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり　ストレングス変更なし")
                     tk.line_send("    (ri)フラッグ型なり損ね。シンプルにupper強めのレンジとみなす")
             else:
-                line_strength = 1
-                print("    (ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす")
+                print("    (ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす　ストレングス変更なし")
         else:
             # ■■■直近の同価格ピークがLower側だった場合の、反対のUpperPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
             opposite_peaks = [item for item in peaks if item["direction"] == 1]  # 利用するのは、Upper側
@@ -434,12 +448,10 @@ def judge_line_strength_based_same_price_list_2(same_price_list, peaks):
                     line_strength = -1
                     tk.line_send("    (ri)フラッグ型（lower水平upper下落）の検出")
                 else:
-                    print("    (ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE")
-                    line_strength = 1
+                    print("    (ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
                     tk.line_send("    (ri)フラッグ型なり損ね、lowerはサポート")
             else:
-                line_strength = 1
-                print("    (ri)upperに傾向性のある下降なし。レンジとみなせる。")
+                print("    (ri)upperに傾向性のある下降なし。レンジとみなせる。　ストレングス変更なし")
         gene.print_arr(opposite_peaks)
 
     # 返却値の整理

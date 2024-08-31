@@ -11,6 +11,8 @@ class order_information:
     total_PLu_max = 0  # これは０以上を検出したいので、float(-inf)ではNG
     total_PLu_min = float('inf')
     position_num = 0  # 何個のポジションを持ったか
+    minus_yen_position_num = 0
+    plus_yen_position_num = 0
 
     def __init__(self, name, oa):
         self.oa = oa  # クラス変数でもいいが、LiveとPracticeの混在ある？　引数でもらう
@@ -252,7 +254,7 @@ class order_information:
         trade_latest = self.t_json
         # (0)　改めてLifeを殺す
         self.life_set(False)
-        # （１）
+        # （１）計算するー累計の円や、回数等
         if trade_latest['state'] == "CLOSED":
             # Totalの円を求める
             order_information.total_yen = round(order_information.total_yen + float(trade_latest['realizedPL']), 2)
@@ -270,6 +272,11 @@ class order_information:
             # 価格情報の更新
             order_information.total_yen = round(order_information.total_yen + float(trade_latest['unrealizedPL']), 2)
             order_information.total_PLu = round(order_information.total_PLu + trade_latest['PLu'], 3)
+        # 計算する（回数）
+        if float(trade_latest['realizedPL'])<0:
+            order_information.minus_yen_position_num = order_information.minus_yen_position_num + 1
+        else:
+            order_information.plus_yen_position_num = order_information.plus_yen_position_num + 1
 
         # （２）LINE送信
         if trade_latest['state'] == "CLOSED":
@@ -282,8 +289,9 @@ class order_information:
             res5 = "【合計】計" + str(order_information.total_PLu) + ",計" + str(order_information.total_yen) + "円"
             res6 = "【合計】累積最大円:" + str(order_information.total_yen_max) + ",最小円:" + str(order_information.total_yen_min)
             res7 = "【合計】累計最大PL:" + str(order_information.total_PLu_max) + ",最小PL:" + str(order_information.total_PLu_min)
+            res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(order_information.minus_yen_position_num)
             tk.line_send(" ▲解消:", self.name, '\n', f.now(), '\n',
-                         res4, res5, res1, id_info, res2, res3, res6, res7)
+                         res4, res5, res1, id_info, res2, res3, res6, res7, res8)
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
             res1 = "強制Close【Unit】" + str(trade_latest['initialUnits'])
@@ -297,9 +305,10 @@ class order_information:
                 order_information.total_yen_min)
             res7 = "【合計】累計最大PL" + str(order_information.total_PLu_max) + ",最小PL" + str(
                 order_information.total_PLu_min)
+            res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(order_information.minus_yen_position_num)
 
             tk.line_send(" ▲解消:", self.name, '\n', f.now(), '\n',
-                         res4, res5, res1, id_info, res2, res3, res6, res7)
+                         res4, res5, res1, id_info, res2, res3, res6, res7, res8)
 
     def close_trade(self, units):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
