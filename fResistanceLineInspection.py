@@ -63,11 +63,11 @@ def find_same_price_list_from_peaks(target_price, target_dir, peaks_all, predict
         # 判定を行う
         if target_price - range_yen <= item['peak'] <= target_price + range_yen:
             # 同価格があった場合
-            peak_strength = 2  # defaultでは2
+            peak_strength = 1  # defaultでは2
             # ピークの強さによってはカウントしない
             if item['peak_strength'] == 0.5:
                 print("    (ri)飛ばす可能性のあるPeak(通過確定価格ともいえる？？）", item['time'])
-                peak_strength = 1  #
+                peak_strength = 0.5  #
 
             counter += 1
             # 方向に関する判定

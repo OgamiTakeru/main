@@ -217,7 +217,7 @@ def inspection_predict_line_make_order(df_r):
         main_order = copy.deepcopy(order_base_info)
 
         # 強度の組み合わせで、オーダーを生成する
-        if line_strength >= 0.7 and peak_strength_ave >= 0.7:
+        if line_strength >= 0.5 and peak_strength_ave >= 0.75:
             # ①強い抵抗線となりそうな場合（Latestから見ると、逆張り[limitオーダー]となる)
             print("  (m)強い抵抗線　line,peak", line_strength, peak_strength_ave, target_price)
             main_order['target'] = each_line_info['line_base_info']['line_base_price']
