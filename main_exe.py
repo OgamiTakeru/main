@@ -98,7 +98,7 @@ def mode1():
     # ■TEST用(オーダーを取らないような物。プログラムが止まらないような記述も必要）■
 
     # ■検証を実行し、結果を取得する
-    # なお{"take_position_flag":Boo, "exe_orders":[], "exe_order":{}}が返却値の予定
+    # なお{"take_position_flag":Boo, "exe_orders":[], "exe_order":{}, "max_priority":(int) }が返却値の予定
     inspection_result_dic = im.inspection_predict_line_make_order(gl_data5r_df)
 
     # ■ オーダーフラグがない場合は、ここでこの関数は教師終了
@@ -108,19 +108,28 @@ def mode1():
         return 0
     # return 0  # テストモード（動かすがオーダーは入れない）の場合、このリターンをコメントインすし終了させるとオーダーしない。。
 
-    # 以下はオーダー処理となる
-    # ■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
-    pInfo = classPosition.position_check(classes)
-    if pInfo['ans']:
-        # 既存のポジションがある場合、プライオリティ次第で注文を発行する
-        # ポジション後２５分以内の物は、いかなる場合も新ポジションは発行しない
-        if pInfo['max_position_time_sec'] < 1500:
-            tk.line_send("★ポジションありの為様子見", pInfo['max_position_time_sec'])
-            # classPosition.position_check(classes) で各ポジションの状態を確認可能
+    # ■■既存のオーダーやポジションとの兼ね合いの検証
+    pInfo = classPosition.position_check(classes)  # 現在の情報を取得
+    # ■■■既存オーダーとの兼ね合い
+    if pInfo['order_exist']:
+        # オーダーが存在する場合、互い(新規と既存)プライオリティ次第で注文を発行する
+        # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
+        if pInfo['max_priority'] == 2:
+            tk.line_send("新規オーダー見送り（既存オーダーにフラッグ用注文が含まれるため）")
             return 0
+    # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
+    if pInfo['position_exist']:
+        # 既存のポジションがある場合、互い(新規と既存)プライオリティ次第で注文を発行する
         # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
-        # if inspection_result_dic['max_priority'] > pInfo['max_priority']:
-        #     tk.line_send("★ポジションありだが置換", classPosition.position_check(classes))
+        if inspection_result_dic['max_priority'] > pInfo['max_priority']:
+            # 重要オーダーあり。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
+            tk.line_send("★ポジションありだがフラッグで置換", classPosition.position_check(classes))
+        else:
+            # ポジション後２５分以内の物は、プライオリティが同一の場合は置き変わらない
+            if pInfo['max_position_time_sec'] < 1500:
+                tk.line_send("★ポジションありの為様子見", pInfo['max_position_time_sec'])
+                # classPosition.position_check(classes) で各ポジションの状態を確認可能
+                return 0
 
     # ■既存のオーダーがある場合（強制的に削除）
     classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う

@@ -592,46 +592,56 @@ def position_check(classes):
     """
     open_positions = []
     not_open_positions = []
+    nazo_class = []
     max_priority = 0
     max_position_time_sec = 0
     total_pl = 0
     for item in classes:
-        if item.t_state == "OPEN":
-            open_positions.append({
-                "name": item.name,
-                "life": item.life,
-                "priority": item.priority,
-                "o_state": item.o_state,
-                "t_state": item.t_state
-            })
-            # 方向だけ取得（ポジションを持った時に、反対側のオーダーを消しあ
+        if item.life:  #lifeがTrueの場合、ポジションかオーダーが存在
+            # プライオリティも最高値を取得
             if item.priority > max_priority:
                 max_priority = item.priority  # ポジションの有る最大のプライオリティを取得する
-            if item.t_time_past_sec > max_position_time_sec:
-                max_position_time_sec = item.t_time_past_sec  # 何分間持たれているポジションか
-            # トータルの含み損益を表示する
-            total_pl = total_pl + float(item.t_unrealize_pl)
-            print("  ポジション状態", item.t_id, ",PL:", total_pl)
-        else:
-            not_open_positions.append({
-                "name": item.name,
-                "life": item.life,
-                "priority": item.priority,
-                "o_state": item.o_state,
-                "t_state": item.t_state
-            })
+
+            if item.t_state == "OPEN":
+                open_positions.append({
+                    "name": item.name,
+                    "life": item.life,
+                    "priority": item.priority,
+                    "o_state": item.o_state,
+                    "t_state": item.t_state
+                })
+
+                if item.t_time_past_sec > max_position_time_sec:
+                    max_position_time_sec = item.t_time_past_sec  # 何分間持たれているポジションか
+                # トータルの含み損益を表示する
+                total_pl = total_pl + float(item.t_unrealize_pl)
+                print("  ポジション状態", item.t_id, ",PL:", total_pl)
+            elif item.o_state == "PENDING":
+                not_open_positions.append({
+                    "name": item.name,
+                    "life": item.life,
+                    "priority": item.priority,
+                    "o_state": item.o_state,
+                    "t_state": item.t_state
+                })
     print(" ★★★★★一時テスト（classPosition)")
     print(open_positions)
     print(not_open_positions)
     print("ここまで")
     # 結果の集約
     if len(open_positions) != 0:
-        ans = True  # ポジションが一つでもOpenになっている場合は、True
+        position_exist = True  # ポジションが一つでもOpenになっている場合は、True
     else:
-        ans = False
+        position_exist = False
+
+    if len(not_open_positions) != 0:
+        order_exist = True
+    else:
+        order_exist = False
 
     return {
-        "ans": ans,
+        "position_exist": position_exist,
+        "order_exist": order_exist,
         "open_positions": open_positions,
         "not_open_positions": not_open_positions,
         "max_priority": max_priority,

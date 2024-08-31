@@ -238,20 +238,41 @@ def inspection_predict_line_make_order(df_r):
             flag_and_orders['take_position_flag'] = True
             flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
-        elif peak_strength_ave < 0.5:
+        elif line_strength < 0:
+            # フラッグ形状が発覚している場合。Latest方向に強く伸びる予想
+            print("  (m)フラッグ検出（大きな動き前兆）", line_strength, peak_strength_ave, target_price)
+            main_order['target'] = each_line_info['line_base_info']['line_base_price']
+            main_order['tp'] = 0.09  # LCは広め
+            main_order['lc'] = 0.09  # LCは広め
+            main_order['type'] = 'STOP'  # 順張り
+            # main_order['tr_range'] = 0.10  # 要検討
+            main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し
+            main_order['priority'] = 2
+            main_order['units'] = order_base_info['units'] * 1
+            main_order['name'] = "フラッグ検出" + str(each_line_info['strength_info']['line_strength'])
+            main_order['lc_change'] = [
+                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.05},
+                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012},
+                {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08}
+            ]
+            # オーダーが来た場合は、フラグをあげ、オーダーを追加する
+            flag_and_orders['take_position_flag'] = True
+            flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
+            flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
+        elif peak_strength_ave < 0.75:
             # ②ピークが弱いものばかりである場合、通過点レベルの線とみなす（Latestから見ると、順張りとなる）
             print("  (m)通過線　line,peak", line_strength, peak_strength_ave, target_price)
             main_order['target'] = each_line_info['line_base_info']['line_base_price']
-            main_order['tp'] = 0.09  # LCは広め
-            main_order['lc'] = 0.03  # LCは広め
-            main_order['type'] = 'STOP'
+            main_order['tp'] = 0.03  # LCは広め
+            main_order['lc'] = 0.04  # LCは広め
+            main_order['type'] = 'STOP'  # 順張り
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し
-            main_order['priority'] = each_line_info['strength_info']['line_strength']
+            main_order['priority'] = 1
             main_order['units'] = order_base_info['units'] * 1.1
             main_order['name'] = "LINE探索(通過)" + str(each_line_info['strength_info']['line_strength'])
             main_order['lc_change'] = [
-                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.05},
+                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.02},
                 {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012},
                 {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08}
             ]
@@ -300,6 +321,12 @@ def inspection_predict_line_make_order(df_r):
             flag_and_orders['take_position_flag'] = True
             flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
+
+    # プライオリティの最大値を取得しておく
+    max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+    flag_and_orders['max_priority'] = max_priority
+    print(max_priority)
+    print(flag_and_orders)
 
     return flag_and_orders
 
