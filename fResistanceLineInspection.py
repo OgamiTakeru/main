@@ -487,7 +487,7 @@ def judge_line_strength_based_lines(predict_line_info_list):
             else:
                 # 中間地点たちのもの
                 line_strength_for_update = 0.76  # 通過にならないぎりぎりの線で上書き
-            item['strength_info']['line_strength'] = 1  # 上書き作業を実行
+            item['strength_info']['line_strength'] = line_strength_for_update  # 上書き作業を実行
     else:
         print("     そうでもない（とりあえず何もしない）")
 
@@ -726,7 +726,8 @@ def find_predict_line_based_latest(*args):
 
     # ③Lineが複数ある場合、関係性を考慮したストレングスにする
     if len(predict_line_info_list) > 1:
-        predict_line_info = judge_line_strength_based_lines(predict_line_info_list)
+        predict_line_info_list = judge_line_strength_based_lines(predict_line_info_list)
+        pass
 
     print("  RIの結果", )
     gene.print_arr(predict_line_info_list)
