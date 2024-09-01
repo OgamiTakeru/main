@@ -479,8 +479,17 @@ def judge_line_strength_based_lines(predict_line_info_list):
     print("     条件　Line個数:逆思想のLine個数", len(predict_line_info_list), len(revers_lines))
     if len(predict_line_info_list) == len(revers_lines):
         print("     すべて逆張り思想のLINE⇒手前側のストレングスを低減")
+        # [0] が最も強い抵抗であるべき⇒[1]以降の抵抗を下げる
+        for i, item in enumerate(predict_line_info_list):
+            if i == 0:
+                # 最も強くあるべき線（現在価格から遠い）
+                line_strength_for_update = 1  # 1でストレングスを上書き
+            else:
+                # 中間地点たちのもの
+                line_strength_for_update = 0.76  # 通過にならないぎりぎりの線で上書き
+            item['strength_info']['line_strength'] = 1  # 上書き作業を実行
     else:
-        print("     そうでもない")
+        print("     そうでもない（とりあえず何もしない）")
 
     return predict_line_info_list
 

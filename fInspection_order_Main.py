@@ -239,7 +239,7 @@ def inspection_predict_line_make_order(df_r):
             flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
         elif line_strength < 0:
-            # フラッグ形状が発覚している場合。Latest方向に強く伸びる予想
+            # フラッグ形状が発覚している場合。Latest方向に強く伸びる予想 (通過と同義だが、プライオリティが異なる）
             print("  (m)フラッグ検出（大きな動き前兆）", line_strength, peak_strength_ave, target_price)
             main_order['target'] = each_line_info['line_base_info']['line_base_price']
             main_order['tp'] = 0.09  # LCは広め
