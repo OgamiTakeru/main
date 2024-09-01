@@ -8,6 +8,7 @@ def order_base(now_prie):
     """
     引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
     従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
+    基本はすべて仮の値だが、Unitのみはこれがベースとなる。
     """
     return {
             "target": 0.00,

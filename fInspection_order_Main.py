@@ -209,8 +209,8 @@ def inspection_predict_line_make_order(df_r):
     # （２）状況にあわせたオーダーを生成する
     for each_line_info in predict_line_info_list:
         # 受け取った価格リストからオーダーを生成する
-        line_strength = each_line_info['strength_info']['line_strength']
-        peak_strength_ave = each_line_info['strength_info']['peak_strength_ave']
+        line_strength = float(each_line_info['strength_info']['line_strength'])
+        peak_strength_ave = float(each_line_info['strength_info']['peak_strength_ave'])
         target_price = each_line_info['line_base_info']['line_base_price']
         print("  (M)Line等の強度", line_strength, peak_strength_ave)
         # オーダーの元を生成する
@@ -221,13 +221,13 @@ def inspection_predict_line_make_order(df_r):
             # ①強い抵抗線となりそうな場合（Latestから見ると、逆張り[limitオーダー]となる)
             print("  (m)強い抵抗線　line,peak", line_strength, peak_strength_ave, target_price)
             main_order['target'] = each_line_info['line_base_info']['line_base_price']
-            main_order['tp'] = 0.09  # LCは広め
-            main_order['lc'] = 0.09  # LCは広め
+            main_order['tp'] = 0.1 * line_strength  # 0.09  # LCは広め
+            main_order['lc'] = 0.1 * line_strength  # 0.09  # LCは広め
             main_order['type'] = 'LIMIT'
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * -1  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = each_line_info['strength_info']['line_strength']
-            main_order['units'] = order_base_info['units'] * 1
+            main_order['units'] = order_base_info['units'] * line_strength
             main_order['name'] = "LINE探索(強抵抗)" + str(each_line_info['strength_info']['line_strength'])
             main_order['lc_change'] = [
                 {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.05},
@@ -243,7 +243,7 @@ def inspection_predict_line_make_order(df_r):
             print("  (m)フラッグ検出（大きな動き前兆）", line_strength, peak_strength_ave, target_price)
             main_order['target'] = each_line_info['line_base_info']['line_base_price']
             main_order['tp'] = 0.09  # LCは広め
-            main_order['lc'] = 0.09  # LCは広め
+            main_order['lc'] = 0.05  #
             main_order['type'] = 'STOP'  # 順張り
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し

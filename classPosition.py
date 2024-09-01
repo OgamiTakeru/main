@@ -27,7 +27,7 @@ class order_information:
         self.o_id = 0
         self.o_time = 0
         self.o_state = ""
-        self.o_time_past = 0  # オーダー発行からの経過秒
+        self.o_time_past_sec = 0  # オーダー発行からの経過秒
         # トレード情報
         self.t_json = {}  # 最新情報は常に持っておく
         self.t_id = 0
@@ -68,7 +68,7 @@ class order_information:
         self.o_id = 0
         self.o_time = 0
         self.o_state = ""
-        self.o_time_past = 0  # オーダー発行からの経過秒
+        self.o_time_past_sec = 0  # オーダー発行からの経過秒
         # トレード情報
         self.t_id = 0
         self.t_state = ""
@@ -103,7 +103,7 @@ class order_information:
         print("   【name】", self.name)
         print("   【order_permission】", self.order_permission)
         print("   【plan】", self.plan)
-        print("   【order1】", self.o_id, self.o_time, self.o_state, self.o_time_past)
+        print("   【order1】", self.o_id, self.o_time, self.o_state, self.o_time_past_sec)
         print("   【trade1】", self.t_id, self.t_execution_price, self.t_type, self.t_initial_units, self.t_current_units)
         print("   【trade1】", self.t_time, self.t_time_past_sec)
         print("   【trade2】", self.t_state, self.t_realize_pl, self.t_close_time, self.t_close_price)
@@ -112,7 +112,7 @@ class order_information:
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
         print("　 【life】", self.life)
         print("   【name】", self.name)
-        print("   【order1】", self.o_id, self.o_time, self.o_state, self.o_time_past)
+        print("   【order1】", self.o_id, self.o_time, self.o_state, self.o_time_past_sec)
         print("   【trade1】", self.t_id, self.t_initial_units, self.t_current_units, self.t_execution_price)
         print("   【trade1】", self.t_unrealize_pl, self.t_pl_u, self.t_time_past_sec)
 
@@ -212,7 +212,7 @@ class order_information:
         # 必要な情報を登録する
         self.o_id = order_ans['order_id']
         self.o_time = order_ans['order_time']
-        self.o_time_past = 0  # 初回は変更なし
+        self.o_time_past_sec = 0  # 初回は変更なし
         self.life_set(True)  # ★重要　LIFEのONはここでのみ実施
         print("    オーダー発行完了＠make_order", self.name, )
 
@@ -406,12 +406,12 @@ class order_information:
         order_latest = self.o_json
         # 情報の更新
         self.o_state = order_latest['state']  # ここで初めて更新
-        self.o_time_past = order_latest['time_past']
+        self.o_time_past_sec = order_latest['time_past']
         # オーダーのクローズを検討する
         if order_latest['state'] == "PENDING":
             # print("    時間的な解消を検討", self.o_time_past, self.o_state, "基準", self.order_timeout_min * 60)
-            if self.o_time_past > self.order_timeout_min * 60 and (self.o_state == "" or self.o_state == "PENDING"):
-                tk.line_send("   オーダー解消(時間)@", self.name, self.o_time_past, ",", self.order_timeout_min)
+            if self.o_time_past_sec > self.order_timeout_min * 60 and (self.o_state == "" or self.o_state == "PENDING"):
+                tk.line_send("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min)
                 self.close_order()
 
     def trade_update_and_close(self):
@@ -592,17 +592,18 @@ def position_check(classes):
     """
     open_positions = []
     not_open_positions = []
-    nazo_class = []
     max_priority = 0
     max_position_time_sec = 0
+    max_order_time_sec = 0
     total_pl = 0
     for item in classes:
         if item.life:  #lifeがTrueの場合、ポジションかオーダーが存在
             # プライオリティも最高値を取得
             if item.priority > max_priority:
                 max_priority = item.priority  # ポジションの有る最大のプライオリティを取得する
-
+            # 各情報
             if item.t_state == "OPEN":
+                # ポジションがある場合、ポジションの情報を取得する
                 open_positions.append({
                     "name": item.name,
                     "life": item.life,
@@ -610,13 +611,14 @@ def position_check(classes):
                     "o_state": item.o_state,
                     "t_state": item.t_state
                 })
-
+                # ポジションの所有時間（ポジションがある中で最大）も取得しておく
                 if item.t_time_past_sec > max_position_time_sec:
                     max_position_time_sec = item.t_time_past_sec  # 何分間持たれているポジションか
                 # トータルの含み損益を表示する
                 total_pl = total_pl + float(item.t_unrealize_pl)
                 print("  ポジション状態", item.t_id, ",PL:", total_pl)
             elif item.o_state == "PENDING":
+                # オーダーのみ（取得俟ちの場合）取得まち用の配列に入れておく
                 not_open_positions.append({
                     "name": item.name,
                     "life": item.life,
@@ -624,6 +626,10 @@ def position_check(classes):
                     "o_state": item.o_state,
                     "t_state": item.t_state
                 })
+                # ポジションの所有時間（ポジションがある中で最大）も取得しておく
+                if item.o_time_past_sec > max_order_time_sec:
+                    max_order_time_sec = item.o_time_past_sec  # 何分間オーダー待ちか
+
     print(" ★★★★★一時テスト（classPosition)")
     print(open_positions)
     print(not_open_positions)
@@ -646,6 +652,7 @@ def position_check(classes):
         "not_open_positions": not_open_positions,
         "max_priority": max_priority,
         "max_position_time_sec": max_position_time_sec,
+        "max_order_time_sec": max_order_time_sec,
         "total_pl": total_pl,
     }
 
