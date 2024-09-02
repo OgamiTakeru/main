@@ -2,6 +2,7 @@ import copy
 
 import fPeakInspection as p  # とりあえずの関数集
 import fGeneric as gene
+import fDoublePeaks as dp
 import tokens as tk
 
 import fPeakInspection as peak_inspection
@@ -13,15 +14,7 @@ def find_same_price_list_from_peaks(target_price, target_dir, peaks_all, predict
     """
     価格が指定され、それと同じpeakをpeaksから探し出し、リストとして返却する。方向（上端か下端か）は問わない（情報としては取得する）
     target_dirは、抵抗線となりうるポイント(1)か、サポート線となりうるポイント(-1)かを示す。
-    例1、渡されたピークが以下、target_priceが★、target_dirは-1(=peaks[1]のriverのdirectionと同様となるケース)
-      peaks
-        \  /\/\　
-         \/    \/
-               ↑★target_price
-    例2、渡されたピークが以下、target_priceが★、target_dirは1(=peaks[0]のlatestのdirectionと同様となるケース)
-      peaks       ↓★target_price(予測値）
-        \  /\/\　
-         \/    \/
+
 
     引数
     target_price:target_dirとセット
@@ -43,7 +36,7 @@ def find_same_price_list_from_peaks(target_price, target_dir, peaks_all, predict
     if predict_flag:
         # 予測値を用いた場合は、アジャスタを0にし(latest分)、検索のレンジも少し大きめにする
         start_adjuster = 0
-        range_yen = 0.02  # 24/8/21 13:15のデータをもとに設定(0.04 = 指定の0.02×2(上と下分）)
+        range_yen = 0.022  # 24/8/21 13:15のデータをもとに設定(0.04 = 指定の0.02×2(上と下分）)
     else:
         start_adjuster = 1
         range_yen = gene.cal_at_least_most(0.01, round(ave * 0.153, 3), 0.041)  # 0.153倍が一番よかった(大きすぎないレベル）。。
@@ -63,21 +56,18 @@ def find_same_price_list_from_peaks(target_price, target_dir, peaks_all, predict
         # 判定を行う
         if target_price - range_yen <= item['peak'] <= target_price + range_yen:
             # 同価格があった場合
-            peak_strength = 1  # defaultでは2
-            # ピークの強さによってはカウントしない
+
+            # 今後ピークの強さで分岐する？
             if item['peak_strength'] == 0.5:
                 print("    (ri)飛ばす可能性のあるPeak(通過確定価格ともいえる？？）", item['time'])
-                peak_strength = 0.5  #
 
             counter += 1
             # 方向に関する判定
             if item['direction'] == target_dir:
-                # print("    Between確認", between_peaks_num, item['time'])
-                same_dir = True
                 # print("　　　　同方向の近似ピーク（≒ダブルピークの素）", item['time'], near_point_gap)
                 same_list.append({"time": item['time'],
                                   "peak": item['peak'],
-                                  "same_dir": same_dir,
+                                  "same_dir": True,  # 同じ方向のピークかどうか
                                   "direction": target_dir,
                                   "count_foot_gap": i,
                                   "depth_point_gap": round(depth_point_gap, 3),
@@ -92,11 +82,12 @@ def find_same_price_list_from_peaks(target_price, target_dir, peaks_all, predict
                                   'near_fit_count': near_fit_count,
                                   "between_peaks_num": between_peaks_num,
                                   "i": i,  # 何個目か
-                                  "peak_strength": peak_strength
+                                  "peak_strength": item['peak_strength']
                                   })
                 # 通過したピーク情報を初期化する
                 depth_point_gap = 0
                 near_point_gap = 100
+                near_break_count = near_fit_count = depth_break_count = depth_fit_count = 0
                 between_peaks_num = start_adjuster  # 初期値は1のため注意
             else:
                 pass
@@ -122,139 +113,70 @@ def find_same_price_list_from_peaks(target_price, target_dir, peaks_all, predict
                     depth_break_count += 1  # マイナスというより、LINEを突破している位置にあるカウント
                 else:
                     depth_fit_count += 1
+
             if item['direction'] == target_dir:
                 # 同じピークの場合→Nearの方
                 # ニアの方の深さの値を取得する
+                print("     TIME", item['time'])
                 if peak_gap < near_point_gap:
                     # 最も近い価格を超える（かつ逆方向）場合
                     near_point_gap = peak_gap
                     near_point = item['peak']
                     near_point_time = item['time']
                 # マイナスプラスをカウントする
-                # print(" nearPointGap", peak_gap, item['time'])
+                print("     nearPointGap", peak_gap, item['time'])
                 if peak_gap <= 0:
                     near_break_count += 1
                 else:
                     near_fit_count += 1
+            # 最後のピークは同価格でないフラグを立てて、記録する（最後の同価格発見以降に、その価格よりオーバー等があるかを確認するため）
+            if i == len(peaks_all) - 1 and len(same_list) != 0:
+                # ほかにSamePriceが一つでもあった場合、最後の価格は残す
+                # （SamePriceではないが、最後として残すことで、最上位のピークかどうかを判定できるようにする
+                # ほかにSamePriceがない場合、この最後の値だけが入ってしまうため、ほかにSamePriceがない場合はスルーする
+                same_list.append({"time": item['time'],
+                                  "peak": item['peak'],
+                                  "same_dir": False,
+                                  "direction": target_dir,
+                                  "count_foot_gap": i,
+                                  "depth_point_gap": round(depth_point_gap, 3),
+                                  'depth_point': depth_point,
+                                  "depth_point_time": depth_point_time,
+                                  "depth_break_count": depth_break_count,
+                                  "depth_fit_count": depth_fit_count,
+                                  "near_point_gap": round(near_point_gap, 3),
+                                  "near_point": near_point,
+                                  "near_point_time": near_point_time,
+                                  'near_break_count': near_break_count,
+                                  'near_fit_count': near_fit_count,
+                                  "between_peaks_num": between_peaks_num,
+                                  "i": i,  # 何個目か
+                                  "peak_strength": 0  # peakStrength＝０は、同価格ではない、最後の調査対象価格
+                                  })
     # 同価格リスト
-    # print("    (ri)ベース価格", target_price, target_price - range_yen, "<r<",
-    #       target_price + range_yen,
-    #       "許容ギャップ", range_yen, "方向", target_dir, " 平均ピークGap", ave)
-    # print("    (ri)同価格リスト↓")
-    # gene.print_arr(same_list)
+    print("    (ri)ベース価格", target_price, target_price - range_yen, "<r<",
+          target_price + range_yen,
+          "許容ギャップ", range_yen, "方向", target_dir, " 平均ピークGap", ave)
+    print("    (ri)同価格リスト↓")
+    gene.print_arr(same_list)
     return same_list
 
 
-def judge_line_strength_based_same_price_list(same_price_list):
+def judge_line_strength_based_same_price_list(same_price_list, peaks):
     """
     ラインの強度を判定する。
-    ・引数は同じ価格のリスト（配列）のみが、従来の強度判定には必要。
-    ・target_price以降の引数は、返却値を整えるためのもの（引っ越し前の関数の名残。。）
-    """
-    # ■LineStrengthを決定するため、同価格リストの結果をもとに、谷があるかを判定する
-    line_strength = 0.01
-    minus_counter = 0  # 初期値
-    if len(same_price_list) > 0:
-        # 同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
-        # ①まずは直近のSamePriceに関しての調査
-        # print("　　　　SamePriceが１つあり→　調査する")
-        # 同一価格の発見が１つの場合、
-        # ＊パターン１　同一価格の間のピーク数が４個(丁度）の場合は、そのラインは強いライン
-        #    以下の２パターンがあるが、どちらも強いラインの形（三尊、カルデラ）
-        # 　   \/\  /\/
-        # 　      \/  ↑river peak
-        # 　      ↑Near
-        # 　     ↓
-        # 　   /\/\
-        # 　 \/    \/
-        #      　　　↑river_peak
-        #  ＊パターン２　同一価格間のピーク数が４個よりも多い場合
-        # 　    /\/\/\
-        # 　  \/      \/
-        #             ↑　river_peak
-        #    near が半分以上マイナス値（ラインを割っている）の場合、信頼度が下がる
-        #
-        #   *パターン３　シンプルなダブルトップ系
-        #    /\/\
-        #   /
-        #    betweenが２の場合のみ
-
-        info = same_price_list[0]  # 同一価格が１つだけが成立（その情報を取得する）
-        # print("Between", info['between_num'])
-        # パターン１の処理
-        if info['between_peaks_num'] == 4:
-            line_strength = 2  # 強いラインとみなす
-
-        # # パターン３の処理（シンプルダブルトップ）
-        # if info['between_peaks_num'] == 2:
-        #     if info['gap_time_min'] <= 20:  # 20分いないのダブルトップは、信頼度低（単なるギザギザの可能性）
-        #         # print("初回短すぎ・・？")
-        #         line_strength = 1.5  # 割とLineを突破することが多い気がするが。。。
-        #     else:
-        #         # print("適正？")
-        #         line_strength = 2  # ただ、depthの深さによって変るのでは？
-
-        # パターン２の処理
-        if info['between_peaks_num'] > 4:
-            # nearマイナスの数が、nearの数の半分以上の場合
-            all_near_num = info['between_peaks_num'] / 2 - 1  # nearの数はこう求める
-            minus_ratio = info['near_break_count'] / all_near_num
-            # print("    参考：マイナス比率", minus_ratio, info['near_break_count'], all_near_num)
-            if minus_ratio >= 0.4:
-                line_strength = 0.5
-            elif minus_ratio > 0:
-                line_strength = 1.5
-            else:
-                line_strength = 3
-
-        # ②同一価格が２個以上ある場合は、他も同号して検討する
-        # print("　　　　複数のSamePriceあり。強いLINEではあるが、当たってきてる回数が多いので、抜ける可能性大？")
-        if len(same_price_list) >= 2:
-            for i in range(len(same_price_list)):
-                if same_price_list[i]['near_point_gap'] < 0:
-                    minus_counter += 1  # マイナスはLINEを超えた回数
-            if minus_counter > len(same_price_list) * 0.5:
-                # LINE越えが過半数の場合、LINEの信頼度つぃては高くない
-                line_strength = 0.5
-                # print("　　　　複数時　弱強度", minus_counter, len(same_list))
-            elif minus_counter >= 1:
-                line_strength = 1
-                # print("　　　　複数時　１つ以上LINE越えあり", minus_counter)
-            else:
-                # LINE越えがない為、LINEの信頼度が比較的高い
-                line_strength = 3
-                # print("　　　　複数時　強強度", minus_counter, len(same_list))
-    else:
-        pass
-
-    # # ただし、ぐちゃぐちゃしている場合（riverもturnもflop3もカウントが合計値が7以下（どれも２程度）の場合）LineStrengthを下げる
-    # if river_count + turn_count + flop3_count <= 7:
-    #     # print(peaks_all[1])
-    #     # print(peaks_all[2])
-    #     # print(peaks_all[3])
-    #     # print(river_count, turn_count, flop3_count)
-    #     print("   ◇◇ごちゃごちゃしている状態の為、ストレングスを解消", line_strength, "を０に", peaks_all[1]['count'],
-    #           peaks_all[2]['count'], peaks_all[3]['count'])
-    #     # line_strength = 0
-
-    return_dic = {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
-        "line_strength": line_strength,
-        "line_on_num": len(same_price_list),
-        "same_time_latest": 0 if len(same_price_list) == 0 else same_price_list[0]['time']  # 一番近い同一価格と判断した時刻
-    }
-    return return_dic
-
-
-def judge_line_strength_based_same_price_list_2(same_price_list, peaks):
-    """
-    ラインの強度を判定する。
-    ・引数は同じ価格のリスト（配列）のみが、従来の強度判定には必要。
+    ・引数は同じ価格のリスト（配列）のみが、強度判定には必要。
+    ・同じ価格のリストの最後尾には、必ずstrength０の最後の値が付いてくる（同価格ではないが、調査期間の最後を示すもの）
     ・target_price以降の引数は、返却値を整えるためのもの（引っ越し前の関数の名残。。）
     """
     print("      JudgeLineStrength", len(same_price_list))
     # ■リターン値や、各初期値の設定
     minus_counter = 0  # 初期
     line_strength = 0.01
+    len_of_same_price_list = len(same_price_list) - 1  # 最後に調査最終時刻を示すデータがあるため、実データは-1
+    # 調査期間すべてを通じて、最上位（または最下位）のLINEかを確認する。
+    all_range_strong_line = sum(item['near_break_count'] for item in same_price_list)  # 0の場合(LINE越が）通算通じて強いLine
+
     return_dic = {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "line_strength": line_strength,  # 検証では0は飛ばされてしまう。履歴のために飛ばしたくないため、0以外にしておく
         "line_on_num": 0,
@@ -262,14 +184,15 @@ def judge_line_strength_based_same_price_list_2(same_price_list, peaks):
         "peak_strength_ave": sum([item['peak_strength'] for item in same_price_list]) / len(same_price_list)
     }
     print("      AVE平均値", sum([item['peak_strength'] for item in same_price_list]) / len(same_price_list))
+    print("      通算でのトップか？", all_range_strong_line)
 
     # ■調査不要の場合は即時リターンする
-    if len(same_price_list) == 0:
+    if len_of_same_price_list == 0:
         # 同価格がない場合、ストレングスをミニマムで返却する
         return return_dic
 
     # ■同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
-    if len(same_price_list) == 1:
+    if len_of_same_price_list == 1:
         # ■■同一価格が一つの場合：(シンプルダブルトップ　or カルデラ等）
         info = same_price_list[0]  # 同一価格が１つだけが成立（その情報を取得する）
         between_peaks_num = info['between_peaks_num']  # 可読性、記入性向上のため、入れ替え。
@@ -290,12 +213,12 @@ def judge_line_strength_based_same_price_list_2(same_price_list, peaks):
                 line_strength = 0.5  #1.5
             else:
                 line_strength = 1  # 3
-    # elif len(same_price_list) == 2:
+    # elif len_of_same_price_list == 2:
     #     # ■■同一価格が２個ある場合
-    #     for i in range(len(same_price_list)):
+    #     for i in range(len_of_same_price_list):
     #         if same_price_list[i]['near_point_gap'] < 0:
     #             minus_counter += 1  # マイナスはLINEを超えた回数
-    #     if minus_counter > len(same_price_list) * 0.5:
+    #     if minus_counter > len_of_same_price_list * 0.5:
     #         # LINE越えが過半数の場合、LINEの信頼度つぃては高くない
     #         line_strength = 0.1
     #         # print("　　　　複数時　弱強度", minus_counter, len(same_list))
@@ -306,13 +229,13 @@ def judge_line_strength_based_same_price_list_2(same_price_list, peaks):
     #         # LINE越えがない為、LINEの信頼度が比較的高い
     #         line_strength = 1
     #         # print("　　　　複数時　強強度", minus_counter, len(same_list))
-    elif len(same_price_list) >= 2:
+    elif len_of_same_price_list >= 2:
         # ■■同一価格が2個以上ある場合 (もともとフラッグを探すのは3個以上だったが、2個でもある場合もあったため、2個以上に変更）
         # ■■■まず、シンプルなトップの形状のみで判断
-        for i in range(len(same_price_list)):
+        for i in range(len_of_same_price_list):
             if same_price_list[i]['near_point_gap'] < 0:
                 minus_counter += 1  # マイナスはLINEを超えた回数
-        if minus_counter > len(same_price_list) * 0.5:
+        if minus_counter > len_of_same_price_list * 0.5:
             # LINE越えが過半数の場合、LINEの信頼度つぃては高くない
             line_strength = 0.1
             # print("　　　　複数時　弱強度", minus_counter, len(same_list))
@@ -323,145 +246,150 @@ def judge_line_strength_based_same_price_list_2(same_price_list, peaks):
             # LINE越えがない為、LINEの信頼度が比較的高い
             line_strength = 1
             # print("　　　　複数時　強強度", minus_counter, len(same_list))
-        # ■■■フラッグ形状が見つかった場合は、ストレングスをマイナスに上書きする
-        if same_price_list[0]['direction'] == 1:
-            # ■■■直近の同価格ピークがUpper側だった場合の、反対のLowerのPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
-            opposite_peaks = [item for item in peaks if item["direction"] == -1]  # 利用するのは、Lower側
-            opposite_peaks = opposite_peaks[:5]  # 直近5個くらいでないと、昔すぎるのを参照してしまう（線より下の個数が増え、判定が厳しくなる）
-            print(" Opposite")
-            gene.print_arr(opposite_peaks)
-
-            # 直近の一番下の値と何番目のピークだったかを求める
-            min_index, min_info = min(enumerate(opposite_peaks), key=lambda x: x[1]["peak"])
-            print("    (ri)最小値とそのインデックス", min_info['peak'], min_index)
-            # そのMinを原点として、直近Peakまでの直線の傾きを算出する(座標で言うx軸は秒単位）
-            # yの増加量(価格の差分)　/ xの増加量(時間の差分)
-            x_change_sec = (gene.cal_at_least(0.001,
-                                              gene.cal_str_time_gap(min_info['time'], opposite_peaks[0]['time'])[
-                                                  'gap_abs'].seconds))  # ０にならない最低値を設定する
-            tilt = (opposite_peaks[0]['peak'] - min_info['peak']) / x_change_sec
-            if tilt >= 0:
-                print("    (ri)tiltがプラス値。想定されるLowerのせり上がり")
-            else:
-                print("    (ri)tiltがマイナス値。広がっていく価格で、こちらは想定外")
-            # 集計用の変数を定義する
-            total_peaks_num = min_index + 1  # 母数になるPeaksの個数(最小値の場所そのものだが、直近の場合添え字が０なので、＋１で底上げ）
-            clear_peaks_num = failed_peaks_num = 0  # 上側にある（＝合格）と下側にある（＝不合格）の個数
-            on_line = 0  # 線上にあるものもカウントし、よりフラッグ形状であることを示したい
-            # 各要素がその直線（0.05pipsの切片分だけ余裕をとる）より上にあるかを確認する
-            for i, item in enumerate(opposite_peaks):
-                # iがmin_indexを超える場合は終了する
-                if i >= min_index:
-                    print("    (ri)breakします", i, min_index)
-                    break
-                # thisの座標(a,b)を取得する
-                a = gene.cal_str_time_gap(min_info['time'], item['time'])['gap_abs'].seconds  # 時間差分
-                b = item["peak"] - min_info['peak']  # ここでは
-                print("    (ri)a:", a, ",b:", b)
-                # 判定する
-                # ■上にあるか
-                c = -0.02  # ここはマイナス値にすることで余裕が出る
-                jd_y = tilt * a + c  # Cは切片。0.02程度だけ下回ってもいいようにする
-                if b > jd_y:
-                    clear_peaks_num += 1
-                    print("    (ri)上にあります（合格）", item)
-                else:
-                    failed_peaks_num += 1
-                    print("    (ri)下にあるため除外", item)
-                # ■線上といえるか
-                c2 = 0.06
-                jd_y_max = tilt * a + c2
-                if jd_y_max > b > jd_y:
-                    print("    (ri)線上にあります")
-                    on_line += 1
-                else:
-                    print("    (ri)線上にはありません")
-            # 集計結果
-            print("    (ri)全部で", total_peaks_num, '個のピークがあり、合格（上の方にあった）のは', clear_peaks_num,
-                  "不合格は", failed_peaks_num)
-            print("    (ri)割合", clear_peaks_num / total_peaks_num * 100)
-            print("    (ri)線上にあった数は", on_line, "割合的には", on_line / total_peaks_num * 100)
-            if clear_peaks_num / total_peaks_num * 100 >= 60:  # 傾きに沿ったピークであるが、最小値が例外的な低い値の可能性も）
-                if on_line / total_peaks_num * 100 >= 35:  # さらに傾きの線上に多い場合⇒間違えなくフラッグといえる
-                    print("    (ri)Lowerの継続した上昇とみられる⇒検出したupperは突破される方向になる")
-                    line_strength = -1
-                    tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出")
-                else:
-                    print("    (ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり　ストレングス変更なし")
-                    tk.line_send("    (ri)フラッグ型なり損ね。シンプルにupper強めのレンジとみなす")
-            else:
-                print("    (ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす　ストレングス変更なし")
-        else:
-            # ■■■直近の同価格ピークがLower側だった場合の、反対のUpperPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
-            opposite_peaks = [item for item in peaks if item["direction"] == 1]  # 利用するのは、Upper側
-            opposite_peaks = opposite_peaks[:5]  # 直近5個くらいでないと、昔すぎるのを参照してしまう（線より下の個数が増え、判定が厳しくなる）
-            # 直近の一番下の値と何番目のピークだったかを求める
-            max_index, max_info = max(enumerate(opposite_peaks), key=lambda x: x[1]["peak"])
-            print("    (ri)最大値とそのインデックス", max_info['peak'], max_index)
-            # そのMinを原点として、直近Peakまでの直線の傾きを算出する(座標で言うx軸は秒単位）
-            # yの増加量(価格の差分)　/ xの増加量(時間の差分)
-            x_change_sec = gene.cal_at_least(1, gene.cal_str_time_gap(max_info['time'], opposite_peaks[0]['time'])['gap_abs'].seconds)
-            tilt = (opposite_peaks[0]['peak'] - max_info['peak']) / x_change_sec  # こちらはマイナスが期待される（下りのため）
-            if tilt >= 0:
-                print("    (ri)tiltがプラス値。広がっていく価格でこちらは想定外")
-            else:
-                print("    (ri)tiltがマイナス値。Upperが上から降りてくる、フラッグ形状")
-            # 集計用の変数を定義する
-            total_peaks_num = max_index + 1  # 母数になるPeaksの個数(最小値の場所そのもの）０の可能性があるため、個数を表現するために＋１
-            clear_peaks_num = failed_peaks_num = 0  # 上側にある（＝合格）と下側にある（＝不合格）の個数
-            on_line = 0  # 線上にあるものもカウントし、よりフラッグ形状であることを示したい
-            # 各要素がその直線（0.05pipsの切片分だけ余裕をとる）より上にあるかを確認する
-            for i, item in enumerate(opposite_peaks):
-                # iがmin_indexを超える場合は終了する
-                if i >= max_index:
-                    print("    (ri)breakします", i, max_index)
-                    break
-                # thisの座標(a,b)を取得する
-                a = gene.cal_str_time_gap(max_info['time'], item['time'])['gap_abs'].seconds  # 時間差分
-                b = item["peak"] - max_info['peak']  # ここではマイナス値がデフォルト（変化後ー変化前）
-                print("    (ri)a:", a, ",b:", b)
-                # 判定する
-                c = 0.02  # プラス値のほうが余裕が出る（ある程度した上に突き抜けていたとしてもセーフ）
-                jd_y = tilt * a + c  # Cは切片。0.02程度だけ下回ってもいいようにする
-                # ■最低限の位置関係を保っているか（線より上にいる場合は超えている、下にいる場合が正常）
-                if b < jd_y:
-                    clear_peaks_num += 1
-                    print("    (ri)下にあるため合格", item)
-                else:
-                    failed_peaks_num += 1
-                    print("    (ri)上にあるため除外（不合格）", item)
-                # ■線上といえるか
-                c2 = -0.04
-                jd_y_max = tilt * a + c2
-                if jd_y_max < b < jd_y:
-                    print("    (ri)線上にあります")
-                    on_line += 1
-                else:
-                    print("    (ri)線上にはありません")
-            # 集計結果
-            print("    (ri)全部で", total_peaks_num, 'このピークがあり、合格（上にあった）のは', clear_peaks_num,
-                  "不合格は", failed_peaks_num)
-            print("    (ri)割合", clear_peaks_num / total_peaks_num * 100)
-            if clear_peaks_num / total_peaks_num * 100 >= 60:
-                if on_line / total_peaks_num * 100 >= 40:
-                    print("    (ri)upperの継続した下落とみられる⇒　このLINEは下に突破される方向になる")
-                    line_strength = -1
-                    tk.line_send("    (ri)フラッグ型（lower水平upper下落）の検出")
-                else:
-                    print("    (ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
-                    tk.line_send("    (ri)フラッグ型なり損ね、lowerはサポート")
-            else:
-                print("    (ri)upperに傾向性のある下降なし。レンジとみなせる。　ストレングス変更なし")
-        gene.print_arr(opposite_peaks)
+        # ■■■フラッグ形状を検索し、見つかった場合は、ストレングスをマイナスに上書きする
+        if all_range_strong_line == 0:  # 通算と通して超えていない場合、フラッグの検証へ
+            flag = judge_flag_figure(peaks, same_price_list[0]['direction'])
+            print("     ★★Flagテスト", flag)
+            if flag:
+                line_strength = -1  # フラッグ成立時は、通常とは逆
+        # if same_price_list[0]['direction'] == 1:
+        #     # ■■■直近の同価格ピークがUpper側だった場合の、反対のLowerのPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
+        #     opposite_peaks = [item for item in peaks if item["direction"] == -1]  # 利用するのは、Lower側
+        #     opposite_peaks = opposite_peaks[:5]  # 直近5個くらいでないと、昔すぎるのを参照してしまう（線より下の個数が増え、判定が厳しくなる）
+        #     print(" Opposite")
+        #     gene.print_arr(opposite_peaks)
+        #
+        #     # 直近の一番下の値と何番目のピークだったかを求める
+        #     min_index, min_info = min(enumerate(opposite_peaks), key=lambda x: x[1]["peak"])
+        #     print("    (ri)最小値とそのインデックス", min_info['peak'], min_index)
+        #     # そのMinを原点として、直近Peakまでの直線の傾きを算出する(座標で言うx軸は秒単位）
+        #     # yの増加量(価格の差分)　/ xの増加量(時間の差分)
+        #     x_change_sec = (gene.cal_at_least(0.001,
+        #                                       gene.cal_str_time_gap(min_info['time'], opposite_peaks[0]['time'])[
+        #                                           'gap_abs'].seconds))  # ０にならない最低値を設定する
+        #     tilt = (opposite_peaks[0]['peak'] - min_info['peak']) / x_change_sec
+        #     if tilt >= 0:
+        #         print("    (ri)tiltがプラス値。想定されるLowerのせり上がり")
+        #     else:
+        #         print("    (ri)tiltがマイナス値。広がっていく価格で、こちらは想定外")
+        #     # 集計用の変数を定義する
+        #     total_peaks_num = min_index + 1  # 母数になるPeaksの個数(最小値の場所そのものだが、直近の場合添え字が０なので、＋１で底上げ）
+        #     clear_peaks_num = failed_peaks_num = 0  # 上側にある（＝合格）と下側にある（＝不合格）の個数
+        #     on_line = 0  # 線上にあるものもカウントし、よりフラッグ形状であることを示したい
+        #     # 各要素がその直線（0.05pipsの切片分だけ余裕をとる）より上にあるかを確認する
+        #     for i, item in enumerate(opposite_peaks):
+        #         # iがmin_indexを超える場合は終了する
+        #         if i >= min_index:
+        #             print("    (ri)breakします", i, min_index)
+        #             break
+        #         # thisの座標(a,b)を取得する
+        #         a = gene.cal_str_time_gap(min_info['time'], item['time'])['gap_abs'].seconds  # 時間差分
+        #         b = item["peak"] - min_info['peak']  # ここでは
+        #         print("    (ri)a:", a, ",b:", b)
+        #         # 判定する
+        #         # ■上にあるか
+        #         c = -0.02  # ここはマイナス値にすることで余裕が出る
+        #         jd_y = tilt * a + c  # Cは切片。0.02程度だけ下回ってもいいようにする
+        #         if b > jd_y:
+        #             clear_peaks_num += 1
+        #             print("    (ri)上にあります（合格）", item)
+        #         else:
+        #             failed_peaks_num += 1
+        #             print("    (ri)下にあるため除外", item)
+        #         # ■線上といえるか
+        #         c2 = 0.06
+        #         jd_y_max = tilt * a + c2
+        #         if jd_y_max > b > jd_y:
+        #             print("    (ri)線上にあります")
+        #             on_line += 1
+        #         else:
+        #             print("    (ri)線上にはありません")
+        #     # 集計結果
+        #     print("    (ri)全部で", total_peaks_num, '個のピークがあり、合格（上の方にあった）のは', clear_peaks_num,
+        #           "不合格は", failed_peaks_num)
+        #     print("    (ri)割合", clear_peaks_num / total_peaks_num * 100)
+        #     print("    (ri)線上にあった数は", on_line, "割合的には", on_line / total_peaks_num * 100)
+        #     if clear_peaks_num / total_peaks_num * 100 >= 60:  # 傾きに沿ったピークであるが、最小値が例外的な低い値の可能性も）
+        #         if on_line / total_peaks_num * 100 >= 35:  # さらに傾きの線上に多い場合⇒間違えなくフラッグといえる
+        #             print("    (ri)Lowerの継続した上昇とみられる⇒検出したupperは突破される方向になる")
+        #             line_strength = -1
+        #             tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出")
+        #         else:
+        #             print("    (ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり　ストレングス変更なし")
+        #             tk.line_send("    (ri)フラッグ型なり損ね。シンプルにupper強めのレンジとみなす")
+        #     else:
+        #         print("    (ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす　ストレングス変更なし")
+        # else:
+        #     # ■■■直近の同価格ピークがLower側だった場合の、反対のUpperPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
+        #     opposite_peaks = [item for item in peaks if item["direction"] == 1]  # 利用するのは、Upper側
+        #     opposite_peaks = opposite_peaks[:5]  # 直近5個くらいでないと、昔すぎるのを参照してしまう（線より下の個数が増え、判定が厳しくなる）
+        #     # 直近の一番下の値と何番目のピークだったかを求める
+        #     max_index, max_info = max(enumerate(opposite_peaks), key=lambda x: x[1]["peak"])
+        #     print("    (ri)最大値とそのインデックス", max_info['peak'], max_index)
+        #     # そのMinを原点として、直近Peakまでの直線の傾きを算出する(座標で言うx軸は秒単位）
+        #     # yの増加量(価格の差分)　/ xの増加量(時間の差分)
+        #     x_change_sec = gene.cal_at_least(1, gene.cal_str_time_gap(max_info['time'], opposite_peaks[0]['time'])['gap_abs'].seconds)
+        #     tilt = (opposite_peaks[0]['peak'] - max_info['peak']) / x_change_sec  # こちらはマイナスが期待される（下りのため）
+        #     if tilt >= 0:
+        #         print("    (ri)tiltがプラス値。広がっていく価格でこちらは想定外")
+        #     else:
+        #         print("    (ri)tiltがマイナス値。Upperが上から降りてくる、フラッグ形状")
+        #     # 集計用の変数を定義する
+        #     total_peaks_num = max_index + 1  # 母数になるPeaksの個数(最小値の場所そのもの）０の可能性があるため、個数を表現するために＋１
+        #     clear_peaks_num = failed_peaks_num = 0  # 上側にある（＝合格）と下側にある（＝不合格）の個数
+        #     on_line = 0  # 線上にあるものもカウントし、よりフラッグ形状であることを示したい
+        #     # 各要素がその直線（0.05pipsの切片分だけ余裕をとる）より上にあるかを確認する
+        #     for i, item in enumerate(opposite_peaks):
+        #         # iがmin_indexを超える場合は終了する
+        #         if i >= max_index:
+        #             print("    (ri)breakします", i, max_index)
+        #             break
+        #         # thisの座標(a,b)を取得する
+        #         a = gene.cal_str_time_gap(max_info['time'], item['time'])['gap_abs'].seconds  # 時間差分
+        #         b = item["peak"] - max_info['peak']  # ここではマイナス値がデフォルト（変化後ー変化前）
+        #         print("    (ri)a:", a, ",b:", b)
+        #         # 判定する
+        #         c = 0.02  # プラス値のほうが余裕が出る（ある程度した上に突き抜けていたとしてもセーフ）
+        #         jd_y = tilt * a + c  # Cは切片。0.02程度だけ下回ってもいいようにする
+        #         # ■最低限の位置関係を保っているか（線より上にいる場合は超えている、下にいる場合が正常）
+        #         if b < jd_y:
+        #             clear_peaks_num += 1
+        #             print("    (ri)下にあるため合格", item)
+        #         else:
+        #             failed_peaks_num += 1
+        #             print("    (ri)上にあるため除外（不合格）", item)
+        #         # ■線上といえるか
+        #         c2 = -0.04
+        #         jd_y_max = tilt * a + c2
+        #         if jd_y_max < b < jd_y:
+        #             print("    (ri)線上にあります")
+        #             on_line += 1
+        #         else:
+        #             print("    (ri)線上にはありません")
+        #     # 集計結果
+        #     print("    (ri)全部で", total_peaks_num, 'このピークがあり、合格（上にあった）のは', clear_peaks_num,
+        #           "不合格は", failed_peaks_num)
+        #     print("    (ri)割合", clear_peaks_num / total_peaks_num * 100)
+        #     if clear_peaks_num / total_peaks_num * 100 >= 60:
+        #         if on_line / total_peaks_num * 100 >= 40:
+        #             print("    (ri)upperの継続した下落とみられる⇒　このLINEは下に突破される方向になる")
+        #             line_strength = -1
+        #             tk.line_send("    (ri)フラッグ型（lower水平upper下落）の検出")
+        #         else:
+        #             print("    (ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
+        #             tk.line_send("    (ri)フラッグ型なり損ね、lowerはサポート")
+        #     else:
+        #         print("    (ri)upperに傾向性のある下降なし。レンジとみなせる。　ストレングス変更なし")
+        # gene.print_arr(opposite_peaks)
 
     # 返却値の整理
     return_dic["line_strength"] = line_strength
-    return_dic["line_on_num"] = len(same_price_list)
+    return_dic["line_on_num"] = len_of_same_price_list
     return_dic["same_time_latest"] = 0 if len(same_price_list) == 0 else same_price_list[0]['time']
     return return_dic
 
 
-def judge_line_strength_based_lines(predict_line_info_list):
+def update_line_strength(predict_line_info_list):
     """
     LINEが複数個ある場合、少し優先度を変更していく
     すでにLINEのストレングスまで算出された状態で実行される
@@ -492,6 +420,170 @@ def judge_line_strength_based_lines(predict_line_info_list):
         print("     そうでもない（とりあえず何もしない）")
 
     return predict_line_info_list
+
+
+def judge_flag_figure(peaks, target_direction):
+    """
+    フラッグ形状かどうかを判定する。
+    peaks:元となるピークス。
+    target_direction: この方向のピーク群が斜め上がり傾向になっているかを検証する（Upperが水平でLowerを検証したい場合、ここはー１が渡される）
+    返り値は、成立しているかどうかのBoolean
+    """
+    flag_figure_total = False  # これは返り値
+
+    long_range_flag = judge_flag_figure_sub_function(peaks, target_direction, 5)
+    short_range_flag = judge_flag_figure_sub_function(peaks, target_direction, 3)
+
+    if long_range_flag and short_range_flag:
+        flag = True
+    else:
+        flag = False
+        print("Flag形状確認", long_range_flag, short_range_flag, flag)
+    return flag
+
+
+def judge_flag_figure_sub_function(peaks, latest_direction, num):
+    """
+    旗の形状を探索するための、サポート関数
+    peaks: ピークス
+    num: ピークスの中で、直近num個分の中でフラッグ形状を判定する
+    返り値は、成立しているかどうかのBoolean
+    """
+    flag_figure = False  # これは返り値
+
+    if latest_direction == 1:
+        # ■■■直近の同価格ピークがUpper側だった場合の、反対のLowerのPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
+        opposite_peaks = [item for item in peaks if item["direction"] == -1]  # 利用するのは、Lower側
+        opposite_peaks = opposite_peaks[:num]  # 直近5個くらいでないと、昔すぎるのを参照してしまう（線より下の個数が増え、判定が厳しくなる）
+        print(" Opposite")
+        gene.print_arr(opposite_peaks)
+
+        # 直近の一番下の値と何番目のピークだったかを求める
+        min_index, min_info = min(enumerate(opposite_peaks), key=lambda x: x[1]["peak"])
+        print("    (ri)最小値とそのインデックス", min_info['peak'], min_index)
+        # そのMinを原点として、直近Peakまでの直線の傾きを算出する(座標で言うx軸は秒単位）
+        # yの増加量(価格の差分)　/ xの増加量(時間の差分)
+        x_change_sec = (gene.cal_at_least(0.001,
+                                          gene.cal_str_time_gap(min_info['time'], opposite_peaks[0]['time'])[
+                                              'gap_abs'].seconds))  # ０にならない最低値を設定する
+        tilt = (opposite_peaks[0]['peak'] - min_info['peak']) / x_change_sec
+        if tilt >= 0:
+            print("    (ri)tiltがプラス値。想定されるLowerのせり上がり")
+        else:
+            print("    (ri)tiltがマイナス値。広がっていく価格で、こちらは想定外")
+        # 集計用の変数を定義する
+        total_peaks_num = min_index + 1  # 母数になるPeaksの個数(最小値の場所そのものだが、直近の場合添え字が０なので、＋１で底上げ）
+        clear_peaks_num = failed_peaks_num = 0  # 上側にある（＝合格）と下側にある（＝不合格）の個数
+        on_line = 0  # 線上にあるものもカウントし、よりフラッグ形状であることを示したい
+        # 各要素がその直線（0.05pipsの切片分だけ余裕をとる）より上にあるかを確認する
+        for i, item in enumerate(opposite_peaks):
+            # iがmin_indexを超える場合は終了する
+            if i >= min_index:
+                print("    (ri)breakします", i, min_index)
+                break
+            # thisの座標(a,b)を取得する
+            a = gene.cal_str_time_gap(min_info['time'], item['time'])['gap_abs'].seconds  # 時間差分
+            b = item["peak"] - min_info['peak']  # ここでは
+            print("    (ri)a:", a, ",b:", b)
+            # 判定する
+            # ■上にあるか
+            c = -0.02  # ここはマイナス値にすることで余裕が出る
+            jd_y = tilt * a + c  # Cは切片。0.02程度だけ下回ってもいいようにする
+            if b > jd_y:
+                clear_peaks_num += 1
+                print("    (ri)上にあります（合格）", item)
+            else:
+                failed_peaks_num += 1
+                print("    (ri)下にあるため除外", item)
+            # ■線上といえるか
+            c2 = 0.06
+            jd_y_max = tilt * a + c2
+            if jd_y_max > b > jd_y:
+                print("    (ri)線上にあります")
+                on_line += 1
+            else:
+                print("    (ri)線上にはありません")
+        # 集計結果
+        print("    (ri)全部で", total_peaks_num, '個のピークがあり、合格（上の方にあった）のは', clear_peaks_num,
+              "不合格は", failed_peaks_num)
+        print("    (ri)割合", clear_peaks_num / total_peaks_num * 100)
+        print("    (ri)線上にあった数は", on_line, "割合的には", on_line / total_peaks_num * 100)
+        if clear_peaks_num / total_peaks_num * 100 >= 60:  # 傾きに沿ったピークであるが、最小値が例外的な低い値の可能性も）
+            if on_line / total_peaks_num * 100 >= 35:  # さらに傾きの線上に多い場合⇒間違えなくフラッグといえる
+                print("    (ri)Lowerの継続した上昇とみられる⇒検出したupperは突破される方向になる")
+                flag_figure = True
+                tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出")
+            else:
+                print("    (ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり　ストレングス変更なし")
+                tk.line_send("    (ri)フラッグ型なり損ね。シンプルにupper強めのレンジとみなす")
+        else:
+            print("    (ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす　ストレングス変更なし")
+    else:
+        # ■■■直近の同価格ピークがLower側だった場合の、反対のUpperPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
+        opposite_peaks = [item for item in peaks if item["direction"] == 1]  # 利用するのは、Upper側
+        opposite_peaks = opposite_peaks[:num]  # 直近5個くらいでないと、昔すぎるのを参照してしまう（線より下の個数が増え、判定が厳しくなる）
+        # 直近の一番下の値と何番目のピークだったかを求める
+        max_index, max_info = max(enumerate(opposite_peaks), key=lambda x: x[1]["peak"])
+        print("    (ri)最大値とそのインデックス", max_info['peak'], max_index)
+        # そのMinを原点として、直近Peakまでの直線の傾きを算出する(座標で言うx軸は秒単位）
+        # yの増加量(価格の差分)　/ xの増加量(時間の差分)
+        x_change_sec = gene.cal_at_least(1, gene.cal_str_time_gap(max_info['time'], opposite_peaks[0]['time'])[
+            'gap_abs'].seconds)
+        tilt = (opposite_peaks[0]['peak'] - max_info['peak']) / x_change_sec  # こちらはマイナスが期待される（下りのため）
+        if tilt >= 0:
+            print("    (ri)tiltがプラス値。広がっていく価格でこちらは想定外")
+        else:
+            print("    (ri)tiltがマイナス値。Upperが上から降りてくる、フラッグ形状")
+        # 集計用の変数を定義する
+        total_peaks_num = max_index + 1  # 母数になるPeaksの個数(最小値の場所そのもの）０の可能性があるため、個数を表現するために＋１
+        clear_peaks_num = failed_peaks_num = 0  # 上側にある（＝合格）と下側にある（＝不合格）の個数
+        on_line = 0  # 線上にあるものもカウントし、よりフラッグ形状であることを示したい
+        # 各要素がその直線（0.05pipsの切片分だけ余裕をとる）より上にあるかを確認する
+        for i, item in enumerate(opposite_peaks):
+            # iがmin_indexを超える場合は終了する
+            if i >= max_index:
+                print("    (ri)breakします", i, max_index)
+                break
+            # thisの座標(a,b)を取得する
+            a = gene.cal_str_time_gap(max_info['time'], item['time'])['gap_abs'].seconds  # 時間差分
+            b = item["peak"] - max_info['peak']  # ここではマイナス値がデフォルト（変化後ー変化前）
+            print("    (ri)a:", a, ",b:", b)
+            # 判定する
+            c = 0.02  # プラス値のほうが余裕が出る（ある程度した上に突き抜けていたとしてもセーフ）
+            jd_y = tilt * a + c  # Cは切片。0.02程度だけ下回ってもいいようにする
+            # ■最低限の位置関係を保っているか（線より上にいる場合は超えている、下にいる場合が正常）
+            if b < jd_y:
+                clear_peaks_num += 1
+                print("    (ri)下にあるため合格", item)
+            else:
+                failed_peaks_num += 1
+                print("    (ri)上にあるため除外（不合格）", item)
+            # ■線上といえるか
+            c2 = -0.04
+            jd_y_max = tilt * a + c2
+            if jd_y_max < b < jd_y:
+                print("    (ri)線上にあります")
+                on_line += 1
+            else:
+                print("    (ri)線上にはありません")
+        # 集計結果
+        print("    (ri)全部で", total_peaks_num, 'このピークがあり、合格（上にあった）のは', clear_peaks_num,
+              "不合格は", failed_peaks_num)
+        print("    (ri)割合", clear_peaks_num / total_peaks_num * 100)
+        if clear_peaks_num / total_peaks_num * 100 >= 60:
+            if on_line / total_peaks_num * 100 >= 40:
+                print("    (ri)upperの継続した下落とみられる⇒　このLINEは下に突破される方向になる")
+                flag_figure = True
+                tk.line_send("    (ri)フラッグ型（lower水平upper下落）の検出")
+            else:
+                print(
+                    "    (ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
+                tk.line_send("    (ri)フラッグ型なり損ね、lowerはサポート")
+        else:
+            print("    (ri)upperに傾向性のある下降なし。レンジとみなせる。　ストレングス変更なし")
+
+    gene.print_arr(opposite_peaks)
+    return flag_figure
 
 
 def find_latest_line_based_river(*args):
@@ -621,7 +713,7 @@ def find_predict_line_based_latest(*args):
     target_dir = peaks[0]['direction']  # Lineの方向
     grid = 0.01  # 調査の細かさ
     # 各変数の設定（動的な値）
-    min_max_search_range = 6
+    min_max_search_range = 7
     max_index, max_peak_info_in_latest4 = max(enumerate(peaks[:min_max_search_range]), key=lambda x: x[1]["peak"])
     min_index, min_peak_info_in_latest4 = min(enumerate(peaks[:min_max_search_range]), key=lambda x: x[1]["peak"])
     print("    (rip)最大最小値検索範囲")
@@ -666,12 +758,17 @@ def find_predict_line_based_latest(*args):
     }
     predict_line_info_list = []
     while search_min_price <= target_price <= search_max_price:
-        print("      (rip)◇◇◇", target_price)
+        print("    (rip)◆◆", target_price)
         same_price_list = find_same_price_list_from_peaks(target_price, target_dir, peaks, True)
         same_price_list = [d for d in same_price_list if d["time"] != peaks[0]['time']]  # Latestは削除する(predict特有）
-        print("    (rip)同価格リスト (Latestピークを削除後)↓")
+        print("    (rip)同価格リスト (Latestピークを削除後)↓　最終時刻は", peaks[0]['time'])
         gene.print_arr(same_price_list)
-        test=[]
+
+        if len(same_price_list) == 1:
+            # 現時刻を消したうえで、内容が一つだけになっている場合、それは最後の時刻のもの（sameprice検索の使用でついてきてしまう）
+            same_price_list = []
+            print(" 　　　(rip)最終時刻のもののみのため、スキップ")
+
         if len(same_price_list) >= 1:
             # 同価格リストが1つ以上発見された場合、範囲飛ばしと、値の登録を行う
             predict_line_info['line_base_info']['line_base_price'] = target_price  # 同価格リストが見つかった時の価格を取得（通常だとRiver価格に相当）
@@ -701,7 +798,7 @@ def find_predict_line_based_latest(*args):
                 target_price = target_price - grid_adj
                 # target_price = - grid  # 下りの場合でも、上から探していく ( 初期思想とは逆）
 
-    print("    (rip)samePrimeLists結果")
+    print("    (rip)【最終】samePrimeLists結果")
     gene.print_arr(predict_line_info_list)
 
     # ②各Lineのストレングスを求める
@@ -715,7 +812,7 @@ def find_predict_line_based_latest(*args):
             each_same_price_list = each_predict_line_info['same_price_list']
             print("    (rip)★強度確認へ")
             gene.print_arr(each_same_price_list)
-            strength_info = judge_line_strength_based_same_price_list_2(each_same_price_list, peaks)
+            strength_info = judge_line_strength_based_same_price_list(each_same_price_list, peaks)
             each_predict_line_info['strength_info'] = strength_info
             # strength_info_list.append({
             #     "line_base_info": line_base_info,
@@ -726,10 +823,17 @@ def find_predict_line_based_latest(*args):
 
     # ③Lineが複数ある場合、関係性を考慮したストレングスにする
     if len(predict_line_info_list) > 1:
-        predict_line_info_list = judge_line_strength_based_lines(predict_line_info_list)
+        predict_line_info_list = update_line_strength(predict_line_info_list)
         pass
 
-    print("  RIの結果", )
+    # ④リバーがDoublePeakに相当するかを確認する
+    test = dp.DoublePeak({"df_r": target_df, "peaks":peaks})
+    double_peak_flag = test['take_position_flag']
+    if double_peak_flag:
+        # リバーがDOublePeakの場合、riverの折り返しが抵抗線で、Latestが伸びていく可能性が高いとみなす（逆張り線まで、順張りとみなす？）
+        pass
+
+    print("  RIの結果 (参考DOublePeakの結果)", double_peak_flag)
     gene.print_arr(predict_line_info_list)
     return predict_line_info_list
 

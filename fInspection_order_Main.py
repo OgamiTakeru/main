@@ -323,10 +323,11 @@ def inspection_predict_line_make_order(df_r):
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
 
     # プライオリティの最大値を取得しておく
-    max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
-    flag_and_orders['max_priority'] = max_priority
-    print(max_priority)
-    print(flag_and_orders)
+    if len(flag_and_orders) >= 1:
+        max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+        flag_and_orders['max_priority'] = max_priority
+        print(max_priority)
+        print(flag_and_orders)
 
     return flag_and_orders
 

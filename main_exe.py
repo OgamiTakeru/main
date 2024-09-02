@@ -104,7 +104,7 @@ def mode1():
 
     # ■既存のオーダーやポジションとの兼ね合いの検証
     classes_info = classPosition.position_check(classes)  # 現在の情報を取得
-    # ■■■既存オーダーとの兼ね合い
+    # ■■■既存オーダーが存在する場合、プライオリティを比較する
     if classes_info['order_exist']:
         # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
         # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
@@ -140,8 +140,8 @@ def mode1():
         print(res_dic)
         # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
         # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
-        line_send = line_send + "◇" + res_dic['order_name'] + \
-                    "(指定価格:" + str(res_dic['order_result']['price']) + ")"+\
+        line_send = line_send + "◆" + res_dic['order_name'] + \
+                    "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
                     ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
                     ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
                     "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
@@ -165,9 +165,9 @@ def mode2():
         if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒と２秒)
             have_position = classPosition.position_check(classes)
             print("■■■Mode2(いずれかポジション有)", f.now(), "これは１分に１回表示")
-            if have_position['ans']:
+            # if have_position['position_exist']:
                 # ポジションがある場合
-                classPosition.close_opposite_order(classes)
+                # classPosition.close_opposite_order(classes)
 
 
 def exe_manage():
