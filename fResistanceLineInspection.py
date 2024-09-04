@@ -169,21 +169,24 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks):
     ・同じ価格のリストの最後尾には、必ずstrength０の最後の値が付いてくる（同価格ではないが、調査期間の最後を示すもの）
     ・target_price以降の引数は、返却値を整えるためのもの（引っ越し前の関数の名残。。）
     """
-    print("      JudgeLineStrength", len(same_price_list))
+    print("      JudgeLineStrength")
     # ■リターン値や、各初期値の設定
     minus_counter = 0  # 初期
     line_strength = 0.01
     len_of_same_price_list = len(same_price_list) - 1  # 最後に調査最終時刻を示すデータがあるため、実データは-1
     # 調査期間すべてを通じて、最上位（または最下位）のLINEかを確認する。
     all_range_strong_line = sum(item['near_break_count'] for item in same_price_list)  # 0の場合(LINE越が）通算通じて強いLine
+    # 平均値はall_range_strong_lineが０の場合、除算エラーとなるため、ここで計算しておく（０除算とならないような仕組み）
+    peak_strength_ave = 0 if len_of_same_price_list == 0 else sum([item['peak_strength'] for item in same_price_list[:-1]]) / len_of_same_price_list
 
     return_dic = {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "line_strength": line_strength,  # 検証では0は飛ばされてしまう。履歴のために飛ばしたくないため、0以外にしておく
         "line_on_num": 0,
         "same_time_latest": 0,
-        "peak_strength_ave": sum([item['peak_strength'] for item in same_price_list]) / len(same_price_list)
+        "peak_strength_ave": peak_strength_ave
+        # ↑itemの最後尾は、peakStrength0の調査期間の最後尾を表すもののため、除外する）
     }
-    print("      AVE平均値", sum([item['peak_strength'] for item in same_price_list]) / len(same_price_list))
+    print("      AVE平均値", peak_strength_ave)
     print("      通算でのトップか？", all_range_strong_line)
 
     # ■調査不要の場合は即時リターンする
@@ -201,7 +204,7 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks):
             line_strength = 0.75  # 2
         elif between_peaks_num == 4:
             # シンプルなカルデラ形状
-            line_strength = 1  # 3
+            line_strength = 0.8  # 3
         elif between_peaks_num > 4:
             # nearマイナスの数が、nearの数の半分以上の場合
             all_near_num = between_peaks_num / 2 - 1  # nearの数はこう求める
@@ -212,7 +215,7 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks):
             elif minus_ratio > 0:
                 line_strength = 0.5  #1.5
             else:
-                line_strength = 1  # 3
+                line_strength = 0.8  # 3
     # elif len_of_same_price_list == 2:
     #     # ■■同一価格が２個ある場合
     #     for i in range(len_of_same_price_list):
@@ -244,14 +247,17 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks):
             # print("　　　　複数時　１つ以上LINE越えあり", minus_counter)
         else:
             # LINE越えがない為、LINEの信頼度が比較的高い
-            line_strength = 1
+            if len_of_same_price_list == 2:
+                line_strength = 0.9
+            else:
+                line_strength = 1  # 最も強い
             # print("　　　　複数時　強強度", minus_counter, len(same_list))
         # ■■■フラッグ形状を検索し、見つかった場合は、ストレングスをマイナスに上書きする
-        if all_range_strong_line == 0:  # 通算と通して超えていない場合、フラッグの検証へ
-            flag = judge_flag_figure(peaks, same_price_list[0]['direction'])
-            print("     ★★Flagテスト", flag)
-            if flag:
-                line_strength = -1  # フラッグ成立時は、通常とは逆
+        # if all_range_strong_line == 0:  # 通算と通して超えていない場合、フラッグの検証へ
+        #     flag = judge_flag_figure(peaks, same_price_list[0]['direction'], line_strength)
+        #     print("     ★★Flagテスト", flag)
+        #     if flag:
+        #         line_strength = -1  # フラッグ成立時は、通常とは逆
         # if same_price_list[0]['direction'] == 1:
         #     # ■■■直近の同価格ピークがUpper側だった場合の、反対のLowerのPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
         #     opposite_peaks = [item for item in peaks if item["direction"] == -1]  # 利用するのは、Lower側
@@ -386,10 +392,11 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks):
     return_dic["line_strength"] = line_strength
     return_dic["line_on_num"] = len_of_same_price_list
     return_dic["same_time_latest"] = 0 if len(same_price_list) == 0 else same_price_list[0]['time']
+    return_dic['all_range_strong_line'] = all_range_strong_line  # 0が強い(Break回数が０）
     return return_dic
 
 
-def update_line_strength(predict_line_info_list):
+def update_line_strength(predict_line_info_list, double_peak_flag):
     """
     LINEが複数個ある場合、少し優先度を変更していく
     すでにLINEのストレングスまで算出された状態で実行される
@@ -419,10 +426,22 @@ def update_line_strength(predict_line_info_list):
     else:
         print("     そうでもない（とりあえず何もしない）")
 
+    # ダブルトップ形状直後の場合、最上値まで戻っていく前提のオーダーにしてみる
+    if double_peak_flag:
+        for i, item in enumerate(predict_line_info_list):
+            if i == 0:
+                # 最も強くあるべき線（現在価格から遠い）
+                line_strength_for_update = 1  # 1でストレングスを上書き
+            else:
+                # 中間地点たちを通過にしなおす。
+                print("   ダブルトップ直後で戻り強い可能性")
+                line_strength_for_update = 0.5  # 通過にならないぎりぎりの線で上書き
+            item['strength_info']['line_strength'] = line_strength_for_update  # 上書き作業を実行
+
     return predict_line_info_list
 
 
-def judge_flag_figure(peaks, target_direction):
+def judge_flag_figure(peaks, target_direction, line_strength):
     """
     フラッグ形状かどうかを判定する。
     peaks:元となるピークス。
@@ -434,10 +453,15 @@ def judge_flag_figure(peaks, target_direction):
     long_range_flag = judge_flag_figure_sub_function(peaks, target_direction, 5)
     short_range_flag = judge_flag_figure_sub_function(peaks, target_direction, 3)
 
-    if long_range_flag and short_range_flag:
-        flag = True
+    if line_strength == 1:
+        # 最も強い抵抗線を持っている場合,ロングレンジでの判定のみ
+        flag = long_range_flag
     else:
-        flag = False
+        # ピークが2個程度の場合、ロング＋ショートレンジで必要
+        if long_range_flag and short_range_flag:
+            flag = True
+        else:
+            flag = False
         print("Flag形状確認", long_range_flag, short_range_flag, flag)
     return flag
 
@@ -512,12 +536,12 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
             if on_line / total_peaks_num * 100 >= 35:  # さらに傾きの線上に多い場合⇒間違えなくフラッグといえる
                 print("    (ri)Lowerの継続した上昇とみられる⇒検出したupperは突破される方向になる")
                 flag_figure = True
-                tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出")
+                tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出", num)
             else:
                 print("    (ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり　ストレングス変更なし")
-                tk.line_send("    (ri)フラッグ型なり損ね。シンプルにupper強めのレンジとみなす")
+                tk.line_send("    (ri)フラッグ型なり損ね。シンプルにupper強めのレンジとみなす", num)
         else:
-            print("    (ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす　ストレングス変更なし")
+            print("    (ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす　ストレングス変更なし", num)
     else:
         # ■■■直近の同価格ピークがLower側だった場合の、反対のUpperPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
         opposite_peaks = [item for item in peaks if item["direction"] == 1]  # 利用するのは、Upper側
@@ -574,13 +598,13 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
             if on_line / total_peaks_num * 100 >= 40:
                 print("    (ri)upperの継続した下落とみられる⇒　このLINEは下に突破される方向になる")
                 flag_figure = True
-                tk.line_send("    (ri)フラッグ型（lower水平upper下落）の検出")
+                tk.line_send("    (ri)フラッグ型（lower水平upper下落）の検出", num)
             else:
                 print(
                     "    (ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
-                tk.line_send("    (ri)フラッグ型なり損ね、lowerはサポート")
+                tk.line_send("    (ri)フラッグ型なり損ね、lowerはサポート", num)
         else:
-            print("    (ri)upperに傾向性のある下降なし。レンジとみなせる。　ストレングス変更なし")
+            print("    (ri)upperに傾向性のある下降なし。レンジとみなせる。　ストレングス変更なし", num)
 
     gene.print_arr(opposite_peaks)
     return flag_figure
@@ -812,28 +836,30 @@ def find_predict_line_based_latest(*args):
             each_same_price_list = each_predict_line_info['same_price_list']
             print("    (rip)★強度確認へ")
             gene.print_arr(each_same_price_list)
-            strength_info = judge_line_strength_based_same_price_list(each_same_price_list, peaks)
+            strength_info = judge_line_strength_based_same_price_list(each_same_price_list, peaks)  # Line強度
+            print(strength_info)
+            # フラッグかどうかを判定（Line強度とは別の関数にする）
+            if strength_info['all_range_strong_line'] == 0:  # 通算と通して超えていない場合、フラッグの検証へ
+                flag = judge_flag_figure(peaks, peaks[0]['direction'], strength_info['line_strength'])
+                print("     ★★Flagテスト", flag)
+                if flag:
+                    strength_info['line_strength'] = -1  # フラッグ成立時は、通常とは逆
             each_predict_line_info['strength_info'] = strength_info
-            # strength_info_list.append({
-            #     "line_base_info": line_base_info,
-            #     "same_price_list": item_same_price_list,
-            #     "strength_info": strength_info,
-            # })
             print("      (rip)", strength_info)
 
-    # ③Lineが複数ある場合、関係性を考慮したストレングスにする
-    if len(predict_line_info_list) > 1:
-        predict_line_info_list = update_line_strength(predict_line_info_list)
-        pass
+        # ③Lineが複数ある場合、関係性や、ダブルトップを考慮したストレングスにする
+        print("  予測と反対側（今回でいうリバー）が強い抵抗線かを検討する")
+        double_top_same_price_list = find_same_price_list_from_peaks(peaks[1]['peak'], peaks[1]['direction'], peaks, False)
+        if len(double_top_same_price_list) != 0:
+            # 同価格が存在する場合
+            strength_info = judge_line_strength_based_same_price_list(double_top_same_price_list, peaks)
+            print(" ★", strength_info)
+            if strength_info['line_strength'] >= 0.9:
+                now_double_peak_gap = peaks[0]['gap']
+                tk.line_send("  反対側に強い抵抗.価格:",peaks[1]['peak'], "強さ", strength_info['line_strength'],
+                             "Gap", peaks[0]['gap'])
 
-    # ④リバーがDoublePeakに相当するかを確認する
-    test = dp.DoublePeak({"df_r": target_df, "peaks":peaks})
-    double_peak_flag = test['take_position_flag']
-    if double_peak_flag:
-        # リバーがDOublePeakの場合、riverの折り返しが抵抗線で、Latestが伸びていく可能性が高いとみなす（逆張り線まで、順張りとみなす？）
-        pass
-
-    print("  RIの結果 (参考DOublePeakの結果)", double_peak_flag)
+    print("  RIの結果")
     gene.print_arr(predict_line_info_list)
     return predict_line_info_list
 

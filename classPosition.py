@@ -630,10 +630,10 @@ def position_check(classes):
                 if item.o_time_past_sec > max_order_time_sec:
                     max_order_time_sec = item.o_time_past_sec  # 何分間オーダー待ちか
 
-    print(" ★★★★★一時テスト（classPosition)")
-    print(open_positions)
-    print(not_open_positions)
-    print("ここまで")
+    # print(" ★★★★★一時テスト（classPosition)")
+    # print(open_positions)
+    # print(not_open_positions)
+    # print("ここまで")
     # 結果の集約
     if len(open_positions) != 0:
         position_exist = True  # ポジションが一つでもOpenになっている場合は、True

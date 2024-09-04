@@ -177,11 +177,14 @@ def DoublePeak(dic_args):
     # ①必要最低限の項目たちを取得する
     mode_judge = fix_args(dic_args)  # ピークスを確保。モードを問わない共通処理。dic_args[0]はデータフレームまたはPeaksList。
     peaks = mode_judge['peaks']
-    river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-    turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
-    flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
+    river = peaks[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
+    flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
     params = mode_judge['params']  # パラメータ情報の取得
     inspection_params = mode_judge['inspection_params']
+    print("  r", river)
+    print("  t", turn)
+    print("  f",flop3)
 
     # (2)パラメータ指定。
     # ①　パラメータを設定する(検証用。売買に関するパラメータ）
@@ -219,7 +222,7 @@ def DoublePeak(dic_args):
         tf_max = 1.2  # ターンは、フロップの６割値度(0.65) ⇒　参考までのダブルトップを求めるため、緩和し1.2へ
         rt_min = 0.2  # リバーは、ターンの最低４割程度
         rt_max = 1.0  # リバーは、ターンの最高でも６割程度
-        f3_count = 4
+        f3_count = 3
         t_count_min = 2  #
         t_count_max = 6  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
         r_count = 2
@@ -235,7 +238,7 @@ def DoublePeak(dic_args):
     # ①形状の判定
     # ①-1 各ブロックのサイズについて
     const_flag = False
-    if river['count'] == r_count:
+    if river['count'] >= r_count:
         if flop3['count'] >= f3_count:
             if turn['gap'] >= 0.011 and t_count_min <= turn['count'] <= t_count_max:
                 const_flag = True
