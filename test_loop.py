@@ -20,9 +20,9 @@ def order_for_test():
     print(" オーダー実行")
     exe_orders_arr = []  # 配列の初期化
     basic = {
-            "target": 0.00,
+            "target": 143.000001,
             "type": "STOP",
-            "units": 100,
+            "units": 100.0001,
             "expected_direction": 1,
             "tp": 0.10,
             "lc": 0.10,

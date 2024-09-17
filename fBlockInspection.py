@@ -193,8 +193,8 @@ def each_block_inspection(data_df_origin):
             "memo_time": memo_time
         }
         # 返却用（シンプルでデータフレームがないものを作成する）
-        ans_dic_simple = ans_dic.pop('data')
-        ans_dic_simple = ans_dic_simple.pop('data_remain')
+        # ans_dic_simple = ans_dic.pop('data')
+        # ans_dic_simple = ans_dic_simple.pop('data_remain')
 
         # ■　形状を判定する（テスト）
         # type_info_dic = turn_each_support(ans_df, base_direction, ans_dic)  # 対象のデータフレームと、方向を渡す
@@ -223,8 +223,8 @@ def each_block_inspection(data_df_origin):
             "support_info":{}
         }
         # 返却用（シンプルでデータフレームがないものを作成する）
-        ans_dic_simple = ans_dic.pop('data')
-        ans_dic_simple = ans_dic_simple.pop('data_remain')
+        # ans_dic_simple = ans_dic.pop('data')
+        # ans_dic_simple = ans_dic_simple.pop('data_remain')
 
     # 返却する
     return ans_dic
@@ -260,6 +260,7 @@ def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
         "move_abs": 0.00001,
         "memo_time": 0,
         "latest2_dir": 0,  # 直近二つのローソクの方向を二桁であらわす.
+        "skip_counter": 0   # 南海スキップしたか
     }
 
     # 処理
@@ -272,6 +273,7 @@ def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
 
     # 通常の処理
     base_direction = 0
+    skip_counter = 0  # 各区間でスキップが何回起きたかをカウントする
     counter = 0
     skip_num = 1  # 変数として利用する値（スキップ指定）
     skip_num_always = 1   # SKIPNUMに代入して利用。初回以外はスキップ有で実行
@@ -287,7 +289,7 @@ def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
         # ■初回の場合の設定。１行目と２行目の変化率に関する情報を取得、セットする
         if counter == 0:
             base_direction = tilt_direction
-        elif counter ==1:
+        elif counter == 1:
             skip_num = skip_num_first  # 初回をスキップすると、折り返しが見抜けないことがある。counterは１の時。
         else:
             skip_num = skip_num_always
@@ -332,9 +334,10 @@ def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
                 # print("　　これの合計移動距離",total_gap, temp_str)
                 # 判定処理　
                 if tilt_direction_skip == base_direction and base_direction == tilt_direction_future:
-                    # 規定数抜いてもなお、同方向の場合
+                    # 規定数抜いてもなお、同方向の場合、スキップする
                     # print(" 　　--SKIP発生", data_df.iloc[i-1]['time_jp'], data_df.iloc[i + skip_num]['time_jp'])
                     counter = counter + skip_num
+                    skip_counter = skip_counter + 1
                 else:
                     break
             # break  # 連続が途切れた場合、ループを抜ける
@@ -413,6 +416,7 @@ def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
         "move_abs": move_ave,
         "memo_time": memo_time,
         "latest2_dir": body_pattern,
+        "skip_counter": skip_counter
     }
 
     # 返却する

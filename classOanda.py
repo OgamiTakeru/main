@@ -237,14 +237,14 @@ class Oanda:
             data = {  # オーダーのテンプレート！（一応書いておく）
                 "order": {
                     "instrument": "USD_JPY",
-                    "units": 10,
+                    "units": "10",
                     "type": "",  # "STOP(逆指)" or "LIMIT"
                     "positionFill": "DEFAULT",
                     "price": "999",  # 指値の時のみ、後で上書きされる。成り行きの時は影響しない為、初期値でテキトーな値を入れておく。
                 }
             }
             # UNITとTYPEの設定
-            data['order']['units'] = str(abs(plan['units']) * plan['ask_bid'])  # 必須　units数 askはマイナス、bidはプラス値
+            data['order']['units'] = str(int(abs(plan['units'])) * plan['ask_bid'])  # 必須　units数 askはマイナス、bidはプラス値
             data['order']['type'] = plan['type']  # 必須
 
             # PRICEの設定① 現在価格の取得(MARKET注文で利用するため）
@@ -332,7 +332,8 @@ class Oanda:
                     data['order']['trailingStopLossOnFill']['distance'] = str(round(plan['tr_range'], 3))  # ロスカット
                     data['order']['trailingStopLossOnFill']['timeInForce'] = "GTC"
 
-            # print(data['order'])
+            print(" 最終オーダー@classOanda")
+            print(data['order'])
             # ★★実行
             ep = OrderCreate(accountID=self.accountID, data=data)  #
             res_json = eval(json.dumps(self.api.request(ep), indent=2))

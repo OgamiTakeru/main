@@ -143,6 +143,7 @@ def peaks_collect_all(*args):
             'gap': round(abs(peak_latest-peak_oldest), 3),
             'latest_price': ans['latest_price'],
             "latest2_dir": ans['latest2_dir'],
+            "skip_counter": ans['skip_counter'],
             'ans': ans,
         }
         if len(peaks) != 0:
@@ -158,6 +159,73 @@ def peaks_collect_all(*args):
         if len(peaks) > max_peak_num:
             return peaks
     return peaks
+
+
+def peaks_collect_all_not_skip(*args):
+    """
+    リバースされたデータフレーム（直近が上）から、極値をN回分求める
+    基本的にトップとボトムが交互のエータを返却する。
+    直近(または指定の時間~）３時間前分を取得することにする
+    :return:
+    """
+    # 基本検索と同様、最初の一つは除外する
+    df_r = args[0]  # 引数からデータフレームを受け取る
+    df_r = df_r[1:]
+
+    # ループの場合時間がかかるので、何個のPeakを取得するかを決定する(引数で指定されている場合は引数から受け取る）
+    if len(args) == 2:
+        max_peak_num = args[1]
+    else:
+        max_peak_num = 15  # N個のピークを取得する
+
+    peaks = []  # 結果格納用
+    for i in range(222):
+        if len(df_r) == 0:
+            break
+        ans = fTurn.each_block_inspection(df_r)
+        # ans = fTurn.each_block_inspection_skip(df_r)
+        # ans = answers # 返り値には色々な値があるので、指定の返却値を取る（簡易版ではない）
+        df_r = df_r[ans['count']-1:]
+        if ans['direction'] == 1:
+            # 上向きの場合
+            peak_latest = ans['data'].iloc[0]["inner_high"]
+            peak_oldest = ans['data'].iloc[-1]["inner_low"]
+        else:
+            # 下向きの場合
+            peak_latest = ans['data'].iloc[0]["inner_low"]
+            peak_oldest = ans['data'].iloc[-1]["inner_high"]
+
+        peak_info = {
+            'time': ans['data'].iloc[0]['time_jp'],
+            'peak': peak_latest,
+            'time_old': ans['data'].iloc[-1]['time_jp'],
+            'peak_old': peak_oldest,
+            'direction': ans['direction'],
+            'body_ave': ans['body_ave'],
+            'count': len(ans["data"]),
+            'gap': round(abs(peak_latest-peak_oldest), 3),
+            'latest_price': ans['latest_price'],
+            # "latest2_dir": ans['latest2_dir'],
+            'ans': ans,
+        }
+        if len(peaks) != 0:
+            if peaks[-1]['time'] == peak_info['time']:
+                # 最後が何故か重複しまくる！時間がかぶったらおしまいにしておく
+                break
+            else:
+                peaks.append(peak_info)  # 全部のピークのデータを取得する
+        else:
+            peaks.append(peak_info)  # 全部のピークのデータを取得する
+
+        # ピーク数の上限を設定する（ループ時に多いと時間がかかるため）
+        if len(peaks) > max_peak_num:
+            break
+
+    # 余計なデータを消しておく
+    for d in peaks:
+        d.pop('ans', None)
+    return peaks
+
 
 
 # ピーク一覧で作成したものを、TopとBottomに分割する

@@ -94,9 +94,9 @@ def mode1():
     # ■検証を実行し、結果を取得する
     # なお{"take_position_flag":Boo, "exe_orders":[], "exe_order":{}, "max_priority":(int) }が返却値の予定
     inspection_result_dic = im.inspection_predict_line_make_order(gl_data5r_df)
+    print(inspection_result_dic)
 
     # ■ オーダーフラグがない場合は、ここでこの関数は教師終了
-    print(inspection_result_dic)
     if not inspection_result_dic['take_position_flag']:
         # 発注がない場合は、終了 (ポケ除け的な部分）
         return 0
@@ -148,9 +148,11 @@ def mode1():
                     ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
                     "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
                     ", OrderID:" + str(res_dic['order_id']) + \
-                    ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "), "
-    # 注文結果を送信す
-    tk.line_send("★オーダー発行", gl_trade_num, "回目: ",  " 　　　",  line_send)
+                    ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") "
+
+        # 注文結果を送信す
+    tk.line_send("★オーダー発行", gl_trade_num, "回目: ",  " 　　　",  line_send,
+                 ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread))
     print("MODE1 END")
     print("")
 
@@ -182,6 +184,7 @@ def exe_manage():
 
     # グローバル変数の宣言（編集有分のみ）
     global gl_midnight_close_flag, gl_now_price_mid, gl_data5r_df, gl_first_exe, gl_first_time, gl_latest_exe_time
+    global gl_now_spread
 
     # ■土日は実行しない（ループにはいるが、API実行はしない）
     if gl_now.weekday() >= 5:
@@ -208,6 +211,7 @@ def exe_manage():
             price_dic = price_dic['data']
 
         gl_now_price_mid = price_dic['mid']  # 念のために保存しておく（APIの回数減らすため）
+        gl_now_spread = price_dic['spread']
         if price_dic['spread'] > gl_arrow_spread:
             print("    ▲スプレッド異常", gl_now, price_dic['spread'])
             return -1  # 強制終了
@@ -301,6 +305,7 @@ gl_first_exe = 0  # 初回のみ実行する内容があるため、初回フラ
 gl_now = 0  # 現在時刻（ミリ秒無し） @exe_loopのみで変更あり
 gl_now_str = ""
 gl_now_price_mid = 0  # 現在価格（念のための保持）　@ exe_manageでのみ変更有
+gl_now_spread = 0
 gl_midnight_close_flag = 0  # 深夜突入時に一回だけポジション等の解消を行うフラグ　＠time_manageのみで変更あり
 gl_exe_mode = 0  # 実行頻度のモード設定　＠
 gl_data5r_df = 0  # 毎回複数回ローソクを取得は時間無駄なので１回を使いまわす　＠exe_manageで取得

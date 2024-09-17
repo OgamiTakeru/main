@@ -363,6 +363,299 @@ def DoublePeak(dic_args):
     # }
 
 
+def DoublePeak_predict(dic_args):
+    """
+    ★ピークスは１０個必要
+    １）引数について。関数を呼び出し、整流化する。最終的に必要なものは、
+    df_r：必須となる要素（ローソク情報(逆順[直近が上の方にある＝時間降順])データフレーム）
+    peaks：この関数の実行には必ず必要。開始時に渡されない場合、整流化関数でdf_rを元に算出される。
+    params：無い場合もある。無い場合はNone、ある場合はDic形式。
+    の三つ。
+    ２）ロジックについて
+    ＜ロジック概要＞ダブルトップを頂点とし、そこから戻る方向にポジションする。
+                     ↓ 10pips（基準：ターン）
+       　　23pips　   /\  /
+           フロップ→ /  \/  ← 7pipsまで(リバー)
+          　　　　　/　　　　　　　　　←ピークの反対くらいがLC？
+    　　トラップライン
+    　　・ターンのピークオールド起点でリバーの逆方向（逆張り）
+    　　・ターンのピーク起点でリバーの逆方向（順張り）
+       ルール一覧
+       ・ターンが小さい、または、少ない場合、ダブルトップポイントを瞬間的に突破する回数が多い為NGとしたい。、
+       　その為、ターンは３足分以上かつ、2pips以上とする。
+       ・出来ればフロップは長い方がいい気がする。フロップカウントは７以上
+       　（さらにフロップの頂点が新規ポイントの場合は率上がるかも？）
+       ・フロップのピーク点か、直近の10ピークの中で最も頂点の場合は、折り返し濃厚。最も頂点でない場合は、Breakまで行く可能性高い。
+       　（別途関数を準備）
+    :return:　必須最低限　{"take_position_flag": boolean} の返却は必須。さらにTrueの場合注文情報が必要。
+    """
+    # print(dic_args)
+    print("  ■ダブルピーク判定関数")
+    # (1)ピークスを取得（引数か処理）。この関数ではPeaksの情報を元にし、Dfは使わない。
+    # ①必要最低限の項目たちを取得する
+    mode_judge = fix_args(dic_args)  # ピークスを確保。モードを問わない共通処理。dic_args[0]はデータフレームまたはPeaksList。
+    peaks = mode_judge['peaks']
+    df_r = mode_judge['df_r']
+    river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
+    flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
+    flop2 = peaks[3]
+    flop2_subscript = 3  # flop2は添え字的には「３」を意味する
+    params = mode_judge['params']  # パラメータ情報の取得
+    inspection_params = mode_judge['inspection_params']
+    print("  r", river)
+    print("  t", turn)
+    print("  f",flop3)
+
+    # (2)パラメータ指定。
+    # ①　パラメータを設定する(検証用。売買に関するパラメータ）
+    # inspection_params = {"margin": 0.01, "d": 1}
+    if inspection_params:
+        # 売買に関するパラメータがある場合(Noneでない場合）、各値を入れていく（１つ入れるなら全て設定する必要あり）
+        position_margin = inspection_params['margin']
+        d = inspection_params['d']  # 売買の方向。リバーの方向に対し、同方向の場合１（ライン突破）．逆方向の場合ー１(ラインで抵抗）
+        sl = inspection_params['sl']  # Stop or Limit
+        tp = f.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
+        lc = f.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
+    else:
+        # 売買に関してのパラメータ無し（ダブルトップで折り返しの方向で、固定のマージンやTP/LCで取得する）
+        position_margin = 0.01
+        d = -1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
+        sl = 1
+        tp = f.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
+        lc = f.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
+
+    # ②　パラメータを設定する（対象の形状目標を変更できるようなパラメータ）
+    # params = {"tf_ratio_max": 0.65, "rt_ratio_min": 0.4, "rt_ratio_max": 1, "t_count": 2, "f3_count": 5}
+    if params:
+        # paramsが入っている場合（Noneでない場合）
+        tf_min = params['tf_ratio_min']
+        tf_max = params['tf_ratio_max']  # ターンは、フロップの６割値度
+        rt_min = params['rt_ratio_min']  # リバーは、ターンの最低４割程度
+        rt_max = params['rt_ratio_max']  # リバーは、ターンの最高でも６割程度
+        f3_count = params['f3_count']
+        t_count_min = params['t_count_min']  #
+        t_count_max = params['t_count_max']  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
+        r_count = params['r_count']
+    else:
+        # パラメータがない場合、一番スタンダート（最初）の物で実施する
+        tf_min = 0.1
+        tf_max = 0.65  # ターンは、フロップの６割値度(0.65) ⇒
+        rt_min = 0.4  # リバーは、ターンの最低４割程度
+        rt_max = 1  # リバーは、ターンの最高でも６割程度
+        f3_count = 5
+        t_count_min = 2  #
+        t_count_max = 6  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
+        r_count = 2
+
+    # (3)★★判定部
+    take_position_flag = False  # ポジションフラグを初期値でFalseにする
+    #          f3  t  r
+    #           ↓　 ↓　↓　
+    #             /\
+    #            /  \/
+    #           /
+    # 　　　　　 / 　　　　
+    # ①形状の判定
+    # ①-1 【基本形状】各ブロックのサイズについて
+    const_flag = False
+    if river['count'] >= r_count:
+        if flop3['count'] >= f3_count:
+            if turn['gap'] >= 0.011 and t_count_min <= turn['count'] <= t_count_max:
+                const_flag = True
+                c = f.str_merge("サイズ感は成立", flop3['count'], turn['count'], river['count'], turn['gap'])
+            else:
+                c = f.str_merge("turnのサイズ、カウントが規定値以下", turn['count'], turn['gap'])
+        else:
+            c = f.str_merge("flop3のカウントが規定値以下", flop3['count'])
+    else:
+        c = f.str_merge("riverのカウントが規定値以下", river['count'])
+
+    # ①-2 【基本形状】各ブロック同士のサイズ感の比率について
+    turn_ratio_based_flop3 = round(turn['gap'] / flop3['gap'], 3)
+    river_ratio_based_turn = round(river['gap'] / turn['gap'], 3)
+    compare_flag = False
+    if tf_min < turn_ratio_based_flop3 < tf_max:
+        if rt_min < river_ratio_based_turn < rt_max:
+            compare_flag = True
+            cr = f.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
+        else:
+            cr = f.str_merge("riverが範囲外", river_ratio_based_turn)
+    else:
+        cr = f.str_merge("turnがflop3に対して大きすぎる", turn_ratio_based_flop3)
+
+    # ①-3 両方成立する場合、TakePositionフラグがOnになる
+    print("  DoubleTop結果", c, cr)
+    if const_flag and compare_flag:
+        take_position_flag = True
+    # ↑この上までで、TakePositionFlagは立つ
+
+    # 追加の検討要素① flop3以前での動きの解析(すでに下落３回以上のターンを伴う大きな下落がある場合NG,山形状となる場合もNG）
+    double_top_strength = 0  # DoubleTopが抵抗線となる場合は1、突破される予想の場合-1
+    double_top_strength_memo = ""
+    flop3_time = flop3['time']
+    flop3_peak = flop3['peak']
+    df_r_before_flop3 = df_r[df_r['time_jp'] < flop3_time]
+    df_r_before_flop3 = df_r_before_flop3[2:30]  # 念のため2行目から（ここら辺同じような価格が続く可能性があるので）
+    print(df_r_before_flop3)
+
+
+    # if len(df_ans) > 0:
+    #     # flop3を超えているものがある場合は、突破できない可能性が高い（そこが底値になるケース高い）
+    #     print(" 突破できないflopピークが山形状麓")
+    #     print(df_ans)
+    #     double_top_strength = 1
+    #     double_top_strength_memo = "flopピークが山形状麓"
+    # else:
+    #     print(" 突破形状維持 山ならず")
+    #     double_top_strength = -1
+    #     double_top_strength_memo = "山形状合格(突破)"
+
+    # 追加の検討要素②
+    # 検出したFlop3の前の数ピークで、flop3が2回分程度のマイナス（プラス）になっていないか？⇒なっていたら下がりきてってる（＝3回目の折り返し扱い）
+    # 下がる方向のデータを取得する
+    flop3_gap = flop3['gap']
+    temp_inspection_peaks = peaks[flop2_subscript:]  # flop以降のピークスすべて
+    f.print_arr(temp_inspection_peaks)
+
+    if river['direction'] == -1:
+        # 直近が下り方向の場合、折り返し基準のflop3は下がり。その前が下がりメインの場合、下がりきっていると思われる。
+        # flop3以前の、最も高い値を算出（その時刻を算出）
+        max_index = max(enumerate(temp_inspection_peaks), key=lambda x: x[1].get('peak', float('-inf')))[0]
+        print(max_index, temp_inspection_peaks[max_index])
+        temp_inspection_peaks = temp_inspection_peaks[:max_index]  # 最大値までの範囲で
+        lower_peaks = [item for item in temp_inspection_peaks if item["direction"] == -1]  # Lower側
+        lower_gap_total = sum(d['gap'] for d in lower_peaks)
+        upper_peak = [item for item in temp_inspection_peaks if item["direction"] == 1]
+        upper_gap_total = sum(d['gap'] for d in upper_peak)
+        upper_lower_gap = round(lower_gap_total - upper_gap_total, 3)
+        print(lower_gap_total - upper_gap_total)
+        print(sum(d['gap'] for d in temp_inspection_peaks))
+
+        if lower_gap_total - upper_gap_total > flop3_gap * 1.3:
+            print("　3回折り返し相当の下がりあり（これ以上下がらない状態）")
+            double_top_strength = 1
+            double_top_strength_memo = double_top_strength_memo + ", 下がり切り" + str(upper_lower_gap) + str(flop3_gap)
+        else:
+            print("  突破形状維持（3回折り返し以内の下がり）")
+            double_top_strength = -1
+            double_top_strength_memo = double_top_strength_memo + ", 突破(より下)"+ str(upper_lower_gap) + str(flop3_gap)
+    else:
+        # 直近が登り方向の場合、折り返し基準のflop3は下がり。その前が下がりメインの場合、下がりきっていると思われる。
+        # flop3以前の、最も低い値を算出（その時刻を算出）
+        min_index = min(enumerate(temp_inspection_peaks), key=lambda x: x[1].get('peak', float('-inf')))[0]
+        print(min_index, temp_inspection_peaks[min_index])
+        temp_inspection_peaks = temp_inspection_peaks[:min_index]  # 最大値までの範囲で
+        lower_peaks = [item for item in temp_inspection_peaks if item["direction"] == -1]  # Lower側
+        lower_gap_total = sum(d['gap'] for d in lower_peaks)
+        upper_peak = [item for item in temp_inspection_peaks if item["direction"] == 1]
+        upper_gap_total = sum(d['gap'] for d in upper_peak)
+        upper_lower_gap = round(upper_gap_total - lower_gap_total, 3)
+        if upper_gap_total - lower_gap_total> flop3_gap * 1.5:
+            print("　3回折り返し相当の上がりあり（これ以上上がらない状態）")
+            double_top_strength = 1
+            double_top_strength_memo = double_top_strength_memo + ", 上がり切り"+ str(upper_lower_gap) + str(flop3_gap)
+        else:
+            print("  突破形状維持（3回折り返し以内の上がり）")
+            double_top_strength = -1
+            double_top_strength_memo = double_top_strength_memo + ", 突破(より上)"+ str(upper_lower_gap) + str(flop3_gap)
+
+    # (4)オーダーの作成と返却
+    if take_position_flag:
+        # オーダーの可能性がある場合、オーダーを正確に作成する
+        exe_orders = [
+            f.order_finalize({  # オーダー２を作成
+                "name": "DoublePeak(ダブル抵抗）",
+                "order_permission": True,
+                "decision_price": river['latest_price'],  # ['peak']か['latest_price']だが、後者の方が適切か？
+                "target": round(river['latest_price'] + (position_margin * river['direction'] * d * sl), 3),  # 価格でする
+                "peak_price": river['peak'],
+                "decision_time": 0,  #
+                "tp": 0.10,
+                "lc": 0.03,
+                "units": 10,
+                "expected_direction": d * river['direction'],
+                "stop_or_limit": sl,
+                "trade_timeout": 1800,
+                "remark": "test",
+                "tr_range": 0.05,
+                "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.01}
+            })
+        ]
+        return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
+            "take_position_flag": take_position_flag,
+            "double_top_strength": double_top_strength,
+            "double_top_strength_memo": double_top_strength_memo
+        }
+    else:
+        return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
+            "take_position_flag": False,  # take_position_flagの値と同様だが、わかりやすいようにあえてFalseで書いている
+        }
+    # # ②判定部2(過去数個のピークの中で、フロップのピークが頂点かどうか(フロップが傾きマイナスなら最低値、逆なら最高値か）
+    # peak_of_peak = peak_of_peak_judgement(peaks[3:10], flop3, df_r)
+    #
+    # # ③ダブルトップの成立判定
+    # if not peak_of_peak:
+    #     # flop3が頂点ではなかった場合、信用できないダブルトップ。
+    #     if take_position_flag:
+    #         take_position_flag = False
+    #         print("    ■TakePositionFlagを解除（最ピークでないため）")
+    #
+    # # (4) ★★オーダーのベースを生成する（検証で利用するのはこのオブジェクト）
+    # # ①オーダー無し時は除外
+    # if not take_position_flag:  # ポジションフラグがFalseの場合は、返却をして終了
+    #     return {  # フラグ無しの場合、オーダー以外を返却。
+    #         "take_position_flag": take_position_flag,
+    #         "order_base": order_base,  # 検証で利用する。
+    #         "records": records  # 記録軍。CSV保存時に出力して解析ができるように。
+    #     }
+    #
+    # # ②★★実オーダーを組み立てる（成立時のみ生成）
+    # print("   決心価格", order_base['decision_price'], "決心時間", order_base['decision_time'])
+    # print("   注文価格", order_base['target_price'], "向とSL", order_base['expected_direction'], stop_or_limit)
+    # exe_orders = [
+    #     f.order_finalize({  # オーダー２を作成
+    #         "name": "DoublePeak(ダブル抵抗）",
+    #         "order_permission": True,
+    #         "decision_price": river['peak'],  # ★
+    #         "target": turn['peak'] + (0.01 * river['direction'] * -1),  # 価格でする
+    #         "decision_time": 0,  #
+    #         "tp": 0.10,
+    #         "lc": 0.03,
+    #         "units": 10,
+    #         "expected_direction": river['direction'] * -1,
+    #         "stop_or_limit": 1,  # ★順張り
+    #         "trade_timeout": 1800,
+    #         "remark": "test",
+    #         "tr_range": 0.05,
+    #         "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.01}
+    #     }),
+    #     f.order_finalize({
+    #         "name": "DoublePeak(ダブル突破）",
+    #         "order_permission": True,
+    #         "decision_price": river['peak'],  # ★
+    #         "target": flop3['peak'] + (0.01 * river['direction']),  # 価格でする
+    #         "decision_time": 0,  #
+    #         "tp": 0.10,
+    #         "lc": 0.03,
+    #         "units": 10,
+    #         "expected_direction": river['direction'],
+    #         "stop_or_limit": 1,  # ★
+    #         "trade_timeout": 1800,
+    #         "remark": "test",
+    #         "tr_range": 0.05,
+    #         "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.02}
+    #     })
+    # ]
+    #
+    # return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
+    #     "take_position_flag": take_position_flag,
+    #     "order_base": order_base,  # 検証で利用する。
+    #     "exe_orders": exe_orders,  # 発行するオーダー。このままオーダーを発行できる状態
+    #     "records": records  # 記録軍。CSV保存時に出力して解析ができるように。
+    # }
+
+
 def peakPatternMain(df_r):
     # peaksを算出しておく
     peaks_info = p.peaks_collect_main(df_r[:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）

@@ -13,7 +13,7 @@ def order_base(now_prie):
     return {
             "target": 0.00,
             "type": "STOP",
-            "units": 1000,
+            "units": 100,
             "expected_direction": 1,
             "tp": 0.10,
             "lc": 0.10,
@@ -279,7 +279,7 @@ def order_finalize(order_base):
     }
     いずれかが必須
     # 注文方法は、Typeでもstop_or_limitでも可能
-        "stop_or_limit": stop_or_limit,  # 必須 (1の場合順張り＝Stop,-1の場合逆張り＝Limit
+        "stop_or_limit": 1 or -1,  # 必須 (1の場合順張り＝Stop,-1の場合逆張り＝Limit
         type = "STOP" "LIMIT" 等直接オーダーに使う文字列
     :return:　order_base = {
         "stop_or_limit": stop_or_limit,  # 任意（本番ではtype項目に置換して別途必要になる。計算に便利なように数字で。）

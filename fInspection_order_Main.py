@@ -183,7 +183,15 @@ def inspection_predict_line_make_order(df_r):
         "exe_order": {}  # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
     }
     # 各リスト
-    now_price = df_r.iloc[0]['open']  # 現在時は、めんどうなのでAPIを叩かずに、データから取っちゃう。
+    price_dic = oa.NowPrice_exe("USD_JPY")
+    if price_dic['error'] == -1:  # APIエラーの場合はスキップ
+        print("API異常発生の可能性")
+        return -1  # 終了
+    else:
+        price_dic = price_dic['data']
+
+    now_price = price_dic['mid']  # 念のために保存しておく（APIの回数減らすため）
+    # now_price = df_r.iloc[0]['open']  # 現在時は、めんどうなのでAPIを叩かずに、データから取っちゃう。
     order_base_info = gene.order_base(now_price)  # オーダーの初期辞書を取得する
     # 関数が来た時の表示
     print("   OrderCreateMain【調査】予測Line")
@@ -207,7 +215,7 @@ def inspection_predict_line_make_order(df_r):
     gene.print_arr(predict_line_info_list)
 
     # （２）状況にあわせたオーダーを生成する
-    for i,each_line_info in enumerate(predict_line_info_list):
+    for i, each_line_info in enumerate(predict_line_info_list):
         # 受け取った価格リストからオーダーを生成する
         line_strength = float(each_line_info['strength_info']['line_strength'])
         peak_strength_ave = float(each_line_info['strength_info']['peak_strength_ave'])
@@ -216,8 +224,9 @@ def inspection_predict_line_make_order(df_r):
         # オーダーの元を生成する
         main_order = copy.deepcopy(order_base_info)
 
-        if now_price - 0.02 <= target_price <= now_price + 0.02:
-            continue
+        # if now_price - 0.05 <= target_price <= now_price + 0.05:
+        #     tk.line_send("    距離近いオーダーをキャンセル")
+        #     continue
 
         # 暫定（オーダーの数を減らすため）
         if i != 0:
@@ -229,46 +238,35 @@ def inspection_predict_line_make_order(df_r):
             print("  (m)強い抵抗線　line,peak", line_strength, peak_strength_ave, target_price)
             main_order['target'] = each_line_info['line_base_info']['line_base_price']
             main_order['tp'] = 0.3 * line_strength  # 0.09  # LCは広め
-            main_order['lc'] = 0.06 * line_strength  # 0.09  # LCは広め
+            main_order['lc'] = 0.07  # * line_strength  # 0.09  # LCは広め
             main_order['type'] = 'LIMIT'
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * -1  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = each_line_info['strength_info']['line_strength']
-            main_order['units'] = order_base_info['units'] * line_strength
-            main_order['name'] = "LINE探索(強抵抗)" + str(each_line_info['strength_info']['line_strength'])
-            main_order['lc_change'] = [
-                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.05},
-                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012},
-                {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08},
-                {"lc_change_exe": True, "lc_trigger_range": 0.13, "lc_ensure_range": 0.1},
-                {"lc_change_exe": True, "lc_trigger_range": 0.17, "lc_ensure_range": 0.13},
-                {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20}
-            ]
+            main_order['units'] = 110 # order_base_info['units'] * line_strength
+            main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
+
             # オーダーが来た場合は、フラグをあげ、オーダーを追加する
             flag_and_orders['take_position_flag'] = True
             flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
         elif line_strength < 0:
-            # フラッグ形状が発覚している場合。Latest方向に強く伸びる予想 (通過と同義だが、プライオリティが異なる）
-            print("  (m)フラッグ検出（大きな動き前兆）", line_strength, peak_strength_ave, target_price)
+            # フラッグ形状やDoublePeak未遂が発覚している場合。Latest方向に強く伸びる予想 (通過と同義だが、プライオリティが異なる）
+            print("  (m)フラッグ・DP未遂検出（大きな動き前兆）", line_strength, peak_strength_ave, target_price)
             main_order['target'] = each_line_info['line_base_info']['line_base_price']
-            main_order['tp'] = 0.09  # LCは広め
-            main_order['lc'] = 0.05  #
+            main_order['tp'] = 0.30  # LCは広め
+            main_order['lc'] = 0.09  #
             main_order['type'] = 'STOP'  # 順張り
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = 2
-            main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "フラッグ検出" + str(each_line_info['strength_info']['line_strength'])
-            main_order['lc_change'] = [
-                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.05},
-                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012},
-                {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08}
-            ]
+            main_order['units'] = 100 # order_base_info['units'] * 1
+            main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
             # オーダーが来た場合は、フラグをあげ、オーダーを追加する
             flag_and_orders['take_position_flag'] = True
             flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
+
         elif peak_strength_ave < 0.75:
             # ②ピークが弱いものばかりである場合、通過点レベルの線とみなす（Latestから見ると、順張りとなる）
             print("  (m)通過線　line,peak", line_strength, peak_strength_ave, target_price)
@@ -279,11 +277,11 @@ def inspection_predict_line_make_order(df_r):
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = 1
-            main_order['units'] = order_base_info['units'] * 1.1
-            main_order['name'] = "LINE探索(通過)" + str(each_line_info['strength_info']['line_strength'])
+            main_order['units'] = 80  # order_base_info['units'] * 1.1
+            main_order['name'] = "今はないはずのLINE探索(通過)" + str(each_line_info['strength_info']['line_strength'])
             main_order['lc_change'] = [
-                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.02},
-                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012},
+                {"lc_change_exe": True, "lc_trigger_range": 0.02, "lc_ensure_range": 0.01},
+                {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.02},
                 {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08}
             ]
             # オーダーが来た場合は、フラグをあげ、オーダーを追加する
@@ -295,36 +293,42 @@ def inspection_predict_line_make_order(df_r):
             # ただしこれは存在しない見込み（SamePriceが存在する＝オーダーを入れる）
             pass
 
-    # (3) 設定されるLINEが遠すぎる場合、そこには到達するだろう、という見込みで現在価格からそこへ向かうオーダーを追加する
+    # (3) 設定されるLINEが遠すぎる場合、そこには到達するだろう、という見込みで通過前提の現在価格からそこへ向かうオーダーを追加する
     # if len(predict_line_info_list)>0:
     #     # predictLineが存在する場合のみ実行
+    #     # 条件の設定
     #     if latest['direction'] == 1:
     #         # 直近が上向きの場合（それよりも上側にオーダーLINEが設定されているオーダーリストの先頭が一番高い）
     #         farthest_line = predict_line_info_list[0]['line_base_info']['line_base_price']
-    #         farthest_gap = farthest_line - now_price
+    #         farthest_gap = abs(farthest_line - now_price)
     #         nearest_line = predict_line_info_list[-1]['line_base_info']['line_base_price']
     #         nearest_gap = nearest_line - now_price
     #     else:
     #         # 直近が下向きの場合　（それよりも下側にオーダーLINEが設定されている。オーダーリストの先頭が一番低い。Latestによって
     #         farthest_line = predict_line_info_list[0]['line_base_info']['line_base_price']
-    #         farthest_gap = farthest_line - now_price
+    #         farthest_gap = abs(farthest_line - now_price)
     #         nearest_line = predict_line_info_list[-1]['line_base_info']['line_base_price']
     #         nearest_gap = nearest_line - now_price
-    #     if nearest_gap >= 0.15:
+    #     # 発行
+    #     print("    オーダーまでの幅", farthest_gap, nearest_line, farthest_line, now_price)
+    #     if farthest_gap >= 0.08:
     #         # 近くてもGapが15Pips以上ある場合、Latestがそのまま延長して、そのLineまで頑張ると想定する。
     #         main_order = copy.deepcopy(order_base_info)  # オーダーの生成
-    #         main_order['target'] = 0.015  # 少しだけ余裕を見て設定
-    #         main_order['tp'] = 0.03  # LCは広め
-    #         main_order['lc'] = 0.03  # LCは広め
-    #         main_order['type'] = 'STOP'  # Latestに対して、順張り
+    #         main_order['target'] = farthest_gap * 0.3  # 少しだけ余裕を見て設定
+    #         main_order['tp'] = 0.20  # LCは広め
+    #         main_order['lc'] = 0.1  # LCは広め
+    #         # main_order['type'] = 'STOP'  # 元々の通過。Latestに対して、順張り
+    #         main_order['type'] = 'LIMIT'  # Latestに対して、順張り
     #         # main_order['tr_range'] = 0.10  # 要検討
-    #         main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し
+    #         # main_order['expected_direction'] = peaks[0]['direction'] * 1  # 元々の通過。latestに対し、1は突破。*-1は折り返し
+    #         main_order['expected_direction'] = peaks[0]['direction'] * -1  # latestに対し、1は突破。*-1は折り返し
     #         main_order['priority'] = 1
-    #         main_order['units'] = order_base_info['units'] * 1.2
+    #         main_order['units'] = 66 # order_base_info['units'] * 0.5
     #         main_order['name'] = "Line遠(Latest延長)" + str(1)
     #         main_order['lc_change'] = [
-    #             {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.05},
-    #             {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012},
+    #             {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},
+    #             {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.01},
+    #             {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.03},
     #             {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08}
     #         ]
     #         # オーダーが来た場合は、フラグをあげ、オーダーを追加する
@@ -336,8 +340,12 @@ def inspection_predict_line_make_order(df_r):
     if len(flag_and_orders["exe_orders"]) >= 1:
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority
-        print(max_priority)
-        print(flag_and_orders)
+        print("max_priority", max_priority)
+        # print(flag_and_orders)
+
+    print("flag_and_ordes")
+    print(flag_and_orders)
+    print("ここまで")
 
     return flag_and_orders
 
