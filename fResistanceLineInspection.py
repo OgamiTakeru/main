@@ -49,11 +49,14 @@ def find_same_price_list_from_peaks(target_price, target_dir, peaks_all, predict
     near_break_count = near_fit_count = 0
     same_list = []
     between_peaks_num = start_adjuster  # 間に何個のピークがあったか。初期値は1としないとなんかおかしなことになる
-    # print("　　　　ダブルトップ判定閾値", range_yen)
+    print("　　　　ダブルトップ判定閾値", range_yen)
     for i, item in enumerate(peaks_all):
         # 判定を行う
         if target_price - range_yen <= item['peak'] <= target_price + range_yen:
             # 同価格があった場合
+            if counter == 0:
+                # 今回のtargetPriceで最初の発見（最低値か最高値）の場合、それにtargetPriceを合わせに行く(それ基準で近い物を探すため）
+                target_price = item['peak']
 
             # 今後ピークの強さで分岐する？
             if item['peak_strength'] == 0.5:
@@ -854,7 +857,8 @@ def find_predict_line_based_latest(*args):
             strength_info = judge_line_strength_based_same_price_list(each_same_price_list, peaks)  # Line強度
             print(strength_info)
             # フラッグかどうかを判定（Line強度とは別の関数にする）
-            if strength_info['all_range_strong_line'] == 0 and strength_info['line_on_num'] >= 3:  # 通算と通して超えていない場合、フラッグの検証へ
+            # if strength_info['all_range_strong_line'] == 0 and strength_info['line_on_num'] >= 3:  # 通算と通して超えていない場合、フラッグの検証へ
+            if strength_info['line_on_num'] >= 3:  # フラッグ検証ハードルを下げる
                 flag = judge_flag_figure(peaks, peaks[0]['direction'], strength_info['line_strength'])
                 print("     【Flagテスト】", flag)
                 if flag:

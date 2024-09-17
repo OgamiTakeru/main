@@ -13,7 +13,7 @@ def order_base(now_prie):
     return {
             "target": 0.00,
             "type": "STOP",
-            "units": 100,
+            "units": 10000,
             "expected_direction": 1,
             "tp": 0.10,
             "lc": 0.10,
@@ -26,7 +26,14 @@ def order_base(now_prie):
                 {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08},
                 {"lc_change_exe": True, "lc_trigger_range": 0.13, "lc_ensure_range": 0.1},
                 {"lc_change_exe": True, "lc_trigger_range": 0.17, "lc_ensure_range": 0.13},
-                {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20}
+                {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
+                {"lc_change_exe": True, "lc_trigger_range": 0.35, "lc_ensure_range": 0.30},
+                {"lc_change_exe": True, "lc_trigger_range": 0.50, "lc_ensure_range": 0.45},
+                {"lc_change_exe": True, "lc_trigger_range": 0.60, "lc_ensure_range": 0.50},
+                {"lc_change_exe": True, "lc_trigger_range": 0.70, "lc_ensure_range": 0.60},
+                {"lc_change_exe": True, "lc_trigger_range": 0.80, "lc_ensure_range": 0.70},
+                {"lc_change_exe": True, "lc_trigger_range": 0.90, "lc_ensure_range": 0.80}
+
             ],
     }
 

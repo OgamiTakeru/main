@@ -243,7 +243,7 @@ def inspection_predict_line_make_order(df_r):
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * -1  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = each_line_info['strength_info']['line_strength']
-            main_order['units'] = 110 # order_base_info['units'] * line_strength
+            main_order['units'] = order_base_info['units'] * 1
             main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
 
             # オーダーが来た場合は、フラグをあげ、オーダーを追加する
@@ -258,9 +258,9 @@ def inspection_predict_line_make_order(df_r):
             main_order['lc'] = 0.09  #
             main_order['type'] = 'STOP'  # 順張り
             # main_order['tr_range'] = 0.10  # 要検討
-            main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し
+            main_order['expected_direction'] = peaks[0]['direction'] * 1.2  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = 2
-            main_order['units'] = 100 # order_base_info['units'] * 1
+            main_order['units'] = order_base_info['units'] * 1
             main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
             # オーダーが来た場合は、フラグをあげ、オーダーを追加する
             flag_and_orders['take_position_flag'] = True
@@ -277,7 +277,7 @@ def inspection_predict_line_make_order(df_r):
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = 1
-            main_order['units'] = 80  # order_base_info['units'] * 1.1
+            main_order['units'] = order_base_info['units'] * 0.8
             main_order['name'] = "今はないはずのLINE探索(通過)" + str(each_line_info['strength_info']['line_strength'])
             main_order['lc_change'] = [
                 {"lc_change_exe": True, "lc_trigger_range": 0.02, "lc_ensure_range": 0.01},
@@ -323,7 +323,7 @@ def inspection_predict_line_make_order(df_r):
     #         # main_order['expected_direction'] = peaks[0]['direction'] * 1  # 元々の通過。latestに対し、1は突破。*-1は折り返し
     #         main_order['expected_direction'] = peaks[0]['direction'] * -1  # latestに対し、1は突破。*-1は折り返し
     #         main_order['priority'] = 1
-    #         main_order['units'] = 66 # order_base_info['units'] * 0.5
+    #         main_order['units'] = order_base_info['units'] * 0.5
     #         main_order['name'] = "Line遠(Latest延長)" + str(1)
     #         main_order['lc_change'] = [
     #             {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},

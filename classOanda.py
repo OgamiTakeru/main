@@ -998,6 +998,7 @@ def error_method(name, start_time, e):
     past_sec = (now_time - start_time).seconds
 
     print("　★API_Error【", name, "】", now_time, past_sec)
+    print(e)
     # エラーの種類によって表示やLINE送信を行う。
     if past_sec > 10:
         print("   時間切れエラー？")

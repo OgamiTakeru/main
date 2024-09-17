@@ -44,7 +44,7 @@ class order_information:
         self.t_close_time = 0
         self.t_close_price = 0
         # 経過時間管理
-        self.order_timeout_min = 25  # 分単位で指定
+        self.order_timeout_min = 45  # 分単位で指定
         self.trade_timeout_min = 50  # 分単位で指定
         self.over_write_block = False
         # 勝ち負け情報更新用(一つの関数を使いまわすため、辞書化する）
@@ -154,6 +154,8 @@ class order_information:
             self.priority = plan['priority']  # プラオリティを登録する
         if 'trade_timeout_min' in plan:  # していない場合は初期値50分
             self.trade_timeout_min = plan['trade_timeout_min']
+        if 'order_timeout_min' in plan:  # していない場合は初期値50分
+            self.order_timeout_min = plan['order_timeout_min']
         self.name = plan['name'] + "(" + str(self.priority) + ")"  # 名前を入れる(クラス内の変更）
         # (2)各フラグを指定しておく
         self.order_permission = plan['order_permission']  # 即時のオーダー判断に利用する
@@ -457,6 +459,9 @@ class order_information:
 
         # (1) OrderDetail,TradeDetailの取得（orderId,tradeIdの確保）
         order_ans = self.oa.OrderDetails_exe(self.o_id)  # ■■API
+        if 'error' in order_ans:
+            print("OrderErrorのためリターン０（@classPosition463）")
+            return 0
         order_latest = order_ans['data']['order']  # jsonを取得
         self.o_json = order_latest  # Json自体も格納
         if "tradeOpenedID" in order_latest:  # ポジションが存在している場合
