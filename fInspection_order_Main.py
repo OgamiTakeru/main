@@ -277,7 +277,7 @@ def inspection_predict_line_make_order(df_r):
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = 1
-            main_order['units'] = order_base_info['units'] * 0.8
+            main_order['units'] = order_base_info['units'] * 0.1
             main_order['name'] = "今はないはずのLINE探索(通過)" + str(each_line_info['strength_info']['line_strength'])
             main_order['lc_change'] = [
                 {"lc_change_exe": True, "lc_trigger_range": 0.02, "lc_ensure_range": 0.01},
