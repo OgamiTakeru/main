@@ -205,6 +205,113 @@ class Oanda:
             return e_info
 
     # (5)オーダーの発行を実施
+
+    def OrderCreate_dic_support(self, plan):
+        # 初期値を入れておく
+        plan['ask_bid'] = plan['direction']  # その場しのぎ。。
+
+        data = {  # オーダーのテンプレート！（一応書いておく）
+            "order": {
+                "instrument": "USD_JPY",
+                "units": "10",
+                "type": "",  # "STOP(逆指)" or "LIMIT"
+                "positionFill": "DEFAULT",
+                "price": "999",  # 指値の時のみ、後で上書きされる。成り行きの時は影響しない為、初期値でテキトーな値を入れておく。
+            }
+        }
+        # UNITとTYPEの設定
+        data['order']['units'] = str(int(abs(plan['units'])) * plan['ask_bid'])  # 必須　units数 askはマイナス、bidはプラス値
+        data['order']['type'] = plan['type']  # 必須
+
+        # PRICEの設定① 現在価格の取得(MARKET注文で利用するため）
+        price_dic = self.NowPrice_exe("USD_JPY")  # 現在価格の取得用APIを叩く
+        if price_dic['error'] == -1:  # APIエラーの場合はスキップ
+            print("　　API異常発生の可能性　現在価格取得　CreateOrderClass")
+            return -1  # 終了
+        else:
+            if plan['ask_bid'] == 1:
+                price_now = price_dic['data']['ask']  # 現在価格を取得(買い）
+            elif plan['ask_bid'] == -1:
+                price_now = price_dic['data']['bid']  # 現在価格を取得(売り）
+            else:
+                price_now = price_dic['data']['mid']  # 現在価格を取得(MID)あんまりない想定
+        # PRICEの設定②　 plan['price']の設定
+        if plan['type'] == "MARKET":  # 成り行き注文時は、現在価格を取得する⇒注文には不要だが、LCやTPを計算するうえで必要。
+            plan['price'] = price_now  # info内は計算に使うためSTRせず。
+            # data['order']['price'] = price_now  # MARKET時は設定不要
+        else:  # 成り行き注文以外(指値注文)
+            data['order']['price'] = str(round(plan['price'], 3))  # 指値の場合は必須
+
+        # 利確の設定
+        # 利確レンジの記入がある場合。
+        if 'tp_range' in plan and plan['tp_range'] != 0:
+            # 利確設定ありの場合
+            tp_range = abs(plan['tp_range'])  # 正負がついていることがあるため、解除しておく(ask_bidで判別が正確)
+            data['order']['takeProfitOnFill'] = {}
+            data['order']['takeProfitOnFill']['price'] = str(round(plan['price'] +
+                                                                   (tp_range * plan['ask_bid']), 3))  # 利確
+            data['order']['takeProfitOnFill']['timeInForce'] = "GTC"
+        # 利確価格が指定されている場合。
+        if 'tp_price' in plan and plan['tp_price'] != 0:
+            # 共通部の格納
+            data['order']['takeProfitOnFill'] = {}
+            data['order']['takeProfitOnFill']['timeInForce'] = "GTC"
+            # 範囲が適正かを確認し、修正な場合修正する
+            if plan['ask_bid'] == 1 and plan['tp_price'] < plan['price']:
+                # 買い方向なのに、利確がターゲット価格より低い場合。（めんどいからテキトーに設定しちゃう）
+                print("不適正　利確")
+                data['order']['takeProfitOnFill']['price'] = str(
+                    round(plan['price'] + (0.05 * plan['ask_bid']), 3))  # 利確
+            elif plan['ask_bid'] == -1 and plan['tp_price'] > plan['price']:
+                # 売り方向なのに、利確がターゲット価格より高い場合。（めんどいからテキトーに設定しちゃう）
+                print("不適正　利確")
+                data['order']['takeProfitOnFill']['price'] = str(
+                    round(plan['price'] + (0.05 * plan['ask_bid']), 3))  # 利確
+            else:
+                # print("適正　利確")
+                data['order']['takeProfitOnFill']['price'] = str(round(plan['tp_price'], 3))  # 利確
+
+        # ロスカの設定
+        # ロスカ幅の記入がある場合
+        if 'lc_range' in plan and plan['lc_range'] != 0:
+            # ロスカ設定ありの場合
+            lc_range = abs(plan['lc_range'])
+            data['order']['stopLossOnFill'] = {}
+            data['order']['stopLossOnFill']['price'] = str(round(plan['price'] -
+                                                                 (lc_range * plan['ask_bid']), 3))  # ロスカット
+            data['order']['stopLossOnFill']['timeInForce'] = "GTC"
+        # ロスカ価格が指定されている場合。
+        if 'lc_price' in plan and plan['lc_price'] != 0:
+            # 共通部の格納
+            data['order']['stopLossOnFill'] = {}
+            data['order']['stopLossOnFill']['timeInForce'] = "GTC"
+            # 範囲が適正かを確認し、修正な場合修正する
+            if plan['ask_bid'] == 1 and plan['lc_price'] > plan['price']:
+                # 買い方向なのに、利確がターゲット価格より高い場合。（めんどいからテキトーに設定しちゃう）
+                print(" 不適正　ロスカ")
+                data['order']['stopLossOnFill']['price'] = str(
+                    round(plan['price'] - (0.05 * plan['ask_bid']), 3))  # 利確
+            elif plan['ask_bid'] == -1 and plan['lc_price'] < plan['price']:
+                # 売り方向なのに、利確がターゲット価格より低い場合。（めんどいからテキトーに設定しちゃう）
+                print(" 不適正　ロスカ")
+                data['order']['stopLossOnFill']['price'] = str(
+                    round(plan['price'] - (0.05 * plan['ask_bid']), 3))  # 利確
+            else:
+                # print("適正　ロスカ")
+                data['order']['stopLossOnFill']['price'] = str(round(plan['lc_price'], 3))  # 利確
+
+        # トレールの設定
+        if 'tr_range' in plan:
+            if plan['tr_range'] != 0:
+                # トレールストップロス設定ありの場合
+                data['order']['trailingStopLossOnFill'] = {}
+                data['order']['trailingStopLossOnFill']['distance'] = str(round(plan['tr_range'], 3))  # ロスカット
+                data['order']['trailingStopLossOnFill']['timeInForce'] = "GTC"
+
+        print(" 最終オーダー@classOanda")
+        print(data['order'])
+
+
     def OrderCreate_dic_exe(self, plan):
         """
         オーダーを発行する。以下の形式でInfo（辞書形式）を受け付ける。

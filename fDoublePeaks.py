@@ -2,9 +2,10 @@ import fBlockInspection as t  # とりあえずの関数集
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
 import fPeakInspection as p  # とりあえずの関数集
-import fGeneric as f
+import fGeneric as gene
 import statistics
 import pandas as pd
+import copy
 
 oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
@@ -194,15 +195,15 @@ def DoublePeak(dic_args):
         position_margin = inspection_params['margin']
         d = inspection_params['d']  # 売買の方向。リバーの方向に対し、同方向の場合１（ライン突破）．逆方向の場合ー１(ラインで抵抗）
         sl = inspection_params['sl']  # Stop or Limit
-        tp = f.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
-        lc = f.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
+        tp = gene.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
+        lc = gene.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
     else:
         # 売買に関してのパラメータ無し（ダブルトップで折り返しの方向で、固定のマージンやTP/LCで取得する）
         position_margin = 0.01
         d = -1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
         sl = 1
-        tp = f.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
-        lc = f.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
+        tp = gene.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
+        lc = gene.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
 
     # ②　パラメータを設定する（対象の形状目標を変更できるようなパラメータ）
     # params = {"tf_ratio_max": 0.65, "rt_ratio_min": 0.4, "rt_ratio_max": 1, "t_count": 2, "f3_count": 5}
@@ -242,13 +243,13 @@ def DoublePeak(dic_args):
         if flop3['count'] >= f3_count:
             if turn['gap'] >= 0.011 and t_count_min <= turn['count'] <= t_count_max:
                 const_flag = True
-                c = f.str_merge("サイズ感は成立", flop3['count'], turn['count'], river['count'], turn['gap'])
+                c = gene.str_merge("サイズ感は成立", flop3['count'], turn['count'], river['count'], turn['gap'])
             else:
-                c = f.str_merge("turnのサイズ、カウントが規定値以下", turn['count'], turn['gap'])
+                c = gene.str_merge("turnのサイズ、カウントが規定値以下", turn['count'], turn['gap'])
         else:
-            c = f.str_merge("flop3のカウントが規定値以下", flop3['count'])
+            c = gene.str_merge("flop3のカウントが規定値以下", flop3['count'])
     else:
-        c= f.str_merge("riverのカウントが規定値以下", river['count'])
+        c= gene.str_merge("riverのカウントが規定値以下", river['count'])
 
     # ①-2 各ブロック同士のサイズ感の比率について
     turn_ratio_based_flop3 = round(turn['gap'] / flop3['gap'], 3)
@@ -257,11 +258,11 @@ def DoublePeak(dic_args):
     if tf_min < turn_ratio_based_flop3 < tf_max:
         if rt_min < river_ratio_based_turn < rt_max:
             compare_flag = True
-            cr = f.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
+            cr = gene.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
         else:
-            cr = f.str_merge("riverが範囲外", river_ratio_based_turn)
+            cr = gene.str_merge("riverが範囲外", river_ratio_based_turn)
     else:
-        cr = f.str_merge("turnがflop3に対して大きすぎる", turn_ratio_based_flop3)
+        cr = gene.str_merge("turnがflop3に対して大きすぎる", turn_ratio_based_flop3)
 
     # ①-3 両方成立する場合、TakePositionフラグがOnになる
     print("  DoubleTop結果", c, cr)
@@ -272,7 +273,7 @@ def DoublePeak(dic_args):
     if take_position_flag:
         # オーダーの可能性がある場合、オーダーを正確に作成する
         exe_orders = [
-            f.order_finalize({  # オーダー２を作成
+            gene.order_finalize({  # オーダー２を作成
                 "name": "DoublePeak(ダブル抵抗）",
                 "order_permission": True,
                 "decision_price": river['latest_price'],  # ['peak']か['latest_price']だが、後者の方が適切か？
@@ -415,15 +416,15 @@ def DoublePeak_predict(dic_args):
         position_margin = inspection_params['margin']
         d = inspection_params['d']  # 売買の方向。リバーの方向に対し、同方向の場合１（ライン突破）．逆方向の場合ー１(ラインで抵抗）
         sl = inspection_params['sl']  # Stop or Limit
-        tp = f.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
-        lc = f.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
+        tp = gene.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
+        lc = gene.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
     else:
         # 売買に関してのパラメータ無し（ダブルトップで折り返しの方向で、固定のマージンやTP/LCで取得する）
         position_margin = 0.01
         d = -1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
         sl = 1
-        tp = f.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
-        lc = f.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
+        tp = gene.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
+        lc = gene.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
 
     # ②　パラメータを設定する（対象の形状目標を変更できるようなパラメータ）
     # params = {"tf_ratio_max": 0.65, "rt_ratio_min": 0.4, "rt_ratio_max": 1, "t_count": 2, "f3_count": 5}
@@ -433,6 +434,7 @@ def DoublePeak_predict(dic_args):
         tf_max = params['tf_ratio_max']  # ターンは、フロップの６割値度
         rt_min = params['rt_ratio_min']  # リバーは、ターンの最低４割程度
         rt_max = params['rt_ratio_max']  # リバーは、ターンの最高でも６割程度
+        rt_max_extend = params['rt_ratio_max_extend']  # リバーは、ターンの最高でも６割程度
         f3_count = params['f3_count']
         t_count_min = params['t_count_min']  #
         t_count_max = params['t_count_max']  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
@@ -443,6 +445,7 @@ def DoublePeak_predict(dic_args):
         tf_max = 0.65  # ターンは、フロップの６割値度(0.65) ⇒
         rt_min = 0.4  # リバーは、ターンの最低４割程度
         rt_max = 1  # リバーは、ターンの最高でも６割程度
+        rt_max_extend = 2.3
         f3_count = 5
         t_count_min = 2  #
         t_count_max = 6  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
@@ -463,26 +466,32 @@ def DoublePeak_predict(dic_args):
         if flop3['count'] >= f3_count:
             if turn['gap'] >= 0.011 and t_count_min <= turn['count'] <= t_count_max:
                 const_flag = True
-                c = f.str_merge("サイズ感は成立", flop3['count'], turn['count'], river['count'], turn['gap'])
+                c = gene.str_merge("サイズ感は成立", flop3['count'], turn['count'], river['count'], turn['gap'])
             else:
-                c = f.str_merge("turnのサイズ、カウントが規定値以下", turn['count'], turn['gap'])
+                c = gene.str_merge("turnのサイズ、カウントが規定値以下", turn['count'], turn['gap'])
         else:
-            c = f.str_merge("flop3のカウントが規定値以下", flop3['count'])
+            c = gene.str_merge("flop3のカウントが規定値以下", flop3['count'])
     else:
-        c = f.str_merge("riverのカウントが規定値以下", river['count'])
+        c = gene.str_merge("riverのカウントが規定値以下", river['count'])
 
     # ①-2 【基本形状】各ブロック同士のサイズ感の比率について
     turn_ratio_based_flop3 = round(turn['gap'] / flop3['gap'], 3)
     river_ratio_based_turn = round(river['gap'] / turn['gap'], 3)
     compare_flag = False
+    confidence = 0
     if tf_min < turn_ratio_based_flop3 < tf_max:
         if rt_min < river_ratio_based_turn < rt_max:
             compare_flag = True
-            cr = f.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
+            confidence = 1  # 一番信用のできる形のため、信頼度最大
+            cr = gene.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
+        elif rt_min < river_ratio_based_turn <= rt_max_extend:
+            compare_flag = True
+            confidence = 0.5  # 信頼度が微妙なため、信頼度半減
+            cr = gene.str_merge("サイズ割合は成立(riverOver）", river_ratio_based_turn, rt_max_extend)
         else:
-            cr = f.str_merge("riverが範囲外", river_ratio_based_turn)
+            cr = gene.str_merge("riverが範囲外", river_ratio_based_turn)
     else:
-        cr = f.str_merge("turnがflop3に対して大きすぎる", turn_ratio_based_flop3)
+        cr = gene.str_merge("turnがflop3に対して大きすぎる", turn_ratio_based_flop3)
 
     # ①-3 両方成立する場合、TakePositionフラグがOnになる
     print("  DoubleTop結果", c, cr)
@@ -497,7 +506,7 @@ def DoublePeak_predict(dic_args):
     flop3_peak = flop3['peak']
     df_r_before_flop3 = df_r[df_r['time_jp'] < flop3_time]
     df_r_before_flop3 = df_r_before_flop3[2:30]  # 念のため2行目から（ここら辺同じような価格が続く可能性があるので）
-    print(df_r_before_flop3)
+    # print(df_r_before_flop3)
 
 
     # if len(df_ans) > 0:
@@ -516,7 +525,7 @@ def DoublePeak_predict(dic_args):
     # 下がる方向のデータを取得する
     flop3_gap = flop3['gap']
     temp_inspection_peaks = peaks[flop2_subscript:]  # flop以降のピークスすべて
-    f.print_arr(temp_inspection_peaks)
+    # gene.print_arr(temp_inspection_peaks)
 
     if river['direction'] == -1:
         # 直近が下り方向の場合、折り返し基準のflop3は下がり。その前が下がりメインの場合、下がりきっていると思われる。
@@ -562,30 +571,49 @@ def DoublePeak_predict(dic_args):
 
     # (4)オーダーの作成と返却
     if take_position_flag:
+        # 現在の状況を取得するう
+        price_dic = oa.NowPrice_exe("USD_JPY")
+        if price_dic['error'] == -1:  # APIエラーの場合はスキップ
+            print("API異常発生の可能性")
+            return -1  # 終了
+        else:
+            price_dic = price_dic['data']
+        now_price = price_dic['mid']  # 念のために保存しておく（APIの回数減らすため）
+        order_base_info = gene.order_base(now_price)  # オーダーの初期辞書を取得する(nowPriceはriver['latest_price']で代用)
         # オーダーの可能性がある場合、オーダーを正確に作成する
-        exe_orders = [
-            f.order_finalize({  # オーダー２を作成
-                "name": "DoublePeak(ダブル抵抗）",
-                "order_permission": True,
-                "decision_price": river['latest_price'],  # ['peak']か['latest_price']だが、後者の方が適切か？
-                "target": round(river['latest_price'] + (position_margin * river['direction'] * d * sl), 3),  # 価格でする
-                "peak_price": river['peak'],
-                "decision_time": 0,  #
-                "tp": 0.10,
-                "lc": 0.03,
-                "units": 10,
-                "expected_direction": d * river['direction'],
-                "stop_or_limit": sl,
-                "trade_timeout": 1800,
-                "remark": "test",
-                "tr_range": 0.05,
-                "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.01}
-            })
-        ]
+        if confidence == 1:
+            # 従来想定の突破形状
+            main_order = copy.deepcopy(order_base_info)
+            main_order['target'] = flop3['peak']
+            main_order['tp'] = 0.3
+            main_order['lc'] = 0.1  # * line_strength  # 0.09  # LCは広め
+            main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            # main_order['tr_range'] = 0.10  # 要検討
+            main_order['expected_direction'] = river['direction']  # 突破方向
+            main_order['priority'] = 2  # ほかので割り込まれない
+            main_order['units'] = order_base_info['units'] * 1
+            main_order['name'] = "突破形状（通常）"
+            main_order = gene.order_finalize(main_order)
+        else:
+            # 従来想定より、リバーの動きが速い
+            double_top_strength = -0.5  # ★この場合のみ、このタイミングでストレングスを編集
+            main_order = copy.deepcopy(order_base_info)
+            main_order['target'] = river["peak"] + (0.02 * -1 * river['direction'])     # turn(最新の折り返し地点）位まで戻る前提（戻らない奴は、、、しかたない、、、）
+            main_order['tp'] = 0.3
+            main_order['lc'] = 0.1  # * line_strength  # 0.09  # LCは広め
+            main_order['type'] = 'LIMIT'  # 現在価格からすると、逆張りに相当する
+            # main_order['tr_range'] = 0.10  # 要検討
+            main_order['expected_direction'] = river['direction']  # 突破方向
+            main_order['priority'] = 2  #
+            main_order['units'] = order_base_info['units'] * 1
+            main_order['name'] = "突破形状（river大）"
+            main_order = gene.order_finalize(main_order)
+
         return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
             "take_position_flag": take_position_flag,
+            "order_finalized": main_order,
             "double_top_strength": double_top_strength,
-            "double_top_strength_memo": double_top_strength_memo
+            "double_top_strength_memo": double_top_strength_memo,
         }
     else:
         return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。

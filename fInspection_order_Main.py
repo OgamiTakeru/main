@@ -251,21 +251,28 @@ def inspection_predict_line_make_order(df_r):
             flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
         elif line_strength < 0:
-            # フラッグ形状やDoublePeak未遂が発覚している場合。Latest方向に強く伸びる予想 (通過と同義だが、プライオリティが異なる）
-            print("  (m)フラッグ・DP未遂検出（大きな動き前兆）", line_strength, peak_strength_ave, target_price)
-            main_order['target'] = each_line_info['line_base_info']['line_base_price']
-            main_order['tp'] = 0.30  # LCは広め
-            main_order['lc'] = 0.09  #
-            main_order['type'] = 'STOP'  # 順張り
-            # main_order['tr_range'] = 0.10  # 要検討
-            main_order['expected_direction'] = peaks[0]['direction'] * 1.2  # latestに対し、1は突破。*-1は折り返し
-            main_order['priority'] = 2
-            main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
-            # オーダーが来た場合は、フラグをあげ、オーダーを追加する
-            flag_and_orders['take_position_flag'] = True
-            flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
-            flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
+            if line_strength == -1:
+                # フラッグ形状の場合
+                # フラッグ形状やDoublePeak未遂が発覚している場合。Latest方向に強く伸びる予想 (通過と同義だが、プライオリティが異なる）
+                print("  (m)フラッグ・DP未遂検出（大きな動き前兆）", line_strength, peak_strength_ave, target_price)
+                main_order['target'] = each_line_info['line_base_info']['line_base_price']
+                main_order['tp'] = 0.30  # LCは広め
+                main_order['lc'] = 0.09  #
+                main_order['type'] = 'STOP'  # 順張り
+                # main_order['tr_range'] = 0.10  # 要検討
+                main_order['expected_direction'] = peaks[0]['direction'] * 1.2  # latestに対し、1は突破。*-1は折り返し
+                main_order['priority'] = 2
+                main_order['units'] = order_base_info['units'] * 1
+                main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
+                # オーダーが来た場合は、フラグをあげ、オーダーを追加する
+                flag_and_orders['take_position_flag'] = True
+                flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
+                flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
+            else:
+                # 突破形状の場合
+                flag_and_orders['take_position_flag'] = True
+                flag_and_orders["exe_orders"].append(each_line_info['strength_info']['order_finalized'])
+                flag_and_orders["exe_order"] = each_line_info['strength_info']['order_finalized']  # とりあえず代表一つ。。
 
         elif peak_strength_ave < 0.75:
             # ②ピークが弱いものばかりである場合、通過点レベルの線とみなす（Latestから見ると、順張りとなる）
