@@ -3,39 +3,7 @@ import json
 from plotly.subplots import make_subplots  # draw_graph
 import plotly.graph_objects as go  # draw_graph
 
-
-def order_base(now_prie):
-    """
-    引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
-    従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
-    基本はすべて仮の値だが、Unitのみはこれがベースとなる。
-    """
-    return {
-            "target": 0.00,
-            "type": "STOP",
-            "units": 10000,
-            "expected_direction": 1,
-            "tp": 0.10,
-            "lc": 0.10,
-            'priority': 0,
-            "decision_price": now_prie,
-            "name": "",
-            "lc_change": [
-                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.05},
-                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012},
-                {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08},
-                {"lc_change_exe": True, "lc_trigger_range": 0.13, "lc_ensure_range": 0.1},
-                {"lc_change_exe": True, "lc_trigger_range": 0.17, "lc_ensure_range": 0.13},
-                {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
-                {"lc_change_exe": True, "lc_trigger_range": 0.35, "lc_ensure_range": 0.30},
-                {"lc_change_exe": True, "lc_trigger_range": 0.50, "lc_ensure_range": 0.45},
-                {"lc_change_exe": True, "lc_trigger_range": 0.60, "lc_ensure_range": 0.50},
-                {"lc_change_exe": True, "lc_trigger_range": 0.70, "lc_ensure_range": 0.60},
-                {"lc_change_exe": True, "lc_trigger_range": 0.80, "lc_ensure_range": 0.70},
-                {"lc_change_exe": True, "lc_trigger_range": 0.90, "lc_ensure_range": 0.80}
-
-            ],
-    }
+basic_unit = 1000
 
 
 def draw_graph(mid_df):
@@ -502,4 +470,71 @@ def time_to_euro_iso(jp_time):
     euro_time_iso = str(euro_time.isoformat()) + ".000000000Z"
 
     return euro_time_iso
+
+def order_base(now_prie):
+    """
+    引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
+    従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
+    基本はすべて仮の値だが、Unitのみはこれがベースとなる。
+    """
+    return {
+            "target": 0.00,
+            "type": "STOP",
+            "units": basic_unit,
+            "expected_direction": 1,
+            "tp": 0.10,
+            "lc": 0.10,
+            'priority': 0,
+            "decision_price": now_prie,
+            "name": "",
+            "lc_change": [
+                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.02},
+                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": 0.012},
+                {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08},
+                {"lc_change_exe": True, "lc_trigger_range": 0.13, "lc_ensure_range": 0.1},
+                {"lc_change_exe": True, "lc_trigger_range": 0.17, "lc_ensure_range": 0.13},
+                {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
+                {"lc_change_exe": True, "lc_trigger_range": 0.35, "lc_ensure_range": 0.30},
+                {"lc_change_exe": True, "lc_trigger_range": 0.50, "lc_ensure_range": 0.45},
+                {"lc_change_exe": True, "lc_trigger_range": 0.60, "lc_ensure_range": 0.50},
+                {"lc_change_exe": True, "lc_trigger_range": 0.70, "lc_ensure_range": 0.60},
+                {"lc_change_exe": True, "lc_trigger_range": 0.80, "lc_ensure_range": 0.70},
+                {"lc_change_exe": True, "lc_trigger_range": 0.90, "lc_ensure_range": 0.80}
+
+            ],
+    }
+
+def order_base_confidential(now_prie):
+    """
+    引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
+    従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
+    基本はすべて仮の値だが、Unitのみはこれがベースとなる。
+    """
+    return {
+            "target": 0.00,
+            "type": "STOP",
+            "units": basic_unit,
+            "expected_direction": 1,
+            "tp": 0.10,
+            "lc": 0.10,
+            'priority': 0,
+            "decision_price": now_prie,
+            "name": "",
+            "lc_change": [
+                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.15},
+                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": -0.05},
+                {"lc_change_exe": True, "lc_trigger_range": 0.07, "lc_ensure_range": 0.013},
+                {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.08},
+                {"lc_change_exe": True, "lc_trigger_range": 0.13, "lc_ensure_range": 0.1},
+                {"lc_change_exe": True, "lc_trigger_range": 0.17, "lc_ensure_range": 0.13},
+                {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
+                {"lc_change_exe": True, "lc_trigger_range": 0.35, "lc_ensure_range": 0.30},
+                {"lc_change_exe": True, "lc_trigger_range": 0.50, "lc_ensure_range": 0.45},
+                {"lc_change_exe": True, "lc_trigger_range": 0.60, "lc_ensure_range": 0.50},
+                {"lc_change_exe": True, "lc_trigger_range": 0.70, "lc_ensure_range": 0.60},
+                {"lc_change_exe": True, "lc_trigger_range": 0.80, "lc_ensure_range": 0.70},
+                {"lc_change_exe": True, "lc_trigger_range": 0.90, "lc_ensure_range": 0.80}
+
+            ],
+    }
 

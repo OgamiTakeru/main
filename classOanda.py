@@ -14,6 +14,7 @@ from oandapyV20.endpoints.positions import OpenPositions, PositionDetails, Posit
 from oandapyV20.endpoints.pricing import PricingInfo
 from oandapyV20.endpoints.trades import TradeCRCDO, TradeDetails, TradeClose, OpenTrades
 import oandapyV20.endpoints.transactions as trans
+import fGeneric as gene
 
 import tokens as tk  # エラーをLINEするため。。
 
@@ -309,7 +310,7 @@ class Oanda:
                 data['order']['trailingStopLossOnFill']['timeInForce'] = "GTC"
 
         print(" 最終オーダー@classOanda")
-        print(data['order'])
+        gene.print_json(data['order'])
 
 
     def OrderCreate_dic_exe(self, plan):

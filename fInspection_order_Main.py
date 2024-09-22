@@ -113,6 +113,13 @@ def inspection_river_line_make_order(df_r):
         ]
         # 注文を配列に追加
         exe_orders_arr.append(gene.order_finalize(main_order))
+
+        # ショートTPのオーダーを追加
+        short_tp_order = main_order.copy()
+        short_tp_order['tp'] = 0.03
+        short_tp_order['unit'] = short_tp_order['unit'] * 0.9
+        short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
+        exe_orders_arr.append(gene.order_finalize(short_tp_order))
         # print(" ★★ORDER PRINT")
         # print(exe_orders_arr)
         # print(exe_orders_arr[0])
@@ -137,6 +144,12 @@ def inspection_river_line_make_order(df_r):
         ]
         # 注文を配列に追加
         exe_orders_arr.append(gene.order_finalize(main_order))
+        # ショートTPのオーダーを追加
+        short_tp_order = main_order.copy()
+        short_tp_order['tp'] = 0.03
+        short_tp_order['unit'] = short_tp_order['unit'] * 0.9
+        short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
+        exe_orders_arr.append(gene.order_finalize(short_tp_order))
         # print(" ★★ORDER PRINT")
         # print(exe_orders_arr)
         # print(exe_orders_arr[0])
@@ -224,7 +237,7 @@ def inspection_predict_line_make_order(df_r):
         # オーダーの元を生成する
         main_order = copy.deepcopy(order_base_info)
 
-        # if now_price - 0.05 <= target_price <= now_price + 0.05:
+        # if now_price - 0.04 <= target_price <= now_price + 0.04:
         #     tk.line_send("    距離近いオーダーをキャンセル")
         #     continue
 
@@ -238,18 +251,25 @@ def inspection_predict_line_make_order(df_r):
             print("  (m)強い抵抗線　line,peak", line_strength, peak_strength_ave, target_price)
             main_order['target'] = each_line_info['line_base_info']['line_base_price']
             main_order['tp'] = 0.3 * line_strength  # 0.09  # LCは広め
-            main_order['lc'] = 0.07  # * line_strength  # 0.09  # LCは広め
+            main_order['lc'] = 0.04  # * line_strength  # 0.09  # LCは広め
             main_order['type'] = 'LIMIT'
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * -1  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = each_line_info['strength_info']['line_strength']
             main_order['units'] = order_base_info['units'] * 1
             main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
-
             # オーダーが来た場合は、フラグをあげ、オーダーを追加する
             flag_and_orders['take_position_flag'] = True
             flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
+
+            # ショートTPのオーダーを追加
+            short_tp_order = main_order.copy()
+            short_tp_order['tp'] = 0.03
+            short_tp_order['lc'] = 0.04
+            short_tp_order['unit'] = short_tp_order['units'] * 0.9
+            short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
+            flag_and_orders["exe_orders"].append(gene.order_finalize(short_tp_order))
         elif line_strength < 0:
             if line_strength == -1:
                 # フラッグ形状の場合
@@ -257,7 +277,7 @@ def inspection_predict_line_make_order(df_r):
                 print("  (m)フラッグ・DP未遂検出（大きな動き前兆）", line_strength, peak_strength_ave, target_price)
                 main_order['target'] = each_line_info['line_base_info']['line_base_price']
                 main_order['tp'] = 0.30  # LCは広め
-                main_order['lc'] = 0.09  #
+                main_order['lc'] = 0.20 #
                 main_order['type'] = 'STOP'  # 順張り
                 # main_order['tr_range'] = 0.10  # 要検討
                 main_order['expected_direction'] = peaks[0]['direction'] * 1.2  # latestに対し、1は突破。*-1は折り返し
@@ -268,11 +288,27 @@ def inspection_predict_line_make_order(df_r):
                 flag_and_orders['take_position_flag'] = True
                 flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
                 flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
+
+                # ショートTPのオーダーを追加
+                short_tp_order = main_order.copy()
+                short_tp_order['tp'] = 0.03
+                short_tp_order['lc'] = 0.04
+                short_tp_order['units'] = short_tp_order['unit'] * 0.9
+                short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
+                flag_and_orders["exe_orders"].append(gene.order_finalize(short_tp_order))
             else:
                 # 突破形状の場合
                 flag_and_orders['take_position_flag'] = True
                 flag_and_orders["exe_orders"].append(each_line_info['strength_info']['order_finalized'])
                 flag_and_orders["exe_order"] = each_line_info['strength_info']['order_finalized']  # とりあえず代表一つ。。
+
+                # ショートTPのオーダーを追加
+                short_tp_order = each_line_info['strength_info']['order_finalized'].copy()
+                short_tp_order['tp'] = 0.03
+                short_tp_order['lc'] = 0.04
+                short_tp_order['units'] = short_tp_order['unit'] * 0.9
+                short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
+                flag_and_orders["exe_orders"].append(gene.order_finalize(short_tp_order))
 
         elif peak_strength_ave < 0.75:
             # ②ピークが弱いものばかりである場合、通過点レベルの線とみなす（Latestから見ると、順張りとなる）
@@ -295,6 +331,14 @@ def inspection_predict_line_make_order(df_r):
             flag_and_orders['take_position_flag'] = True
             flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
+
+            # ショートTPのオーダーを追加
+            short_tp_order = main_order.copy()
+            short_tp_order['tp'] = 0.03
+            short_tp_order['lc'] = 0.04
+            short_tp_order['units'] = short_tp_order['unit'] * 0.9
+            short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
+            flag_and_orders["exe_orders"].append(gene.order_finalize(short_tp_order))
         else:
             # オーダー条件に合わない場合は、変更しない（main_orderのまま）。
             # ただしこれは存在しない見込み（SamePriceが存在する＝オーダーを入れる）

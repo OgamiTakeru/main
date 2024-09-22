@@ -586,7 +586,7 @@ def DoublePeak_predict(dic_args):
             main_order = copy.deepcopy(order_base_info)
             main_order['target'] = flop3['peak']
             main_order['tp'] = 0.3
-            main_order['lc'] = 0.1  # * line_strength  # 0.09  # LCは広め
+            main_order['lc'] = 0.22  # * line_strength  # 0.09  # LCは広め
             main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = river['direction']  # 突破方向
@@ -598,9 +598,9 @@ def DoublePeak_predict(dic_args):
             # 従来想定より、リバーの動きが速い
             double_top_strength = -0.5  # ★この場合のみ、このタイミングでストレングスを編集
             main_order = copy.deepcopy(order_base_info)
-            main_order['target'] = river["peak"] + (0.02 * -1 * river['direction'])     # turn(最新の折り返し地点）位まで戻る前提（戻らない奴は、、、しかたない、、、）
+            main_order['target'] = turn["peak"] + (0.02 * -1 * river['direction'])     # turn(最新の折り返し地点）位まで戻る前提（戻らない奴は、、、しかたない、、、）
             main_order['tp'] = 0.3
-            main_order['lc'] = 0.1  # * line_strength  # 0.09  # LCは広め
+            main_order['lc'] = 0.22  # * line_strength  # 0.09  # LCは広め
             main_order['type'] = 'LIMIT'  # 現在価格からすると、逆張りに相当する
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = river['direction']  # 突破方向

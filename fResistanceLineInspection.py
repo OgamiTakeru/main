@@ -8,6 +8,7 @@ import tokens as tk
 import fPeakInspection as peak_inspection
 import fDoublePeaks as dp
 import pandas as pd
+import fMoveSizeInspection as ms
 
 
 def find_same_price_list_from_peaks(target_price, target_dir, peaks_all, predict_flag):
@@ -762,7 +763,7 @@ def find_predict_line_based_latest(*args):
     target_dir = peaks[0]['direction']  # Lineの方向
     grid = 0.01  # 調査の細かさ
     # 各変数の設定（動的な値）
-    min_max_search_range = 7
+    min_max_search_range = 11
     max_index, max_peak_info_in_latest4 = max(enumerate(peaks[:min_max_search_range]), key=lambda x: x[1]["peak"])
     min_index, min_peak_info_in_latest4 = min(enumerate(peaks[:min_max_search_range]), key=lambda x: x[1]["peak"])
     # print("    (rip)最大最小値検索範囲")
@@ -920,6 +921,9 @@ def find_predict_line_based_latest(*args):
         #         tk.line_send(" 　ダブル突破未遂発見")
         #         predict_line_info_list[0]['strength_info']['line_strength'] = -1
         #         predict_line_info_list[0]['strength_info']['remark'] = "ダブルトップ突破未遂"
+
+    # テスト的な
+    ms.cal_move_size(target_df)
 
     return predict_line_info_list
 
