@@ -18,7 +18,7 @@ def peaks_collect_main(*args):
     """
     # peaksを求める
     if len(args) == 2:
-        print("    (pi)peaks数指定あり", args[1])
+        print("      (pi)peaks数指定あり", args[1])
         all_peaks = peaks_collect_all(args[0], args[1])
     else:
         # print(" peaks数指定なし")
@@ -61,10 +61,10 @@ def peaks_collect_main(*args):
         if (prev_gap != 0 and next_gap != 0) and (prev_gap/curr_gap > 3 and next_gap/curr_gap > 3):
             # どちらかがおかしい場合は、ちょっと除外したい。ただし、ピークが5pips超えている場合は一つとみなす（★★5分足の場合）
             if curr_gap >= 0.05:
-                print("      (pi)強度の低いPeak発見したがスルー（比率的に弱いが、5pips以上あり)", item['time'])
+                # print("      (pi)強度の低いPeak発見したがスルー（比率的に弱いが、5pips以上あり)", item['time'])
                 item['peak_strength'] = 1
             else:
-                print("      (pi)強度の低いPeak発見", item['time'])
+                # print("      (pi)強度の低いPeak発見", item['time'])
                 item['peak_strength'] = 0.5
         else:
             # 自身が問題なくても、Nextに除外すべきPeak（Strengthが1）を持つ場合、自身もStrengthを1にする。（previousではない）
@@ -87,11 +87,11 @@ def peaks_collect_main(*args):
     river = all_peaks_include_around[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
     turn = all_peaks_include_around[2]  # 注目するポイント（ターンと呼ぶ）
     flop3 = all_peaks_include_around[3]  # レンジ判定用（プリフロップと呼ぶ）
-    print("  (pi)<対象>:運用モード")
-    print("  (pi)Latest", latest)
-    print("  (pi)RIVER", river)
-    print("  (pi)TURN ", turn)
-    print("  (pi)FLOP3", flop3)
+    # print("  (pi)<対象>:運用モード")
+    # print("  (pi)Latest", latest)
+    # print("  (pi)RIVER", river)
+    # print("  (pi)TURN ", turn)
+    # print("  (pi)FLOP3", flop3)
     return {
         "all_peaks": all_peaks_include_around
     }

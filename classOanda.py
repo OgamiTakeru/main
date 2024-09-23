@@ -206,7 +206,6 @@ class Oanda:
             return e_info
 
     # (5)オーダーの発行を実施
-
     def OrderCreate_dic_support(self, plan):
         # 初期値を入れておく
         plan['ask_bid'] = plan['direction']  # その場しのぎ。。
@@ -309,8 +308,8 @@ class Oanda:
                 data['order']['trailingStopLossOnFill']['distance'] = str(round(plan['tr_range'], 3))  # ロスカット
                 data['order']['trailingStopLossOnFill']['timeInForce'] = "GTC"
 
-        print(" 最終オーダー@classOanda")
-        gene.print_json(data['order'])
+        # print(" 最終オーダー@classOandaSupport")
+        # gene.print_json(data['order'])
 
 
     def OrderCreate_dic_exe(self, plan):
@@ -440,8 +439,8 @@ class Oanda:
                     data['order']['trailingStopLossOnFill']['distance'] = str(round(plan['tr_range'], 3))  # ロスカット
                     data['order']['trailingStopLossOnFill']['timeInForce'] = "GTC"
 
-            print(" 最終オーダー@classOanda")
-            print(data['order'])
+            # print(" 最終オーダー@classOanda")
+            # print(data['order'])
             # ★★実行
             ep = OrderCreate(accountID=self.accountID, data=data)  #
             res_json = eval(json.dumps(self.api.request(ep), indent=2))

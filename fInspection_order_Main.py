@@ -13,6 +13,7 @@ import fDoublePeaks as dp
 import classPosition as classPosition
 import fResistanceLineInspection as ri
 import fPeakInspection as p
+import fCommonFunction as cf
 
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
@@ -70,7 +71,7 @@ def inspection_river_line_make_order(df_r):
     flag_and_orders = {
         "take_position_flag": False,
         "exe_orders": [],  # 本番用の、辞書の配列
-        "exe_order": gene.order_finalize(gene.order_base(100)),  # 検証用（配列ではなく、一つの辞書）
+        "exe_order": cf.order_finalize(cf.order_base(100)),  # 検証用（配列ではなく、一つの辞書）
     }
 
     # （０）Peakデータを取得する(データフレムは二時間半前くらいが良い？？）
@@ -94,7 +95,7 @@ def inspection_river_line_make_order(df_r):
     # オーダー情報の準備
     # now_price = oa.NowPrice_exe("USD_JPY")['data']['mid']
     now_price = df_r.iloc[0]['open']
-    order_base_info = gene.order_base(now_price)  # オーダーの初期辞書を取得する
+    order_base_info = cf.order_base(now_price)  # オーダーの初期辞書を取得する
     exe_orders_arr = []
 
     if line_info['strength_info']['line_strength'] > 2:  # >= 1.5 < 1
@@ -112,14 +113,14 @@ def inspection_river_line_make_order(df_r):
             {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.01}
         ]
         # 注文を配列に追加
-        exe_orders_arr.append(gene.order_finalize(main_order))
+        exe_orders_arr.append(cf.order_finalize(main_order))
 
         # ショートTPのオーダーを追加
         short_tp_order = main_order.copy()
         short_tp_order['tp'] = 0.03
         short_tp_order['unit'] = short_tp_order['unit'] * 0.9
         short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
-        exe_orders_arr.append(gene.order_finalize(short_tp_order))
+        exe_orders_arr.append(cf.order_finalize(short_tp_order))
         # print(" ★★ORDER PRINT")
         # print(exe_orders_arr)
         # print(exe_orders_arr[0])
@@ -143,13 +144,13 @@ def inspection_river_line_make_order(df_r):
             {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.01}
         ]
         # 注文を配列に追加
-        exe_orders_arr.append(gene.order_finalize(main_order))
+        exe_orders_arr.append(cf.order_finalize(main_order))
         # ショートTPのオーダーを追加
         short_tp_order = main_order.copy()
         short_tp_order['tp'] = 0.03
         short_tp_order['unit'] = short_tp_order['unit'] * 0.9
         short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
-        exe_orders_arr.append(gene.order_finalize(short_tp_order))
+        exe_orders_arr.append(cf.order_finalize(short_tp_order))
         # print(" ★★ORDER PRINT")
         # print(exe_orders_arr)
         # print(exe_orders_arr[0])
@@ -165,7 +166,7 @@ def inspection_river_line_make_order(df_r):
         flag_and_orders = {
             "take_position_flag": False,
             "exe_orders": exe_orders_arr,  # 本番用の、辞書の配列
-            "exe_order": gene.order_finalize(order_base_info),  # 検証用（配列ではなく、一つの辞書）
+            "exe_order": cf.order_finalize(order_base_info),  # 検証用（配列ではなく、一つの辞書）
         }
         return flag_and_orders
 
@@ -195,35 +196,24 @@ def inspection_predict_line_make_order(df_r):
         "exe_orders": [],   # 本番用（本番運用では必須）
         "exe_order": {}  # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
     }
-    # 各リスト
-    price_dic = oa.NowPrice_exe("USD_JPY")
-    if price_dic['error'] == -1:  # APIエラーの場合はスキップ
-        print("API異常発生の可能性")
-        return -1  # 終了
-    else:
-        price_dic = price_dic['data']
-
-    now_price = price_dic['mid']  # 念のために保存しておく（APIの回数減らすため）
-    # now_price = df_r.iloc[0]['open']  # 現在時は、めんどうなのでAPIを叩かずに、データから取っちゃう。
-    order_base_info = gene.order_base(now_price)  # オーダーの初期辞書を取得する
     # 関数が来た時の表示
-    print("   OrderCreateMain【調査】予測Line")
+    print("    【調査スタート】予測Line")
     print(df_r.head(1))
     print(df_r.tail(1))
 
-    # （０）Peakデータを取得する(データフレムは二時間半前くらいが良い？？）
-    peaks_info = p.peaks_collect_main(df_r[:], 15)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
-    peaks = peaks_info['all_peaks']
-    print("PEAKS(予測)")
-    gene.print_arr(peaks)
-    latest = peaks[0]
+    # 各数字やデータを取得する
+    now_price = cf.now_price()  # 現在価格の取得
+    order_base_info = cf.order_base(now_price)  # オーダー発行の元データを取得
+    fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
+    peaks = fixed_information['peaks']
 
-    if latest['count'] != 2:  # 予測なので、LatestがN個続いたときに実行してみる
+    if peaks[0]['count'] != 2:  # 予測なので、LatestがN個続いたときに実行してみる
         print(" latestがCOUNTが３以外の場合は終了")
+        print("    Latest=", peaks[0])
         return flag_and_orders
 
     # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
-    predict_line_info_list = ri.find_predict_line_based_latest(df_r[:])  # Lineが発見された場合には、['line_strength']が１以上になる
+    predict_line_info_list = ri.find_predict_line_based_latest({"df_r": df_r, "peaks": peaks})  # 調査！
     print(" (Main)受け取った同価格リスト")
     gene.print_arr(predict_line_info_list)
 
@@ -260,16 +250,11 @@ def inspection_predict_line_make_order(df_r):
             main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
             # オーダーが来た場合は、フラグをあげ、オーダーを追加する
             flag_and_orders['take_position_flag'] = True
-            flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
+            flag_and_orders["exe_orders"].append(cf.order_finalize(main_order))
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
 
             # ショートTPのオーダーを追加
-            short_tp_order = main_order.copy()
-            short_tp_order['tp'] = 0.03
-            short_tp_order['lc'] = 0.04
-            short_tp_order['unit'] = short_tp_order['units'] * 0.9
-            short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
-            flag_and_orders["exe_orders"].append(gene.order_finalize(short_tp_order))
+            flag_and_orders["exe_orders"].append(cf.order_shorter(main_order))
         elif line_strength < 0:
             if line_strength == -1:
                 # フラッグ形状の場合
@@ -286,16 +271,11 @@ def inspection_predict_line_make_order(df_r):
                 main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
                 # オーダーが来た場合は、フラグをあげ、オーダーを追加する
                 flag_and_orders['take_position_flag'] = True
-                flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
+                flag_and_orders["exe_orders"].append(cf.order_finalize(main_order))
                 flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
 
                 # ショートTPのオーダーを追加
-                short_tp_order = main_order.copy()
-                short_tp_order['tp'] = 0.03
-                short_tp_order['lc'] = 0.04
-                short_tp_order['units'] = short_tp_order['unit'] * 0.9
-                short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
-                flag_and_orders["exe_orders"].append(gene.order_finalize(short_tp_order))
+                flag_and_orders["exe_orders"].append(cf.order_shorter(main_order))
             else:
                 # 突破形状の場合
                 flag_and_orders['take_position_flag'] = True
@@ -303,12 +283,7 @@ def inspection_predict_line_make_order(df_r):
                 flag_and_orders["exe_order"] = each_line_info['strength_info']['order_finalized']  # とりあえず代表一つ。。
 
                 # ショートTPのオーダーを追加
-                short_tp_order = each_line_info['strength_info']['order_finalized'].copy()
-                short_tp_order['tp'] = 0.03
-                short_tp_order['lc'] = 0.04
-                short_tp_order['units'] = short_tp_order['unit'] * 0.9
-                short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
-                flag_and_orders["exe_orders"].append(gene.order_finalize(short_tp_order))
+                flag_and_orders["exe_orders"].append(cf.order_shorter(main_order))
 
         elif peak_strength_ave < 0.75:
             # ②ピークが弱いものばかりである場合、通過点レベルの線とみなす（Latestから見ると、順張りとなる）
@@ -329,16 +304,11 @@ def inspection_predict_line_make_order(df_r):
             ]
             # オーダーが来た場合は、フラグをあげ、オーダーを追加する
             flag_and_orders['take_position_flag'] = True
-            flag_and_orders["exe_orders"].append(gene.order_finalize(main_order))
+            flag_and_orders["exe_orders"].append(cf.order_finalize(main_order))
             flag_and_orders["exe_order"] = main_order  # とりあえず代表一つ。。
 
             # ショートTPのオーダーを追加
-            short_tp_order = main_order.copy()
-            short_tp_order['tp'] = 0.03
-            short_tp_order['lc'] = 0.04
-            short_tp_order['units'] = short_tp_order['unit'] * 0.9
-            short_tp_order['name'] = short_tp_order['name'] + "_SHORT"
-            flag_and_orders["exe_orders"].append(gene.order_finalize(short_tp_order))
+            flag_and_orders["exe_orders"].append(cf.order_shorter(main_order))
         else:
             # オーダー条件に合わない場合は、変更しない（main_orderのまま）。
             # ただしこれは存在しない見込み（SamePriceが存在する＝オーダーを入れる）
