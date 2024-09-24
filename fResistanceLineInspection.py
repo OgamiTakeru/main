@@ -212,6 +212,7 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks, base_price
             line_position_strength = 1
             print("      最低Line(", base_price, ")", )
         else:
+            line_position_strength = 0
             print("      最低ではないLine(", base_price, ")", )
     else:
         # 直近が上方向の場合、上側から確認している（上のLineが最高値かどうかの判定）
@@ -221,6 +222,7 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks, base_price
             line_position_strength = 1
             print("      最高Line(", base_price, ")")
         else:
+            line_position_strength = 0
             print("      最高ではないLine(", base_price, ")")
     # ■同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
     if len_of_same_price_list == 1:
@@ -268,9 +270,10 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks, base_price
     elif len_of_same_price_list >= 2:
         # ■■同一価格が2個以上ある場合 (もともとフラッグを探すのは3個以上だったが、2個でもある場合もあったため、2個以上に変更）
         # ■■■まず、シンプルなトップの形状のみで判断
-        for i in range(len_of_same_price_list):
+        for i in range(len_of_same_price_list):  # この比較はlen_of_same_price_listのため、最後の調査終了用peakは入らない
             if same_price_list[i]['near_point_gap'] < 0:
                 minus_counter += 1  # マイナスはLINEを超えた回数
+
         if minus_counter > len_of_same_price_list * 0.5:
             # LINE越えが過半数の場合、LINEの信頼度つぃては高くない
             line_strength = 0.1
@@ -482,7 +485,7 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
             # thisの座標(a,b)を取得する
             a = gene.cal_str_time_gap(max_info['time'], item['time'])['gap_abs'].seconds  # 時間差分
             b = item["peak"] - max_info['peak']  # ここではマイナス値がデフォルト（変化後ー変化前）
-            print("    (ri)a:", a, ",b:", b)
+            # print("    (ri)a:", a, ",b:", b)
             # 判定する
             c = 0.02  # プラス値のほうが余裕が出る（ある程度した上に突き抜けていたとしてもセーフ）
             jd_y = tilt * a + c  # Cは切片。0.02程度だけ下回ってもいいようにする
@@ -731,7 +734,9 @@ def find_predict_line_based_latest(dic_args):
                 target_price = target_price - grid_adj
 
     print("    ■【最終】samePrimeLists結果")
-    gene.print_arr(predict_line_info_list)
+    for item in predict_line_info_list:
+        print("     ", item)
+    # gene.print_arr(predict_line_info_list)
 
     # ■各Lineのストレングスを求める　（Lineが存在しない場合、終了）
     if len(predict_line_info_list) == 0:
@@ -757,7 +762,7 @@ def find_predict_line_based_latest(dic_args):
         # if strength_info['all_range_strong_line'] == 0 and strength_info['line_on_num'] >= 3:  # 旧条件
         if strength_info['line_on_num'] >= 3:  # フラッグ検証ハードルを下げる
             flag = judge_flag_figure(peaks, peaks[0]['direction'], strength_info['line_strength'])
-            print("     ★【Flagテスト】", each_predict_line_info['line_base_info']["line_base_price"])
+            print("     ★★Flagテスト", each_predict_line_info['line_base_info']["line_base_price"])
             # フラッグの結果次第で、LineStrengthに横やりを入れる形で、値を買い替える
             if flag:
                 strength_info['line_strength'] = -1  # フラッグ成立時は、通常とは逆

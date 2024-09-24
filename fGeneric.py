@@ -199,10 +199,10 @@ def print_arr(*arr):
     else:
         indent = "    "
 
-    # 実表示
-    for i in range(len(arr)):
+    # 実表示 arr[0] が本体
+    for i in range(len(arr[0])):
         # print("ー",  i,"ーーーーーーーーーーーーーーーーー")
-        print(indent, i, arr[i])
+        print(indent, i, arr[0][i])
     # print("↑ーーーーーーーーーーーーーーーーーーーーーーー")
 
 
