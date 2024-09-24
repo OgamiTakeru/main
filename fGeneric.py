@@ -184,15 +184,25 @@ def delYearDay(original_time):
     return str(time)
 
 
-def print_arr(arr):
+def print_arr(*arr):
     """
     配列型を渡すと、それをわかりやすく表示する
-    :param arr:
+    :param arr[0]  表示したい配列
+    :param arr[1] 半角スペース何個分インデントするか。していない場合は4個がデフォ。半角数字で来る（任意）
     :return:
     """
+    if len(arr) == 2:
+        # インデントが指定されている
+        indent = ""
+        for i in range(arr[1]):
+            indent = indent + " "
+    else:
+        indent = "    "
+
+    # 実表示
     for i in range(len(arr)):
         # print("ー",  i,"ーーーーーーーーーーーーーーーーー")
-        print("    ", i, arr[i])
+        print(indent, i, arr[i])
     # print("↑ーーーーーーーーーーーーーーーーーーーーーーー")
 
 

@@ -241,7 +241,7 @@ def inspection_predict_line_make_order(df_r):
             print("  (m)強い抵抗線　line,peak", line_strength, peak_strength_ave, target_price)
             main_order['target'] = each_line_info['line_base_info']['line_base_price']
             main_order['tp'] = 0.3 * line_strength  # 0.09  # LCは広め
-            main_order['lc'] = 0.04  # * line_strength  # 0.09  # LCは広め
+            main_order['lc'] = 0.15  # * line_strength  # 0.09  # LCは広め
             main_order['type'] = 'LIMIT'
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = peaks[0]['direction'] * -1  # latestに対し、1は突破。*-1は折り返し

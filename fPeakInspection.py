@@ -83,15 +83,6 @@ def peaks_collect_main(*args):
             else:
                 item['peak_strength'] = 1
 
-    latest = all_peaks_include_around[0]
-    river = all_peaks_include_around[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-    turn = all_peaks_include_around[2]  # 注目するポイント（ターンと呼ぶ）
-    flop3 = all_peaks_include_around[3]  # レンジ判定用（プリフロップと呼ぶ）
-    # print("  (pi)<対象>:運用モード")
-    # print("  (pi)Latest", latest)
-    # print("  (pi)RIVER", river)
-    # print("  (pi)TURN ", turn)
-    # print("  (pi)FLOP3", flop3)
     return {
         "all_peaks": all_peaks_include_around
     }
@@ -161,6 +152,96 @@ def peaks_collect_all(*args):
     return peaks
 
 
+def peaks_collect_main_not_skip(*args):
+    """
+    引数は、
+    第一引数は、データフレームとする（dr_f)
+    第二引数は任意で、ピークの最低必要個数を受け取る（max_peak_num)　これはループ時間の削減が目的。
+    これらは配列として受け取る。(ちなみに辞書で受け取る場合は**argsで受け取る必要あり
+    :param agrs:
+    :return:
+    """
+    # peaksを求める
+    if len(args) == 2:
+        print("      (pi)peaks数指定あり", args[1])
+        all_peaks = peaks_collect_all_not_skip(args[0], args[1])
+    else:
+        # print(" peaks数指定なし")
+        all_peaks = peaks_collect_all_not_skip(args[0])
+
+    # all_peaksから大きなデータ（計算に使ったものを付与したもの）を除去しておく
+    for i in range(len(all_peaks)):
+        del all_peaks[i]['ans']
+
+    # ■各ピークに、時間的に前後のピークの情報を追加していく（ただし入れ子(next(next())にならないようにする）
+    all_peaks_include_around = []
+    for i in range(len(all_peaks)):
+        # print("現在", all_peaks[i])
+        all_peaks_include_around_base = copy.deepcopy(all_peaks[i])
+        if i == 0:
+            # latestは次がない
+            all_peaks_include_around_base['next'] = {}
+            all_peaks_include_around_base['previous'] = copy.deepcopy(all_peaks[i+1])#['time']
+        elif i == len(all_peaks) - 1:
+            # 最後は前がない
+            all_peaks_include_around_base['next'] = copy.deepcopy(all_peaks[i-1])#['time']
+            all_peaks_include_around_base['previous'] = {}
+        else:
+            # print(" Next", all_peaks[i - 1])
+            # print(" previous", all_peaks[i + 1]['time'])
+            all_peaks_include_around_base['next'] = copy.deepcopy(all_peaks[i-1])#['time']
+            all_peaks_include_around_base['previous'] = copy.deepcopy(all_peaks[i+1])#['time']
+        # 累積して、all_peaksと同様のものを作成する（中身にnextとpreviousがついただけ）
+        all_peaks_include_around.append(all_peaks_include_around_base)
+        # print(" 追加分", all_peaks_include_around_base)
+
+    # ■ピークの強度を求め、追記しておく（前後が長く、自身が極端に短い場合、一瞬の折り返しとみて強度が弱いこととする）
+    for i in range(len(all_peaks_include_around)):
+        item = all_peaks_include_around[i]
+        curr_gap = item['gap']
+        prev_gap = item['previous'].get('gap', 0)  # previousがある場合はその値と、ない場合は０を返す）
+        next_gap = item['next'].get('gap', 0)  # nextがある場合はその値、ない場合は０を返す
+        # print("  PeakInfoMaking（previous_now(1)_next)", round(prev_gap/curr_gap, 1), 1, round(next_gap/curr_gap, 1),
+        # item['time'])
+        if (prev_gap != 0 and next_gap != 0) and (prev_gap/curr_gap > 3 and next_gap/curr_gap > 3):
+            # どちらかがおかしい場合は、ちょっと除外したい。ただし、ピークが5pips超えている場合は一つとみなす（★★5分足の場合）
+            if curr_gap >= 0.05:
+                # print("      (pi)強度の低いPeak発見したがスルー（比率的に弱いが、5pips以上あり)", item['time'])
+                item['peak_strength'] = 1
+            else:
+                # print("      (pi)強度の低いPeak発見", item['time'])
+                item['peak_strength'] = 0.5
+        else:
+            # 自身が問題なくても、Nextに除外すべきPeak（Strengthが1）を持つ場合、自身もStrengthを1にする。（previousではない）
+            # if i != 0 and all_peaks_include_around[i-1]['peak_strength'] == 1: この書き方だと、以降全部 strength=1となる。。
+            # そのため一つ前が、上記と同じ条件を満たす場合、とする
+            if i != 0:
+                temp_item = all_peaks_include_around[i-1]
+                curr_gap_t = temp_item['gap']
+                prev_gap_t = temp_item['previous'].get('gap', 0)  # previousがある場合はその値と、ない場合は０を返す）
+                next_gap_t = temp_item['next'].get('gap', 0)  # nextがある場合はその値、ない場合は０を返す
+                if (prev_gap_t != 0 and next_gap_t != 0) and (prev_gap_t/curr_gap_t > 3 and next_gap_t/curr_gap_t > 3):
+                    # 時間的に次のPeakが、除外すべきpeakとなる場合は、自身も１
+                    item['peak_strength'] = 0.5
+                else:
+                    item['peak_strength'] = 1
+            else:
+                item['peak_strength'] = 1
+
+    latest = all_peaks_include_around[0]
+    river = all_peaks_include_around[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    turn = all_peaks_include_around[2]  # 注目するポイント（ターンと呼ぶ）
+    flop3 = all_peaks_include_around[3]  # レンジ判定用（プリフロップと呼ぶ）
+    # print("  (pi)<対象>:運用モード")
+    # print("  (pi)Latest", latest)
+    # print("  (pi)RIVER", river)
+    # print("  (pi)TURN ", turn)
+    # print("  (pi)FLOP3", flop3)
+    return {
+        "all_peaks": all_peaks_include_around
+    }
+
+
 def peaks_collect_all_not_skip(*args):
     """
     リバースされたデータフレーム（直近が上）から、極値をN回分求める
@@ -222,8 +303,8 @@ def peaks_collect_all_not_skip(*args):
             break
 
     # 余計なデータを消しておく
-    for d in peaks:
-        d.pop('ans', None)
+    # for d in peaks:
+    #     d.pop('ans', None)
     return peaks
 
 

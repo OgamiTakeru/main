@@ -165,17 +165,21 @@ def find_same_price_list_from_peaks(target_price, target_dir, peaks_all, predict
     return same_list
 
 
-def judge_line_strength_based_same_price_list(same_price_list, peaks):
+def judge_line_strength_based_same_price_list(same_price_list, peaks, base_price, latest_direction):
     """
     ラインの強度を判定する。
-    ・引数は同じ価格のリスト（配列）のみが、強度判定には必要。
+    ・引数は同じ価格のリスト（同価格配列リストと、同価格情報）が、形状による強度判定には必要。
     ・同じ価格のリストの最後尾には、必ずstrength０の最後の値が付いてくる（同価格ではないが、調査期間の最後を示すもの）
+    ・価格の高さ（一番上か下か）を検証するために、Peakが必要。（形状だけでなく、周辺の状況から高さを求める）
     ・target_price以降の引数は、返却値を整えるためのもの（引っ越し前の関数の名残。。）
+    peakの扱い方
+    ⇒このSamePriceListのBasePriceがPeaksの中で、どの高さにあるか（一番上の抵抗性なのか？等）を計算するために必要。
     """
-    print("      JudgeLineStrength")
+    print("        ■JudgeLineStrength")
     # ■リターン値や、各初期値の設定
     minus_counter = 0  # 初期
     line_strength = 0.01
+    line_position_strength = 0  # 1の場合は、一番上か一番下を示す（一番下でも-1としない）
     len_of_same_price_list = len(same_price_list) - 1  # 最後に調査最終時刻を示すデータがあるため、実データは-1
     # 調査期間すべてを通じて、最上位（または最下位）のLINEかを確認する。
     all_range_strong_line = sum(item['near_break_count'] for item in same_price_list)  # 0の場合(LINE越が）通算通じて強いLine
@@ -185,6 +189,7 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks):
 
     return_dic = {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "line_strength": line_strength,  # 検証では0は飛ばされてしまう。履歴のために飛ばしたくないため、0以外にしておく
+        "line_position_strength": line_position_strength,  # 引数peakの中で、このsamepricelistの価格帯が一番上か、等。
         "line_on_num": 0,
         "same_time_latest": 0,
         "peak_strength_ave": peak_strength_ave,  # itemの最後尾は、peakStrength0の調査期間の最後尾を表すもののため、除外された計算結果
@@ -198,6 +203,25 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks):
         # 同価格がない場合、ストレングスをミニマムで返却する
         return return_dic
 
+    # ■BasePriceがPeaksの中の高さのどこにいるのかを確かめる（一番上の場合、LinePositionStrength＝１とする。）
+    if latest_direction == -1:
+        # 直近が下方向の場合、下側から確認している（下のLineが最低値かどうかの判定）
+        min_index, min_peak = min(enumerate(peaks[:]), key=lambda x: x[1]["peak"])
+        if min_peak['peak'] + 0.04 > base_price:
+            # 最低値の範囲内であれば（0.04は余裕を持っている。同価格のスキップが0.05なので、それ以下に設定している）
+            line_position_strength = 1
+            print("      最低Line(", base_price, ")", )
+        else:
+            print("      最低ではないLine(", base_price, ")", )
+    else:
+        # 直近が上方向の場合、上側から確認している（上のLineが最高値かどうかの判定）
+        max_index, max_peak = max(enumerate(peaks[:]), key=lambda x: x[1]["peak"])
+        if max_peak['peak'] - 0.04 < base_price:
+            # 最高値の範囲（最低値より少し下よりも上）であれば
+            line_position_strength = 1
+            print("      最高Line(", base_price, ")")
+        else:
+            print("      最高ではないLine(", base_price, ")")
     # ■同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
     if len_of_same_price_list == 1:
         # ■■同一価格が一つの場合：(シンプルダブルトップ　or カルデラ等）
@@ -269,6 +293,7 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks):
     # 返却値の整理
     return_dic["line_strength"] = line_strength
     return_dic["line_on_num"] = len_of_same_price_list
+    return_dic['line_position_strength'] = line_position_strength
     return_dic["same_time_latest"] = 0 if len(same_price_list) == 0 else same_price_list[0]['time']
     return_dic['all_range_strong_line'] = all_range_strong_line  # 0が強い(Break回数が０）
     return_dic["remark"] = remark
@@ -389,7 +414,7 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
             # thisの座標(a,b)を取得する
             a = gene.cal_str_time_gap(min_info['time'], item['time'])['gap_abs'].seconds  # 時間差分
             b = item["peak"] - min_info['peak']  # ここでは
-            print("    (ri)a:", a, ",b:", b)
+            # print("    (ri)a:", a, ",b:", b)
             # 判定する
             # ■上にあるか
             c = -0.02  # ここはマイナス値にすることで余裕が出る
@@ -418,10 +443,11 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
             if on_line / total_peaks_num * 100 >= 35:  # さらに傾きの線上に多い場合⇒間違えなくフラッグといえる
                 # print("    (ri)Lowerの継続した上昇とみられる⇒検出したupperは突破される方向になる")
                 flag_figure = True
-                tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出", num)
+                # tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出", num)
             else:
                 # print("    (ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり　ストレングス変更なし")
-                tk.line_send("    (ri)フラッグ型なり損ね。シンプルにupper強めのレンジとみなす", num)
+                # tk.line_send("    (ri)フラッグ型なり損ね。シンプルにupper強めのレンジとみなす", num)
+                pass
         else:
             pass
             # print("    (ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす　ストレングス変更なし", num)
@@ -484,11 +510,12 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
             if on_line / total_peaks_num * 100 >= 40:
                 # print("    (ri)upperの継続した下落とみられる⇒　このLINEは下に突破される方向になる")
                 flag_figure = True
-                tk.line_send("    (ri)フラッグ型（lower水平upper下落）の検出", num)
+                # tk.line_send("    (ri)フラッグ型（lower水平upper下落）の検出", num)
             else:
                 # print(
                 #     "    (ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
-                tk.line_send("    (ri)フラッグ型なり損ね、lowerはサポート", num)
+                # tk.line_send("    (ri)フラッグ型なり損ね、lowerはサポート", num)
+                pass
         else:
             # print("    (ri)upperに傾向性のある下降なし。レンジとみなせる。　ストレングス変更なし", num)
             pass
@@ -592,35 +619,42 @@ def find_predict_line_based_latest(dic_args):
     """
     引数はDFやピークスなど
     """
-    # 何が正解なのかわからないけど、最初に返却値を設定しておく
-    predict_line_info_list = [
-        {
-            "line_base_info": {},
-            "same_price_lists": [],
-            # strength関数で取得（その後の上書きあり）
-            "strength_info": {
+    # ■返却値を設定しておく
+    predict_line_info_list_base = {
+            "line_base_info": {
+                "line_base_time": 0,  # 予測では将来的に到達する場所のため、設定不可（とりあえず現在時刻？）
+                "line_base_price": 0,  # 予測ではループで探すことになる（後で上書きする）、通常ではRiver価格
+                "line_base_direction": 0,  # 予測ではLatest、通常はRiver。値が1の場合UpperLine（＝上値抵抗）
+                "latest_direction": 0,  # 渡されたPeaksの直近の方向（＝直近の方向）
+                "latest_time_in_df": 0,  # Latest。直近の時間（渡されたDFで判断）
+                "decision_price": 0,
+            },
+            "same_price_list": [],
+            "strength_info": {  # strength関数で取得（その後の上書きあり）
                 "line_strength": 0,
+                "line_position_strength": 0,
                 "line_on_num": 0,
                 "same_time_latest": 0,
                 "all_range_strong_line": 0,
                 "remark": ""
             }
         }
-    ]
+    # 返却するリストの原型（これを上書きし、下のリストに追加していく）
+    predict_line_info_list = []  # 実際に返却されるリスト
+    predict_lint_info_list_error_return = [predict_line_info_list_base]  # エラーの時に返却される値
 
-    # 関数の開始準備（表示と情報の清流化）
+    # ■関数の開始準備（表示と情報の清流化）
     print("    find_predict_line_based_latest関数")
     fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
     # 情報の取得
     target_df = fixed_information['df_r']
     peaks = fixed_information['peaks']
-    target_dir = peaks[0]['direction']  # Lineの方向
+    target_dir = peaks[0]['direction']  # Lineの方向 予測ではLatest、通常はRiver。値が1の場合UpperLine（＝上値抵抗）
     grid = 0.01  # 調査の細かさ
     # 条件を達成していない場合は実行せず
     if len(peaks) < 4:
         # ■ループの際、数が少ないとエラーの原因になる。３個切る場合ば終了（最低３個必要）
-        return predict_line_info_list
-
+        return predict_lint_info_list_error_return
     # 各変数の設定（動的な値）
     min_max_search_range = 11
     max_index, max_peak_info_in_latest4 = max(enumerate(peaks[:min_max_search_range]), key=lambda x: x[1]["peak"])
@@ -628,9 +662,8 @@ def find_predict_line_based_latest(dic_args):
     # print("    (rip)最大最小値検索範囲")
     # gene.print_arr(peaks[:min_max_search_range])
     # print("    (rip)その中の最大価格、最小価格", max_peak_info_in_latest4['peak'], min_peak_info_in_latest4['peak'])
-
-    max_to_min_search = True  # Latestが上昇方向の場合、Maxから降りるように調査する＝加工の場合はMinから上るように調査(初期志向）(Falseで逆になる)
     # 調査価格情報の設定と情報格納
+    max_to_min_search = True  # Latestが上昇方向の場合、Maxから降りるように調査する＝加工の場合はMinから上るように調査(初期志向）(Falseで逆になる)
     if target_dir == 1:
         # latestが登り方向の場合
         search_max_price = max_peak_info_in_latest4['peak'] + grid  # 探索する最高値
@@ -648,30 +681,24 @@ def find_predict_line_based_latest(dic_args):
             target_price = search_min_price  # + grid  # 下（Min）からスタート
         else:
             target_price = search_max_price  # - grid  # 下りの場合でもMAXからスタート
-    line_base_info = {
-        "line_base_time": peaks[0]['time'],  # 予測では将来的に到達する場所のため、設定不可（とりあえず現在時刻？）
-        "line_base_price": target_price,  # 予測ではループで探すことになる（後で上書きする）、通常ではRiver価格
-        "line_base_direction": target_dir,  # 予測ではLatest、通常はRiver。値が1の場合UpperLine（＝上値抵抗）
-        "latest_direction": peaks[0]['direction'],  # 渡されたPeaksの直近の方向（＝直近の方向）
-        "latest_time_in_df": peaks[0]['time'],  # Latest。直近の時間（渡されたDFで判断）
-        "decision_price": target_df.iloc[0]['close'],  #
-    }  # 以上、Line計算の元になるデータ（探索と想定探索で異なる）
-    print("    (rip)価格と方向", target_dir, "調査範囲:", search_min_price, "<=", target_price, "<=", search_max_price)
-    print("    (rip)LineBaseInfo(参考表示)↓")
-    print("    (rip)", line_base_info)
+    # 返り値への登録(LIneBaseInfo)
+    predict_line_info_list_base['line_base_info']['line_base_time'] = peaks[0]['time']
+    predict_line_info_list_base['line_base_info']['line_base_price'] = target_price
+    predict_line_info_list_base['line_base_info']['line_base_direction'] = target_dir
+    predict_line_info_list_base['line_base_info']['latest_direction'] = peaks[0]['direction']
+    predict_line_info_list_base['line_base_info']['latest_time_in_df'] = peaks[0]['time']
+    predict_line_info_list_base['line_base_info']['decision_price'] = target_df.iloc[0]['close']
+    print("    ■価格と方向", target_dir, "調査範囲:", search_min_price, "<=", target_price, "<=", search_max_price)
+    print("    　LineBaseInfo(参考表示)↓")
+    print("     ", predict_line_info_list_base['line_base_info'])
 
-    # ■価格の調査を開始
-    predict_line_info = {
-        "same_price_list": [],
-        "line_base_info": line_base_info
-    }
-    predict_line_info_list = []
+    # ■同一価格の調査を開始
     while search_min_price <= target_price <= search_max_price:
         # print("    (rip)◆◆", target_price)
         same_price_list = find_same_price_list_from_peaks(target_price, target_dir, peaks, True)
         same_price_list = [d for d in same_price_list if d["time"] != peaks[0]['time']]  # Latestは削除する(predict特有）
         # print("    (rip)同価格リスト (Latestピークを削除後)↓　最終時刻は", peaks[0]['time'])
-        gene.print_arr(same_price_list)
+        # gene.print_arr(same_price_list)
 
         if len(same_price_list) == 1:
             # 現時刻を消したうえで、内容が一つだけになっている場合、それは最後の時刻のもの（sameprice検索の使用でついてきてしまう）
@@ -679,12 +706,12 @@ def find_predict_line_based_latest(dic_args):
             # print(" 　　　(rip)最終時刻のもののみのため、スキップ")
 
         if len(same_price_list) >= 1:
-            # 同価格リストが1つ以上発見された場合、範囲飛ばしと、値の登録を行う
-            predict_line_info['line_base_info']['line_base_price'] = target_price  # 同価格リストが見つかった時の価格を取得（通常だとRiver価格に相当）
-            predict_line_info['same_price_list'] = same_price_list
-            predict_line_info_list.append(copy.deepcopy(predict_line_info))
-            print("     (rip) --SkipperOn---")
-            print(same_price_list)
+            # 同価格リストが1つ以上発見された場合、範囲飛ばしと、返却値ベースへの登録を行う
+            predict_line_info_list_base['line_base_info']['line_base_price'] = round(target_price, 3)
+            predict_line_info_list_base['same_price_list'] = same_price_list
+            predict_line_info_list.append(copy.deepcopy(predict_line_info_list_base))  # 一部の情報を返り値情報に追加
+            # print("     (rip) --SkipperOn---")
+            # print(same_price_list)
             skipper = 0.05
         else:
             skipper = 0
@@ -695,91 +722,96 @@ def find_predict_line_based_latest(dic_args):
             # latest(想定するLINEが上方向）が登り方向の場合
             if max_to_min_search:  # 上から下に価格を探す場合
                 target_price = target_price - grid_adj
-                # target_price = - grid  # 登りの場合は、上から探していく
             else:
                 target_price = target_price + grid_adj
-                # target_price = + grid  # 登りの場合でも、下から探していく。(初期思想とは逆）
         else:
             if max_to_min_search:
                 target_price = target_price + grid_adj
-                # target_price = + grid  # 下りの場合は、下から探していく
             else:
                 target_price = target_price - grid_adj
-                # target_price = - grid  # 下りの場合でも、上から探していく ( 初期思想とは逆）
 
-    print("  (rip)★★【最終】samePrimeLists結果")
+    print("    ■【最終】samePrimeLists結果")
     gene.print_arr(predict_line_info_list)
 
-    # ②各Lineのストレングスを求める
+    # ■各Lineのストレングスを求める　（Lineが存在しない場合、終了）
     if len(predict_line_info_list) == 0:
         # same_priceがない場合、次のループへ
-        print("    (rip)同価格なし")
-        pass
-    else:
-        # ③samePriceがある場合、ストレングスを求める(same_price_listごと）
-        for each_predict_line_info in predict_line_info_list:
-            each_same_price_list = each_predict_line_info['same_price_list']
-            print("    (rip)【強度確認へ】")
-            gene.print_arr(each_same_price_list)
-            # print("   シンプルな強度（形状をあまり見ない判定）")
-            strength_info = judge_line_strength_based_same_price_list(each_same_price_list, peaks)  # Line強度
-            print(strength_info)
-            # フラッグかどうかを判定（Line強度とは別の関数にする）
-            # if strength_info['all_range_strong_line'] == 0 and strength_info['line_on_num'] >= 3:  # 通算と通して超えていない場合、フラッグの検証へ
-            if strength_info['line_on_num'] >= 3:  # フラッグ検証ハードルを下げる
-                flag = judge_flag_figure(peaks, peaks[0]['direction'], strength_info['line_strength'])
-                print("     【Flagテスト】", flag)
-                if flag:
-                    strength_info['line_strength'] = -1  # フラッグ成立時は、通常とは逆
-                    strength_info['remark'] = "フラッグ形状"  # 備考を入れておく
-            each_predict_line_info['strength_info'] = strength_info  # StrengInfoの上書き（返却用）
-            print("      (rip)", strength_info)
+        print("     ★同価格なし⇒終了")
+        return predict_lint_info_list_error_return
+    # ■■各同価格帯の強度を求める
+    for each_predict_line_info in predict_line_info_list:
+        print("    ■■ 各同一価格リストの強度確認")
+        print("      各ベース価格")
+        print("      ", each_predict_line_info['line_base_info']["line_base_price"], each_predict_line_info['line_base_info'])
+        print("      各同価格リスト↓")
+        gene.print_arr(each_predict_line_info['same_price_list'], 7)
+        # print("   シンプルな強度（形状をあまり見ない判定）")
+        strength_info = judge_line_strength_based_same_price_list(
+            each_predict_line_info['same_price_list'],
+            peaks,
+            each_predict_line_info['line_base_info']["line_base_price"],
+            each_predict_line_info['line_base_info']["latest_direction"]
+        )  # ■■LINE強度の検証関数の呼び出し
+        print("      ", strength_info)
+        # フラッグかどうかを判定（Line強度とは別の関数にする）
+        # if strength_info['all_range_strong_line'] == 0 and strength_info['line_on_num'] >= 3:  # 旧条件
+        if strength_info['line_on_num'] >= 3:  # フラッグ検証ハードルを下げる
+            flag = judge_flag_figure(peaks, peaks[0]['direction'], strength_info['line_strength'])
+            print("     ★【Flagテスト】", each_predict_line_info['line_base_info']["line_base_price"])
+            # フラッグの結果次第で、LineStrengthに横やりを入れる形で、値を買い替える
+            if flag:
+                strength_info['line_strength'] = -1  # フラッグ成立時は、通常とは逆
+                strength_info['remark'] = "フラッグ形状"  # 備考を入れておく
+        # ■■　結果を返却用配列に追加する(各要素に対して書き換えを行う。eachはpredict_line_info_list_baseと同様）
+        each_predict_line_info['strength_info'] = strength_info  # Strengthに追加（上書き）
+        print("      (rip)", strength_info)
 
-        # 各SamePriceではなく、トータルで見れる（SamePriceに依存しない）場合
-        print("  【予測と反対側（今回でいうリバー）が強い抵抗線かを検討する】")
-        double_top_same_price_list = find_same_price_list_from_peaks(peaks[1]['peak'], peaks[1]['direction'], peaks, False)
-        if len(double_top_same_price_list) != 0:
-            # 同価格が存在する場合
-            oppo_strength_info = judge_line_strength_based_same_price_list(double_top_same_price_list, peaks)
-            print(" 　", oppo_strength_info)
-            if oppo_strength_info['line_strength'] >= 0.9:
-                now_double_peak_gap = peaks[0]['gap']
-                tk.line_send("  反対側に強い抵抗.価格:",peaks[1]['peak'], "強さ", oppo_strength_info['line_strength'],
-                             "Gap", now_double_peak_gap)
+    # 各SamePriceではなく、トータルで見れる（SamePriceに依存しない）場合
+    print("    ■予測と反対側（今回でいうリバー）が強い抵抗線かを検討する")
+    double_top_same_price_list = find_same_price_list_from_peaks(peaks[1]['peak'], peaks[1]['direction'], peaks, False)
+    if len(double_top_same_price_list) != 0:
+        # 同価格が存在する場合
+        oppo_strength_info = judge_line_strength_based_same_price_list(
+            double_top_same_price_list,
+            peaks,
+            peaks[1]['peak'],
+            peaks[1]['direction']
+        )  # ■■LINE強度の検証関数の呼び出し
+        print("     ⇒⇒反対(river)のLine強度", oppo_strength_info)
+        if oppo_strength_info['line_strength'] >= 0.9:
+            now_double_peak_gap = peaks[0]['gap']
+            tk.line_send("  反対側に強い抵抗.価格:",peaks[1]['peak'], "強さ", oppo_strength_info['line_strength'],
+                         "Gap", now_double_peak_gap)
 
-    print("  RIの結果")
-    gene.print_arr(predict_line_info_list)
-
-    # DoublePeak系の判断
-    if len(predict_line_info_list) != 0:
-        print("  【突破形状判定】")
-        # ①形状が北斗七星型？
-        double_peak = dp.DoublePeak_predict({"df_r": target_df, "peaks": peaks})
-        if double_peak['take_position_flag']:
-            predict_line_info_list[0]['strength_info']['line_strength'] = double_peak['double_top_strength']
-            predict_line_info_list[0]['strength_info']['remark'] = double_peak['double_top_strength_memo']
-            predict_line_info_list[0]['strength_info']['order_finalized'] = double_peak['order_finalized']
-        # if double_peak['take_position_flag']:
-        #     print("   形状的には突破形状（ダブルトップ未遂）")
-        #     # ②ピーク価格が、直近25足分（ピーク数ではなく）で,最も高い値（低い価格）の場合
-        #     flop_peak = peaks[2]['peak']
-        #     flop_from_now = peaks[0]['count'] + peaks[1]['count'] - 1  # flop以降で探す（0でもあまり影響はないかも）
-        #     narrow_range_df = target_df[flop_from_now:25]
-        #     if peaks[0]['direction'] == 1:
-        #         # レイテストが上向きの場合、Flopのピークが上記の範囲で最高値かどうかを判定する
-        #         filtered_df = narrow_range_df[narrow_range_df['inner_high'] > flop_peak + 0.02]  # 超えているものを探す
-        #     else:
-        #         # レイテストが下向きの場合、Flopのピークが上記の範囲で最下位かどうかを確認する
-        #         filtered_df = narrow_range_df[narrow_range_df['inner_low'] < flop_peak - 0.01]  # 超えているものを探す
-        #     print("　　ダブルトップ検証範囲", narrow_range_df.iloc[0]['time_jp'], narrow_range_df.iloc[-1]["time_jp"], flop_peak)
-        #     if len(filtered_df) > 0:
-        #         # 超えているものがある場合は、ちょっと微妙
-        #         print("  　微妙なDoubleTop未遂", filtered_df.iloc[0]['time_jp'])
-        #     else:
-        #         print("    真の突破型のダブルトップ未遂")
-        #         tk.line_send(" 　ダブル突破未遂発見")
-        #         predict_line_info_list[0]['strength_info']['line_strength'] = -1
-        #         predict_line_info_list[0]['strength_info']['remark'] = "ダブルトップ突破未遂"
+    # ■■DoublePeak系の判断
+    print("    ■突破形状の確認")
+    # ①形状が北斗七星型？
+    double_peak = dp.DoublePeak_predict({"df_r": target_df, "peaks": peaks})
+    if double_peak['take_position_flag']:
+        predict_line_info_list[0]['strength_info']['line_strength'] = double_peak['double_top_strength']
+        predict_line_info_list[0]['strength_info']['remark'] = double_peak['double_top_strength_memo']
+        predict_line_info_list[0]['strength_info']['order_finalized'] = double_peak['order_finalized']
+    # if double_peak['take_position_flag']:
+    #     print("   形状的には突破形状（ダブルトップ未遂）")
+    #     # ②ピーク価格が、直近25足分（ピーク数ではなく）で,最も高い値（低い価格）の場合
+    #     flop_peak = peaks[2]['peak']
+    #     flop_from_now = peaks[0]['count'] + peaks[1]['count'] - 1  # flop以降で探す（0でもあまり影響はないかも）
+    #     narrow_range_df = target_df[flop_from_now:25]
+    #     if peaks[0]['direction'] == 1:
+    #         # レイテストが上向きの場合、Flopのピークが上記の範囲で最高値かどうかを判定する
+    #         filtered_df = narrow_range_df[narrow_range_df['inner_high'] > flop_peak + 0.02]  # 超えているものを探す
+    #     else:
+    #         # レイテストが下向きの場合、Flopのピークが上記の範囲で最下位かどうかを確認する
+    #         filtered_df = narrow_range_df[narrow_range_df['inner_low'] < flop_peak - 0.01]  # 超えているものを探す
+    #     print("　　ダブルトップ検証範囲", narrow_range_df.iloc[0]['time_jp'], narrow_range_df.iloc[-1]["time_jp"], flop_peak)
+    #     if len(filtered_df) > 0:
+    #         # 超えているものがある場合は、ちょっと微妙
+    #         print("  　微妙なDoubleTop未遂", filtered_df.iloc[0]['time_jp'])
+    #     else:
+    #         print("    真の突破型のダブルトップ未遂")
+    #         tk.line_send(" 　ダブル突破未遂発見")
+    #         predict_line_info_list[0]['strength_info']['line_strength'] = -1
+    #         predict_line_info_list[0]['strength_info']['remark'] = "ダブルトップ突破未遂"
 
     # テスト的な
     ms.cal_move_size({"df_r": target_df, "peaks": peaks})

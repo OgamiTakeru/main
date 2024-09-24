@@ -163,6 +163,7 @@ def information_fix(dic_args):
         peaks = dic_args["peaks"]
     else:
         peaks_info = p.peaks_collect_main(dic_args['df_r'], 15)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
+        # peaks_info = p.peaks_collect_main_not_skip(dic_args['df_r'], 15)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
         peaks = peaks_info['all_peaks']
         print("  <対象>")
         print("  Latest", peaks[0])
@@ -186,17 +187,18 @@ def information_fix(dic_args):
     return {"df_r": dic_args['df_r'], "peaks": peaks, "params": params, "inspection_params": inspection_params}
 
 
-def order_shorter(finalized_order):
+def order_shorter(before_finalized_order):
     """
     与えられたオーダーに対し、コピー生成。
     コピーに対し、LCや名前の変更（ショート化）を行い返却
     """
-    copied_finalized_order = finalized_order.copy()  # 辞書は参照書き換えのため、コピー必須。
-    copied_finalized_order['tp'] = 0.03
-    copied_finalized_order['lc'] = 0.04
-    copied_finalized_order['units'] = copied_finalized_order['units'] * 0.9
-    copied_finalized_order['name'] = copied_finalized_order['name'] + "_SHORT"
-    return finalized_order
+    copied_before_finalized_order = before_finalized_order.copy()  # 辞書は参照書き換えのため、コピー必須。
+    copied_before_finalized_order['tp'] = 0.03
+    copied_before_finalized_order['lc'] = 0.04
+    copied_before_finalized_order['units'] = copied_before_finalized_order['units'] * 0.9
+    copied_before_finalized_order['name'] = copied_before_finalized_order['name'] + "_SHORT"
+
+    return order_finalize(copied_before_finalized_order)
 
 
 def order_finalize(order_base_info):

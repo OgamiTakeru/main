@@ -441,7 +441,7 @@ def DoublePeak_predict(dic_args):
             cr = gene.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
         elif rt_min < river_ratio_based_turn <= rt_max_extend:
             compare_flag = True
-            confidence = 0.5  # 信頼度が微妙なため、信頼度半減
+            confidence = 0.5  # 信頼度が微妙なため、信頼度半減(勢いがいいときは超えるんだけど、、超えない時もある）
             cr = gene.str_merge("サイズ割合は成立(riverOver）", river_ratio_based_turn, rt_max_extend)
         else:
             cr = gene.str_merge("riverが範囲外", river_ratio_based_turn, "規定値は", rt_max_extend, "以下")
