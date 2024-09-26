@@ -240,12 +240,13 @@ def inspection_predict_line_make_order(df_r):
         predict_line_info_list = ri.find_predict_line_based_latest({"df_r": df_r, "peaks": peaks})  # 調査！
         print(" (Main)受け取った同価格リスト")
         gene.print_arr(predict_line_info_list)
-        return flag_and_orders
     elif peaks[0]['count'] == 3:
         # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
         predict_line_info_list = ri.find_predict_line_based_latest_for3({"df_r": df_r, "peaks": peaks})  # 調査！
         print(" (Main)受け取った同価格リスト")
         gene.print_arr(predict_line_info_list)
+    else:
+        return flag_and_orders
 
 
     # （２）状況にあわせたオーダーを生成する
