@@ -171,6 +171,33 @@ def inspection_river_line_make_order(df_r):
         return flag_and_orders
 
 
+def wrap_up_inspection_orders(df_r):
+    # 必要最低限の返却値の定義
+    for_res = {
+        "take_position_flag": False,  # 必須
+        "exe_orders": [],  # 仮で作っておく
+        "exe_order": {}
+    }
+
+    # 調査実施
+    line_order_info = inspection_river_line_make_order(df_r)
+    p_line_order_info = inspection_predict_line_make_order(df_r)
+
+    if line_order_info['take_position_flag'] and p_line_order_info['take_position_flag']:
+        print("　本来はexe_ordersをがっちゃんこしたい(現状は同タイミングはありえない）")
+
+    # 今(上記二つの解析)は明確にタイミングが異なり、同時の成立がないため、独立して返却が可能
+    if line_order_info['take_position_flag']:
+        # tk.line_send("通常Flag成立")
+        for_res = line_order_info
+    elif p_line_order_info['take_position_flag']:
+        print(p_line_order_info)
+        for_res = p_line_order_info
+
+    return for_res
+
+
+
 def inspection_predict_line_make_order(df_r):
     """
     主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
@@ -207,15 +234,19 @@ def inspection_predict_line_make_order(df_r):
     fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
     peaks = fixed_information['peaks']
 
-    if peaks[0]['count'] != 2:  # 予測なので、LatestがN個続いたときに実行してみる
-        print(" latestがCOUNTが３以外の場合は終了")
-        print("    Latest=", peaks[0])
+    if peaks[0]['count'] == 2:  # 予測なので、LatestがN個続いたときに実行してみる
+        print(" latestがCOUNTが2の場合")
+        # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
+        predict_line_info_list = ri.find_predict_line_based_latest({"df_r": df_r, "peaks": peaks})  # 調査！
+        print(" (Main)受け取った同価格リスト")
+        gene.print_arr(predict_line_info_list)
         return flag_and_orders
+    elif peaks[0]['count'] == 3:
+        # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
+        predict_line_info_list = ri.find_predict_line_based_latest_for3({"df_r": df_r, "peaks": peaks})  # 調査！
+        print(" (Main)受け取った同価格リスト")
+        gene.print_arr(predict_line_info_list)
 
-    # （１）RangeInspectionを実施（ここでTakePositionFlagを付与する）
-    predict_line_info_list = ri.find_predict_line_based_latest({"df_r": df_r, "peaks": peaks})  # 調査！
-    print(" (Main)受け取った同価格リスト")
-    gene.print_arr(predict_line_info_list)
 
     # （２）状況にあわせたオーダーを生成する
     for i, each_line_info in enumerate(predict_line_info_list):
@@ -247,7 +278,7 @@ def inspection_predict_line_make_order(df_r):
             main_order['expected_direction'] = peaks[0]['direction'] * -1  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = each_line_info['strength_info']['line_strength']
             main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
+            main_order['name'] = each_line_info['strength_info']['remark']
             # オーダーが来た場合は、フラグをあげ、オーダーを追加する
             flag_and_orders['take_position_flag'] = True
             flag_and_orders["exe_orders"].append(cf.order_finalize(main_order))
@@ -255,20 +286,21 @@ def inspection_predict_line_make_order(df_r):
 
             # ショートTPのオーダーを追加
             flag_and_orders["exe_orders"].append(cf.order_shorter(main_order))
-        elif line_strength < 0:
+        elif -10 < line_strength < 0:
+            # -10を入れた理由は、オーダーを入れたくない時、－10入れておけばいいやと思ったので、、
             if line_strength == -1:
                 # フラッグ形状の場合
                 # フラッグ形状やDoublePeak未遂が発覚している場合。Latest方向に強く伸びる予想 (通過と同義だが、プライオリティが異なる）
-                print("  (m)フラッグ・DP未遂検出（大きな動き前兆）", line_strength, peak_strength_ave, target_price)
+                print("  (m)フラッグ・突破形状検出（大きな動き前兆）", line_strength, peak_strength_ave, target_price)
                 main_order['target'] = each_line_info['line_base_info']['line_base_price']
                 main_order['tp'] = 0.30  # LCは広め
-                main_order['lc'] = 0.20 #
+                main_order['lc'] = 0.15  #
                 main_order['type'] = 'STOP'  # 順張り
                 # main_order['tr_range'] = 0.10  # 要検討
                 main_order['expected_direction'] = peaks[0]['direction'] * 1.2  # latestに対し、1は突破。*-1は折り返し
                 main_order['priority'] = 2
                 main_order['units'] = order_base_info['units'] * 1
-                main_order['name'] = each_line_info['strength_info']['remark'] + str(each_line_info['strength_info']['line_strength'])
+                main_order['name'] = each_line_info['strength_info']['remark']
                 # オーダーが来た場合は、フラグをあげ、オーダーを追加する
                 flag_and_orders['take_position_flag'] = True
                 flag_and_orders["exe_orders"].append(cf.order_finalize(main_order))
@@ -279,11 +311,11 @@ def inspection_predict_line_make_order(df_r):
             else:
                 # 突破形状の場合
                 flag_and_orders['take_position_flag'] = True
-                flag_and_orders["exe_orders"].append(each_line_info['strength_info']['order_finalized'])
-                flag_and_orders["exe_order"] = each_line_info['strength_info']['order_finalized']  # とりあえず代表一つ。。
+                flag_and_orders["exe_orders"].append(cf.order_finalize(each_line_info['strength_info']['order_before_finalized']))
+                flag_and_orders["exe_order"] = cf.order_finalize(each_line_info['strength_info']['order_before_finalized']) # とりあえず代表一つ。。
 
                 # ショートTPのオーダーを追加
-                flag_and_orders["exe_orders"].append(cf.order_shorter(main_order))
+                # flag_and_orders["exe_orders"].append(cf.order_shorter(each_line_info['strength_info']['order_before_finalized']))
 
         elif peak_strength_ave < 0.75:
             # ②ピークが弱いものばかりである場合、通過点レベルの線とみなす（Latestから見ると、順張りとなる）
@@ -296,7 +328,7 @@ def inspection_predict_line_make_order(df_r):
             main_order['expected_direction'] = peaks[0]['direction'] * 1  # latestに対し、1は突破。*-1は折り返し
             main_order['priority'] = 1
             main_order['units'] = order_base_info['units'] * 0.1
-            main_order['name'] = "今はないはずのLINE探索(通過)" + str(each_line_info['strength_info']['line_strength'])
+            main_order['name'] = "今はないはずのLINE探索(通過)"
             main_order['lc_change'] = [
                 {"lc_change_exe": True, "lc_trigger_range": 0.02, "lc_ensure_range": 0.01},
                 {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.02},
@@ -369,32 +401,6 @@ def inspection_predict_line_make_order(df_r):
     print("ここまで")
 
     return flag_and_orders
-
-
-def wrap_up_inspection_orders(df_r):
-    # 必要最低限の返却値の定義
-    for_res = {
-        "take_position_flag": False,  # 必須
-        "exe_orders": [],  # 仮で作っておく
-        "exe_order": {}
-    }
-
-    # 調査実施
-    line_order_info = inspection_river_line_make_order(df_r)
-    p_line_order_info = inspection_predict_line_make_order(df_r)
-
-    if line_order_info['take_position_flag'] and p_line_order_info['take_position_flag']:
-        print("　本来はexe_ordersをがっちゃんこしたい(現状は同タイミングはありえない）")
-
-    # 今(上記二つの解析)は明確にタイミングが異なり、同時の成立がないため、独立して返却が可能
-    if line_order_info['take_position_flag']:
-        # tk.line_send("通常Flag成立")
-        for_res = line_order_info
-    elif p_line_order_info['take_position_flag']:
-        print(p_line_order_info)
-        for_res = p_line_order_info
-
-    return for_res
 
 
 

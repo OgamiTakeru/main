@@ -16,8 +16,9 @@ class order_information:
 
     def __init__(self, name, oa):
         self.oa = oa  # クラス変数でもいいが、LiveとPracticeの混在ある？　引数でもらう
-        # リセ対象群
         self.name = name  #
+        self.reset()
+        # 以下リセット対象群
         self.priority = 0  # このポジションのプライオリティ（登録されるプランのプライオリティが、既登録以上の物だったら入れ替え予定）
         self.life = False  # 有効かどうか（オーダー発行からポジションクローズまでがTrue）
         self.order_permission = True
@@ -156,7 +157,7 @@ class order_information:
             self.trade_timeout_min = plan['trade_timeout_min']
         if 'order_timeout_min' in plan:  # していない場合は初期値50分
             self.order_timeout_min = plan['order_timeout_min']
-        self.name = plan['name'] + "(" + str(self.priority) + ")"  # 名前を入れる(クラス内の変更）
+        self.name = plan['name']  #  + "(" + str(self.priority) + ")"  # 名前を入れる(クラス内の変更）
         # (2)各フラグを指定しておく
         self.order_permission = plan['order_permission']  # 即時のオーダー判断に利用する
         # (3-1) 付加情報１　各便利情報を格納しておく(直接Orderで使わない）
@@ -490,8 +491,33 @@ class order_information:
 
         # 変化による情報（勝ち負けの各最大値、継続時間等の取得）
         self.updateWinLoseTime(trade_latest['PLu'])  # PLU(realizePL / Unit)の推移を記録する
-        # LCの変更を検討する
+        # LCの変更を検討する(プラス域にいった場合のTP底上げ≒トレールに近い）
         self.lc_change()
+        # LCの変更を検討する（マイナスストレートの場合、できるだけ早く処理する）
+        self.lc_change2()
+
+
+    def lc_change2(self):
+        """
+        ロスカット幅をせり上げる（特にストレートに落ちそうな場合）
+        """
+        border_plus = 0.01  # 最大でもプラスが1pipsの状態で
+        trigger_minus = -0.04  # 4pipsマイナスに到達してしまった場合
+        border_sec = 300  # しかもポジション取得から300秒程度の短い間の場合
+        new_lc_range = - 0.06  # 6pipsでLCしてしまう
+
+        if self.t_pl_u >= trigger_minus:
+            if self.win_max_plu < border_plus and self.t_time_past_sec < border_sec:
+                # 最大のプラス領域がほぼ０の状態で、早い時間帯で下がっている場合
+                new_lc_price = round(float(self.t_execution_price) + (new_lc_range * self.plan['ask_bid']), 3)
+                data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+                res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+                if res['error'] == -1:
+                    tk.line_send("    LC変更ミス＠lc_change")
+                    return 0  # APIエラー時は終了
+                tk.line_send("　(ストレートマイナスLC変更)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
+                             )
+
 
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """

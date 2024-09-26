@@ -403,7 +403,7 @@ def DoublePeak_predict(dic_args):
         rt_max_extend = 2.3
         f3_count = 5
         t_count_min = 2  #
-        t_count_max = 6  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
+        t_count_max = 7  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。6
         r_count = 2
 
     # ■■　形状の判定部
@@ -527,25 +527,26 @@ def DoublePeak_predict(dic_args):
         main_order['priority'] = 2  # ほかので割り込まれない
         main_order['units'] = order_base_info['units'] * 1
         main_order['name'] = "突破形状（通常）"
-        main_order = cf.order_finalize(main_order)
     else:
         # 従来想定より、リバーの動きが速い
         double_top_strength = -0.5  # ★この場合のみ、このタイミングでストレングスを編集
         main_order = copy.deepcopy(order_base_info)
-        main_order['target'] = turn["peak"] + (0.02 * -1 * river['direction'])     # turn(最新の折り返し地点）位まで戻る前提（戻らない奴は、、、しかたない、、、）
+        # main_order['target'] = turn["peak"] + (0.02 * -1 * river['direction'])     # turn(最新の折り返し地点）位まで戻る前提（戻らない奴は、、、しかたない、、、）
+        main_order['target'] = now_price + (0.02 * -1 * river['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
         main_order['tp'] = 0.3
-        main_order['lc'] = 0.22  # * line_strength  # 0.09  # LCは広め
+        # main_order['lc'] = 0.22  # * line_strength  # 0.09  # LCは広め
+        main_order['lc'] = river["gap"] + 0.02  # * line_strength  # 0.09  # LCは広め
         main_order['type'] = 'LIMIT'  # 現在価格からすると、逆張りに相当する
         # main_order['tr_range'] = 0.10  # 要検討
         main_order['expected_direction'] = river['direction']  # 突破方向
         main_order['priority'] = 2  #
         main_order['units'] = order_base_info['units'] * 1
         main_order['name'] = "突破形状（river大）"
-        main_order = cf.order_finalize(main_order)
+
 
     return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "take_position_flag": take_position_flag,
-        "order_finalized": main_order,
+        "order_before_finalized": main_order,
         "double_top_strength": double_top_strength,
         "double_top_strength_memo": double_top_strength_memo,
     }

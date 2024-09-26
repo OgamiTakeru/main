@@ -108,7 +108,7 @@ def mode1():
     if classes_info['order_exist']:
         # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
         # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
-        if classes_info['max_priority'] == 2:
+        if classes_info['max_priority'] >= inspection_result_dic['max_priority']:
             tk.line_send("新規オーダー見送り（既存オーダーにフラッグ用注文が含まれるため）", classes_info['max_order_time_sec'])
             return 0
     # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
@@ -117,7 +117,7 @@ def mode1():
         # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
         if inspection_result_dic['max_priority'] > classes_info['max_priority']:
             # 重要オーダーあり。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
-            tk.line_send("★ポジションありだがフラッグ発生のため置換", classPosition.position_check(classes))
+            tk.line_send("★ポジションありだがフラッグ発生のため置換")
         else:
             # ポジション後２５分以内の物は、プライオリティが同一の場合は置き変わらない
             if classes_info['max_position_time_sec'] < 1500:
