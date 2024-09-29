@@ -858,13 +858,14 @@ def find_predict_line_strength_based_same_price_list(dic_args):
     main_order_base['name'] = target_strength['strength_info']['remark'] + str(main_order_base['priority'])
     main_order_base['lc_change'] = []
     # gene.print_json(cf.order_finalize(main_order_base))
+    print("ResLinInspec", main_order_base)
     exe_orders.append(cf.order_finalize(main_order_base))
 
     # 返却する
     orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
-    orders_and_evidence["exe_orders"]= exe_orders
-    orders_and_evidence["target_strength"]= target_strength
-    orders_and_evidence["evidence"]= predict_line_info_list
+    orders_and_evidence["exe_orders"] = exe_orders
+    orders_and_evidence["target_strength"] = target_strength
+    orders_and_evidence["evidence"] = predict_line_info_list
     return orders_and_evidence
 
     # # 各SamePriceではなく、トータルで見れる（SamePriceに依存しない）場合
@@ -925,7 +926,7 @@ def find_predict_line_strength_based_same_price_list(dic_args):
     #
     # print("    ■移動距離の確認")
     # ms.cal_move_size({"df_r": target_df, "peaks": peaks})
-    return predict_line_info_list
+    # return predict_line_info_list
 
 
 def river_peak_line_strength(dic_args):

@@ -6,6 +6,7 @@ import tokens as tk
 import fPeakInspection as p
 import fGeneric as gene
 import classOanda
+from collections import OrderedDict
 
 basic_unit = 1000
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
@@ -248,6 +249,7 @@ def order_finalize(order_base_info):
               'decision_price' in order_base_info, 'decision_time' in order_base_info)
         return -1  # エラー
 
+
     # 0 注文方式を指定する
     if not ('stop_or_limit' in order_base_info) and not ("type" in order_base_info):
         print(" ★★オーダー方式が入力されていません")
@@ -268,7 +270,7 @@ def order_finalize(order_base_info):
         print("    ★★★target(Rangeか価格か）が入力されていません")
     elif order_base_info['target'] >= 80:
         # targetが８０以上の数字の場合、ターゲット価格が指定されたとみなす
-        order_base_info['position_margin'] = abs(order_base_info['decision_price'] - order_base_info['target'])
+        order_base_info['position_margin'] = round(abs(order_base_info['decision_price'] - order_base_info['target']), 3)
         order_base_info['target_price'] = order_base_info['target']
         # print("    ★★target 価格指定", order_base['target'], abs(order_base['decision_price']), order_base['target_price'])
     elif order_base_info['target'] < 80:
@@ -276,7 +278,7 @@ def order_finalize(order_base_info):
         if order_base_info['target'] < 0:
             print("   targetに負のRangeが指定されています。ABSで使用します（正の値を計算で調整）")
             order_base_info['target'] = abs(order_base_info['target'])
-        order_base_info['position_margin'] = order_base_info['target']
+        order_base_info['position_margin'] = round(order_base_info['target'], 3)
         order_base_info['target_price'] = order_base_info['decision_price'] + \
                                           (order_base_info['target'] * order_base_info['expected_direction'] * order_base_info[
                                          'stop_or_limit'])
@@ -296,16 +298,16 @@ def order_finalize(order_base_info):
             # 調整を行う（Rangeを最低の0.02に設定し、そこから改めてLC＿Priceを算出する）
             print("  ★★TP価格とTarget価格が同値となったため、調整あり(0.02)")
             order_base_info['tp_range'] = 0.02
-            order_base_info['tp_price'] = order_base_info['target_price'] + (
-                    order_base_info['tp_range'] * order_base_info['expected_direction'])
+            order_base_info['tp_price'] = round(order_base_info['target_price'] + (
+                    order_base_info['tp_range'] * order_base_info['expected_direction']), 3)
         else:
             # 調整なしでOK
-            order_base_info['tp_price'] = order_base_info['tp']
+            order_base_info['tp_price'] = round(order_base_info['tp'], 3)
             order_base_info['tp_range'] = abs(order_base_info['target_price'] - order_base_info['tp'])
     elif order_base_info['tp'] < 80:
         # print("    TP　Range指定")
         # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
-        order_base_info['tp_price'] = order_base_info['target_price'] + (order_base_info['tp'] * order_base_info['expected_direction'])
+        order_base_info['tp_price'] = round(order_base_info['target_price'] + (order_base_info['tp'] * order_base_info['expected_direction']), 3)
         order_base_info['tp_range'] = order_base_info['tp']
 
     # ③ LC_priceとLC_rangeを求める
@@ -320,16 +322,16 @@ def order_finalize(order_base_info):
             # 調整を行う（Rangeを最低の0.02に設定し、そこから改めてLC＿Priceを算出する）
             print("  ★★LC価格とTarget価格が同値となったため、調整あり(0.02)")
             order_base_info['lc_range'] = 0.02
-            order_base_info['lc_price'] = order_base_info['target_price'] - (
-                    order_base_info['lc_range'] * order_base_info['expected_direction'])
+            order_base_info['lc_price'] = round(order_base_info['target_price'] - (
+                    order_base_info['lc_range'] * order_base_info['expected_direction']), 3)
         else:
             # 調整なしでOK
-            order_base_info['lc_price'] = order_base_info['lc']
+            order_base_info['lc_price'] = round(order_base_info['lc'], 3)
             order_base_info['lc_range'] = abs(order_base_info['target_price'] - order_base_info['lc'])
     elif order_base_info['lc'] < 80:
         # print("    LC RANGE指定")
         # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
-        order_base_info['lc_price'] = order_base_info['target_price'] - (order_base_info['lc'] * order_base_info['expected_direction'])
+        order_base_info['lc_price'] = round(order_base_info['target_price'] - (order_base_info['lc'] * order_base_info['expected_direction']), 3)
         order_base_info['lc_range'] = order_base_info['lc']
 
     # 最終的にオーダーで必要な情報を付与する(項目名を整えるためにコピーするだけ）。LimitかStopかを算出
@@ -337,5 +339,11 @@ def order_finalize(order_base_info):
     order_base_info['price'] = order_base_info['target_price']
     order_base_info['trade_timeout_min'] = order_base_info['trade_timeout_min'] if 'trade_timeout_min' in order_base_info else 60
     order_base_info['order_permission'] = order_base_info['order_permission'] if 'order_permission' in order_base_info else True
+    # 表示形式の問題で、、念のため（機能としては不要）
+    order_base_info['decision_price'] = float(order_base_info['decision_price'])
+    order_base_info['decision_time'] = 0
+
+    # ordered_dict = OrderedDict((key, order_base_info[key]) for key in order)
+    order_base_info = sorted_dict = {key: order_base_info[key] for key in sorted(order_base_info)}
 
     return order_base_info

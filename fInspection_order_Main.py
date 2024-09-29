@@ -472,7 +472,9 @@ def inspection_warp_up_and_make_order(df_r):
         elif orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:通常ストレングス(flag含む)】")
             # シンプルなLineStrengthによるオーダー発行
+            flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = orders_and_evidence["exe_orders"]
+            print(" なにかおかしい", orders_and_evidence["exe_orders"])
             # この後、トラリピ入れたいなぁ
             # ■■最も強いストレングスが遠い場合、最も強いストレングスに向かう方向へトラリピを設定
             trid_do = True
@@ -500,7 +502,7 @@ def inspection_warp_up_and_make_order(df_r):
                     }
                     trid_orders_finalized = cf.make_trid_order(plan)  # トラリピオーダーの生成（ファイナライズド）
                     gene.print_arr(trid_orders_finalized)
-                    flag_and_orders["exe_orders"].append(trid_orders_finalized)
+                    flag_and_orders["exe_orders"].extend(trid_orders_finalized)  # ここは配列を足すので、appendではなくextend
 
     elif peaks[0]['count'] == 3:
         # latestが3この時に実行されるもの
@@ -518,5 +520,6 @@ def inspection_warp_up_and_make_order(df_r):
             #     [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
 
     print(" ■検証終了")
-
+    print(flag_and_orders['take_position_flag'])
+    gene.print_arr(flag_and_orders['exe_orders'])
     return flag_and_orders
