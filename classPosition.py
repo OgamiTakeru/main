@@ -57,6 +57,7 @@ class order_information:
 
         # ロスカット変更情報
         self.lc_change_dic = {}  # 空を持っておくだけ
+        self.lc_change_dic2 = {}  # 空を持っておくだけ
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
@@ -97,6 +98,7 @@ class order_information:
 
         # ロスカット変更情報
         self.lc_change_dic = {}  # 空を持っておくだけ
+        self.lc_change_dic2 = {}  # 空を持っておくだけ
 
     def print_info(self):
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
@@ -501,22 +503,44 @@ class order_information:
         """
         ロスカット幅をせり上げる（特にストレートに落ちそうな場合）
         """
+        # {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
         border_plus = 0.01  # 最大でもプラスが1pipsの状態で
         trigger_minus = -0.04  # 4pipsマイナスに到達してしまった場合
         border_sec = 300  # しかもポジション取得から300秒程度の短い間の場合
         new_lc_range = - 0.06  # 6pipsでLCしてしまう
 
-        if self.t_pl_u >= trigger_minus:
+        if self.t_state != "OPEN" or self.t_time_past_sec < 60:
+            # ポジションがない場合、合は実行しない
+            return 0
+
+        if 'done' in self.lc_change_dic2:
+            # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
+            return 0
+
+        if self.t_pl_u <= trigger_minus:  #不等号向き注意　-0.02 < -0.04基準
             if self.win_max_plu < border_plus and self.t_time_past_sec < border_sec:
                 # 最大のプラス領域がほぼ０の状態で、早い時間帯で下がっている場合
                 new_lc_price = round(float(self.t_execution_price) + (new_lc_range * self.plan['ask_bid']), 3)
+                if self.plan['ask_bid'] == 1:
+                    # 買い方向の場合、
+                    if new_lc_price <= self.plan['lc_price']:
+                        # 新しいLC価格が、現在のLCよりも下になる（LCが広がり、損失が大きくなる場合）
+                        self.lc_change_dic2['done'] = True  # やったことにする
+                        return 0
+                else:
+                    # 売り方向の場合
+                    if new_lc_price >= self.plan["lc_price"]:
+                        # 新しいLC価格が、現在のLCよりも上にある（LCが広がる方向の場合）
+                        self.lc_change_dic2['done'] = True
+                        return 0
                 data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
                 res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+                self.lc_change_dic2['done'] = True
                 if res['error'] == -1:
                     tk.line_send("    LC変更ミス＠lc_change")
                     return 0  # APIエラー時は終了
                 tk.line_send("　(ストレートマイナスLC変更)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
-                             )
+                             "　max plus", self.win_max_plu, "time",self.t_time_past_sec)
 
 
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
@@ -559,6 +583,7 @@ class order_information:
                     tk.line_send("    LC変更ミス＠lc_change")
                     return 0  # APIエラー時は終了
                 item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
+                # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
                 tk.line_send("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
                              "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice", self.t_execution_price,
                              "予定価格", self.plan['price'])

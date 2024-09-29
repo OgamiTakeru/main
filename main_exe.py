@@ -109,7 +109,7 @@ def mode1():
         # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
         # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
         if classes_info['max_priority'] >= inspection_result_dic['max_priority']:
-            tk.line_send("新規オーダー見送り（既存オーダーにフラッグ用注文が含まれるため）", classes_info['max_order_time_sec'])
+            tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority'], inspection_result_dic['max_priority'])
             return 0
     # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
     if classes_info['position_exist']:
@@ -343,7 +343,7 @@ else:  # Live
 
 # ■ポジションクラスの生成
 classes = []
-for i in range(6):
+for i in range(10):
     # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
     # クラス名を確定し、クラスを生成する。
     new_name = "c" + str(i)

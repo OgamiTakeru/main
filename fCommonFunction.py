@@ -28,9 +28,9 @@ def order_base(now_prie):
             "decision_price": now_prie,
             "name": "",
             "lc_change": [
-                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
-                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": -0.072},
-                {"lc_change_exe": True, "lc_trigger_range": 0.07, "lc_ensure_range": -0.032},
+                # {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
+                # {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": -0.072},
+                {"lc_change_exe": True, "lc_trigger_range": 0.08, "lc_ensure_range": 0.01},
                 {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.05},
                 {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.1},
                 {"lc_change_exe": True, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
@@ -60,7 +60,8 @@ def make_trid_order(plan):
         start_price_lc: 検討中。
         num: end_priceがない場合は必須。何個分のグリッドを設置。
         end_price:　numがない場合は必須。numと両方ある場合は、こちらが優先。StartPriceからEndPriceまで設置する
-        type:　"STOP" 基本はストップになるはずだけれど。
+        type:　"STOP" 基本は順張りとなるため、ストップになるはずだけれど。
+    }
 
     :return: 上記の情報をまとめてArrで。オーダーミス発生(オーダー入らず)した場合は、辞書内cancelがTrueとなる。
     ■　結果は配列で返される。
@@ -110,7 +111,7 @@ def make_trid_order(plan):
             order_result_arr.append(each_order)
 
             # 次のループへ
-            for_price = for_price + (plan['expected_direction'] * plan['grid'])
+            for_price = round(for_price + (plan['expected_direction'] * plan['grid']), 3)
 
     return order_result_arr
 
@@ -121,7 +122,7 @@ def now_price():
     ・とりあえずミドル価格を返す
     ・エラーの場合、このループをおしまいにする？それともっぽい値を返却する？
     """
-    print("   NowPrice関数@ CommonFunction")
+    # print("   NowPrice関数@ CommonFunction")
     price_dic = oa.NowPrice_exe("USD_JPY")
     if price_dic['error'] == -1:  # APIエラーの場合はスキップ
         print("      API異常発生の可能性")
@@ -152,27 +153,29 @@ def information_fix(dic_args):
     :return: {"peaks":peaks, "df_r": df_r, "params": パラメータList or None}
          注　Peakが渡された場合は、そのままを返却するする。（上書きしないため、渡されたdf_rと齟齬がある可能性も０ではない）
     """
-    print("    引数整流化 @CommonFunction")
+    s = "        "  # 5個分
+    print(s, "<引数整流化> @CommonFunction")
+
 
     # データフレームに関する処理
     if not "df_r" in dic_args:
-        print("       Df_rがありません（異常です）")
+        print(s, "Df_rがありません（異常です）")
 
     # ピークスに関する処理（生成or既存のものを利用)
     if "peaks" in dic_args:  # Peakの算出等を行う
-        print("       Peaks既存")
+        print(s, "Peaks既存")
         peaks = dic_args["peaks"]
     else:
         peaks_info = p.peaks_collect_main(dic_args['df_r'], 15)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
         # peaks_info = p.peaks_collect_main_not_skip(dic_args['df_r'], 15)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
         peaks = peaks_info['all_peaks']
-        print("  <対象>")
-        print("  Latest", peaks[0])
-        print("  river ", peaks[1])
-        print("  turn", peaks[2])
-        print("  flop3", peaks[2])
-        print("  すべて")
-        gene.print_arr(peaks)
+        print(s, "<対象>")
+        print(s, "Latest", peaks[0])
+        print(s, "river ", peaks[1])
+        print(s, "turn", peaks[2])
+        print(s, "flop3", peaks[2])
+        print(s, "すべて")
+        gene.print_arr(peaks, 5)
 
     # 以下はパラメータ用（あまり使っていない）
     if "params" in dic_args:  # paramsが引数の中にある場合 (検証モードや条件切り替え等で利用）
@@ -211,9 +214,9 @@ def order_finalize(order_base_info):
         "expected_direction": river['direction'] * -1,  # 必須
         "decision_time": river['time'],  # 任意（アウトプットのエクセルの時に使う　それ以外は使わない）
         "decision_price": river['peak'],  # 必須（特に、targetの指定がRangeで与えられた場合に利用する）
-        "target": 価格 or Range で正の値  # 80以上の値は価格とみなし、それ以外ならMarginとする
-        "tp": 価格 or Rangeで正の値,  # 80以上の値は価格とみなし、それ以外ならMarginとする
-        "lc": 価格　or Rangeで正の値  # 80以上の値は価格とみなし、それ以外ならMarginとする
+        "target": 価格 or Range で正の値  # 80以上の値は価格とみなし、それ以外ならMargin(現価格＋marginがターゲット価格）とする
+        "tp": 価格 or Rangeで正の値,  # 80以上の値は価格とみなし、それ以外ならRange(target価格+Range）とする
+        "lc": 価格　or Rangeで正の値  # 80以上の値は価格とみなし、それ以外ならRange(target価格+Range）とする
         #オプション
         ""
     }

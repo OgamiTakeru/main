@@ -197,7 +197,7 @@ def print_arr(*arr):
         for i in range(arr[1]):
             indent = indent + " "
     else:
-        indent = "    "
+        indent = " "
 
     # 実表示 arr[0] が本体
     for i in range(len(arr[0])):

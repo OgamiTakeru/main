@@ -1058,7 +1058,7 @@ class Oanda:
                     if "price" in item["takeProfitOnFill"]:
                         dict["price_tp"] = item["takeProfitOnFill"]["price"]
                     else:
-                        dict["price_tp"] = "N"
+                        dict["price_tp"] = 99999  # "N"
                 else:
                     dict["price_tp"] = 0
 
@@ -1066,7 +1066,7 @@ class Oanda:
                     if "price" in item["stopLossOnFill"]:
                         dict["price_lc"] = item["stopLossOnFill"]["price"]
                     else:
-                        dict["price_lc"] = "N"
+                        dict["price_lc"] = 99999   # "N"
                 else:
                     dict["price_lc"] = 0
                 # priceを含む場合（オーダーのキャンセル以外はpriceが入る）
