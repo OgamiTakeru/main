@@ -93,7 +93,7 @@ def mode1():
 
     # ■検証を実行し、結果を取得する
     # なお{"take_position_flag":Boo, "exe_orders":[], "exe_order":{}, "max_priority":(int) }が返却値の予定
-    inspection_result_dic = im.inspection_predict_line_make_order(gl_data5r_df)
+    inspection_result_dic = im.inspection_warp_up_and_make_order(gl_data5r_df)
     print(inspection_result_dic)
 
     # ■ オーダーフラグがない場合は、ここでこの関数は教師終了
@@ -108,7 +108,8 @@ def mode1():
     if classes_info['order_exist']:
         # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
         # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
-        if classes_info['max_priority'] >= inspection_result_dic['max_priority']:
+        if classes_info['max_priority'] > inspection_result_dic['max_priority']:
+            # 同じだったら入れ替えたいので、「すでに入力されているものが大きかったら(>)」となる。
             tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority'], inspection_result_dic['max_priority'])
             return 0
     # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
@@ -116,14 +117,17 @@ def mode1():
         # 既存のポジションがある場合、互い(新規と既存)プライオリティ次第で注文を発行する
         # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
         if inspection_result_dic['max_priority'] > classes_info['max_priority']:
-            # 重要オーダーあり。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
-            tk.line_send("★ポジションありだがフラッグ発生のため置換")
+            # 新規が重要オーダー。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
+            tk.line_send("★ポジションありだがフラッグ発生のため置換", "Pri", inspection_result_dic['max_priority'])
         else:
-            # ポジション後２５分以内の物は、プライオリティが同一の場合は置き変わらない
+            # 新規の重要性は今より低い。ただし、ポジション後２５分以内の物は、プライオリティが同一の場合でも置き変わらない
             if classes_info['max_position_time_sec'] < 1500:
-                tk.line_send("★ポジションありの為様子見", classes_info['max_position_time_sec'])
+                tk.line_send("★ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri", classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'])
                 # classPosition.position_check(classes) で各ポジションの状態を確認可能
                 return 0
+            else:
+                tk.line_send("重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri", classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'])
+                pass
 
     # ■既存のオーダーがある場合（強制的に削除）
     classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
@@ -192,11 +196,11 @@ def exe_manage():
         return 0
 
     # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
-    # if 3 <= time_hour <= 6:
-    #     if gl_midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
-    #         classPosition.reset_all_position(classes)
-    #         tk.line_send("■深夜のポジション・オーダー解消を実施")
-    #         gl_midnight_close_flag = 1  # 実施済みフラグを立てる
+    if 6 <= time_hour <= 7:
+        if gl_midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
+            classPosition.reset_all_position(classes)
+            tk.line_send("■深夜のポジション・オーダー解消を実施")
+            gl_midnight_close_flag = 1  # 実施済みフラグを立てる
 
     # ■実行を行う
     else:

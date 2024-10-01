@@ -194,6 +194,7 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks, base_price
     return_dic = {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "line_strength": line_strength,  # 検証では0は飛ばされてしまう。履歴のために飛ばしたくないため、0以外にしておく
         "line_position_strength": line_position_strength,  # 引数peakの中で、このsamepricelistの価格帯が一番上か。１がトップかボトム。それ以外０ 。
+        "priority": 0,  # 基本はLineStrengthの写し。ただし別関数で、フラッグ形状の場合は２が上書きされる
         "line_on_num": 0,
         "same_time_latest": 0,
         "peak_strength_ave": peak_strength_ave,  # itemの最後尾は、peakStrength0の調査期間の最後尾を表すもののため、除外された計算結果
@@ -299,6 +300,7 @@ def judge_line_strength_based_same_price_list(same_price_list, peaks, base_price
 
     # 返却値の整理
     return_dic["line_strength"] = line_strength
+    return_dic["priority"] = line_strength
     return_dic["line_on_num"] = len_of_same_price_list
     return_dic['line_position_strength'] = line_position_strength
     return_dic["same_time_latest"] = 0 if len(same_price_list) == 0 else same_price_list[0]['time']
@@ -457,16 +459,16 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
         # print(s7, "(ri)線上にあった数は", on_line, "割合的には", on_line / total_peaks_num * 100)
         if clear_peaks_num / total_peaks_num * 100 >= 60:  # 傾きに沿ったピークであるが、最小値が例外的な低い値の可能性も）
             if on_line / total_peaks_num * 100 >= 35:  # さらに傾きの線上に多い場合⇒間違えなくフラッグといえる
-                # print("    (ri)Lowerの継続した上昇とみられる⇒検出したupperは突破される方向になる")
+                print(s7, "(ri)Lowerの継続した上昇とみられる⇒検出したupperは突破される方向になる")
                 flag_figure = True
                 # tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出", num)
             else:
-                # print("    (ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり　ストレングス変更なし")
+                print(s7, "(ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり　ストレングス変更なし")
                 # tk.line_send("    (ri)フラッグ型なり損ね。シンプルにupper強めのレンジとみなす", num)
                 pass
         else:
             pass
-            # print("    (ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす　ストレングス変更なし", num)
+            print(s7, "(ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす　ストレングス変更なし", num)
     else:
         # ■■■直近の同価格ピークがLower側だった場合の、反対のUpperPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
         opposite_peaks = [item for item in peaks if item["direction"] == 1]  # 利用するのは、Upper側
@@ -527,26 +529,28 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
         # print(s7, "(ri)割合", clear_peaks_num / total_peaks_num * 100)
         if clear_peaks_num / total_peaks_num * 100 >= 60:
             if on_line / total_peaks_num * 100 >= 40:
-                # print("    (ri)upperの継続した下落とみられる⇒　このLINEは下に突破される方向になる")
+                print(s7, "(ri)upperの継続した下落とみられる⇒　このLINEは下に突破される方向になる")
                 flag_figure = True
                 # tk.line_send(s7, "(ri)フラッグ型（lower水平upper下落）の検出", num)
             else:
-                # print(s7, "(ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
+                print(s7, "(ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
                 # tk.line_send(s7, "(ri)フラッグ型なり損ね、lowerはサポート", num)
                 pass
         else:
-            # print(s7, "(ri)upperに傾向性のある下降なし。レンジとみなせる。　ストレングス変更なし", num)
+            print(s7, "(ri)upperに傾向性のある下降なし。レンジとみなせる。　ストレングス変更なし", num)
             pass
 
     # gene.print_arr(opposite_peaks)
     # LC値の参考地のため、opposite_peaksについて調査する
     total_peak = sum(item["peak"] for item in opposite_peaks)
     count = len(opposite_peaks)
-    ave_peak = round(total_peak / count, 3)
-    print(s7, "OppositePeakAve", ave_peak)
+    ave_peak_price = round(total_peak / count, 3)
+    lc_margin = 0.01 * latest_direction * -1
+    ave_peak_price = ave_peak_price + lc_margin
+    print(s7, "OppositePeakAve", ave_peak_price)
     return {
         "flag_figure": flag_figure,  # フラッグ形状かどうかの判定（Boo）
-        "lc": ave_peak  # LC価格の提案を行う
+        "lc": ave_peak_price  # LC価格の提案を行う
     }
 
 
@@ -659,6 +663,7 @@ def find_predict_line_strength_based_same_price_list(dic_args):
             "same_price_list": [],
             "strength_info": {  # strength関数で取得（その後の上書きあり）
                 "line_strength": 0,
+                "priority": 0,  # 基本はLineStrengthの写し。ただしフラッグ形状の場合は２が上書きされる
                 "line_position_strength": 0,
                 "line_on_num": 0,
                 "same_time_latest": 0,
@@ -721,7 +726,7 @@ def find_predict_line_strength_based_same_price_list(dic_args):
             target_price = search_max_price  # - grid  # 下りの場合でもMAXからスタート
     # 返り値への登録(LIneBaseInfo)
     predict_line_info_list_base['line_base_info']['line_base_time'] = peaks[0]['time']
-    predict_line_info_list_base['line_base_info']['line_base_price'] = target_price
+    predict_line_info_list_base['line_base_info']['line_base_price'] = target_price  # 暫定値
     predict_line_info_list_base['line_base_info']['line_base_direction'] = target_dir
     predict_line_info_list_base['line_base_info']['latest_direction'] = peaks[0]['direction']
     predict_line_info_list_base['line_base_info']['latest_time_in_df'] = peaks[0]['time']
@@ -745,7 +750,7 @@ def find_predict_line_strength_based_same_price_list(dic_args):
 
         if len(same_price_list) >= 1:
             # 同価格リストが1つ以上発見された場合、範囲飛ばしと、返却値ベースへの登録を行う
-            predict_line_info_list_base['line_base_info']['line_base_price'] = round(target_price, 3)
+            predict_line_info_list_base['line_base_info']['line_base_price'] = round(target_price, 3)  # 上書き
             predict_line_info_list_base['same_price_list'] = same_price_list
             predict_line_info_list.append(copy.deepcopy(predict_line_info_list_base))  # 一部の情報を返り値情報に追加
             # print("     (rip) --SkipperOn---")
@@ -794,19 +799,20 @@ def find_predict_line_strength_based_same_price_list(dic_args):
             each_predict_line_info['line_base_info']["latest_direction"]
         )
         print("         強度結果", each_strength_info)
-        # ■■■　LCをそれぞれ求め、StrengthInfoに初めて追加する（処理が遠い順のため、一つ遠いものがロスカット価格となる
+        # ■■■　【注文に必要な情報】ExpectedDirectionとLCを求め、StrengthInfoに初めて追加する（処理が遠い順のため、一つ遠いものがロスカット価格となる）
         far_lc_range = 0.15  # 一番遠い物のLC幅
         range_margin = 0.05
+        # ■expectedDirectionを追加する（この後のフラッグで上書きされる可能性ある）
+        each_strength_info['expected_direction'] = peaks[0]['direction'] * -1  # 逆
+        # ■LCの追加
         if i == 0:
             # 初回のみ（一番遠い値）は、LCを適当に設定する（本当はこれが一番大事？！）
             each_strength_info['lc'] = far_lc_range
         else:
-            if each_predict_line_info['line_base_info']["latest_direction"] == 1:
-                each_strength_info['lc'] = round(predict_line_info_list[i - 1]['line_base_info'][
-                                                "line_base_price"] - range_margin, 3)
+            if each_strength_info['expected_direction'] == 1:
+                each_strength_info['lc'] = round(predict_line_info_list[i - 1]['line_base_info']["line_base_price"] + range_margin, 3)
             else:
-                each_strength_info['lc'] = round(predict_line_info_list[i - 1]['line_base_info'][
-                                                "line_base_price"] + range_margin, 3)
+                each_strength_info['lc'] = round(predict_line_info_list[i - 1]['line_base_info']["line_base_price"] - range_margin, 3)
 
         # ■■■フラッグかどうかを判定（Line強度とは別の関数にする）
         # if each_strength_info['all_range_strong_line'] == 0 and each_strength_info['line_on_num'] >= 3:  # 旧条件　かなり厳しい
@@ -819,17 +825,15 @@ def find_predict_line_strength_based_same_price_list(dic_args):
             # フラッグの結果次第で、LineStrengthに横やりを入れる形で、値を買い替える
             if flag_figure:
                 print(s6, "Flag成立")
+                # 【注文に必要な情報】フラッグ形状の場合は上書きする
                 each_strength_info['line_strength'] = -1  # フラッグ成立時は、通常とは逆
                 each_strength_info['lc'] = flag_lc
+                each_strength_info['expected_direction'] = peaks[0]['direction']
                 each_strength_info['remark'] = "フラッグ形状"  # 備考を入れておく
-                # 以下暫定（オーダー複数個になる対策として、フラッグありの場合は、フラッグ部分のみに置き換えてしまう）
-                predict_line_info_list_base['line_base_info'] = each_predict_line_info['line_base_info']  # 上書き
-                predict_line_info_list_base['same_price_list'] = each_predict_line_info['same_price_list']
-                predict_line_info_list_base['strength_info'] = each_strength_info
-                # predict_line_info_list = [predict_line_info_list_base]  # ■フラッグ検出の場合は、思い切ってオーダーのもとを完全上書き！！（一つのみにする）
-                # break  # ループも抜け、この一つだけを返すようにする
-                # ↑暫定対策ここまで
-        # ■■　結果を返却用配列に追加する(各要素に対して書き換えを行う。eachはpredict_line_info_list_baseと同様）
+                each_strength_info['priority'] = 2  # 備考を入れておく
+                predict_line_info_list_base['strength_info'] = each_strength_info  # 上書きする
+
+        # ■　結果を返却用配列に追加する(各要素に対して書き換えを行う。eachはpredict_line_info_list_baseと同様）
         each_predict_line_info['strength_info'] = each_strength_info  # Strengthに追加（上書き）
 
     # ■オーダーを作成する
@@ -852,8 +856,8 @@ def find_predict_line_strength_based_same_price_list(dic_args):
     main_order_base['tp'] = 0.3  # 0.09  # LCは広め
     main_order_base['lc'] = target_strength["strength_info"]["lc"]  # * line_strength  # 0.09  # LCは広め
     main_order_base['type'] = 'LIMIT'
-    main_order_base['expected_direction'] = peaks[0]['direction'] * -1  # latestに対し、1は突破。*-1は折り返し
-    main_order_base['priority'] = target_strength['strength_info']['line_strength']
+    main_order_base['expected_direction'] = target_strength['strength_info']['expected_direction']
+    main_order_base['priority'] = target_strength['strength_info']['priority']
     main_order_base['units'] = main_order_base['units'] * 1
     main_order_base['name'] = target_strength['strength_info']['remark'] + str(main_order_base['priority'])
     main_order_base['lc_change'] = []

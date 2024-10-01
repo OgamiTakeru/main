@@ -30,18 +30,18 @@ def order_base(now_prie):
             "name": "",
             "lc_change": [
                 # {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
-                # {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": -0.072},
+                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": -0.9},
                 {"lc_change_exe": True, "lc_trigger_range": 0.08, "lc_ensure_range": 0.01},
-                {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.05},
-                {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.1},
-                {"lc_change_exe": True, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
-                {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
-                {"lc_change_exe": True, "lc_trigger_range": 0.35, "lc_ensure_range": 0.30},
-                {"lc_change_exe": True, "lc_trigger_range": 0.50, "lc_ensure_range": 0.45},
-                {"lc_change_exe": True, "lc_trigger_range": 0.60, "lc_ensure_range": 0.50},
-                {"lc_change_exe": True, "lc_trigger_range": 0.70, "lc_ensure_range": 0.60},
-                {"lc_change_exe": True, "lc_trigger_range": 0.80, "lc_ensure_range": 0.70},
-                {"lc_change_exe": True, "lc_trigger_range": 0.90, "lc_ensure_range": 0.80}
+                {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.07},
+                {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.10},
+                {"lc_change_exe": True, "lc_trigger_range": 0.20, "lc_ensure_range": 0.16},
+                {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.21},
+                {"lc_change_exe": True, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
+                {"lc_change_exe": True, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
+                {"lc_change_exe": True, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
+                {"lc_change_exe": True, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
+                {"lc_change_exe": True, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
+                {"lc_change_exe": True, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
 
             ],
     }
@@ -58,6 +58,7 @@ def make_trid_order(plan):
                      トラリピの最初の価格を指定する
         expected_direction: 1 or -1
         grid: 格子幅の設定。またこれは基本的に各LCRangeとほぼ同等となる。
+        lc_range: ある場合、全てのに対して同じものが適応される
         start_price_lc: 検討中。
         num: end_priceがない場合は必須。何個分のグリッドを設置。
         end_price:　numがない場合は必須。numと両方ある場合は、こちらが優先。StartPriceからEndPriceまで設置する
@@ -101,11 +102,12 @@ def make_trid_order(plan):
                 "target": for_price,  # 価格で指定する
                 "decision_time": 0,  #
                 "tp": plan['grid'] * 0.8,
-                "lc": plan['grid'] * 0.8,
+                "lc": 0.06 if not('lc_range' in plan) else plan['lc_range'],
                 "units": plan['units'],
                 "expected_direction": plan['expected_direction'],
                 "stop_or_limit": 1,  # ★順張り
                 "trade_timeout_min": 1800,
+                "priority": 0,
                 "remark": "test",
             })
             # オーダーの蓄積

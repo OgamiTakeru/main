@@ -58,6 +58,9 @@ class order_information:
         # ロスカット変更情報
         self.lc_change_dic = {}  # 空を持っておくだけ
         self.lc_change_dic2 = {}  # 空を持っておくだけ
+        # 特殊　カウンターオーダー
+        self.counter_order_num = 0  # カウンターオーダーを入れる際、何回実施したかをカウント（1回やったらもうやらない）
+
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
@@ -99,6 +102,7 @@ class order_information:
         # ロスカット変更情報
         self.lc_change_dic = {}  # 空を持っておくだけ
         self.lc_change_dic2 = {}  # 空を持っておくだけ
+        self.counter_order_num = 0  # カウンターオーダーを入れる際、何回実施したかをカウント（1回やったらもうやらない）
 
     def print_info(self):
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
@@ -315,6 +319,14 @@ class order_information:
             tk.line_send(" ▲解消:", self.name, '\n', f.now(), '\n',
                          res4, res5, res1, id_info, res2, res3, res6, res7, res8)
 
+    def counter_order_exe(self):
+        # カウンターオーダーを1回だけ入れる
+        if self.counter_order_num == 0:
+            # カウンターを増やす
+            self.counter_order_num = self.counter_order_num + 1
+            # 処理
+            self.plan
+
     def close_trade(self, units):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
         # クローズ後は、AfterCloseFunctionに移行し、情報の送信等を行う
@@ -496,7 +508,7 @@ class order_information:
         # LCの変更を検討する(プラス域にいった場合のTP底上げ≒トレールに近い）
         self.lc_change()
         # LCの変更を検討する（マイナスストレートの場合、できるだけ早く処理する）
-        self.lc_change2()
+        # self.lc_change2()
 
 
     def lc_change2(self):

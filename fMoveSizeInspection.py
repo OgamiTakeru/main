@@ -66,3 +66,39 @@ def cal_move_size(dic_args):
     print(t6, peaks_ave)
     print(t6, "変動幅検証関数　ここまで")
 
+    # ■サイズ間でLCの幅とかを決めたい
+    # 大きさを定義する
+    very_small_range = 0.07
+    small_range = 0.11
+    middle_range = 0.15
+    # 変数を定義
+    flag = True
+    high_price = 0
+    low_price = 999
+    gap = 0
+    for index, row in df_r[0:25].iterrows():
+        # high lowデータの更新
+        if high_price < row['inner_high']:
+            high_price = row['inner_high']
+        if low_price > row['inner_low']:
+            low_price = row['inner_low']
+
+        # 基準を超えているかを確認
+        gap = high_price - low_price
+        if gap > middle_range:
+            # middleより大きい場合は、変動が大きな場所
+            print("これ以前は変動大", row['time_jp'])
+        elif gap > small_range:
+            # small 以上　middle以下は、Middle
+            print("これ以前は変動中", row['time_jp'])
+            flag = False
+        else:
+            flag = False
+
+    return {
+        "flag": flag,
+        "gap": gap
+    }
+
+
+

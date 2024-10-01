@@ -117,15 +117,18 @@ def peaks_collect_all(*args):
         if ans['direction'] == 1:
             # 上向きの場合
             peak_latest = ans['data'].iloc[0]["inner_high"]
+            peak_peak = ans['data'].iloc[0]["high"]
             peak_oldest = ans['data'].iloc[-1]["inner_low"]
         else:
             # 下向きの場合
             peak_latest = ans['data'].iloc[0]["inner_low"]
+            peak_peak = ans['data'].iloc[0]["low"]
             peak_oldest = ans['data'].iloc[-1]["inner_high"]
 
         peak_info = {
             'time': ans['data'].iloc[0]['time_jp'],
             'peak': peak_latest,
+            'peak_peak': peak_peak,
             'time_old': ans['data'].iloc[-1]['time_jp'],
             'peak_old': peak_oldest,
             'direction': ans['direction'],
@@ -270,15 +273,18 @@ def peaks_collect_all_not_skip(*args):
         if ans['direction'] == 1:
             # 上向きの場合
             peak_latest = ans['data'].iloc[0]["inner_high"]
+            peak_peak = ans['data'].iloc[0]["high"]
             peak_oldest = ans['data'].iloc[-1]["inner_low"]
         else:
             # 下向きの場合
             peak_latest = ans['data'].iloc[0]["inner_low"]
+            peak_peak = ans['data'].iloc[0]["low"]
             peak_oldest = ans['data'].iloc[-1]["inner_high"]
 
         peak_info = {
             'time': ans['data'].iloc[0]['time_jp'],
             'peak': peak_latest,
+            'peak_peak': peak_peak,
             'time_old': ans['data'].iloc[-1]['time_jp'],
             'peak_old': peak_oldest,
             'direction': ans['direction'],

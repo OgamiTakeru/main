@@ -397,6 +397,7 @@ def DoublePeak_predict(dic_args):
         t_count_min = params['t_count_min']  #
         t_count_max = params['t_count_max']  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
         r_count = params['r_count']
+        flop3_size = 0.12
     else:
         # パラメータがない場合、一番スタンダート（最初）の物で実施する
         tf_min = 0.1
@@ -408,6 +409,7 @@ def DoublePeak_predict(dic_args):
         t_count_min = 2  #
         t_count_max = 7  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。6
         r_count = 2
+        flop3_size = 0.15
 
     # ■■　形状の判定部
     take_position_flag = False  # ポジションフラグを初期値でFalseにする
@@ -437,19 +439,22 @@ def DoublePeak_predict(dic_args):
     river_ratio_based_turn = round(river['gap'] / turn['gap'], 3)
     compare_flag = False
     confidence = 0
-    if tf_min < turn_ratio_based_flop3 < tf_max:
-        if rt_min < river_ratio_based_turn < rt_max:
-            compare_flag = True
-            confidence = 1  # 一番信用のできる形のため、信頼度最大
-            cr = gene.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
-        elif rt_min < river_ratio_based_turn <= rt_max_extend:
-            compare_flag = True
-            confidence = 0.5  # 信頼度が微妙なため、信頼度半減(勢いがいいときは超えるんだけど、、超えない時もある）
-            cr = gene.str_merge("サイズ割合は成立(riverOver）", river_ratio_based_turn, rt_max_extend)
+    if flop3['gap'] > flop3_size:
+        if tf_min < turn_ratio_based_flop3 < tf_max:
+            if rt_min < river_ratio_based_turn < rt_max:
+                compare_flag = True
+                confidence = 1  # 一番信用のできる形のため、信頼度最大
+                cr = gene.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
+            elif rt_min < river_ratio_based_turn <= rt_max_extend:
+                compare_flag = True
+                confidence = 0.5  # 信頼度が微妙なため、信頼度半減(勢いがいいときは超えるんだけど、、超えない時もある）
+                cr = gene.str_merge("サイズ割合は成立(riverOver）", river_ratio_based_turn, rt_max_extend)
+            else:
+                cr = gene.str_merge("riverが範囲外", river_ratio_based_turn, "規定値は", rt_max_extend, "以下")
         else:
-            cr = gene.str_merge("riverが範囲外", river_ratio_based_turn, "規定値は", rt_max_extend, "以下")
+            cr = gene.str_merge("turnがflop3に対して大きすぎる", turn_ratio_based_flop3)
     else:
-        cr = gene.str_merge("turnがflop3に対して大きすぎる", turn_ratio_based_flop3)
+        cr = gene.str_merge("全体的に小さい（FLop3が小さい)", flop3['gap'])
 
     # ①-3 両方成立する場合、TakePositionフラグがOnになる
     print(t6, "DoubleTop結果", c, cr)
@@ -539,7 +544,7 @@ def DoublePeak_predict(dic_args):
         double_top_strength = -0.9  # ★この場合のみ、このタイミングでストレングスを編集
         main_order = copy.deepcopy(order_base_info)
         # main_order['target'] = turn["peak"] + (0.02 * -1 * river['direction'])     # turn(最新の折り返し地点）位まで戻る前提（戻らない奴は、、、しかたない、、、）
-        main_order['target'] = now_price + (0.01 * 1 * river['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
+        main_order['target'] = now_price + (0.022 * 1 * river['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
         main_order['tp'] = 0.3
         # main_order['lc'] = 0.22  # * line_strength  # 0.09  # LCは広め
         main_order['lc'] = turn['peak'] + (0.03 * -1 * river['direction'])
