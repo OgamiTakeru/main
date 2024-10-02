@@ -112,19 +112,18 @@ def inspection_if_include_large_variations(block_ans):
     target_df = block_ans['data']
     sorted_df = target_df.sort_values(by='body_abs', ascending=False)
     max_body = sorted_df["body_abs"].max()
-    print(s6, "対象となるデータフレーム")
-    print(max_body)
-    print(target_df)
-    print(sorted_df.iloc[0]['body_abs'], sorted_df.iloc[0]['time_jp'])
-    print(sorted_df.iloc[1]['body_abs'], sorted_df.iloc[1]['time_jp'])
+    # print(s6, "対象となるデータフレーム")
+    # print(max_body)
+    # print(target_df)
+    # print(sorted_df.iloc[0]['body_abs'], sorted_df.iloc[0]['time_jp'])
+    # print(sorted_df.iloc[1]['body_abs'], sorted_df.iloc[1]['time_jp'])
 
     body_base_min = 0.094
     base_body = max_body
-    smaller_body = sorted_df.iloc[1]['body_abs']
     counter = 0
     if base_body < body_base_min:
         # ベース自身が0.13以上ない場合は、平凡⇒終了
-        print(s6, "自身が小さめ")
+        # print(s6, "自身が小さめ")
         return 0
 
     for index, row in sorted_df.iterrows():
@@ -133,18 +132,20 @@ def inspection_if_include_large_variations(block_ans):
         smaller_body = row['body_abs']
         if base_body > body_base_min:
             if smaller_body / base_body < 0.55:
-                print(s6, "Baseが大きめといえる", smaller_body / base_body , "size", base_body)
+                # print(s6, "Baseが大きめといえる", smaller_body / base_body , "size", base_body)
                 counter = counter + 1
             else:
-                print(s6, "自身より大き目（比率）", smaller_body / base_body)
+                pass
+                # print(s6, "自身より大き目（比率）", smaller_body / base_body)
         else:
-            print(s6, "自身と同レベルでサイズが大き目")
+            pass
+            # print(s6, "自身と同レベルでサイズが大き目")
     if (len(sorted_df) - 1) - counter <= 1:
         # 二つ程度が大きい場合、突発の伸びがあったと推定（急伸は戻る可能性大）
-        print(s6, "急伸の足を含む", (len(sorted_df) - 1) - counter)
+        # print(s6, "急伸の足を含む", (len(sorted_df) - 1) - counter)
         include_large = True
     else:
-        print(s6, "急伸とみなさない")
+        # print(s6, "急伸とみなさない")
         include_large = False
 
     return include_large
