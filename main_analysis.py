@@ -7,6 +7,7 @@ import fGeneric as gene
 import fResistanceLineInspection as ri
 import fDoublePeaks as dp
 import fMoveSizeInspection as ms
+import fBlockInspection as bi
 import math
 
 # グローバルでの宣言
@@ -36,17 +37,14 @@ def analysis_part(df_r):
     # モードによる引数の差分を処理
     # ans = ms.cal_move_size(df_r)
     # ans = im.inspection_predict_line_make_order(df_r)
-    ans = im.inspection_warp_up_and_make_order(df_r)
+    # ans = im.inspection_warp_up_and_make_order(df_r)
+    #
+    # print("最終（main_analysis)")
+    # print(ans)
+    # oa.OrderCreate_dic_support(ans['exe_orders'][0])
+    # return ans
 
-    print("最終（main_analysis)")
-    print(ans)
-    oa.OrderCreate_dic_support(ans['exe_orders'][0])
-    return ans
 
-    # ダブルトップは特殊
-    # test = dp.DoublePeak({"df_r": df_r})
-    # print(test)
-    # return test
 
 # 検証パート
 def confirm_part(df_r, order):
@@ -494,7 +492,7 @@ gl_count = gl_res_part_low + gl_analysis_part_low + 1
 gl_times = 1  # Count(最大5000件）を何セット取るか  大体2225×３で１か月位。　10時間は120足 1時間は12
 # ■■取得時間の指定
 gl_use_now = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 10, 1, 7, 55, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2024, 10, 1, 23, 40, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # ■■方法の指定
 gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。
 # gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。

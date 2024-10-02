@@ -328,20 +328,10 @@ def DoublePeak_predict(dic_args):
     の三つ。
     ２）ロジックについて
     ＜ロジック概要＞ダブルトップを頂点とし、そこから戻る方向にポジションする。
-                     ↓ 10pips（基準：ターン）
+                     ↓ 10pips（基準：リバー）
        　　23pips　   /\  /
-           フロップ→ /  \/  ← 7pipsまで(リバー)
+           ターン　→ /  \/  ← 7pipsまで(レイテスト)
           　　　　　/　　　　　　　　　←ピークの反対くらいがLC？
-    　　トラップライン
-    　　・ターンのピークオールド起点でリバーの逆方向（逆張り）
-    　　・ターンのピーク起点でリバーの逆方向（順張り）
-       ルール一覧
-       ・ターンが小さい、または、少ない場合、ダブルトップポイントを瞬間的に突破する回数が多い為NGとしたい。、
-       　その為、ターンは３足分以上かつ、2pips以上とする。
-       ・出来ればフロップは長い方がいい気がする。フロップカウントは７以上
-       　（さらにフロップの頂点が新規ポイントの場合は率上がるかも？）
-       ・フロップのピーク点か、直近の10ピークの中で最も頂点の場合は、折り返し濃厚。最も頂点でない場合は、Breakまで行く可能性高い。
-       　（別途関数を準備）
     :return:　必須最低限　{"take_position_flag": boolean} の返却は必須。さらにTrueの場合注文情報が必要。
     """
     # print(dic_args)
@@ -354,17 +344,17 @@ def DoublePeak_predict(dic_args):
     # 情報の取得
     df_r = fixed_information['df_r']
     peaks = fixed_information['peaks']
-    river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-    turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
-    flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-    flop2 = peaks[3]
-    flop2_subscript = 3  # flop2は添え字的には「３」を意味する
+    latest = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
+    river = peaks[1]  # 注目するポイント（ターンと呼ぶ）
+    turn = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
+    flop3 = peaks[3]
+    flop3_subscript = 3  # flop3は添え字的には「３」を意味する
     # テスト用パラメータの取得
     params = fixed_information['params']  # パラメータ情報の取得
     inspection_params = fixed_information['inspection_params']
+    print(t6, "l", latest)
     print(t6, "r", river)
     print(t6, "t", turn)
-    print(t6, "f", flop3)
 
     # (2)パラメータ指定。
     # ①　パラメータを設定する(検証用。売買に関するパラメータ）
@@ -374,46 +364,46 @@ def DoublePeak_predict(dic_args):
         position_margin = inspection_params['margin']
         d = inspection_params['d']  # 売買の方向。リバーの方向に対し、同方向の場合１（ライン突破）．逆方向の場合ー１(ラインで抵抗）
         sl = inspection_params['sl']  # Stop or Limit
-        tp = gene.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
-        lc = gene.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
+        tp = gene.cal_at_least(0.06, (abs(river['peak'] - latest['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
+        lc = gene.cal_at_least(0.05, (abs(river['peak'] - latest['peak_old']) * 0.8))
     else:
         # 売買に関してのパラメータ無し（ダブルトップで折り返しの方向で、固定のマージンやTP/LCで取得する）
         position_margin = 0.01
         d = -1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
         sl = 1
-        tp = gene.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
-        lc = gene.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
+        tp = gene.cal_at_least(0.06, (abs(river['peak'] - latest['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
+        lc = gene.cal_at_least(0.05, (abs(river['peak'] - latest['peak_old']) * 0.8))
 
     # ②　パラメータを設定する（対象の形状目標を変更できるようなパラメータ）
-    # params = {"tf_ratio_max": 0.65, "rt_ratio_min": 0.4, "rt_ratio_max": 1, "t_count": 2, "f3_count": 5}
+    # params = {"tf_ratio_max": 0.65, "rt_ratio_min": 0.4, "rt_ratio_max": 1, "t_count": 2, "t_count": 5}
     if params:
         # paramsが入っている場合（Noneでない場合）
-        tf_min = params['tf_ratio_min']
-        tf_max = params['tf_ratio_max']  # ターンは、フロップの６割値度
-        rt_min = params['rt_ratio_min']  # リバーは、ターンの最低４割程度
-        rt_max = params['rt_ratio_max']  # リバーは、ターンの最高でも６割程度
-        rt_max_extend = params['rt_ratio_max_extend']  # リバーは、ターンの最高でも６割程度
-        f3_count = params['f3_count']
-        t_count_min = params['t_count_min']  #
-        t_count_max = params['t_count_max']  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
-        r_count = params['r_count']
+        rt_min = params['rt_ratio_min']
+        rt_max = params['rt_ratio_max']  # リバーは、ターンの６割値度
+        lr_min = params['lr_ratio_min']  # レイテストは、リバーの最低４割程度
+        lr_max = params['lr_ratio_max']  # レイテストは、リバーの最高でも６割程度
+        lr_max_extend = params['lr_ratio_max_extend']  # レイテストは、リバーの最高でも６割程度
+        t_count = params['t_count']
+        r_count_min = params['r_count_min']  #
+        r_count_max = params['r_count_max']  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
+        l_count = params['l_count']
         flop3_size = 0.12
     else:
         # パラメータがない場合、一番スタンダート（最初）の物で実施する
-        tf_min = 0.1
-        tf_max = 0.65  # ターンは、フロップの６割値度(0.65) ⇒
-        rt_min = 0.24  # リバーは、ターンの最低４割程度
-        rt_max = 1  # リバーは、ターンの最高でも６割程度
-        rt_max_extend = 5
-        f3_count = 5
-        t_count_min = 2  #
-        t_count_max = 7  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。6
-        r_count = 2
+        rt_min = 0.1
+        rt_max = 0.65  # リバーは、ターンの６割値度(0.65) ⇒
+        lr_min = 0.24  # レイテストは、リバーの最低４割程度
+        lr_max = 1  # レイテストは、リバーの最高でも６割程度
+        lr_max_extend = 5
+        t_count = 5
+        r_count_min = 2  #
+        r_count_max = 7  # リバーは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。6
+        l_count = 2
         flop3_size = 0.15
 
     # ■■　形状の判定部
     take_position_flag = False  # ポジションフラグを初期値でFalseにする
-    #          f3  t  r
+    #           t  r  l
     #           ↓　 ↓　↓　
     #             /\
     #            /  \/
@@ -422,39 +412,39 @@ def DoublePeak_predict(dic_args):
     # ①形状の判定
     # ①-1 【基本形状】各ブロックのサイズについて
     const_flag = False
-    if river['count'] >= r_count:
-        if flop3['count'] >= f3_count:
-            if turn['gap'] >= 0.011 and t_count_min <= turn['count'] <= t_count_max:
+    if latest['count'] >= l_count:
+        if turn['count'] >= t_count:
+            if river['gap'] >= 0.011 and r_count_min <= river['count'] <= r_count_max:
                 const_flag = True
-                c = gene.str_merge("サイズ感は成立", flop3['count'], turn['count'], river['count'], turn['gap'])
+                c = gene.str_merge("サイズ感は成立", turn['count'], river['count'], latest['count'], river['gap'])
             else:
-                c = gene.str_merge("turnのサイズ、カウントが規定値以下", turn['count'], turn['gap'])
+                c = gene.str_merge("riverのサイズ、カウントが規定値以下", river['count'], river['gap'])
         else:
-            c = gene.str_merge("flop3のカウントが規定値以下", flop3['count'])
+            c = gene.str_merge("turnのカウントが規定値以下", turn['count'])
     else:
-        c = gene.str_merge("riverのカウントが規定値以下", river['count'])
+        c = gene.str_merge("latestのカウントが規定値以下", latest['count'])
 
     # ①-2 【基本形状】各ブロック同士のサイズ感の比率について
-    turn_ratio_based_flop3 = round(turn['gap'] / flop3['gap'], 3)
-    river_ratio_based_turn = round(river['gap'] / turn['gap'], 3)
+    turn_ratio_based_flop3 = round(river['gap'] / turn['gap'], 3)
+    river_ratio_based_turn = round(latest['gap'] / river['gap'], 3)
     compare_flag = False
     confidence = 0
-    if flop3['gap'] > flop3_size:
-        if tf_min < turn_ratio_based_flop3 < tf_max:
-            if rt_min < river_ratio_based_turn < rt_max:
+    if turn['gap'] > flop3_size:
+        if rt_min < turn_ratio_based_flop3 < rt_max:
+            if lr_min < river_ratio_based_turn < lr_max:
                 compare_flag = True
                 confidence = 1  # 一番信用のできる形のため、信頼度最大
                 cr = gene.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
-            elif rt_min < river_ratio_based_turn <= rt_max_extend:
+            elif lr_min < river_ratio_based_turn <= lr_max_extend:
                 compare_flag = True
                 confidence = 0.5  # 信頼度が微妙なため、信頼度半減(勢いがいいときは超えるんだけど、、超えない時もある）
-                cr = gene.str_merge("サイズ割合は成立(riverOver）", river_ratio_based_turn, rt_max_extend)
+                cr = gene.str_merge("サイズ割合は成立(LatestOver）", river_ratio_based_turn, lr_max_extend)
             else:
-                cr = gene.str_merge("riverが範囲外", river_ratio_based_turn, "規定値は", rt_max_extend, "以下")
+                cr = gene.str_merge("Latestが範囲外", river_ratio_based_turn, "規定値は", lr_max_extend, "以下")
         else:
-            cr = gene.str_merge("turnがflop3に対して大きすぎる", turn_ratio_based_flop3)
+            cr = gene.str_merge("riverがturnに対して大きすぎる", turn_ratio_based_flop3)
     else:
-        cr = gene.str_merge("全体的に小さい（FLop3が小さい)", flop3['gap'])
+        cr = gene.str_merge("全体的に小さい（turnが小さい)", turn['gap'])
 
     # ①-3 両方成立する場合、TakePositionフラグがOnになる
     print(t6, "DoubleTop結果", c, cr)
@@ -467,16 +457,18 @@ def DoublePeak_predict(dic_args):
         return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
             "take_position_flag": False,  # take_position_flagの値と同様だが、わかりやすいようにあえてFalseで書いている
         }
+
+    # ダブルトップ形状は確定した中で、他に細かい情報で判断していく
     # 追加の検討要素① flop3以前での動きの解析(すでに下落３回以上のターンを伴う大きな下落がある場合NG,山形状となる場合もNG）
     double_top_strength = 0  # DoubleTopが抵抗線となる場合は1、突破される予想の場合-1
     double_top_strength_memo = ""
-    flop3_time = flop3['time']
-    flop3_peak = flop3['peak']
-    df_r_before_flop3 = df_r[df_r['time_jp'] < flop3_time]
-    flop3_gap = flop3['gap']
-    temp_inspection_peaks = peaks[flop2_subscript:]  # flop以降のピークスすべて
+    turn_time = turn['time']
+    turn_peak = turn['peak']
+    df_r_before_turn = df_r[df_r['time_jp'] < turn_time]
+    turn_gap = turn['gap']
+    temp_inspection_peaks = peaks[flop3_subscript:]  # flop以降のピークスすべて
     # gene.print_arr(temp_inspection_peaks, 6)
-    if river['direction'] == -1:
+    if latest['direction'] == -1:
         # 直近が下り方向の場合、折り返し基準のflop3は下がり。その前が下がりメインの場合、下がりきっていると思われる。
         # flop3以前の、最も高い値を算出（その時刻を算出）
         max_index = max(enumerate(temp_inspection_peaks), key=lambda x: x[1].get('peak', float('-inf')))[0]
@@ -490,14 +482,14 @@ def DoublePeak_predict(dic_args):
         # print(lower_gap_total - upper_gap_total)
         # print(sum(d['gap'] for d in temp_inspection_peaks))
 
-        if lower_gap_total - upper_gap_total > flop3_gap * 1.3:
+        if lower_gap_total - upper_gap_total > turn_gap * 1.3:
             print(t6, "3回折り返し相当の下がりあり（これ以上下がらない状態）")
             double_top_strength = 1
-            double_top_strength_memo = double_top_strength_memo + ", 下がり切り" + str(upper_lower_gap) + str(flop3_gap)
+            double_top_strength_memo = double_top_strength_memo + ", 下がり切り" + str(upper_lower_gap) + str(turn_gap)
         else:
             print(t6, "突破形状維持（3回折り返し以内の下がり、もっと下がる）")
             double_top_strength = -1
-            double_top_strength_memo = double_top_strength_memo + ", 突破(より下)"+ str(upper_lower_gap) + str(flop3_gap)
+            double_top_strength_memo = double_top_strength_memo + ", 突破(より下)"+ str(upper_lower_gap) + str(turn_gap)
     else:
         # 直近が登り方向の場合、折り返し基準のflop3は下がり。その前が下がりメインの場合、下がりきっていると思われる。
         # flop3以前の、最も低い値を算出（その時刻を算出）
@@ -509,51 +501,54 @@ def DoublePeak_predict(dic_args):
         upper_peak = [item for item in temp_inspection_peaks if item["direction"] == 1]
         upper_gap_total = sum(d['gap'] for d in upper_peak)
         upper_lower_gap = round(upper_gap_total - lower_gap_total, 3)
-        if upper_gap_total - lower_gap_total> flop3_gap * 1.5:
+        if upper_gap_total - lower_gap_total> turn_gap * 1.5:
             print(t6, "3回折り返し相当の上がりあり（これ以上上がらない状態）")
             double_top_strength = 1
-            double_top_strength_memo = double_top_strength_memo + ", 上がり切り"+ str(upper_lower_gap) + str(flop3_gap)
+            double_top_strength_memo = double_top_strength_memo + ", 上がり切り" + str(upper_lower_gap) + str(turn_gap)
         else:
             print(t6, "突破形状維持（3回折り返し以内の上がり、もっと上がる）")
             double_top_strength = -1
-            double_top_strength_memo = double_top_strength_memo + ", 突破(より上)"+ str(upper_lower_gap) + str(flop3_gap)
+            double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
+    # 追加の検討要素②　ターンで突発的な足がある場合、突破しにくいのでは、という判定
+    if turn['include_large']:
+        # 大きな足をインクルードする場合、抵抗線の信頼度は強い
+        print(t6, "急変動を含むため、抵抗側と判断")
+        tk.line_send("急変動を含むため、突破形状だが突破なし")
+        double_top_strength = 1
+        double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
 
     # ■オーダーの作成を実施する
     now_price = cf.now_price()  # 現在価格の取得
     order_base_info = cf.order_base(now_price)  # オーダーの初期辞書を取得する(nowPriceはriver['latest_price']で代用)
     ms.cal_move_size({"df_r": df_r, "peaks": peaks})
-
-    print(t6, "ちょっと検証")
-    print(t6, turn['peak'])
-
     # オーダーの可能性がある場合、オーダーを正確に作成する
     if confidence == 1:
-        # 従来想定の突破形状
+        # 【突破形状】従来想定の突破形状
         main_order = copy.deepcopy(order_base_info)
-        main_order['target'] = flop3['peak']
+        main_order['target'] = turn['peak']
         main_order['tp'] = 0.3
         main_order['lc'] = 0.15  # * line_strength  # 0.09  # LCは広め
         main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
         # main_order['tr_range'] = 0.10  # 要検討
-        main_order['expected_direction'] = river['direction']  # 突破方向
+        main_order['expected_direction'] = latest['direction']  # 突破方向
         main_order['priority'] = 2  # ほかので割り込まれない
         main_order['units'] = order_base_info['units'] * 1
         main_order['name'] = "突破形状（通常）"
     else:
-        # 従来想定より、リバーの動きが速い
+        # 【突破形状】従来想定より、リバーの動きが速い
         double_top_strength = -0.9  # ★この場合のみ、このタイミングでストレングスを編集
         main_order = copy.deepcopy(order_base_info)
-        # main_order['target'] = turn["peak"] + (0.02 * -1 * river['direction'])     # turn(最新の折り返し地点）位まで戻る前提（戻らない奴は、、、しかたない、、、）
-        main_order['target'] = now_price + (0.022 * 1 * river['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
+        # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction'])     # river(最新の折り返し地点）位まで戻る前提（戻らない奴は、、、しかたない、、、）
+        main_order['target'] = now_price + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
         main_order['tp'] = 0.3
         # main_order['lc'] = 0.22  # * line_strength  # 0.09  # LCは広め
-        main_order['lc'] = turn['peak'] + (0.03 * -1 * river['direction'])
+        main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
         main_order['type'] = 'LIMIT'  # 現在価格からすると、逆張りに相当する
         # main_order['tr_range'] = 0.10  # 要検討
-        main_order['expected_direction'] = river['direction']  # 突破方向
+        main_order['expected_direction'] = latest['direction']  # 突破方向
         main_order['priority'] = 2  #
         main_order['units'] = order_base_info['units'] * 1
-        main_order['name'] = "突破形状（river大）"
+        main_order['name'] = "突破形状（latest大）"
 
     return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "take_position_flag": take_position_flag,

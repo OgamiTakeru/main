@@ -383,7 +383,8 @@ def judge_flag_figure(peaks, target_direction, line_strength):
         print(s6, "Flag形状確認", long_range_flag, short_range_flag, "結論", flag)
     return {
         "flag_figure": flag,
-        "lc": short_range_flag_info['lc']  # こっちのほうがlongよりLC幅が狭いので。いつかリスクを追う場合は、Longに？）
+        "lc": short_range_flag_info['lc'],  # こっちのほうがlongよりLC幅が狭いので。いつかリスクを追う場合は、Longに？）
+        "remark": short_range_flag_info['remark']
     }
 
 
@@ -392,9 +393,11 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
     旗の形状を探索するための、サポート関数
     peaks: ピークス
     num: ピークスの中で、直近num個分の中でフラッグ形状を判定する
+    remark: コメント
     返り値は、成立しているかどうかのBoolean
     """
     flag_figure = False  # これは返り値
+    remark = "フラッグ不成立"
     s7 = "      "
     print(s7, "□　Flag確認関数")
     if latest_direction == 1:
@@ -461,6 +464,7 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
             if on_line / total_peaks_num * 100 >= 35:  # さらに傾きの線上に多い場合⇒間違えなくフラッグといえる
                 print(s7, "(ri)Lowerの継続した上昇とみられる⇒検出したupperは突破される方向になる")
                 flag_figure = True
+                remark = "フラッグ型（下側上昇）"
                 # tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出", num)
             else:
                 print(s7, "(ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり　ストレングス変更なし")
@@ -531,6 +535,7 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
             if on_line / total_peaks_num * 100 >= 40:
                 print(s7, "(ri)upperの継続した下落とみられる⇒　このLINEは下に突破される方向になる")
                 flag_figure = True
+                remark = "フラッグ形状(Upper下落)"
                 # tk.line_send(s7, "(ri)フラッグ型（lower水平upper下落）の検出", num)
             else:
                 print(s7, "(ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
@@ -550,7 +555,8 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
     print(s7, "OppositePeakAve", ave_peak_price)
     return {
         "flag_figure": flag_figure,  # フラッグ形状かどうかの判定（Boo）
-        "lc": ave_peak_price  # LC価格の提案を行う
+        "lc": ave_peak_price,  # LC価格の提案を行う
+        "remark": remark
     }
 
 
@@ -691,7 +697,7 @@ def find_predict_line_strength_based_same_price_list(dic_args):
     # 情報の取得
     target_df = fixed_information['df_r']
     peaks = fixed_information['peaks']
-    target_dir = peaks[0]['direction']  # Lineの方向 予測ではLatest、通常はRiver。値が1の場合UpperLine（＝上値抵抗）
+    target_dir = peaks[0]['direction']  # Lineの方向 予測ではLatest。値が1の場合UpperLine（＝上値抵抗）
     grid = 0.01  # 調査の細かさ
     # 条件を達成していない場合は実行せず
     if len(peaks) < 4:
@@ -829,7 +835,7 @@ def find_predict_line_strength_based_same_price_list(dic_args):
                 each_strength_info['line_strength'] = -1  # フラッグ成立時は、通常とは逆
                 each_strength_info['lc'] = flag_lc
                 each_strength_info['expected_direction'] = peaks[0]['direction']
-                each_strength_info['remark'] = "フラッグ形状"  # 備考を入れておく
+                each_strength_info['remark'] = flag['remark']
                 each_strength_info['priority'] = 2  # 備考を入れておく
                 predict_line_info_list_base['strength_info'] = each_strength_info  # 上書きする
 

@@ -196,11 +196,11 @@ def exe_manage():
         return 0
 
     # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
-    if 6 <= time_hour <= 7:
-        if gl_midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
-            classPosition.reset_all_position(classes)
-            tk.line_send("■深夜のポジション・オーダー解消を実施")
-            gl_midnight_close_flag = 1  # 実施済みフラグを立てる
+    # if 6 <= time_hour <= 7:
+    #     if gl_midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
+    #         classPosition.reset_all_position(classes)
+    #         tk.line_send("■深夜のポジション・オーダー解消を実施")
+    #         gl_midnight_close_flag = 1  # 実施済みフラグを立てる
 
     # ■実行を行う
     else:
@@ -217,7 +217,7 @@ def exe_manage():
         gl_now_price_mid = price_dic['mid']  # 念のために保存しておく（APIの回数減らすため）
         gl_now_spread = price_dic['spread']
         if price_dic['spread'] > gl_arrow_spread:
-            print("    ▲スプレッド異常", gl_now, price_dic['spread'])
+            # print("    ▲スプレッド異常", gl_now, price_dic['spread'])
             return -1  # 強制終了
 
         # ■直近の検討データの取得　　　メモ：data_format = '%Y/%m/%d %H:%M:%S'

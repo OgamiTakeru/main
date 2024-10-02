@@ -101,6 +101,54 @@ import fGeneric as f
 #         "range_expected": range_expected
 #     }
 
+def inspection_if_include_large_variations(block_ans):
+    """
+    対象となる範囲のデータフレームをループし（ブロックを探すのと並行してやるので、二回ループ作業してることになるが）
+    突発を含むかを判定する
+    """
+    # 大きい順に並べる
+    s6 = "      "
+
+    target_df = block_ans['data']
+    sorted_df = target_df.sort_values(by='body_abs', ascending=False)
+    max_body = sorted_df["body_abs"].max()
+    print(s6, "対象となるデータフレーム")
+    print(max_body)
+    print(target_df)
+    print(sorted_df.iloc[0]['body_abs'], sorted_df.iloc[0]['time_jp'])
+    print(sorted_df.iloc[1]['body_abs'], sorted_df.iloc[1]['time_jp'])
+
+    body_base_min = 0.094
+    base_body = max_body
+    smaller_body = sorted_df.iloc[1]['body_abs']
+    counter = 0
+    if base_body < body_base_min:
+        # ベース自身が0.13以上ない場合は、平凡⇒終了
+        print(s6, "自身が小さめ")
+        return 0
+
+    for index, row in sorted_df.iterrows():
+        # 自分自身が、絶対的に見て0.13以上と大きく、他の物より約2倍ある物を探す。（自分だけが大きければ、突然の伸び＝戻る可能性大）
+        # 自分自身を、未達カウントするため注意が必要
+        smaller_body = row['body_abs']
+        if base_body > body_base_min:
+            if smaller_body / base_body < 0.55:
+                print(s6, "Baseが大きめといえる", smaller_body / base_body , "size", base_body)
+                counter = counter + 1
+            else:
+                print(s6, "自身より大き目（比率）", smaller_body / base_body)
+        else:
+            print(s6, "自身と同レベルでサイズが大き目")
+    if (len(sorted_df) - 1) - counter <= 1:
+        # 二つ程度が大きい場合、突発の伸びがあったと推定（急伸は戻る可能性大）
+        print(s6, "急伸の足を含む", (len(sorted_df) - 1) - counter)
+        include_large = True
+    else:
+        print(s6, "急伸とみなさない")
+        include_large = False
+
+    return include_large
+
 
 def each_block_inspection(data_df_origin):
     """
@@ -110,141 +158,10 @@ def each_block_inspection(data_df_origin):
     """
     # コピーウォーニングのための入れ替え
     data_df = data_df_origin.copy()
-
-    if len(data_df) >=1:  # データが存在していれば実施
-        # 処理の開始
-        base_direction = 0
-        counter = 0
-        for i in range(len(data_df)-1):
-            tilt = data_df.iloc[i]['middle_price'] - data_df.iloc[i+1]['middle_price']
-            if tilt == 0:
-                tilt = 0.001
-            tilt_direction = round(tilt / abs(tilt), 0)  # 方向のみ（念のためラウンドしておく）
-            # ■初回の場合の設定。１行目と２行目の変化率に関する情報を取得、セットする
-            if counter == 0:
-                base_direction = tilt_direction
-            else:
-                # print(" 初回ではありません")
-                pass
-
-            # ■カウントを進めていく
-            if tilt_direction == base_direction:  # 今回の検証変化率が、初回と動きの方向が同じ場合
-                counter += 1
-            else:
-                break  # 連続が途切れた場合、ループを抜ける
-        # ■対象のDFを取得し、情報を格納していく
-        ans_df = data_df[0:counter+1]  # 同方向が続いてる範囲のデータを取得する
-        ans_other_df = data_df[counter:]  # 残りのデータ
-
-        if base_direction == 1:
-            # 上り方向の場合、直近の最大価格をlatest_image価格として取得(latest価格とは異なる可能性あり）
-            latest_image_price = ans_df.iloc[0]["inner_high"]
-            oldest_image_price = ans_df.iloc[-1]["inner_low"]
-            latest_peak_price = ans_df.iloc[0]["high"]
-            oldest_peak_price = ans_df.iloc[-1]["low"]
-        else:
-            # 下り方向の場合
-            latest_image_price = ans_df.iloc[0]["inner_low"]
-            oldest_image_price = ans_df.iloc[-1]["inner_high"]
-            latest_peak_price = ans_df.iloc[0]["low"]
-            oldest_peak_price = ans_df.iloc[-1]["high"]
-        #
-        # ■平均移動距離等を考える
-        body_ave = round(data_df["body_abs"].mean(),3)
-        move_ave = round(data_df["moves"].mean(),3)
-
-        # ■GAPを計算する（０の時は割る時とかに困るので、最低0.001にしておく）
-        # gap = round(abs(latest_image_price - oldest_image_price), 3)  # MAXのサイズ感
-        gap_close = round(abs(latest_image_price - ans_df.iloc[-1]["close"]), 3)  # 直近の価格（クローズの価格&向き不問）
-        if gap_close == 0:
-            gap_close = 0.001
-        else:
-            gap_close = gap_close
-
-        gap = round(abs(latest_image_price - oldest_image_price), 3)  # 直近の価格（クローズの価格&向き不問）
-        if gap == 0:
-            gap = 0.001
-        else:
-            gap = gap
-
-        # ■　一旦格納する
-        # 表示等で利用する用（機能としては使わない
-        memo_time = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
-            ans_df.iloc[0]["time_jp"])
-        # 返却用(Simple データを持たない表示用)
-        ans_dic = {
-            "direction": base_direction,
-            "count": counter+1,  # 最新時刻からスタートして同じ方向が何回続いているか
-            "data": ans_df,  # 対象となるデータフレーム（元のデータフレームではない）
-            "data_remain": ans_other_df,  # 対象以外の残りのデータフレーム
-            "data_size": len(data_df),  # (注)元のデータサイズ
-            "latest_image_price": latest_image_price,
-            "oldest_image_price": oldest_image_price,
-            "oldest_time_jp": ans_df.iloc[-1]["time_jp"],
-            "latest_time_jp": ans_df.iloc[0]["time_jp"],
-            "latest_price": ans_df.iloc[0]["close"],
-            "oldest_price": ans_df.iloc[-1]["open"],
-            "latest_peak_price": latest_peak_price,
-            "oldest_peak_price": oldest_peak_price,
-            "gap": gap,
-            "gap_close": gap_close,
-            "body_ave": body_ave,
-            "move_abs": move_ave,
-            "memo_time": memo_time
-        }
-        # 返却用（シンプルでデータフレームがないものを作成する）
-        # ans_dic_simple = ans_dic.pop('data')
-        # ans_dic_simple = ans_dic_simple.pop('data_remain')
-
-        # ■　形状を判定する（テスト）
-        # type_info_dic = turn_each_support(ans_df, base_direction, ans_dic)  # 対象のデータフレームと、方向を渡す
-        # ans_dic["support_info"] = type_info_dic  # あくまでメイン解析の要素の一つとして渡す
-    else:  # データがEmptyの場合
-        # 返却用
-        ans_dic = {
-            "direction": 1,
-            "count": 0,  # 最新時刻からスタートして同じ方向が何回続いているか
-            "data": data_df,  # 対象となるデータフレーム（元のデータフレームではない）
-            "data_remain": data_df,  # 対象以外の残りのデータフレーム
-            "data_size": len(data_df),  # (注)元のデータサイズ
-            "latest_image_price": 0,
-            "oldest_image_price": 0,
-            "oldest_time_jp": 0,
-            "latest_time_jp": 0,
-            "latest_price": 0,
-            "oldest_price": 0,
-            "latest_peak_price": 0,
-            "oldest_peak_price": 0,
-            "gap": 0.0001,
-            "gap_close": 0.00001,
-            "body_ave": 0.000001,
-            "move_abs": 0.00001,
-            "memo_time": 0,
-            "support_info":{}
-        }
-        # 返却用（シンプルでデータフレームがないものを作成する）
-        # ans_dic_simple = ans_dic.pop('data')
-        # ans_dic_simple = ans_dic_simple.pop('data_remain')
-
-    # 返却する
-    return ans_dic
-
-
-def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
-    """
-    渡された範囲で、何連続で同方向に進んでいるかを検証する
-    ただし方向が異なる１つ（N個）を除去しても方向が変わらない場合、延長する
-    :param data_df_origin: 直近が上側（日付降順/リバース）のデータを利用
-    :return: Dict形式のデータを返却　（冒頭で定義）
-    """
-    # コピーウォーニングのための入れ替え
-    data_df = data_df_origin.copy()
-    # 返却値の設定
-    ans_format = {
+    # 返却値を設定
+    ans_dic = {
         "direction": 1,
         "count": 0,  # 最新時刻からスタートして同じ方向が何回続いているか
-        "data": data_df,  # 対象となるデータフレーム（元のデータフレームではない）
-        "data_remain": data_df,  # 対象以外の残りのデータフレーム
         "data_size": len(data_df),  # (注)元のデータサイズ
         "latest_image_price": 0,
         "oldest_image_price": 0,
@@ -255,12 +172,145 @@ def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
         "latest_peak_price": 0,
         "oldest_peak_price": 0,
         "gap": 0.0001,
+        "gap_high_low": 0.00001,
+        "gap_close": 0.00001,
+        "body_ave": 0.000001,
+        "move_abs": 0.00001,
+        "memo_time": 0,
+        "data": data_df,  # 対象となるデータフレーム（元のデータフレームではない）
+        "data_remain": data_df,  # 対象以外の残りのデータフレーム
+        "support_info": {},
+        "include_large": False
+    }
+    if len(data_df) < 1:  # データが存在していれば実施
+        return ans_dic
+
+    # 実処理処理の開始
+    base_direction = 0
+    counter = 0
+    for i in range(len(data_df)-1):
+        tilt = data_df.iloc[i]['middle_price'] - data_df.iloc[i+1]['middle_price']
+        if tilt == 0:
+            tilt = 0.001
+        tilt_direction = round(tilt / abs(tilt), 0)  # 方向のみ（念のためラウンドしておく）
+        # ■初回の場合の設定。１行目と２行目の変化率に関する情報を取得、セットする
+        if counter == 0:
+            base_direction = tilt_direction
+        else:
+            # print(" 初回ではありません")
+            pass
+
+        # ■カウントを進めていく
+        if tilt_direction == base_direction:  # 今回の検証変化率が、初回と動きの方向が同じ場合
+            counter += 1
+        else:
+            break  # 連続が途切れた場合、ループを抜ける
+    # ■対象のDFを取得し、情報を格納していく
+    ans_df = data_df[0:counter+1]  # 同方向が続いてる範囲のデータを取得する
+    ans_other_df = data_df[counter:]  # 残りのデータ
+
+    if base_direction == 1:
+        # 上り方向の場合、直近の最大価格をlatest_image価格として取得(latest価格とは異なる可能性あり）
+        latest_image_price = ans_df.iloc[0]["inner_high"]
+        oldest_image_price = ans_df.iloc[-1]["inner_low"]
+        latest_peak_price = ans_df.iloc[0]["high"]
+        oldest_peak_price = ans_df.iloc[-1]["low"]
+    else:
+        # 下り方向の場合
+        latest_image_price = ans_df.iloc[0]["inner_low"]
+        oldest_image_price = ans_df.iloc[-1]["inner_high"]
+        latest_peak_price = ans_df.iloc[0]["low"]
+        oldest_peak_price = ans_df.iloc[-1]["high"]
+    #
+    # ■平均移動距離等を考える
+    body_ave = round(data_df["body_abs"].mean(),3)
+    move_ave = round(data_df["moves"].mean(),3)
+
+    # ■GAPを計算する（０の時は割る時とかに困るので、最低0.001にしておく）
+    # gap = round(abs(latest_image_price - oldest_image_price), 3)  # MAXのサイズ感
+    gap_close = round(abs(latest_image_price - ans_df.iloc[-1]["close"]), 3)  # 直近の価格（クローズの価格&向き不問）
+    if gap_close == 0:
+        gap_close = 0.001
+    else:
+        gap_close = gap_close
+
+    gap = round(abs(latest_image_price - oldest_image_price), 3)  # 直近の価格（クローズの価格&向き不問）
+    if gap == 0:
+        gap = 0.001
+    else:
+        gap = gap
+
+    gap_high_low = round(abs(latest_peak_price - oldest_peak_price), 3)  # 直近の価格（クローズの価格&向き不問）
+    if gap_high_low == 0:
+        gap_high_low = 0.001
+    else:
+        gap_high_low = gap_high_low
+
+    # ■　一旦格納する
+    # 表示等で利用する用（機能としては使わない
+    memo_time = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
+        ans_df.iloc[0]["time_jp"])
+    # 返却用(Simple データを持たない表示用)
+    ans_dic = {
+        "direction": base_direction,
+        "count": counter+1,  # 最新時刻からスタートして同じ方向が何回続いているか
+        "data_size": len(data_df),  # (注)元のデータサイズ
+        "latest_image_price": latest_image_price,
+        "oldest_image_price": oldest_image_price,
+        "oldest_time_jp": ans_df.iloc[-1]["time_jp"],
+        "latest_time_jp": ans_df.iloc[0]["time_jp"],
+        "latest_price": ans_df.iloc[0]["close"],
+        "oldest_price": ans_df.iloc[-1]["open"],
+        "latest_peak_price": latest_peak_price,
+        "oldest_peak_price": oldest_peak_price,
+        "gap": gap,
+        "gap_high_low": gap_high_low,
+        "gap_close": gap_close,
+        "body_ave": body_ave,
+        "move_abs": move_ave,
+        "memo_time": memo_time,
+        "data": ans_df,  # 対象となるデータフレーム（元のデータフレームではない）
+        "data_remain": ans_other_df,  # 対象以外の残りのデータフレーム
+    }
+    ans_dic['include_large'] = inspection_if_include_large_variations(ans_dic)
+
+    # 返却する
+    return ans_dic
+
+
+def each_block_inspection_skip(data_df_origin) -> dict[str, any]:
+    """
+    渡された範囲で、何連続で同方向に進んでいるかを検証する
+    ただし方向が異なる１つ（N個）を除去しても方向が変わらない場合、延長する
+    :param data_df_origin: 直近が上側（日付降順/リバース）のデータを利用
+    :return: Dict形式のデータを返却　（冒頭で定義）
+    """
+    # コピーウォーニングのための入れ替え
+    data_df = data_df_origin.copy()
+    # 返却値の設定
+    ans_dic = {
+        "direction": 1,
+        "count": 0,  # 最新時刻からスタートして同じ方向が何回続いているか
+        "data_size": len(data_df),  # (注)元のデータサイズ
+        "latest_image_price": 0,
+        "oldest_image_price": 0,
+        "oldest_time_jp": 0,
+        "latest_time_jp": 0,
+        "latest_price": 0,
+        "oldest_price": 0,
+        "latest_peak_price": 0,
+        "oldest_peak_price": 0,
+        "gap": 0.0001,
+        "gap_high_low": 0.00001,
         "gap_close": 0.00001,
         "body_ave": 0.000001,
         "move_abs": 0.00001,
         "memo_time": 0,
         "latest2_dir": 0,  # 直近二つのローソクの方向を二桁であらわす.
-        "skip_counter": 0   # 南海スキップしたか
+        "skip_counter": 0,   # 南海スキップしたか
+        "data": data_df,  # 対象となるデータフレーム（元のデータフレームではない）
+        "data_remain": data_df,  # 対象以外の残りのデータフレーム
+        "include_large": False
     }
 
     # 処理
@@ -269,7 +319,7 @@ def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
         # ans_dic_simple = ans_dic.copy()
         # ans_dic_simple.pop('data')
         # ans_dic_simple.pop('data_remain')
-        return ans_format
+        return ans_dic
 
     # 通常の処理
     base_direction = 0
@@ -376,6 +426,12 @@ def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
     else:
         gap = gap
 
+    gap_high_low = round(abs(latest_peak_price - oldest_peak_price), 3)  # 直近の価格（クローズの価格&向き不問）
+    if gap_high_low == 0:
+        gap_high_low = 0.001
+    else:
+        gap_high_low = gap_high_low
+
     body_pattern = 0
     if counter+1 == 2:
         # 直近のボディーの方向、
@@ -396,11 +452,9 @@ def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
     memo_time = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
         ans_df.iloc[0]["time_jp"])
     # 返却用(Simple データを持たない表示用)
-    ans = {
+    ans_dic = {
         "direction": base_direction,
         "count": counter+1,  # 最新時刻からスタートして同じ方向が何回続いているか
-        "data": ans_df,  # 対象となるデータフレーム（元のデータフレームではない）
-        "data_remain": ans_other_df,  # 対象以外の残りのデータフレーム
         "data_size": len(data_df),  # (注)元のデータサイズ
         "latest_image_price": latest_image_price,
         "oldest_image_price": oldest_image_price,
@@ -411,17 +465,23 @@ def each_block_inspection_skip(data_df_origin) -> dict[str,any]:
         "latest_peak_price": latest_peak_price,
         "oldest_peak_price": oldest_peak_price,
         "gap": gap,
+        "gap_high_low": gap_high_low,
         "gap_close": gap_close,
         "body_ave": body_ave,
         "move_abs": move_ave,
         "memo_time": memo_time,
         "latest2_dir": body_pattern,
-        "skip_counter": skip_counter
+        "skip_counter": skip_counter,
+        "data": ans_df,  # 対象となるデータフレーム（元のデータフレームではない）
+        "data_remain": ans_other_df,  # 対象以外の残りのデータフレーム
     }
 
+    # ■■　突発的な伸びを含むかを検証し、追記する
+    ans_dic['include_large'] = inspection_if_include_large_variations(ans_dic)
+
     # 返却する
-    if f.dict_compare(ans_format, ans):
-        return ans
+    if f.dict_compare(ans_dic, ans_dic):
+        return ans_dic
     else:
         print("★返却値異常")
 
