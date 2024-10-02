@@ -138,6 +138,7 @@ def peaks_collect_all(*args):
             'latest_price': ans['latest_price'],
             "latest2_dir": ans['latest2_dir'],
             "skip_counter": ans['skip_counter'],
+            "include_large": ans['include_large'],
             'ans': ans,
         }
         if len(peaks) != 0:
@@ -293,6 +294,7 @@ def peaks_collect_all_not_skip(*args):
             'gap': round(abs(peak_latest-peak_oldest), 3),
             'latest_price': ans['latest_price'],
             # "latest2_dir": ans['latest2_dir'],
+            "include_large": ans['include_large'],
             'ans': ans,
         }
         if len(peaks) != 0:

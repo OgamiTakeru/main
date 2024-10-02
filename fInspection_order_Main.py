@@ -476,7 +476,7 @@ def inspection_warp_up_and_make_order(df_r):
             flag_and_orders["exe_orders"] = orders_and_evidence["exe_orders"]
             # この後、トラリピ入れたいなぁ
             # ■■最も強いストレングスが遠い場合、最も強いストレングスに向かう方向へトラリピを設定
-            trid_do = True  # False
+            trid_do = False
             if trid_do and orders_and_evidence["target_strength"]["strength_info"]["line_strength"] >= 0:# フラッグではない場合（こっちはフラッグの可能性もあり)
                 # Lineで折り返される判定が前提。（0より低い値 ＝突破方向となり、今回のトラリピの対象外）
                 now_price = cf.now_price()

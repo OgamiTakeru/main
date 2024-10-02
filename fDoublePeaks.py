@@ -510,6 +510,7 @@ def DoublePeak_predict(dic_args):
             double_top_strength = -1
             double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
     # 追加の検討要素②　ターンで突発的な足がある場合、突破しにくいのでは、という判定
+    # gene.print_json(turn)
     if turn['include_large']:
         # 大きな足をインクルードする場合、抵抗線の信頼度は強い
         print(t6, "急変動を含むため、抵抗側と判断")
