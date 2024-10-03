@@ -806,7 +806,7 @@ def find_predict_line_strength_based_same_price_list(dic_args):
         )
         print("         強度結果", each_strength_info)
         # ■■■　【注文に必要な情報】ExpectedDirectionとLCを求め、StrengthInfoに初めて追加する（処理が遠い順のため、一つ遠いものがロスカット価格となる）
-        far_lc_range = 0.15  # 一番遠い物のLC幅
+        far_lc_range = 0.07  # 一番遠い物のLC幅
         range_margin = 0.05
         # ■expectedDirectionを追加する（この後のフラッグで上書きされる可能性ある）
         each_strength_info['expected_direction'] = peaks[0]['direction'] * -1  # 逆

@@ -510,7 +510,7 @@ def inspection_warp_up_and_make_order(df_r):
         # ■ダブルトップ突破型に関する情報を取得する
         print(s, "■Latest3回の場合の実行")
         print(s, "■DoubleTOpBreakの調査(latest3)")
-        df_r_first_delete = df_r[1:]
+        df_r_first_delete = df_r[0:]
         break_double_top_strength_orders_and_evidence = ri.double_top_break_strength({"df_r": df_r_first_delete})
         print(s, break_double_top_strength_orders_and_evidence)
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
@@ -528,7 +528,6 @@ def inspection_warp_up_and_make_order(df_r):
     print("おーだー")
     print(flag_and_orders["exe_orders"])
     if len(flag_and_orders["exe_orders"]) >= 1:
-
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority
         print("max_priority", max_priority)
@@ -536,10 +535,11 @@ def inspection_warp_up_and_make_order(df_r):
 
     # テスト
     size_flag = ms.cal_move_size({"df_r": df_r, "peaks": peaks})
-    if size_flag:
+    if size_flag['flag']:
         # Trueの場合は通常通り
-        pass
+        print("幅広め")
     else:
         tk.line_send("直近幅が小さいため、様子見(LC幅の縮小等）が必要かもしれない")
+        flag_and_orders['take_position_flag'] = False
 
     return flag_and_orders

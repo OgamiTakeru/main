@@ -104,7 +104,7 @@ def mode1():
 
     # ■既存のオーダーやポジションとの兼ね合いの検証
     classes_info = classPosition.position_check(classes)  # 現在の情報を取得
-    # ■■■既存オーダーが存在する場合、プライオリティを比較する
+    # ■■■既存オーダーが存在する場合、プライオリティ、現在のプラスマイナス、入れようとしている向きが同方向かを比較する
     if classes_info['order_exist']:
         # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
         # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
@@ -115,19 +115,27 @@ def mode1():
     # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
     if classes_info['position_exist']:
         # 既存のポジションがある場合、互い(新規と既存)プライオリティ次第で注文を発行する
-        # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
-        if inspection_result_dic['max_priority'] > classes_info['max_priority']:
-            # 新規が重要オーダー。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
-            tk.line_send("★ポジションありだがフラッグ発生のため置換", "Pri", inspection_result_dic['max_priority'])
-        else:
-            # 新規の重要性は今より低い。ただし、ポジション後２５分以内の物は、プライオリティが同一の場合でも置き変わらない
-            if classes_info['max_position_time_sec'] < 1500:
-                tk.line_send("★ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri", classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'])
-                # classPosition.position_check(classes) で各ポジションの状態を確認可能
-                return 0
+        if classes_info['open_positions'][0]['pl'] < 0:
+            # 現在のポジションがマイナスの場合
+            if classes_info['direction'] == inspection_result_dic['exe_orders'][0]['expected_direction']:
+                # 新オーダー候補と方向が同じな場合
+                # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
+                if inspection_result_dic['max_priority'] > classes_info['max_priority']:
+                    # 新規が重要オーダー。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
+                    tk.line_send("★ポジションありだがフラッグ発生のため置換", "Pri", inspection_result_dic['max_priority'])
+                else:
+                    # 新規の重要性は今より低い。ただし、ポジション後２５分以内の物は、プライオリティが同一の場合でも置き変わらない
+                    if classes_info['max_position_time_sec'] < 1500:
+                        tk.line_send("★ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri", classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'])
+                        # classPosition.position_check(classes) で各ポジションの状態を確認可能
+                        return 0
+                    else:
+                        tk.line_send("重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri", classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'])
+                        pass
             else:
-                tk.line_send("重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri", classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'])
-                pass
+                tk.line_send("★既存のポジションと方向が同じ（マイナスだが）のため様子見")
+        else:
+            tk.line_send("★ポジションありで、プラスのため様子見")
 
     # ■既存のオーダーがある場合（強制的に削除）
     classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う

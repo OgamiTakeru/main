@@ -76,7 +76,7 @@ def cal_move_size(dic_args):
     high_price = 0
     low_price = 999
     gap = 0
-    for index, row in df_r[0:25].iterrows():
+    for index, row in df_r[0:15].iterrows():
         # high lowデータの更新
         if high_price < row['inner_high']:
             high_price = row['inner_high']
@@ -88,6 +88,8 @@ def cal_move_size(dic_args):
         if gap > middle_range:
             # middleより大きい場合は、変動が大きな場所
             # print("これ以前は変動大", row['time_jp'])
+            flag = True
+            break
             pass
         elif gap > small_range:
             # small 以上　middle以下は、Middle

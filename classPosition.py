@@ -369,6 +369,7 @@ class order_information:
             price = res_json['orderFillTransaction']['tradeReduced']['price']
             tk.line_send("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL, "price", price)
 
+
     def updateWinLoseTime(self, new_pl):
         """
         最新の勝ち負け情報（PLu)を渡される。
@@ -678,7 +679,9 @@ def position_check(classes):
                     "life": item.life,
                     "priority": item.priority,
                     "o_state": item.o_state,
-                    "t_state": item.t_state
+                    "t_state": item.t_state,
+                    "pl": item.t_pl_u,
+                    "direction": item.plan['direction']
                 })
                 # ポジションの所有時間（ポジションがある中で最大）も取得しておく
                 if item.t_time_past_sec > max_position_time_sec:
@@ -693,7 +696,9 @@ def position_check(classes):
                     "life": item.life,
                     "priority": item.priority,
                     "o_state": item.o_state,
-                    "t_state": item.t_state
+                    "t_state": item.t_state,
+                    "pl": item.t_pl_u,
+                    "direction": item.plan['direction']
                 })
                 # ポジションの所有時間（ポジションがある中で最大）も取得しておく
                 if item.o_time_past_sec > max_order_time_sec:
