@@ -117,7 +117,7 @@ def mode1():
         # 既存のポジションがある場合、互い(新規と既存)プライオリティ次第で注文を発行する
         if classes_info['open_positions'][0]['pl'] < 0:
             # 現在のポジションがマイナスの場合
-            if classes_info['direction'] == inspection_result_dic['exe_orders'][0]['expected_direction']:
+            if classes_info['open_positions'][0]['direction'] == inspection_result_dic['exe_orders'][0]['expected_direction']:
                 # 新オーダー候補と方向が同じな場合
                 # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
                 if inspection_result_dic['max_priority'] > classes_info['max_priority']:
@@ -134,8 +134,10 @@ def mode1():
                         pass
             else:
                 tk.line_send("★既存のポジションと方向が同じ（マイナスだが）のため様子見")
+                return 0
         else:
             tk.line_send("★ポジションありで、プラスのため様子見")
+            return 0
 
     # ■既存のオーダーがある場合（強制的に削除）
     classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
