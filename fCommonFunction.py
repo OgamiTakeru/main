@@ -30,7 +30,8 @@ def order_base(now_prie):
             "name": "",
             "lc_change": [
                 # {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
-                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": -0.9},
+                {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": -0.2},
+                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": -0.03},
                 {"lc_change_exe": True, "lc_trigger_range": 0.08, "lc_ensure_range": 0.01},
                 {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.07},
                 {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.10},

@@ -447,20 +447,34 @@ def inspection_warp_up_and_make_order(df_r):
     fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
     peaks = fixed_information['peaks']
 
+    fixed_information_for3 = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
+    peaks_for3 = fixed_information_for3['peaks']
+
+    if peaks[0]['direction'] == peaks_for3[0]['direction']:
+        print("　通常")
+    else:
+        print(" すぐ折り返しが来ている状態（latest3でやるつもりがlatest2で意図しない状態になるやつ")
+
+    print('調査テスト')
+    print(peaks)
+    print(peaks_for3)
+
     # ■検証とオーダー作成を実行
     if peaks[0]['count'] == 2:  # 予測なので、LatestがN個続いたときに実行してみる
         print(s, "■Latest2回の場合の実行")
         # latestが2個の時に実行されるもの
         # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
         print(s, "■Latest基準の同価格Strengthの調査")
-        orders_and_evidence = ri.find_predict_line_strength_based_same_price_list({"df_r": df_r, "peaks": peaks})  # 調査！
+        orders_and_evidence = ri.judge_strength_from_predict_line_based_all_same_price_list({"df_r": df_r, "peaks": peaks})  # 調査！
         # gene.print_arr(orders_and_evidence['evidence'], 2)
+
         # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
         print(s, "■river方向（逆）の強度の確認")
-        river_peak_line_strength = ri.river_peak_line_strength({"df_r": df_r, "peaks": peaks})
+        river_peak_line_strength = ri.judge_strength_river_peak_line({"df_r": df_r, "peaks": peaks})
+
         # ■ダブルトップ突破型に関する情報を取得する
         print(s, "■DoubleTOpBreakの調査")
-        break_double_top_strength_orders_and_evidence = ri.double_top_break_strength({"df_r": df_r, "peaks": peaks})
+        break_double_top_strength_orders_and_evidence = ri.judge_strength_double_top_break({"df_r": df_r, "peaks": peaks})
         # print(s, break_double_top_strength_orders_and_evidence)
 
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
@@ -474,10 +488,9 @@ def inspection_warp_up_and_make_order(df_r):
             # シンプルなLineStrengthによるオーダー発行
             flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = orders_and_evidence["exe_orders"]
-            # この後、トラリピ入れたいなぁ
             # ■■最も強いストレングスが遠い場合、最も強いストレングスに向かう方向へトラリピを設定
             trid_do = False
-            if trid_do and orders_and_evidence["target_strength"]["strength_info"]["line_strength"] >= 0:# フラッグではない場合（こっちはフラッグの可能性もあり)
+            if trid_do and orders_and_evidence["target_strength"]["strength_info"]["line_strength"] >= 0:  # フラッグではない場合（こっちはフラッグの可能性もあり)
                 # Lineで折り返される判定が前提。（0より低い値 ＝突破方向となり、今回のトラリピの対象外）
                 now_price = cf.now_price()
                 now_price = peaks[0]['peak']
@@ -511,7 +524,7 @@ def inspection_warp_up_and_make_order(df_r):
         print(s, "■Latest3回の場合の実行")
         print(s, "■DoubleTOpBreakの調査(latest3)")
         df_r_first_delete = df_r[0:]
-        break_double_top_strength_orders_and_evidence = ri.double_top_break_strength({"df_r": df_r_first_delete})
+        break_double_top_strength_orders_and_evidence = ri.judge_strength_double_top_break({"df_r": df_r_first_delete})
         print(s, break_double_top_strength_orders_and_evidence)
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
             # DoubleTopの判定が最優先 (単品）
@@ -534,12 +547,13 @@ def inspection_warp_up_and_make_order(df_r):
         # print(flag_and_orders)
 
     # テスト
-    size_flag = ms.cal_move_size({"df_r": df_r, "peaks": peaks})
-    if size_flag['flag']:
-        # Trueの場合は通常通り
-        print("幅広め")
-    else:
-        tk.line_send("直近幅が小さいため、様子見(LC幅の縮小等）が必要かもしれない")
-        flag_and_orders['take_position_flag'] = False
-
+    if flag_and_orders['take_position_flag']:
+        size_flag = ms.cal_move_size({"df_r": df_r, "peaks": peaks})
+        if size_flag['range_flag']:
+            # Trueの場合は通常通り
+            tk.line_send("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
+            flag_and_orders['take_position_flag'] = False
+        else:
+            print(" 通常の動き")
+            pass
     return flag_and_orders

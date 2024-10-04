@@ -110,7 +110,7 @@ def mode1():
         # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
         if classes_info['max_priority'] > inspection_result_dic['max_priority']:
             # 同じだったら入れ替えたいので、「すでに入力されているものが大きかったら(>)」となる。
-            tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority'], inspection_result_dic['max_priority'])
+            tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority'], inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
             return 0
     # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
     if classes_info['position_exist']:
@@ -126,17 +126,17 @@ def mode1():
                 else:
                     # 新規の重要性は今より低い。ただし、ポジション後２５分以内の物は、プライオリティが同一の場合でも置き変わらない
                     if classes_info['max_position_time_sec'] < 1500:
-                        tk.line_send("★ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri", classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'])
+                        tk.line_send("★ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri", classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
                         # classPosition.position_check(classes) で各ポジションの状態を確認可能
                         return 0
                     else:
-                        tk.line_send("重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri", classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'])
+                        tk.line_send("重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri", classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
                         pass
             else:
-                tk.line_send("★既存のポジションと方向が同じ（マイナスだが）のため様子見")
+                tk.line_send("★既存のポジションと方向が同じ（マイナスだが）のため様子見", inspection_result_dic['exe_orders'][0]['name'])
                 return 0
         else:
-            tk.line_send("★ポジションありで、プラスのため様子見")
+            tk.line_send("★ポジションありで、プラスのため様子見", inspection_result_dic['exe_orders'][0]['name'])
             return 0
 
     # ■既存のオーダーがある場合（強制的に削除）
