@@ -739,15 +739,13 @@ def judge_strength_from_predict_line_based_all_same_price_list(dic_args):
         # if each_strength_info['line_on_num'] >= 3 and each_strength_info['line_strength'] == 1:  # 旧条件２　少し厳しい
         if each_strength_info['line_on_num'] >= 2 and each_strength_info['line_strength'] == 0.9:  # allRangeは不要か
             flag = judge_flag_figure(peaks, peaks[0]['direction'], each_strength_info['line_strength'])
-            flag_figure = flag['flag_figure']  # boolean  成立でＴｒｕｅ
-            flag_lc = flag['lc']  # フラッグ向けのLC価格候補（今後StrengthInfoに入れておく）
             print(s6, "[Flagテスト]", each_predict_line_info['line_base_info']["line_base_price"])
             # フラッグの結果次第で、LineStrengthに横やりを入れる形で、値を買い替える
-            if flag_figure:
+            if flag['flag_figure']:
                 print(s6, "Flag成立")
                 # 【注文に必要な情報】フラッグ形状の場合は上書きする
                 each_strength_info['line_strength'] = -1  # フラッグ成立時は、通常とは逆
-                each_strength_info['lc'] = flag_lc
+                each_strength_info['lc'] = flag['lc']
                 each_strength_info['expected_direction'] = peaks[0]['direction']
                 each_strength_info['remark'] = flag['remark']
                 each_strength_info['priority'] = 2  # 備考を入れておく

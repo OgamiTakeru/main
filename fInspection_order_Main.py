@@ -480,7 +480,7 @@ def inspection_warp_up_and_make_order(df_r):
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)")
             # DoubleTopの判定が最優先 (単品）
-            flag_and_orders["take_position_flag"] = False
+            flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = \
                 [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
         elif orders_and_evidence['take_position_flag']:

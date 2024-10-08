@@ -559,7 +559,8 @@ def DoublePeak_predict(dic_args):
             main_order['target'] = turn['peak']
             main_order['tp'] = 0.3
             main_order['lc'] = 0.15  # * line_strength  # 0.09  # LCは広め
-            main_order['type'] = 'LIMIT'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            # main_order['type'] = 'LIMIT'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
             main_order['priority'] = 2  # ほかので割り込まれない
@@ -574,7 +575,8 @@ def DoublePeak_predict(dic_args):
             main_order['tp'] = 0.3
             # main_order['lc'] = 0.22  # * line_strength  # 0.09  # LCは広め
             main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
-            main_order['type'] = 'LIMIT'  # 順張り
+            # main_order['type'] = 'LIMIT'  # 順張り
+            main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
             main_order['priority'] = 2  #
@@ -589,41 +591,41 @@ def DoublePeak_predict(dic_args):
     }
 
 
-def peakPatternMain(df_r):
-    # peaksを算出しておく
-    peaks_info = p.peaks_collect_main(df_r[:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
-    peaks = peaks_info['all_peaks']
-    print("  <対象>")
-    print("  RIVER", peaks[0])
-    print("  TURN ", peaks[1])
-    print("  FLOP3", peaks[2])
-
-    # 初期構想のDoubleTopを検討する
-    inspection_params = {"margin": 0.05, "d": -1, "sl": -1}  # d=expected_direction, sl=Stop(1)orLimit(-1)
-    params = {"tf_ratio_min": 0, "tf_ratio_max": 0.45, "rt_ratio_min": 0.4, "rt_ratio_max": 1,
-              "f3_count": 5, "t_count_min": 2, "t_count_max": 4, "r_count": 2}
-    double_top_ans = DoublePeak({"df_r": df_r, "inspection_params": inspection_params, "params": params, "peaks": peaks})
-    if double_top_ans['take_position_flag']:
-        print(double_top_ans['exe_orders'])
-
-    # ガタガタと進んでいくケース
-    inspection_params = {"margin": 0.05, "d": -1, "sl": -1}  # d=expected_direction, sl=Stop(1)orLimit(-1)
-    params = {"tf_ratio_min": 0.55, "tf_ratio_max": 1, "rt_ratio_min": 0.4, "rt_ratio_max": 1.2,
-              "f3_count": 5, "t_count_min": 3, "t_count_max": 5, "r_count": 3}
-    jagged_move_ans = DoublePeak({"df_r": df_r, "inspection_params": inspection_params, "params": params, "peaks": peaks})
-    if jagged_move_ans['take_position_flag']:
-        print(jagged_move_ans['exe_orders'])
-
-    if double_top_ans['take_position_flag'] or jagged_move_ans['take_position_flag']:
-        print("  ★どちらかが成立",double_top_ans['take_position_flag'], jagged_move_ans['take_position_flag'])
-        if double_top_ans['take_position_flag']:
-            order = double_top_ans['exe_orders']
-            print(" ダブルトップが成立", double_top_ans['take_position_flag'])
-            tk.line_send("ダブルトップが成立", order)
-        else:
-            order = jagged_move_ans['exe_orders']
-            print(" ジグザグムーブが成立", jagged_move_ans['exe_orders'])
-            tk.line_send("ジグザグムーブが成立", order)
+# def peakPatternMain(df_r):
+#     # peaksを算出しておく
+#     peaks_info = p.peaks_collect_main(df_r[:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
+#     peaks = peaks_info['all_peaks']
+#     print("  <対象>")
+#     print("  RIVER", peaks[0])
+#     print("  TURN ", peaks[1])
+#     print("  FLOP3", peaks[2])
+#
+#     # 初期構想のDoubleTopを検討する
+#     inspection_params = {"margin": 0.05, "d": -1, "sl": -1}  # d=expected_direction, sl=Stop(1)orLimit(-1)
+#     params = {"tf_ratio_min": 0, "tf_ratio_max": 0.45, "rt_ratio_min": 0.4, "rt_ratio_max": 1,
+#               "f3_count": 5, "t_count_min": 2, "t_count_max": 4, "r_count": 2}
+#     double_top_ans = DoublePeak({"df_r": df_r, "inspection_params": inspection_params, "params": params, "peaks": peaks})
+#     if double_top_ans['take_position_flag']:
+#         print(double_top_ans['exe_orders'])
+#
+#     # ガタガタと進んでいくケース
+#     inspection_params = {"margin": 0.05, "d": -1, "sl": -1}  # d=expected_direction, sl=Stop(1)orLimit(-1)
+#     params = {"tf_ratio_min": 0.55, "tf_ratio_max": 1, "rt_ratio_min": 0.4, "rt_ratio_max": 1.2,
+#               "f3_count": 5, "t_count_min": 3, "t_count_max": 5, "r_count": 3}
+#     jagged_move_ans = DoublePeak({"df_r": df_r, "inspection_params": inspection_params, "params": params, "peaks": peaks})
+#     if jagged_move_ans['take_position_flag']:
+#         print(jagged_move_ans['exe_orders'])
+#
+#     if double_top_ans['take_position_flag'] or jagged_move_ans['take_position_flag']:
+#         print("  ★どちらかが成立",double_top_ans['take_position_flag'], jagged_move_ans['take_position_flag'])
+#         if double_top_ans['take_position_flag']:
+#             order = double_top_ans['exe_orders']
+#             print(" ダブルトップが成立", double_top_ans['take_position_flag'])
+#             tk.line_send("ダブルトップが成立", order)
+#         else:
+#             order = jagged_move_ans['exe_orders']
+#             print(" ジグザグムーブが成立", jagged_move_ans['exe_orders'])
+#             tk.line_send("ジグザグムーブが成立", order)
 
 # def triplePeaks_pattern(*dic_args):
 #     """
