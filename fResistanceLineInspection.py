@@ -737,7 +737,7 @@ def judge_strength_from_predict_line_based_all_same_price_list(dic_args):
         # ■■■フラッグかどうかを判定（Line強度とは別の関数にする）
         # if each_strength_info['all_range_strong_line'] == 0 and each_strength_info['line_on_num'] >= 3:  # 旧条件　かなり厳しい
         # if each_strength_info['line_on_num'] >= 3 and each_strength_info['line_strength'] == 1:  # 旧条件２　少し厳しい
-        if each_strength_info['line_on_num'] >= 2 and each_strength_info['line_strength'] == 0.9:  # allRangeは不要か
+        if each_strength_info['line_on_num'] >= 3 and each_strength_info['line_strength'] == 0.9:  # allRangeは不要か
             flag = judge_flag_figure(peaks, peaks[0]['direction'], each_strength_info['line_strength'])
             print(s6, "[Flagテスト]", each_predict_line_info['line_base_info']["line_base_price"])
             # フラッグの結果次第で、LineStrengthに横やりを入れる形で、値を買い替える
@@ -762,26 +762,21 @@ def judge_strength_from_predict_line_based_all_same_price_list(dic_args):
     max_index, max_strength = max(enumerate(predict_line_info_list[:]), key=lambda x: x[1]["strength_info"]["line_strength"])
     min_index, min_strength = min(enumerate(predict_line_info_list[:]), key=lambda x: x[1]["strength_info"]["line_strength"])  # 念のために取得
     flag_strength = [d for d in predict_line_info_list if d["strength_info"]["line_strength"] == -1]  # フラッグ形状の場合はこれが存在
-
+    # オーダーの元情報を取得する。フラッグの場合と通常の場合で、方向(expected_direction)が異なるため、Limit等も変わる。
     if len(flag_strength) != 0:
         target_strength_info = flag_strength[0]  # flag_strength は配列のため、要素としたいため、[0]とする
+        position_type = "STOP"  # フラッグありの場合突破方向のため、STOP
         print(s4, "フラッグがSameList内に存在")
     else:
         target_strength_info = max_strength
+        position_type = "LIMIT"
 
-    # if min_strength["strength_info"]["line_strength"] == -1:
-    #     # フラッグ形状がある場合、最小（フラッグの場合は-1となっており、これは最小値（突破）を意味する）を持つ情報でオーダー
-    #     target_strength_info = min_strength#
-    #     print(s4, "フラッグがSameList内に存在")
-    # else:
-    #     # それ以外は、最大のストレングス（抵抗線としての強さ）を採用
-    #     target_strength_info = max_strength
     print(s4, "オーダー対象", target_strength_info)
     main_order_base = cf.order_base(cf.now_price())
     main_order_base['target'] = target_strength_info['line_base_info']['line_base_price']
     main_order_base['tp'] = 0.3  # 0.09  # LCは広め
     main_order_base['lc'] = target_strength_info["strength_info"]["lc"]  # * line_strength  # 0.09  # LCは広め
-    main_order_base['type'] = 'LIMIT'
+    main_order_base['type'] = position_type  # 'LIMIT'
     main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
     main_order_base['priority'] = target_strength_info['strength_info']['priority']
     main_order_base['units'] = main_order_base['units'] * 1
