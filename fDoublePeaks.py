@@ -483,18 +483,18 @@ def DoublePeak_predict(dic_args):
         # print(sum(d['gap'] for d in temp_inspection_peaks))
 
         if lower_gap_total - upper_gap_total > turn_gap * 1.3:
-            print(t6, "3回折り返し相当の下がりあり（これ以上下がらない状態）")
+            print(t6, "3回折り返し相当の下がりあり（これ以上下がらない状態）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap)
             double_top_strength = 1
             double_top_strength_memo = double_top_strength_memo + ", 下がり切り" + str(upper_lower_gap) + str(turn_gap)
         else:
-            print(t6, "突破形状維持（3回折り返し以内の下がり、もっと下がる）")
+            print(t6, "突破形状維持（3回折り返し以内の下がり、もっと下がる）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap)
             double_top_strength = -1
             double_top_strength_memo = double_top_strength_memo + ", 突破(より下)"+ str(upper_lower_gap) + str(turn_gap)
     else:
         # 直近が登り方向の場合、折り返し基準のflop3は下がり。その前が下がりメインの場合、下がりきっていると思われる。
         # flop3以前の、最も低い値を算出（その時刻を算出）
         min_index = min(enumerate(temp_inspection_peaks), key=lambda x: x[1].get('peak', float('-inf')))[0]
-        # print(min_index, temp_inspection_peaks[min_index])
+        print(min_index, temp_inspection_peaks[min_index])
         temp_inspection_peaks = temp_inspection_peaks[:min_index]  # 最大値までの範囲で
         lower_peaks = [item for item in temp_inspection_peaks if item["direction"] == -1]  # Lower側
         lower_gap_total = sum(d['gap'] for d in lower_peaks)
@@ -502,11 +502,11 @@ def DoublePeak_predict(dic_args):
         upper_gap_total = sum(d['gap'] for d in upper_peak)
         upper_lower_gap = round(upper_gap_total - lower_gap_total, 3)
         if upper_gap_total - lower_gap_total> turn_gap * 1.5:
-            print(t6, "3回折り返し相当の上がりあり（これ以上上がらない状態）")
+            print(t6, "3回折り返し相当の上がりあり（これ以上上がらない状態）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap)
             double_top_strength = 1
             double_top_strength_memo = double_top_strength_memo + ", 上がり切り" + str(upper_lower_gap) + str(turn_gap)
         else:
-            print(t6, "突破形状維持（3回折り返し以内の上がり、もっと上がる）")
+            print(t6, "突破形状維持（3回折り返し以内の上がり、もっと上がる）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap)
             double_top_strength = -1
             double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
     # 追加の検討要素②　ターンで突発的な足がある場合、突破しにくいのでは、という判定
@@ -530,7 +530,8 @@ def DoublePeak_predict(dic_args):
             main_order['target'] = turn['peak']
             main_order['tp'] = 0.3
             main_order['lc'] = 0.15  # * line_strength  # 0.09  # LCは広め
-            main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            # main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = latest['direction']  # 突破方向
             main_order['priority'] = 2  # ほかので割り込まれない
@@ -545,7 +546,8 @@ def DoublePeak_predict(dic_args):
             main_order['tp'] = 0.3
             # main_order['lc'] = 0.22  # * line_strength  # 0.09  # LCは広め
             main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
-            main_order['type'] = 'STOP'  # 順張り
+            # main_order['type'] = 'STOP'  # 順張り
+            main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = latest['direction']  # 突破方向
             main_order['priority'] = 2  #
@@ -554,7 +556,7 @@ def DoublePeak_predict(dic_args):
     else:
         # ストレングスが抵抗形状の場合
         if confidence == 1:
-            # 【突破形状】従来想定の突破形状
+            # 従来想定の突破形状の未遂（抵抗）
             main_order = copy.deepcopy(order_base_info)
             main_order['target'] = turn['peak']
             main_order['tp'] = 0.3
@@ -567,7 +569,7 @@ def DoublePeak_predict(dic_args):
             main_order['units'] = order_base_info['units'] * 1
             main_order['name'] = "NOT突破（突破形状だが突発含み）"
         else:
-            # 【突破形状】従来想定より、リバーの動きが速い
+            # 従来想定より、リバーの動きが速いの未遂（抵抗）
             double_top_strength = 1  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
             main_order = copy.deepcopy(order_base_info)
             # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提

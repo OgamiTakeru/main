@@ -131,12 +131,12 @@ def inspection_if_include_large_variations(block_ans):
         # 自分自身を、未達カウントするため注意が必要
         smaller_body = row['body_abs']
         if base_body > body_base_min:
-            if smaller_body / base_body < 0.55:
-                # print(s6, "Baseが大きめといえる", smaller_body / base_body , "size", base_body)
+            if smaller_body / base_body < 0.561:
+                # print(s6, "Baseが大きめといえる", smaller_body / base_body , "size", base_body, row['time_jp'])
                 counter = counter + 1
             else:
                 pass
-                # print(s6, "自身より大き目（比率）", smaller_body / base_body)
+                # print(s6, "自身より大き目（比率）", smaller_body / base_body, row['time_jp'])
         else:
             pass
             # print(s6, "自身と同レベルでサイズが大き目")

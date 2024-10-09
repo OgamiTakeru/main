@@ -568,7 +568,7 @@ class order_information:
         :return:         print(" ロスカ変更関数", self.lc_change_dic, self.t_pl_u,self.t_state)
         """
         # print("  ★LC＿Change実行関数")
-        if len(self.lc_change_dic) == 0 or self.t_state != "OPEN" or self.t_time_past_sec < 60:
+        if len(self.lc_change_dic) == 0 or self.t_state != "OPEN" or self.t_time_past_sec < 4 * 5 * 60:  # 足数×〇分足×秒
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
             return 0
 

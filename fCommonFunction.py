@@ -30,8 +30,8 @@ def order_base(now_prie):
             "name": "",
             "lc_change": [
                 # {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
-                {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": -0.2},
-                {"lc_change_exe": True, "lc_trigger_range": 0.05, "lc_ensure_range": -0.03},
+                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.1},
+                {"lc_change_exe": True, "lc_trigger_range": 0.048, "lc_ensure_range": 0.023},
                 {"lc_change_exe": True, "lc_trigger_range": 0.08, "lc_ensure_range": 0.01},
                 {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.07},
                 {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.10},
@@ -178,7 +178,7 @@ def information_fix(dic_args):
         print(s, "turn", peaks[2])
         print(s, "flop3", peaks[2])
         print(s, "すべて")
-        gene.print_arr(peaks, 5)
+        # gene.print_arr(peaks, 5)
 
     # 以下はパラメータ用（あまり使っていない）
     if "params" in dic_args:  # paramsが引数の中にある場合 (検証モードや条件切り替え等で利用）

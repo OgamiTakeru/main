@@ -761,10 +761,10 @@ def judge_strength_from_predict_line_based_all_same_price_list(dic_args):
     #  predict_line_listは添え字０から現在価格から遠いほうに並んでいる。その為、同値のストレングスがある場合、遠いほう（添え字が０に近い）が選ばれる
     max_index, max_strength = max(enumerate(predict_line_info_list[:]), key=lambda x: x[1]["strength_info"]["line_strength"])
     min_index, min_strength = min(enumerate(predict_line_info_list[:]), key=lambda x: x[1]["strength_info"]["line_strength"])  # 念のために取得
-    flag_strength = [d for d in predict_line_info_list if d["strength_info"]["line_strength"] == -1]  # フラッグ形状の場合はこれが存在。
+    flag_strength = [d for d in predict_line_info_list if d["strength_info"]["line_strength"] == -1]  # フラッグ形状の場合はこれが存在
 
     if len(flag_strength) != 0:
-        target_strength_info = flag_strength
+        target_strength_info = flag_strength[0]  # flag_strength は配列のため、要素としたいため、[0]とする
         print(s4, "フラッグがSameList内に存在")
     else:
         target_strength_info = max_strength

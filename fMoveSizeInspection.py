@@ -79,8 +79,8 @@ def cal_move_size(dic_args):
         # print(item)
         if item['count'] <= 3:
             range_counter = range_counter + 1
-            print("Out")
-    print("Count=", range_counter)
+            # print("Out")
+    # print("Count=", range_counter)
     if range_counter == 4:
         range_flag = True
         # print("直近ピーク4回が全て短い⇒動きが少ない")
