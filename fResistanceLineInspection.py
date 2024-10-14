@@ -229,6 +229,7 @@ def judge_line_strength_based_each_same_price_list(same_price_list, peaks, base_
         else:
             line_position_strength = 0
             print(s6, "最高ではないLine(", base_price, ")")
+
     # ■同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
     if len_of_same_price_list == 1:
         # ■■同一価格が一つの場合：(シンプルダブルトップ　or カルデラ等）
@@ -256,6 +257,10 @@ def judge_line_strength_based_each_same_price_list(same_price_list, peaks, base_
             else:
                 line_strength = 0.9  # 3
                 remark = "単強め"
+        else:
+            # 過去最高店で、他にない（あるの・・？）
+            line_strength = 0.01
+            remark = "最高単一ポイント（要チェック）"
     # elif len_of_same_price_list == 2:
     #     # ■■同一価格が２個ある場合
     #     for i in range(len_of_same_price_list):
@@ -774,7 +779,7 @@ def judge_strength_from_predict_line_based_all_same_price_list(dic_args):
     print(s4, "オーダー対象", target_strength_info)
     main_order_base = cf.order_base(cf.now_price())
     main_order_base['target'] = target_strength_info['line_base_info']['line_base_price']
-    main_order_base['tp'] = 0.3  # 0.09  # LCは広め
+    main_order_base['tp'] = 0.5  # 0.09  # LCは広め
     main_order_base['lc'] = target_strength_info["strength_info"]["lc"]  # * line_strength  # 0.09  # LCは広め
     main_order_base['type'] = position_type  # 'LIMIT'
     main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']

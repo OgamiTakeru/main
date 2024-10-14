@@ -386,6 +386,7 @@ def DoublePeak_predict(dic_args):
         t_count = params['t_count']
         r_count_min = params['r_count_min']  #
         r_count_max = params['r_count_max']  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
+        r_body_max = 0.1
         l_count = params['l_count']
         flop3_size = 0.12
     else:
@@ -397,7 +398,8 @@ def DoublePeak_predict(dic_args):
         lr_max_extend = 5
         t_count = 5
         r_count_min = 2  #
-        r_count_max = 7  # リバーは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。6
+        r_count_max = 7  # リバーは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。（突破できなそう）
+        r_body_max = 0.1  # リバーが１０pips以上あるとこれも戻しが強すぎるため、突破できないかも。
         l_count = 2
         flop3_size = 0.15
 
@@ -414,11 +416,11 @@ def DoublePeak_predict(dic_args):
     const_flag = False
     if latest['count'] >= l_count:
         if turn['count'] >= t_count:
-            if river['gap'] >= 0.011 and r_count_min <= river['count'] <= r_count_max:
+            if river['gap'] >= 0.011 and r_count_min <= river['count'] <= r_count_max and river['gap'] < r_body_max:
                 const_flag = True
                 c = gene.str_merge("サイズ感は成立", turn['count'], river['count'], latest['count'], river['gap'])
             else:
-                c = gene.str_merge("riverのサイズ、カウントが規定値以下", river['count'], river['gap'])
+                c = gene.str_merge("riverのサイズ、カウントが規定値外れ", river['count'], river['gap'])
         else:
             c = gene.str_merge("turnのカウントが規定値以下", turn['count'])
     else:
@@ -466,13 +468,14 @@ def DoublePeak_predict(dic_args):
     turn_peak = turn['peak']
     df_r_before_turn = df_r[df_r['time_jp'] < turn_time]
     turn_gap = turn['gap']
-    temp_inspection_peaks = peaks[flop3_subscript:]  # flop以降のピークスすべて
+    temp_inspection_peaks = peaks[flop3_subscript:]  # flop以前のピークスすべて
+    memo2 = ""
     # gene.print_arr(temp_inspection_peaks, 6)
     if latest['direction'] == -1:
         # 直近が下り方向の場合、折り返し基準のflop3は下がり。その前が下がりメインの場合、下がりきっていると思われる。
         # flop3以前の、最も高い値を算出（その時刻を算出）
         max_index = max(enumerate(temp_inspection_peaks), key=lambda x: x[1].get('peak', float('-inf')))[0]
-        # print(max_index, temp_inspection_peaks[max_index])
+        print(max_index, temp_inspection_peaks[max_index])
         temp_inspection_peaks = temp_inspection_peaks[:max_index]  # 最大値までの範囲で
         lower_peaks = [item for item in temp_inspection_peaks if item["direction"] == -1]  # Lower側
         lower_gap_total = sum(d['gap'] for d in lower_peaks)
@@ -482,7 +485,14 @@ def DoublePeak_predict(dic_args):
         # print(lower_gap_total - upper_gap_total)
         # print(sum(d['gap'] for d in temp_inspection_peaks))
 
-        if lower_gap_total - upper_gap_total > turn_gap * 1.3:
+        # RiverピークとMaxの間に何個下向きのピークが存在するかをカウント
+        gene.print_arr(temp_inspection_peaks[:max_index])
+        peak_count_peaks = [item for item in temp_inspection_peaks[:max_index] if item["direction"] == -1]  # Lower側
+        peak_count = len(peak_count_peaks)
+        memo2 = "," + str(peak_count) + "ピーク有"
+        print(peak_count)
+
+        if lower_gap_total - upper_gap_total > turn_gap * 1.3 and lower_gap_total - upper_gap_total >= 0.28:
             print(t6, "3回折り返し相当の下がりあり（これ以上下がらない状態）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap)
             double_top_strength = 1
             double_top_strength_memo = double_top_strength_memo + ", 下がり切り" + str(upper_lower_gap) + str(turn_gap)
@@ -501,12 +511,20 @@ def DoublePeak_predict(dic_args):
         upper_peak = [item for item in temp_inspection_peaks if item["direction"] == 1]
         upper_gap_total = sum(d['gap'] for d in upper_peak)
         upper_lower_gap = round(upper_gap_total - lower_gap_total, 3)
+
+        # RiverピークとMinの間に何個上向きのピークが存在するかをカウント
+        gene.print_arr(temp_inspection_peaks[:min_index])
+        peak_count_peaks = [item for item in temp_inspection_peaks[:min_index] if item["direction"] == 1]  # Lower側
+        peak_count = len(peak_count_peaks)
+        memo2 = "," + str(peak_count) + "ピーク有"
+        print(peak_count)
+
         if upper_gap_total - lower_gap_total> turn_gap * 1.5:
-            print(t6, "3回折り返し相当の上がりあり（これ以上上がらない状態）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap)
+            print(t6, "3回折り返し相当の上がりあり（これ以上上がらない状態）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap, upper_gap_total - lower_gap_total)
             double_top_strength = 1
             double_top_strength_memo = double_top_strength_memo + ", 上がり切り" + str(upper_lower_gap) + str(turn_gap)
         else:
-            print(t6, "突破形状維持（3回折り返し以内の上がり、もっと上がる）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap)
+            print(t6, "突破形状維持（3回折り返し以内の上がり、もっと上がる）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap, upper_gap_total - lower_gap_total)
             double_top_strength = -1
             double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
     # 追加の検討要素②　ターンで突発的な足がある場合、突破しにくいのでは、という判定
@@ -519,71 +537,79 @@ def DoublePeak_predict(dic_args):
         double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
 
     # ■オーダーの作成を実施する
+    # 価格の設定（現在価格、LC、等）
     now_price = cf.now_price()  # 現在価格の取得
+    # lc_target_price =   # 想定されるLCの理想価格（Rangeではない）
     order_base_info = cf.order_base(now_price)  # オーダーの初期辞書を取得する(nowPriceはriver['latest_price']で代用)
     # オーダーの可能性がある場合、オーダーを正確に作成する
     if double_top_strength < 0:
-        # ストレングスが突破形状の場合
+        # ストレングスが突破形状の場合(マイナス値）
         if confidence == 1:
             # 【突破形状】従来想定の突破形状
             main_order = copy.deepcopy(order_base_info)
             main_order['target'] = turn['peak']
-            main_order['tp'] = 0.3
-            main_order['lc'] = 0.15  # * line_strength  # 0.09  # LCは広め
+            main_order['tp'] = 0.5
+            main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
             # main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
-            # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = latest['direction']  # 突破方向
             main_order['priority'] = 2  # ほかので割り込まれない
             main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "突破形状（通常）"
+            main_order['name'] = "突破形状（通常）"+ memo2
         else:
             # 【突破形状】従来想定より、リバーの動きが速い
+            lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
+            lc_range_temp = abs(now_price - lc_price_temp)  # 従来の設定ロスカ幅(計算用）
+            lc = gene.cal_at_least(0.07, lc_range_temp)
+
             double_top_strength = -0.9  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
             main_order = copy.deepcopy(order_base_info)
             # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
             main_order['target'] = now_price + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
-            main_order['tp'] = 0.3
-            # main_order['lc'] = 0.22  # * line_strength  # 0.09  # LCは広め
-            main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
+            main_order['tp'] = 0.5
+            main_order['lc'] = lc  #
+            # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
             # main_order['type'] = 'STOP'  # 順張り
             main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
-            # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = latest['direction']  # 突破方向
             main_order['priority'] = 2  #
             main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "突破形状（latest大）"
+            main_order['name'] = "突破形状（latest大）" + memo2
     else:
         # ストレングスが抵抗形状の場合
         if confidence == 1:
             # 従来想定の突破形状の未遂（抵抗）
             main_order = copy.deepcopy(order_base_info)
             main_order['target'] = turn['peak']
-            main_order['tp'] = 0.3
-            main_order['lc'] = 0.15  # * line_strength  # 0.09  # LCは広め
+            main_order['tp'] = 0.5
+            main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
             # main_order['type'] = 'LIMIT'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
             main_order['priority'] = 2  # ほかので割り込まれない
             main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "NOT突破（突破形状だが突発含み）"
+            main_order['name'] = "NOT突破（突破形状だが）" + memo2
         else:
             # 従来想定より、リバーの動きが速いの未遂（抵抗）
             double_top_strength = 1  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
             main_order = copy.deepcopy(order_base_info)
+            lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
+            lc_range_temp = abs(now_price - lc_price_temp)  # 従来の設定ロスカ幅(計算用）
+            lc = gene.cal_at_least(0.07, lc_range_temp)
+
             # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
             main_order['target'] = now_price + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
-            main_order['tp'] = 0.3
-            # main_order['lc'] = 0.22  # * line_strength  # 0.09  # LCは広め
-            main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
+            main_order['tp'] = 0.5
+            main_order['lc'] = lc
+            # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
             # main_order['type'] = 'LIMIT'  # 順張り
             main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
             main_order['priority'] = 2  #
             main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "NOT突破（latest大の突破形状だが突破含み）"
+            main_order['name'] = "NOT突破（latest大の突破形状だが）" + memo2
 
     return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "take_position_flag": take_position_flag,
@@ -592,215 +618,3 @@ def DoublePeak_predict(dic_args):
         "double_top_strength_memo": double_top_strength_memo,
     }
 
-
-# def peakPatternMain(df_r):
-#     # peaksを算出しておく
-#     peaks_info = p.peaks_collect_main(df_r[:90], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
-#     peaks = peaks_info['all_peaks']
-#     print("  <対象>")
-#     print("  RIVER", peaks[0])
-#     print("  TURN ", peaks[1])
-#     print("  FLOP3", peaks[2])
-#
-#     # 初期構想のDoubleTopを検討する
-#     inspection_params = {"margin": 0.05, "d": -1, "sl": -1}  # d=expected_direction, sl=Stop(1)orLimit(-1)
-#     params = {"tf_ratio_min": 0, "tf_ratio_max": 0.45, "rt_ratio_min": 0.4, "rt_ratio_max": 1,
-#               "f3_count": 5, "t_count_min": 2, "t_count_max": 4, "r_count": 2}
-#     double_top_ans = DoublePeak({"df_r": df_r, "inspection_params": inspection_params, "params": params, "peaks": peaks})
-#     if double_top_ans['take_position_flag']:
-#         print(double_top_ans['exe_orders'])
-#
-#     # ガタガタと進んでいくケース
-#     inspection_params = {"margin": 0.05, "d": -1, "sl": -1}  # d=expected_direction, sl=Stop(1)orLimit(-1)
-#     params = {"tf_ratio_min": 0.55, "tf_ratio_max": 1, "rt_ratio_min": 0.4, "rt_ratio_max": 1.2,
-#               "f3_count": 5, "t_count_min": 3, "t_count_max": 5, "r_count": 3}
-#     jagged_move_ans = DoublePeak({"df_r": df_r, "inspection_params": inspection_params, "params": params, "peaks": peaks})
-#     if jagged_move_ans['take_position_flag']:
-#         print(jagged_move_ans['exe_orders'])
-#
-#     if double_top_ans['take_position_flag'] or jagged_move_ans['take_position_flag']:
-#         print("  ★どちらかが成立",double_top_ans['take_position_flag'], jagged_move_ans['take_position_flag'])
-#         if double_top_ans['take_position_flag']:
-#             order = double_top_ans['exe_orders']
-#             print(" ダブルトップが成立", double_top_ans['take_position_flag'])
-#             tk.line_send("ダブルトップが成立", order)
-#         else:
-#             order = jagged_move_ans['exe_orders']
-#             print(" ジグザグムーブが成立", jagged_move_ans['exe_orders'])
-#             tk.line_send("ジグザグムーブが成立", order)
-
-# def triplePeaks_pattern(*dic_args):
-#     """
-#     引数は配列で受け取る。今は最大二つを想定。
-#     引数１つ目：ローソク情報(逆順[直近が上の方にある＝時間降順])データフレームを受け取り、範囲の中で、ダブルトップ直前ついて捉える
-#     引数２つ目はループ検証時のパラメータ群(ループ検証の時のみ入ってくる）
-#     例→params_arr = [
-#             {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
-#             {"river_turn_ratio_min": 1, "river_turn_ratio": 1.3, "turn_flop_ratio": 0.6, "count": 2, "gap_min": 0, "gap": 0.02, "margin": 0.05, "sl": 1, "d": 1},
-#         ]
-#     理想形 (ダブルトップ到達前）
-#
-#     :param df_r:
-#     :return:　必須最低限　{"take_position_flag": boolean} の返却は必須。さらにTrueの場合注文情報が必要。
-#     """
-#     # print(dic_args)
-#     print("■3つの力判定")
-#     df_r_part = dic_args[0][:90]  # 検証に必要な分だけ抜き取る
-#     peaks_info = p.peaks_collect_main(df_r_part, 3)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
-#     peaks = peaks_info['all_peaks']
-#
-#     # 必要なピークを出す (どれをRiverにするかを判断する）
-#     # 一番直近のピークをlatestとするが、
-#     # ①latestをriverとして扱う場合 (未確定のriverを扱う）。ただしlatestのCount＝２でないと毎回実施になってしまう)
-#     # ②形が確定したriverを扱う場合　でスイッチできるようにする
-#     latest_is_river = False
-#     if latest_is_river:
-#         # ①形の決まっていないlatestをriverとして扱う場合
-#         latest = peaks[0]
-#         river = peaks[0]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-#         turn = peaks[1]  # 注目するポイント（ターンと呼ぶ）
-#         flop3 = peaks[2]  # レンジ判定用（プリフロップと呼ぶ）
-#     else:
-#         #　②形が確定したriverを扱う場合
-#         latest = peaks[0]  #
-#         river = peaks[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-#         turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
-#         flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
-#     peaks_times = "◇River:" + \
-#                   f.delYear(river['time']) + "-" + f.delYear(river['time_old']) + "(" + str(river['direction']) + ")" \
-#                                                                                                                   "◇Turn:" + \
-#                   f.delYear(turn['time']) + "-" + f.delYear(turn['time_old']) + "(" + str(turn['direction']) + ")" \
-#                                                                                                                "◇FLOP三" + \
-#                   f.delYear(flop3['time']) + "-" + f.delYear(flop3['time_old']) + "(" + str(flop3['direction']) + ")"
-#     print("  <対象>")
-#     print("  RIVER", river)
-#     print("  TURN ", turn)
-#     print("  FLOP3", flop3)
-#
-#     # (1) ターンを基準に
-#     col = "gap"  # 偏差値を使う場合はstdev　gapを使うことも可能
-#     # ⓪リバーのターンに対する割合を取得（〇%に小さくなっている事を想定）
-#     size_ans = size_compare(river[col], turn[col], 0.1, 0.3)
-#     river_turn_gap = round(size_ans['gap'], 3)
-#     river_turn_ratio = size_ans['size_compare_ratio']
-#     # ①ターンのフロップ３に対する割合を取得（〇%に小さくなっていることを想定）
-#     size_ans = size_compare(turn[col], flop3[col], 0.1, 0.3)
-#     turn_flop3_gap = round(size_ans['gap'], 3)
-#     turn_flop3_ratio = size_ans['size_compare_ratio']
-#
-#     # (2)条件の設定
-#     # フロップターンの関係
-#     tf1 = 0.6
-#     tf2 = 0.7
-#     tf3 = 1.0
-#     tf4 = 1.5
-#     # ターンリバーの関係
-#     tr1_1 = 0.6
-#     tr1_2 = 0.9
-#     tr1_3 = 1.1
-#     tr1_4 = 1.4
-#     #
-#     tr3_1 = 0.3
-#     tr3_2 = 1.0
-#     #
-#     tr4_1 = 0.9
-#     tr4_2 = 1.5
-#
-#     # (3)判定処理  （マージン、ポジション方向、タイプ、TP、LCを取得する）
-#     # ①リバーはターン直後のみを採用。
-#     if latest['count'] != 2:
-#         print("   River 2以外の為スキップ")
-#         return {"take_position_flag": False}
-#     # ②フロップターンと、リバーターンの関係で調査する(複雑注意)
-#     if turn_flop3_ratio <= tf1:  # ◆微戻りパターン(<40)。順方向に伸びる、一番狙いの形状の為、順張りしたい。
-#         # フロップ３とターンの関係
-#         #     /\　←微戻り
-#         #    /  　
-#         #   /
-#         if river_turn_ratio <= tr1_1:  # ◇0-60 マージン有、順張りのリバー同方向にオーダー。一番いい形
-#             #     /\/ ↑　　　←この形(もう少しリバーの戻りが弱い状態）
-#             #    /  　
-#             #   /
-#             p_type = "t微戻り→r微戻り"
-#         elif river_turn_ratio <= tr1_2:  # ◇60-90 順張りのリバー同方向にオーダー。ただしMargin余裕があれば。
-#             #     /\/ ↑　←この形（リバーのが殆ど上まで戻っている状態）
-#             #    /  　
-#             #   /
-#             p_type = "t微戻り→rダブルトップ"
-#         elif river_turn_ratio <= tr1_3:  # ◇90-110 待機
-#             #        /　↑↓？　　 ←ダブルトップを超えた直後を想定
-#             #     /\/
-#             #    /  　
-#             p_type = "t微戻り→r戻り微オーバー"
-#         elif river_turn_ratio <= tr1_4:  # ◇110-130 即順張りのリバー同方向にオーダー。ジグザグトレンドと推定
-#             #         / ↑　　　　←結構、ダブルトップを超えた直後を想定
-#             #        /
-#             #     /\/
-#             #    /  　
-#             p_type = "t微戻り→r戻り強オーバー"
-#         else:  # 130以上 待機　（伸びすぎていて、失速の可能性もあるため）
-#             #         / ←これが大きすぎる場合
-#             #        /
-#             #     /\/
-#             #    /
-#             p_type = "t微戻り→r戻り超強オーバー"
-#     elif turn_flop3_ratio <= tf2:  # ◆待機パターン(<70)。戻が半端なため。
-#         #     /\ ←この形（リバーのが殆ど上まで戻っている状態）
-#         #    /  \　
-#         #   /
-#         p_type = "t中途半端戻り"
-#     elif turn_flop3_ratio <= tf3:  # ◆深戻りパターン(<100)。旗形状やジグザグトレンド(リバー同方向)と推定。
-#         #     /\ ←この形（リバーのが殆ど上まで戻っている状態）
-#         #    /  \　
-#         #   /    \
-#         #  /
-#         if river_turn_ratio <= tr3_1:  # ◇0-30 逆張りのリバー逆方向。旗形状(大きく上がらない)等のレンジ。ワンチャン、ジグトレ
-#             #     /\　　　↓
-#             #    /  \　
-#             #   /    \/
-#             #  /
-#             p_type = "tやや深戻り→r微戻り"
-#         elif river_turn_ratio <= tr3_2:  # ◇30-100 逆張りのリバー逆方向にオーダー（ターゲットはターン開始位置）ジグザグトレンドと推定
-#             #     /\
-#             #    /  \  /  ↑
-#             #   /    \/
-#             #  /
-#             p_type = "tやや深戻り→rダブルトップ以下"
-#         else:  # ◇100-
-#             #            /
-#             #     /\    /
-#             #    /  \  /  ↑
-#             #   /    \/
-#             #  /
-#             p_type = "tやや深戻り→r戻りオーバー"
-#     elif turn_flop3_ratio <= tf4:  # ◆戻り大パターン(<150)。ジグザグトレンド(リバー逆方向)の入口と推定。
-#         #     /\
-#         #    /  \　
-#         #   /    \
-#         #         \ ←　ターンが長い
-#         if river_turn_ratio <= tr4_1:  # ◇0-90 逆張りのリバー逆方向にオーダー（ターン起点手前）。ジグザグトレンド（リバー逆）と推定
-#             #     /\
-#             #    /  \    /　↓　　　　
-#             #   /    \  /
-#             #         \/
-#             p_type = "t強戻り→r戻り"
-#         elif river_turn_ratio <= tr4_2:  # ◇90-150 即順リバー同方向。リバー強く、ジグザグするにせよ、リバー方向に行くと推定。
-#             #              /
-#             #     /\      /
-#             #    /  \    /　　　　　
-#             #   /    \  /
-#             #         \/
-#             p_type = "t強戻り→r強戻り"
-#         else:
-#             p_type = "t強戻り→r強すぎる戻り"
-#     else:  # ◆待機パターン。戻りが強すぎるため。
-#         p_type = "t強戻りすぎる"
-#     print(p_type)
-#     print("   情報 tf:", turn_flop3_ratio, "(", turn_flop3_gap, ")", "rt:", river_turn_ratio, "(", river_turn_gap, ")",
-#           "f_gap:", flop3['gap'], "t_gap:", turn['gap'], "r_gap:", river['gap'])
-#
-#
-#     return {
-#         "take_position_flag": False,
-#         "exe_orders":0,
-#     }

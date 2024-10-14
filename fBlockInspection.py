@@ -151,6 +151,57 @@ def inspection_if_include_large_variations(block_ans):
     return include_large
 
 
+def inspection_if_include_sustainable_large_variations(block_ans):
+    """
+    対象となる範囲のデータフレームをループし（ブロックを探すのと並行してやるので、二回ループ作業してることになるが）
+    比較的大きなBodyを持つ足（７．５ぴっぷす）を何個含むかを判定する。３割程度が大きい場合、急変動とみなす（その後は戻る。突破しない）
+    """
+    # 大きい順に並べる
+    s6 = "      "
+    # 今後作成。
+
+    # target_df = block_ans['data']
+    # sorted_df = target_df.sort_values(by='body_abs', ascending=False)
+    # max_body = sorted_df["body_abs"].max()
+    # # print(s6, "対象となるデータフレーム")
+    # # print(max_body)
+    # # print(target_df)
+    # # print(sorted_df.iloc[0]['body_abs'], sorted_df.iloc[0]['time_jp'])
+    # # print(sorted_df.iloc[1]['body_abs'], sorted_df.iloc[1]['time_jp'])
+    #
+    # body_base_min = 0.094
+    # base_body = max_body
+    # counter = 0
+    # if base_body < body_base_min:
+    #     # ベース自身が0.13以上ない場合は、平凡⇒終了
+    #     # print(s6, "自身が小さめ")
+    #     return 0
+    #
+    # for index, row in sorted_df.iterrows():
+    #     # 自分自身が、絶対的に見て0.13以上と大きく、他の物より約2倍ある物を探す。（自分だけが大きければ、突然の伸び＝戻る可能性大）
+    #     # 自分自身を、未達カウントするため注意が必要
+    #     smaller_body = row['body_abs']
+    #     if base_body > body_base_min:
+    #         if smaller_body / base_body < 0.561:
+    #             # print(s6, "Baseが大きめといえる", smaller_body / base_body , "size", base_body, row['time_jp'])
+    #             counter = counter + 1
+    #         else:
+    #             pass
+    #             # print(s6, "自身より大き目（比率）", smaller_body / base_body, row['time_jp'])
+    #     else:
+    #         pass
+    #         # print(s6, "自身と同レベルでサイズが大き目")
+    # if (len(sorted_df) - 1) - counter <= 1:
+    #     # 二つ程度が大きい場合、突発の伸びがあったと推定（急伸は戻る可能性大）
+    #     # print(s6, "急伸の足を含む", (len(sorted_df) - 1) - counter)
+    #     include_large = True
+    # else:
+    #     # print(s6, "急伸とみなさない")
+    #     include_large = False
+
+    return True
+
+
 def each_block_inspection(data_df_origin):
     """
     渡された範囲で、何連続で同方向に進んでいるかを検証する
@@ -274,6 +325,7 @@ def each_block_inspection(data_df_origin):
         "data_remain": ans_other_df,  # 対象以外の残りのデータフレーム
     }
     ans_dic['include_large'] = inspection_if_include_large_variations(ans_dic)
+    ans_dic['include_sustainable _large'] = inspection_if_include_sustainable_large_variations(ans_dic)
 
     # 返却する
     return ans_dic
@@ -479,6 +531,7 @@ def each_block_inspection_skip(data_df_origin) -> dict[str, any]:
 
     # ■■　突発的な伸びを含むかを検証し、追記する
     ans_dic['include_large'] = inspection_if_include_large_variations(ans_dic)
+    ans_dic['include_sustainable _large'] = inspection_if_include_sustainable_large_variations(ans_dic)
 
     # 返却する
     if f.dict_compare(ans_dic, ans_dic):

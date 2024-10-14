@@ -8,7 +8,7 @@ import fGeneric as gene
 import classOanda
 from collections import OrderedDict
 
-basic_unit = 1000
+basic_unit = 10000
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
 
@@ -32,7 +32,7 @@ def order_base(now_prie):
                 # {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
                 {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.1},
                 {"lc_change_exe": True, "lc_trigger_range": 0.048, "lc_ensure_range": 0.023},
-                {"lc_change_exe": True, "lc_trigger_range": 0.08, "lc_ensure_range": 0.01},
+                {"lc_change_exe": True, "lc_trigger_range": 0.08, "lc_ensure_range": 0.045},
                 {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.07},
                 {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.10},
                 {"lc_change_exe": True, "lc_trigger_range": 0.20, "lc_ensure_range": 0.16},
