@@ -465,16 +465,16 @@ def inspection_warp_up_and_make_order(df_r):
         # latestが2個の時に実行されるもの
         # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
         print(s, "■Latest基準の同価格Strengthの調査")
-        orders_and_evidence = ri.judge_strength_from_predict_line_based_all_same_price_list({"df_r": df_r, "peaks": peaks})  # 調査！
+        orders_and_evidence = ri.main_line_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
         # gene.print_arr(orders_and_evidence['evidence'], 2)
 
         # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
         print(s, "■river方向（逆）の強度の確認")
-        river_peak_line_strength = ri.judge_strength_river_peak_line({"df_r": df_r, "peaks": peaks})
+        river_peak_line_strength = ri.main_river_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
 
         # ■ダブルトップ突破型に関する情報を取得する
         print(s, "■DoubleTOpBreakの調査")
-        break_double_top_strength_orders_and_evidence = ri.judge_strength_double_top_break({"df_r": df_r, "peaks": peaks})
+        break_double_top_strength_orders_and_evidence = dp.main_double_peak_inspection_and_order({"df_r": df_r, "peaks": peaks})
         # print(s, break_double_top_strength_orders_and_evidence)
 
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
@@ -524,7 +524,7 @@ def inspection_warp_up_and_make_order(df_r):
         print(s, "■Latest3回の場合の実行")
         print(s, "■DoubleTOpBreakの調査(latest3)")
         df_r_first_delete = df_r[0:]
-        break_double_top_strength_orders_and_evidence = ri.judge_strength_double_top_break({"df_r": df_r_first_delete})
+        break_double_top_strength_orders_and_evidence = dp.main_double_peak_inspection_and_order({"df_r": df_r_first_delete})
         print(s, break_double_top_strength_orders_and_evidence)
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
             # DoubleTopの判定が最優先 (単品）
@@ -534,8 +534,8 @@ def inspection_warp_up_and_make_order(df_r):
                 [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
 
     print(" ■検証終了")
-    print(flag_and_orders['take_position_flag'])
-    gene.print_arr(flag_and_orders['exe_orders'])
+    # print(flag_and_orders['take_position_flag'])
+    # gene.print_arr(flag_and_orders['exe_orders'])
 
     # プライオリティの追加
     print("おーだー")
@@ -551,7 +551,157 @@ def inspection_warp_up_and_make_order(df_r):
         size_flag = ms.cal_move_size({"df_r": df_r, "peaks": peaks})
         if size_flag['range_flag']:
             # Trueの場合は通常通り
-            tk.line_send("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
+            # tk.line_send("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
+            print("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
+            flag_and_orders['take_position_flag'] = False
+        else:
+            print(" 通常の動き")
+            pass
+    return flag_and_orders
+
+
+def inspection_warp_up_and_make_order_practice(df_r):
+    """
+    主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
+    引数
+    "data": df_r ローソク情報(逆順[直近が上の方にある＝時間降順])のみ。
+
+    :return:
+    　このリターンの値は、そのまま発注に使われる。
+    　本番（main_exe)から呼ばれる場合と、検証(main_analysis)から呼ばれる場合では、返すべき値が異なることに注意。
+    　本番環境は複数のオーダーが可能だが、検証は一つのオーダーのみしか受け付けられないため。
+    　本番環境を行いながらでもテストができるように、辞書配列と辞書を同時に返却する
+    　（辞書は基本的に辞書配列の[0]となる見込み）
+    　返却値は以下の通り
+      return{
+            "take_position_flag": True or False　Trueの場合、オーダーが入る
+            "exe_orders": オーダーの【配列】。複数オーダーが可能な本番環境用
+            "exe_order": オーダーの辞書単品。単品オーダーのみ受付可能な検証環境用（基本、exe_orders[0]でOK？）
+      }
+    """
+    # 返却値を設定しておく　（上書きされない限り、takePositionFlag=Falseのまま進み、返却される）
+    flag_and_orders = {
+        "take_position_flag": False,
+        "exe_orders": [],  # 本番用（本番運用では必須）
+        "exe_order": {}  # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
+    }
+    # 表示のインデント
+    ts = " "
+    s = "  "  # 2個分
+    print(ts, "■調査開始")
+    # 関数が来た時の表示
+    print(df_r.head(1))
+    print(df_r.tail(1))
+    # 各数字やデータを取得する
+    fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
+    peaks = fixed_information['peaks']
+
+    fixed_information_for3 = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
+    peaks_for3 = fixed_information_for3['peaks']
+
+    if peaks[0]['direction'] == peaks_for3[0]['direction']:
+        print("　通常")
+    else:
+        print(" すぐ折り返しが来ている状態（latest3でやるつもりがlatest2で意図しない状態になるやつ")
+
+    print('調査テスト')
+    print(peaks)
+    print(peaks_for3)
+
+    # ■検証とオーダー作成を実行
+    if peaks[0]['count'] == 2:  # 予測なので、LatestがN個続いたときに実行してみる
+        print(s, "■Latest2回の場合の実行")
+        # latestが2個の時に実行されるもの
+        # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
+        print(s, "■Latest基準の同価格Strengthの調査")
+        orders_and_evidence = ri.main_line_strength_inspection_and_order_practice({"df_r": df_r, "peaks": peaks})  # 調査！
+        # gene.print_arr(orders_and_evidence['evidence'], 2)
+
+        # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
+        print(s, "■river方向（逆）の強度の確認")
+        river_peak_line_strength = ri.main_river_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
+
+        # ■ダブルトップ突破型に関する情報を取得する
+        print(s, "■DoubleTOpBreakの調査")
+        break_double_top_strength_orders_and_evidence = dp.main_double_peak_inspection_and_order({"df_r": df_r, "peaks": peaks})
+        # print(s, break_double_top_strength_orders_and_evidence)
+
+        if break_double_top_strength_orders_and_evidence['take_position_flag']:
+            print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)")
+            # DoubleTopの判定が最優先 (単品）
+            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["exe_orders"] = \
+                [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
+        elif orders_and_evidence['take_position_flag']:
+            print(s, "【最終的判断:通常ストレングス(flag含む)】")
+            # シンプルなLineStrengthによるオーダー発行
+            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["exe_orders"] = orders_and_evidence["exe_orders"]
+            # ■■最も強いストレングスが遠い場合、最も強いストレングスに向かう方向へトラリピを設定
+            trid_do = False
+            if trid_do and orders_and_evidence["target_strength"]["strength_info"]["line_strength"] >= 0:  # フラッグではない場合（こっちはフラッグの可能性もあり)
+                # Lineで折り返される判定が前提。（0より低い値 ＝突破方向となり、今回のトラリピの対象外）
+                now_price = cf.now_price()
+                now_price = peaks[0]['peak']
+                main_target_price = orders_and_evidence["target_strength"]["line_base_info"]["line_base_price"]
+                gap = abs(main_target_price - now_price)
+                if gap >= 0.10:
+                    print("トラリピ入ります")
+                    print("strength", orders_and_evidence["target_strength"]["strength_info"]["line_strength"],
+                          main_target_price)
+                    # print(s4, "トラリピ入ります")
+                    # 10pips以上退屈する場合、3pips起きにトラリピを入れていく(オーダーの向きは、Latestの延長のため、latestDirと同様）
+                    margin = 0.02 if peaks[0]['direction'] == 1 else -0.02
+                    plan = {
+                        "decision_price": now_price,
+                        "units": 100,
+                        "start_price": now_price + margin,
+                        "expected_direction": peaks[0]['direction'],
+                        "lc_range": peaks[0]['gap'],
+                        "grid": 0.03,
+                        "num": 1,
+                        # "end_price": main_target_price,
+                        "type": "STOP"
+                    }
+                    trid_orders_finalized = cf.make_trid_order(plan)  # トラリピオーダーの生成（ファイナライズド）
+                    # gene.print_arr(trid_orders_finalized)
+                    flag_and_orders["exe_orders"].extend(trid_orders_finalized)  # ここは配列を足すので、appendではなくextend
+
+    elif peaks[0]['count'] == 3:
+        # latestが3この時に実行されるもの
+        # ■ダブルトップ突破型に関する情報を取得する
+        print(s, "■Latest3回の場合の実行")
+        print(s, "■DoubleTOpBreakの調査(latest3)")
+        df_r_first_delete = df_r[0:]
+        break_double_top_strength_orders_and_evidence = dp.main_double_peak_inspection_and_order({"df_r": df_r_first_delete})
+        print(s, break_double_top_strength_orders_and_evidence)
+        if break_double_top_strength_orders_and_evidence['take_position_flag']:
+            # DoubleTopの判定が最優先 (単品）
+            # tk.line_send("latest3でDoubleTop突破確認")
+            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["exe_orders"] = \
+                [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
+
+    print(" ■検証終了")
+    # print(flag_and_orders['take_position_flag'])
+    # gene.print_arr(flag_and_orders['exe_orders'])
+
+    # プライオリティの追加
+    print("おーだー")
+    print(flag_and_orders["exe_orders"])
+    if len(flag_and_orders["exe_orders"]) >= 1:
+        max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+        flag_and_orders['max_priority'] = max_priority
+        print("max_priority", max_priority)
+        # print(flag_and_orders)
+
+    # テスト
+    if flag_and_orders['take_position_flag']:
+        size_flag = ms.cal_move_size({"df_r": df_r, "peaks": peaks})
+        if size_flag['range_flag']:
+            # Trueの場合は通常通り
+            # tk.line_send("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
+            print("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
             flag_and_orders['take_position_flag'] = False
         else:
             print(" 通常の動き")

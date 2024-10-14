@@ -52,9 +52,9 @@ def order_line_send(class_order_arr, add_info):
             o_memo = "OrderPermissionFalse"
 
     # 送信は一回だけにしておく。
-    tk.line_send("■折返Position！", gl_live, gl_trade_num, "回目(", datetime.datetime.now().replace(microsecond=0), ")",
-                 "トリガー:", info['trigger'], "指定価格", price, "情報:", info['memo'], ",オーダー:", '\n', o_memo,
-                 '\n', "初回時間", gl_first_time, "その他情報⇒", "WL:", add_info['wl_info'])
+    # tk.line_send("■折返Position！", gl_live, gl_trade_num, "回目(", datetime.datetime.now().replace(microsecond=0), ")",
+    #              "トリガー:", info['trigger'], "指定価格", price, "情報:", info['memo'], ",オーダー:", '\n', o_memo,
+    #              '\n', "初回時間", gl_first_time, "その他情報⇒", "WL:", add_info['wl_info'])
     # テスト用
     # peak_information = p.peaks_collect(gl_data5r_df)
     # tops = p.horizon_line_detect(peak_information['tops'])
@@ -93,7 +93,7 @@ def mode1():
 
     # ■検証を実行し、結果を取得する
     # なお{"take_position_flag":Boo, "exe_orders":[], "exe_order":{}, "max_priority":(int) }が返却値の予定
-    inspection_result_dic = im.inspection_warp_up_and_make_order(gl_data5r_df)
+    inspection_result_dic = im.inspection_warp_up_and_make_order_practice(gl_data5r_df)
     print(inspection_result_dic)
 
     # ■ オーダーフラグがない場合は、ここでこの関数は教師終了
@@ -110,7 +110,7 @@ def mode1():
         # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
         if classes_info['max_priority'] > inspection_result_dic['max_priority']:
             # 同じだったら入れ替えたいので、「すでに入力されているものが大きかったら(>)」となる。
-            tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority'], inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
+            # tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority'], inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
             return 0
     # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
     if classes_info['position_exist']:
@@ -122,21 +122,22 @@ def mode1():
                 # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
                 if inspection_result_dic['max_priority'] > classes_info['max_priority']:
                     # 新規が重要オーダー。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
-                    tk.line_send("★ポジションありだがフラッグ発生のため置換", "Pri", inspection_result_dic['max_priority'])
+                    pass
+                    # tk.line_send("★[practice]ポジションありだがフラッグ発生のため置換", "Pri", inspection_result_dic['max_priority'])
                 else:
                     # 新規の重要性は今より低い。ただし、ポジション後２５分以内の物は、プライオリティが同一の場合でも置き変わらない
                     if classes_info['max_position_time_sec'] < 1500:
-                        tk.line_send("★ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri", classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
+                        # tk.line_send("★[practice]ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri", classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
                         # classPosition.position_check(classes) で各ポジションの状態を確認可能
                         return 0
                     else:
-                        tk.line_send("重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri", classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
+                        # tk.line_send("[practice]重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri", classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
                         pass
             else:
-                tk.line_send("★既存のポジションと方向が同じ（マイナスだが）のため様子見", inspection_result_dic['exe_orders'][0]['name'])
+                # tk.line_send("★[practice]既存のポジションと方向が同じ（マイナスだが）のため様子見", inspection_result_dic['exe_orders'][0]['name'])
                 return 0
         else:
-            tk.line_send("★ポジションありで、プラスのため様子見", inspection_result_dic['exe_orders'][0]['name'])
+            # tk.line_send("[practice]★ポジションありで、プラスのため様子見", inspection_result_dic['exe_orders'][0]['name'])
             return 0
 
     # ■既存のオーダーがある場合（強制的に削除）
@@ -165,8 +166,8 @@ def mode1():
                     ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") "
 
         # 注文結果を送信す
-    tk.line_send("★オーダー発行", gl_trade_num, "回目: ",  " 　　　",  line_send,
-                 ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread))
+    # tk.line_send("★オーダー発行", gl_trade_num, "回目: ",  " 　　　",  line_send,
+    #              ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread))
     print("MODE1 END")
     print("")
 
@@ -347,7 +348,7 @@ gl_lower_line = 0
 gl_upper_line = 0
 
 # ■オアンダクラスの設定
-fx_mode = 0  # 1=practice, 0=Live
+fx_mode = 1  # 1=practice, 0=Live
 if fx_mode == 1:  # practice
     oa = classOanda.Oanda(tk.accountID, tk.access_token, tk.environment)  # インスタンス生成
     gl_live = "Pra"

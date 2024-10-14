@@ -98,227 +98,7 @@ def size_compare(after_change, before_change, min_range, max_range):
     }
 
 
-# def DoublePeak(dic_args):
-#     """
-#     ★ピークスは１０個必要
-#     １）引数について。関数を呼び出し、整流化する。最終的に必要なものは、
-#     df_r：必須となる要素（ローソク情報(逆順[直近が上の方にある＝時間降順])データフレーム）
-#     peaks：この関数の実行には必ず必要。開始時に渡されない場合、整流化関数でdf_rを元に算出される。
-#     params：無い場合もある。無い場合はNone、ある場合はDic形式。
-#     の三つ。
-#     ２）ロジックについて
-#     ＜ロジック概要＞ダブルトップを頂点とし、そこから戻る方向にポジションする。
-#                      ↓ 10pips（基準：ターン）
-#        　　23pips　   /\  /
-#            フロップ→ /  \/  ← 7pipsまで(リバー)
-#           　　　　　/　　　　　　　　　←ピークの反対くらいがLC？
-#     　　トラップライン
-#     　　・ターンのピークオールド起点でリバーの逆方向（逆張り）
-#     　　・ターンのピーク起点でリバーの逆方向（順張り）
-#        ルール一覧
-#        ・ターンが小さい、または、少ない場合、ダブルトップポイントを瞬間的に突破する回数が多い為NGとしたい。、
-#        　その為、ターンは３足分以上かつ、2pips以上とする。
-#        ・出来ればフロップは長い方がいい気がする。フロップカウントは７以上
-#        　（さらにフロップの頂点が新規ポイントの場合は率上がるかも？）
-#        ・フロップのピーク点か、直近の10ピークの中で最も頂点の場合は、折り返し濃厚。最も頂点でない場合は、Breakまで行く可能性高い。
-#        　（別途関数を準備）
-#     :return:　必須最低限　{"take_position_flag": boolean} の返却は必須。さらにTrueの場合注文情報が必要。
-#     """
-#     # print(dic_args)
-#     print("  ■ダブルピーク判定")
-#     # (1)ピークスを取得（引数か処理）。この関数ではPeaksの情報を元にし、Dfは使わない。
-#     # ①必要最低限の項目たちを取得する
-#     fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
-#     # 情報の取得
-#     df_r = fixed_information['df_r']
-#     peaks = fixed_information['peaks']
-#     river = peaks[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）
-#     turn = peaks[2]  # 注目するポイント（ターンと呼ぶ）
-#     flop3 = peaks[3]  # レンジ判定用（プリフロップと呼ぶ）
-#     params = fixed_information['params']  # パラメータ情報の取得
-#     inspection_params = fixed_information['inspection_params']
-#     print("  r", river)
-#     print("  t", turn)
-#     print("  f",flop3)
-#
-#     # (2)パラメータ指定。
-#     # ①　パラメータを設定する(検証用。売買に関するパラメータ）
-#     # inspection_params = {"margin": 0.01, "d": 1}
-#     if inspection_params:
-#         # 売買に関するパラメータがある場合(Noneでない場合）、各値を入れていく（１つ入れるなら全て設定する必要あり）
-#         position_margin = inspection_params['margin']
-#         d = inspection_params['d']  # 売買の方向。リバーの方向に対し、同方向の場合１（ライン突破）．逆方向の場合ー１(ラインで抵抗）
-#         sl = inspection_params['sl']  # Stop or Limit
-#         tp = gene.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
-#         lc = gene.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
-#     else:
-#         # 売買に関してのパラメータ無し（ダブルトップで折り返しの方向で、固定のマージンやTP/LCで取得する）
-#         position_margin = 0.01
-#         d = -1  # 売買の方向。リバーの方向に対し、同方向の場合１．逆方向の場合ー１
-#         sl = 1
-#         tp = gene.cal_at_least(0.06, (abs(turn['peak'] - river['peak_old']) * 1))  # 5pipsとなると結構大きい。Minでも3pips欲しい
-#         lc = gene.cal_at_least(0.05, (abs(turn['peak'] - river['peak_old']) * 0.8))
-#
-#     # ②　パラメータを設定する（対象の形状目標を変更できるようなパラメータ）
-#     # params = {"tf_ratio_max": 0.65, "rt_ratio_min": 0.4, "rt_ratio_max": 1, "t_count": 2, "f3_count": 5}
-#     if params:
-#         # paramsが入っている場合（Noneでない場合）
-#         tf_min = params['tf_ratio_min']
-#         tf_max = params['tf_ratio_max']  # ターンは、フロップの６割値度
-#         rt_min = params['rt_ratio_min']  # リバーは、ターンの最低４割程度
-#         rt_max = params['rt_ratio_max']  # リバーは、ターンの最高でも６割程度
-#         f3_count = params['f3_count']
-#         t_count_min = params['t_count_min']  #
-#         t_count_max = params['t_count_max']  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
-#         r_count = params['r_count']
-#     else:
-#         # パラメータがない場合、一番スタンダート（最初）の物で実施する
-#         tf_min = 0.3
-#         tf_max = 1.2  # ターンは、フロップの６割値度(0.65) ⇒　参考までのダブルトップを求めるため、緩和し1.2へ
-#         rt_min = 0.2  # リバーは、ターンの最低４割程度
-#         rt_max = 1.0  # リバーは、ターンの最高でも６割程度
-#         f3_count = 3
-#         t_count_min = 2  #
-#         t_count_max = 6  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
-#         r_count = 2
-#
-#     # (3)★★判定部
-#     take_position_flag = False  # ポジションフラグを初期値でFalseにする
-#     #          f3  t  r
-#     #           ↓　 ↓　↓　
-#     #             /\  /
-#     #            /  \/
-#     #           /
-#     # 　　　　　 / 　　　　
-#     # ①形状の判定
-#     # ①-1 各ブロックのサイズについて
-#     const_flag = False
-#     if river['count'] >= r_count:
-#         if flop3['count'] >= f3_count:
-#             if turn['gap'] >= 0.011 and t_count_min <= turn['count'] <= t_count_max:
-#                 const_flag = True
-#                 c = gene.str_merge("サイズ感は成立", flop3['count'], turn['count'], river['count'], turn['gap'])
-#             else:
-#                 c = gene.str_merge("turnのサイズ、カウントが規定値以下", turn['count'], turn['gap'])
-#         else:
-#             c = gene.str_merge("flop3のカウントが規定値以下", flop3['count'])
-#     else:
-#         c= gene.str_merge("riverのカウントが規定値以下", river['count'])
-#
-#     # ①-2 各ブロック同士のサイズ感の比率について
-#     turn_ratio_based_flop3 = round(turn['gap'] / flop3['gap'], 3)
-#     river_ratio_based_turn = round(river['gap'] / turn['gap'], 3)
-#     compare_flag = False
-#     if tf_min < turn_ratio_based_flop3 < tf_max:
-#         if rt_min < river_ratio_based_turn < rt_max:
-#             compare_flag = True
-#             cr = gene.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
-#         else:
-#             cr = gene.str_merge("riverが範囲外", river_ratio_based_turn)
-#     else:
-#         cr = gene.str_merge("turnがflop3に対して大きすぎる", turn_ratio_based_flop3)
-#
-#     # ①-3 両方成立する場合、TakePositionフラグがOnになる
-#     print("  DoubleTop結果", c, cr)
-#     if const_flag and compare_flag:
-#         take_position_flag = True
-#
-#     # (4)オーダーの作成と返却
-#     if take_position_flag:
-#         # オーダーの可能性がある場合、オーダーを正確に作成する
-#         exe_orders = [
-#             gene.order_finalize({  # オーダー２を作成
-#                 "name": "DoublePeak(ダブル抵抗）",
-#                 "order_permission": True,
-#                 "decision_price": river['latest_price'],  # ['peak']か['latest_price']だが、後者の方が適切か？
-#                 "target": round(river['latest_price'] + (position_margin * river['direction'] * d * sl), 3),  # 価格でする
-#                 "peak_price": river['peak'],
-#                 "decision_time": 0,  #
-#                 "tp": 0.10,
-#                 "lc": 0.03,
-#                 "units": 10,
-#                 "expected_direction": d * river['direction'],
-#                 "stop_or_limit": sl,
-#                 "trade_timeout": 1800,
-#                 "remark": "test",
-#                 "tr_range": 0.05,
-#                 "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.01}
-#             })
-#         ]
-#         return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
-#             "take_position_flag": take_position_flag,
-#             "exe_orders": exe_orders,  # 発行するオーダー。このままオーダーを発行できる状態
-#         }
-#     else:
-#         return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
-#             "take_position_flag": False,  # take_position_flagの値と同様だが、わかりやすいようにあえてFalseで書いている
-#         }
-#     # # ②判定部2(過去数個のピークの中で、フロップのピークが頂点かどうか(フロップが傾きマイナスなら最低値、逆なら最高値か）
-#     # peak_of_peak = peak_of_peak_judgement(peaks[3:10], flop3, df_r)
-#     #
-#     # # ③ダブルトップの成立判定
-#     # if not peak_of_peak:
-#     #     # flop3が頂点ではなかった場合、信用できないダブルトップ。
-#     #     if take_position_flag:
-#     #         take_position_flag = False
-#     #         print("    ■TakePositionFlagを解除（最ピークでないため）")
-#     #
-#     # # (4) ★★オーダーのベースを生成する（検証で利用するのはこのオブジェクト）
-#     # # ①オーダー無し時は除外
-#     # if not take_position_flag:  # ポジションフラグがFalseの場合は、返却をして終了
-#     #     return {  # フラグ無しの場合、オーダー以外を返却。
-#     #         "take_position_flag": take_position_flag,
-#     #         "order_base": order_base,  # 検証で利用する。
-#     #         "records": records  # 記録軍。CSV保存時に出力して解析ができるように。
-#     #     }
-#     #
-#     # # ②★★実オーダーを組み立てる（成立時のみ生成）
-#     # print("   決心価格", order_base['decision_price'], "決心時間", order_base['decision_time'])
-#     # print("   注文価格", order_base['target_price'], "向とSL", order_base['expected_direction'], stop_or_limit)
-#     # exe_orders = [
-#     #     f.order_finalize({  # オーダー２を作成
-#     #         "name": "DoublePeak(ダブル抵抗）",
-#     #         "order_permission": True,
-#     #         "decision_price": river['peak'],  # ★
-#     #         "target": turn['peak'] + (0.01 * river['direction'] * -1),  # 価格でする
-#     #         "decision_time": 0,  #
-#     #         "tp": 0.10,
-#     #         "lc": 0.03,
-#     #         "units": 10,
-#     #         "expected_direction": river['direction'] * -1,
-#     #         "stop_or_limit": 1,  # ★順張り
-#     #         "trade_timeout": 1800,
-#     #         "remark": "test",
-#     #         "tr_range": 0.05,
-#     #         "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.01}
-#     #     }),
-#     #     f.order_finalize({
-#     #         "name": "DoublePeak(ダブル突破）",
-#     #         "order_permission": True,
-#     #         "decision_price": river['peak'],  # ★
-#     #         "target": flop3['peak'] + (0.01 * river['direction']),  # 価格でする
-#     #         "decision_time": 0,  #
-#     #         "tp": 0.10,
-#     #         "lc": 0.03,
-#     #         "units": 10,
-#     #         "expected_direction": river['direction'],
-#     #         "stop_or_limit": 1,  # ★
-#     #         "trade_timeout": 1800,
-#     #         "remark": "test",
-#     #         "tr_range": 0.05,
-#     #         "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.02}
-#     #     })
-#     # ]
-#     #
-#     # return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
-#     #     "take_position_flag": take_position_flag,
-#     #     "order_base": order_base,  # 検証で利用する。
-#     #     "exe_orders": exe_orders,  # 発行するオーダー。このままオーダーを発行できる状態
-#     #     "records": records  # 記録軍。CSV保存時に出力して解析ができるように。
-#     # }
-
-
-def DoublePeak_predict(dic_args):
+def double_peak_judgement_predict(dic_args):
     """
     ★ピークスは１０個必要
     １）引数について。関数を呼び出し、整流化する。最終的に必要なものは、
@@ -427,24 +207,24 @@ def DoublePeak_predict(dic_args):
         c = gene.str_merge("latestのカウントが規定値以下", latest['count'])
 
     # ①-2 【基本形状】各ブロック同士のサイズ感の比率について
-    turn_ratio_based_flop3 = round(river['gap'] / turn['gap'], 3)
-    river_ratio_based_turn = round(latest['gap'] / river['gap'], 3)
+    river_ratio_based_turn = round(river['gap'] / turn['gap'], 3)
+    latest_ratio_based_river = round(latest['gap'] / river['gap'], 3)
     compare_flag = False
     confidence = 0
     if turn['gap'] > flop3_size:
-        if rt_min < turn_ratio_based_flop3 < rt_max:
-            if lr_min < river_ratio_based_turn < lr_max:
+        if rt_min < river_ratio_based_turn < rt_max:
+            if lr_min < latest_ratio_based_river < lr_max:
                 compare_flag = True
                 confidence = 1  # 一番信用のできる形のため、信頼度最大
-                cr = gene.str_merge("サイズ割合は成立", turn_ratio_based_flop3, river_ratio_based_turn)
-            elif lr_min < river_ratio_based_turn <= lr_max_extend:
+                cr = gene.str_merge("サイズ割合は成立", river_ratio_based_turn, latest_ratio_based_river)
+            elif lr_min < latest_ratio_based_river <= lr_max_extend:
                 compare_flag = True
                 confidence = 0.5  # 信頼度が微妙なため、信頼度半減(勢いがいいときは超えるんだけど、、超えない時もある）
-                cr = gene.str_merge("サイズ割合は成立(LatestOver）", river_ratio_based_turn, lr_max_extend)
+                cr = gene.str_merge("サイズ割合は成立(LatestOver）", latest_ratio_based_river, lr_max_extend)
             else:
-                cr = gene.str_merge("Latestが範囲外", river_ratio_based_turn, "規定値は", lr_max_extend, "以下")
+                cr = gene.str_merge("Latestが範囲外", latest_ratio_based_river, "規定値は", lr_max_extend, "以下")
         else:
-            cr = gene.str_merge("riverがturnに対して大きすぎる", turn_ratio_based_flop3)
+            cr = gene.str_merge("riverがturnに対して大きすぎる", river_ratio_based_turn)
     else:
         cr = gene.str_merge("全体的に小さい（turnが小さい)", turn['gap'])
 
@@ -536,6 +316,134 @@ def DoublePeak_predict(dic_args):
         double_top_strength = 1
         double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
 
+    return {
+        "take_position_flag": take_position_flag,
+        "confidence": confidence,  # latestが、すでに超えている(Break)しているかどうか。
+        "double_top_strength": double_top_strength,
+        "double_top_strength_memo": double_top_strength_memo,
+        "latest": latest,
+        "river": river,
+        "turn": turn,
+        "peaks": peaks
+    }
+
+    # # ■オーダーの作成を実施する
+    # # 価格の設定（現在価格、LC、等）
+    # now_price = cf.now_price()  # 現在価格の取得
+    # # lc_target_price =   # 想定されるLCの理想価格（Rangeではない）
+    # order_base_info = cf.order_base(now_price)  # オーダーの初期辞書を取得する(nowPriceはriver['latest_price']で代用)
+    # # オーダーの可能性がある場合、オーダーを正確に作成する
+    # if double_top_strength < 0:
+    #     # ストレングスが突破形状の場合(マイナス値）
+    #     if confidence == 1:
+    #         # 【突破形状】従来想定の突破形状
+    #         main_order = copy.deepcopy(order_base_info)
+    #         main_order['target'] = turn['peak']
+    #         main_order['tp'] = 0.5
+    #         main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
+    #         # main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         main_order['expected_direction'] = latest['direction']  # 突破方向
+    #         main_order['priority'] = 2  # ほかので割り込まれない
+    #         main_order['units'] = order_base_info['units'] * 1
+    #         main_order['name'] = "突破形状（通常）"+ memo2
+    #     else:
+    #         # 【突破形状】従来想定より、リバーの動きが速い
+    #         lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
+    #         lc_range_temp = abs(now_price - lc_price_temp)  # 従来の設定ロスカ幅(計算用）
+    #         lc = gene.cal_at_least(0.07, lc_range_temp)
+    #
+    #         double_top_strength = -0.9  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
+    #         main_order = copy.deepcopy(order_base_info)
+    #         # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
+    #         main_order['target'] = now_price + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
+    #         main_order['tp'] = 0.5
+    #         main_order['lc'] = lc  #
+    #         # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
+    #         # main_order['type'] = 'STOP'  # 順張り
+    #         main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         main_order['expected_direction'] = latest['direction']  # 突破方向
+    #         main_order['priority'] = 2  #
+    #         main_order['units'] = order_base_info['units'] * 1
+    #         main_order['name'] = "突破形状（latest大）" + memo2
+    # else:
+    #     # ストレングスが抵抗形状の場合
+    #     if confidence == 1:
+    #         # 従来想定の突破形状の未遂（抵抗）
+    #         main_order = copy.deepcopy(order_base_info)
+    #         main_order['target'] = turn['peak']
+    #         main_order['tp'] = 0.5
+    #         main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
+    #         # main_order['type'] = 'LIMIT'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         # main_order['tr_range'] = 0.10  # 要検討
+    #         main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
+    #         main_order['priority'] = 2  # ほかので割り込まれない
+    #         main_order['units'] = order_base_info['units'] * 1
+    #         main_order['name'] = "NOT突破（突破形状だが）" + memo2
+    #     else:
+    #         # 従来想定より、リバーの動きが速いの未遂（抵抗）
+    #         double_top_strength = 1  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
+    #         main_order = copy.deepcopy(order_base_info)
+    #         lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
+    #         lc_range_temp = abs(now_price - lc_price_temp)  # 従来の設定ロスカ幅(計算用）
+    #         lc = gene.cal_at_least(0.07, lc_range_temp)
+    #
+    #         # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
+    #         main_order['target'] = now_price + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
+    #         main_order['tp'] = 0.5
+    #         main_order['lc'] = lc
+    #         # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
+    #         # main_order['type'] = 'LIMIT'  # 順張り
+    #         main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         # main_order['tr_range'] = 0.10  # 要検討
+    #         main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
+    #         main_order['priority'] = 2  #
+    #         main_order['units'] = order_base_info['units'] * 1
+    #         main_order['name'] = "NOT突破（latest大の突破形状だが）" + memo2
+    #
+    # return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
+    #     "take_position_flag": take_position_flag,
+    #     "order_before_finalized": main_order,
+    #     "double_top_strength": double_top_strength,
+    #     "double_top_strength_memo": double_top_strength_memo,
+    # }
+
+
+def main_double_peak_inspection_and_order(dic_args):
+    """
+    本番用と練習用でオーダーを分けるために、関数を分割した.
+    ダブルピークの判定を実施する
+    """
+    """
+    ダブルトップを突破する強度。
+
+    （基本的にLineの強度は、折り返す強さであらわされるため、突破する場合は強度はー１と表現される。）
+
+    """
+    # 表示時のインデント
+    ts = "    "
+    s6 = "      "
+
+    # ■関数の開始準備（表示と情報の清流化）
+    print(ts, "■ダブルトップ突破形状の確認")
+    fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
+    target_df = fixed_information['df_r']
+    peaks = fixed_information['peaks']
+
+    # ■■DoublePeak系の判断　（これは上記のLineStrengthとは独立の考え方に近い）
+    double_peak_info = double_peak_judgement_predict(dic_args)  # 関数呼び出しで形状の判定を実施する
+
+    # ■オーダー作成パート
+    take_position_flag = double_peak_info['take_position_flag']
+    confidence = double_peak_info['confidence']
+    double_top_strength = double_peak_info['double_top_strength']
+    double_top_strength_memo = double_peak_info['double_top_strength_memo']
+    peaks = double_peak_info['peaks']
+    latest = double_peak_info['latest']
+    river = double_peak_info['river']
+    turn = double_peak_info['turn']
+
     # ■オーダーの作成を実施する
     # 価格の設定（現在価格、LC、等）
     now_price = cf.now_price()  # 現在価格の取得
@@ -555,7 +463,7 @@ def DoublePeak_predict(dic_args):
             main_order['expected_direction'] = latest['direction']  # 突破方向
             main_order['priority'] = 2  # ほかので割り込まれない
             main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "突破形状（通常）"+ memo2
+            main_order['name'] = "突破形状（通常）"
         else:
             # 【突破形状】従来想定より、リバーの動きが速い
             lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
@@ -574,7 +482,7 @@ def DoublePeak_predict(dic_args):
             main_order['expected_direction'] = latest['direction']  # 突破方向
             main_order['priority'] = 2  #
             main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "突破形状（latest大）" + memo2
+            main_order['name'] = "突破形状（latest大）"
     else:
         # ストレングスが抵抗形状の場合
         if confidence == 1:
@@ -589,7 +497,7 @@ def DoublePeak_predict(dic_args):
             main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
             main_order['priority'] = 2  # ほかので割り込まれない
             main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "NOT突破（突破形状だが）" + memo2
+            main_order['name'] = "NOT突破（突破形状だが）"
         else:
             # 従来想定より、リバーの動きが速いの未遂（抵抗）
             double_top_strength = 1  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
@@ -609,7 +517,7 @@ def DoublePeak_predict(dic_args):
             main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
             main_order['priority'] = 2  #
             main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "NOT突破（latest大の突破形状だが）" + memo2
+            main_order['name'] = "NOT突破（latest大の突破形状だが）"
 
     return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "take_position_flag": take_position_flag,

@@ -14,10 +14,11 @@ class order_information:
     minus_yen_position_num = 0
     plus_yen_position_num = 0
 
-    def __init__(self, name, oa):
-        self.oa = oa  # クラス変数でもいいが、LiveとPracticeの混在ある？　引数でもらう
+    def __init__(self, name, oa, is_live):
         self.name = name  #
-        self.reset()
+        self.oa = oa  # クラス変数でもいいが、LiveとPracticeの混在ある？　引数でもらう
+        self.is_live = is_live  # 本番環境か練習か（Boolean）
+        # self.reset()
         # 以下リセット対象群
         self.priority = 0  # このポジションのプライオリティ（登録されるプランのプライオリティが、既登録以上の物だったら入れ替え予定）
         self.life = False  # 有効かどうか（オーダー発行からポジションクローズまでがTrue）
@@ -67,6 +68,7 @@ class order_information:
         print("    OrderClassリセット")
         self.name = ""
         self.priority = 0  # このポジションのプライオリティ
+        # self.is_live = True  # 本番環境か練習か（Boolean）　⇒する必要なし
         self.life = False
         self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
         # オーダー情報(オーダー発行時に基本的に上書きされる）
@@ -131,6 +133,20 @@ class order_information:
             # Life終了時（＝能動オーダークローズ、能動ポジションクローズ、市場で発生した成り行きのポジションクローズで発動）
             print(" LIFE 終了", self.name)
             # self.output_res()  # 解析用にポジション情報を収集しておく
+
+    def send_line(self, *args):
+        """
+        元々定義していなかった。
+        各メソッドからsendすると、「本番環境の場合はLINE送ってPracticeの場合に送らない」が面倒くさいので、いったんここを噛ませる
+        """
+        if self.is_live:
+            tk.line_send(args)
+        else:
+            if args[0] == "■■■解消:":
+                tk.line_send("練習環境@@", args)
+            else:
+                print("     ", "おかしい？", args)
+
 
     def order_plan_registration(self, plan):
         """
@@ -202,20 +218,20 @@ class order_information:
         position_num = position_num_dic['data']  # 現在のオーダー数を取得
         if position_num >= 10:
             # エラー等で大量のオーダーが入るのを防ぐ(６個以上のオーダーは防ぐ）
-            tk.line_send(" 【注】大量ポジション入る可能性", position_num_dic)
+            self.send_line(" 【注】大量ポジション入る可能性", position_num_dic)
             return {"order_name": "error", "order_id": 0}
         # (2)オーダー数の確認
         order_num = self.oa.OrderCount_All_exe()
         if order_num >= 10:
             # エラー等で大量のオーダーが入るのを防ぐ
-            tk.line_send(" 【注】大量オーダー入る可能性", order_num)
+            self.send_line(" 【注】大量オーダー入る可能性", order_num)
             return {"order_name": "error", "order_id": 0}
 
         # (3)オーダー発行処理★
         order_ans_dic = self.oa.OrderCreate_dic_exe(self.plan)  # Plan情報からオーダー発行しローカル変数に結果を格納する
         order_ans = order_ans_dic['data']  # エラーはあんまりないから、いいわ。
         if order_ans['cancel']:  # キャンセルされている場合は、リセットする
-            tk.line_send(" 　Order不成立（今後ループの可能性）", self.name, order_ans['order_id'])
+            self.send_line(" 　Order不成立（今後ループの可能性）", self.name, order_ans['order_id'])
             return {"order_name": "error", "order_id": 0}
 
         # 必要な情報を登録する
@@ -299,7 +315,7 @@ class order_information:
             res6 = "【合計】累積最大円:" + str(order_information.total_yen_max) + ",最小円:" + str(order_information.total_yen_min)
             res7 = "【合計】累計最大PL:" + str(order_information.total_PLu_max) + ",最小PL:" + str(order_information.total_PLu_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(order_information.minus_yen_position_num)
-            tk.line_send(" ▲解消:", self.name, '\n', f.now(), '\n',
+            self.send_line("■■■解消:", self.name, '\n', f.now(), '\n',
                          res4, res5, res1, id_info, res2, res3, res6, res7, res8)
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
@@ -316,7 +332,7 @@ class order_information:
                 order_information.total_PLu_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(order_information.minus_yen_position_num)
 
-            tk.line_send(" ▲解消:", self.name, '\n', f.now(), '\n',
+            self.send_line("■■■解消:", self.name, '\n', f.now(), '\n',
                          res4, res5, res1, id_info, res2, res3, res6, res7, res8)
 
     def counter_order_exe(self):
@@ -341,16 +357,16 @@ class order_information:
 
             close_res = self.oa.TradeClose_exe(self.t_id, None)  # ★クローズを実行
             if close_res['error'] == -1:  # APIエラーの場合終了。ただし、
-                tk.line_send("  ★ポジション解消ミスNone＠close_position", self.name, self.t_id, self.t_pl_u)
+                self.send_line("  ★ポジション解消ミスNone＠close_position", self.name, self.t_id, self.t_pl_u)
                 return 0
-            tk.line_send("  ポジション解消指示", self.name, self.t_id, self.t_pl_u)
+            self.send_line("  ポジション解消指示", self.name, self.t_id, self.t_pl_u)
             self.after_close_trade_function()
 
         # 部分解除の場合（LINE送信無し）
         else:
             if float(units) > abs(float(self.t_current_units)):
                 # 部分解消が失敗しそうなオーダーになっている場合
-                tk.line_send("    指定されたCloseUnits大（Error)⇒全解除, units", ">", abs(float(self.t_current_units)))
+                self.send_line("    指定されたCloseUnits大（Error)⇒全解除, units", ">", abs(float(self.t_current_units)))
                 self.life_set(False)  # ★大事　全解除の場合、APIがエラーでもLIFEフラグは取り下げる
                 self.t_state = "CLOSED"
                 close_res = self.oa.TradeClose_exe(self.t_id, None)  # ★オーダーを実行
@@ -360,14 +376,14 @@ class order_information:
                 close_res = self.oa.TradeClose_exe(self.t_id, {"units": units})  # ★オーダーを実行
 
             if close_res['error'] == -1:  # APIエラーの場合終了。ただし、
-                tk.line_send("  ★ポジション解消ミス部分＠close_position", self.name, self.t_id, self.t_pl_u)
+                self.send_line("  ★ポジション解消ミス部分＠close_position", self.name, self.t_id, self.t_pl_u)
                 return 0
             res_json = close_res['data_json']  # jsonデータを取得
             tradeID = res_json['orderFillTransaction']['tradeReduced']['tradeID']
             units = res_json['orderFillTransaction']['tradeReduced']['units']
             realizedPL = res_json['orderFillTransaction']['tradeReduced']['realizedPL']
             price = res_json['orderFillTransaction']['tradeReduced']['price']
-            tk.line_send("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL, "price", price)
+            self.send_line("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL, "price", price)
 
 
     def updateWinLoseTime(self, new_pl):
@@ -406,11 +422,11 @@ class order_information:
         trade_latest = self.t_json
         if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
-                tk.line_send("    (取得)", self.name)
+                self.send_line("    (取得)", self.name)
 
             if "position_state" in trade_latest:
                 if trade_latest['position_state'] == 'CLOSED':  # ポジションクローズ（ポジション取得とほぼ同時にクローズ[異常]）
-                    tk.line_send("    (即時)クローズ")
+                    self.send_line("    (即時)クローズ")
             else:
                 pass
                 # print("    NOT GOOD Ref")
@@ -429,7 +445,7 @@ class order_information:
         if order_latest['state'] == "PENDING":
             # print("    時間的な解消を検討", self.o_time_past, self.o_state, "基準", self.order_timeout_min * 60)
             if self.o_time_past_sec > self.order_timeout_min * 60 and (self.o_state == "" or self.o_state == "PENDING"):
-                tk.line_send("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min)
+                self.send_line("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min)
                 self.close_order()
 
     def trade_update_and_close(self):
@@ -452,12 +468,12 @@ class order_information:
         if trade_latest['state'] == "OPEN":
             # 規定時間を過ぎ、マイナス継続時間も１分程度ある場合は、もう強制ロスカットにする
             if self.t_time_past_sec > self.trade_timeout_min * 60 and self.lose_hold_time_sec > 60:
-                tk.line_send("   Trade解消(マイナス×時間)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold", self.lose_hold_time_sec)
+                self.send_line("   Trade解消(マイナス×時間)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold", self.lose_hold_time_sec)
                 self.close_trade(None)
             # 規定時間を過ぎ、大きくプラスもなくふらふらしている場合
             if self.t_time_past_sec > self.trade_timeout_min * 60:  # 時間が経過している
                 if self.win_max_plu <= 0.05 and self.t_pl_u <= 0.03:
-                    tk.line_send("   Trade解消(微プラス膠着)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold",
+                    self.send_line("   Trade解消(微プラス膠着)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold",
                                  self.win_max_plu, self.t_pl_u)
                     self.close_trade(None)
 
@@ -550,9 +566,9 @@ class order_information:
                 res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
                 self.lc_change_dic2['done'] = True
                 if res['error'] == -1:
-                    tk.line_send("    LC変更ミス＠lc_change")
+                    self.send_line("    LC変更ミス＠lc_change")
                     return 0  # APIエラー時は終了
-                tk.line_send("　(ストレートマイナスLC変更)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
+                self.send_line("　(ストレートマイナスLC変更)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
                              "　max plus", self.win_max_plu, "time",self.t_time_past_sec)
 
 
@@ -593,11 +609,11 @@ class order_information:
                 data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
                 res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
                 if res['error'] == -1:
-                    tk.line_send("    LC変更ミス＠lc_change")
+                    self.send_line("    LC変更ミス＠lc_change")
                     return 0  # APIエラー時は終了
                 item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
                 # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-                tk.line_send("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
+                self.send_line("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
                              "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice", self.t_execution_price,
                              "予定価格", self.plan['price'])
                 break
