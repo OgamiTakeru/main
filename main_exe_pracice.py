@@ -179,7 +179,7 @@ def mode2():
     if classPosition.life_check(classes):
         # オーダー以上がある場合。表示用（１分に１回表示させたい）
         temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
-        if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒と２秒)
+        if 2 <= int(temp_date.second) < 4:  # ＝１分に一回練習用は(毎分2秒と4秒)
             have_position = classPosition.position_check(classes)
             print("■■■Mode2(いずれかポジション有)", f.now(), "これは１分に１回表示")
             # if have_position['position_exist']:
@@ -238,7 +238,7 @@ def exe_manage():
         else:
             past_time = (datetime.datetime.now().replace(microsecond=0) - gl_latest_exe_time).seconds
 
-        if time_min % 5 == 0 and 6 <= time_sec < 30 and past_time > 60:  # キャンドルの確認　秒指定だと飛ぶので、前回から●秒経過&秒数に余裕を追加
+        if time_min % 8 == 0 and 9 <= time_sec < 30 and past_time > 60:  # キャンドルの確認　秒指定だと飛ぶので、前回から●秒経過&秒数に余裕を追加
             print("■■■Candle調査", gl_live, gl_now, past_time)  # 表示用（実行時）
             classPosition.all_update_information(classes)  # 情報アップデート
             d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)  # 時間昇順(直近が最後尾）

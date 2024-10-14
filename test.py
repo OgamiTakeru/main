@@ -24,12 +24,13 @@ for i in range(3):
     # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
     # クラス名を確定し、クラスを生成する。
     new_name = "c" + str(i)
-    classes.append(classPosition.order_information(new_name, oa))  # 順思想のオーダーを入れるクラス
+    classes.append(classPosition.order_information(new_name, oa, False))  # 順思想のオーダーを入れるクラス
 
 #  一般的なテストはここいかに書く
-test = float('inf')
-print(test)
-if test > 7:
-    print("正解です")
-else:
-    print("testは７より大きいです")
+
+
+def main(*args):
+    args = ("k",) + args
+    print(args)
+
+main("test", "t")

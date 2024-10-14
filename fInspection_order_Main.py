@@ -474,7 +474,7 @@ def inspection_warp_up_and_make_order(df_r):
 
         # ■ダブルトップ突破型に関する情報を取得する
         print(s, "■DoubleTOpBreakの調査")
-        break_double_top_strength_orders_and_evidence = dp.main_double_peak_inspection_and_order({"df_r": df_r, "peaks": peaks})
+        break_double_top_strength_orders_and_evidence = dp.main_double_peak_break_inspection_and_order({"df_r": df_r, "peaks": peaks})
         # print(s, break_double_top_strength_orders_and_evidence)
 
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
@@ -524,7 +524,7 @@ def inspection_warp_up_and_make_order(df_r):
         print(s, "■Latest3回の場合の実行")
         print(s, "■DoubleTOpBreakの調査(latest3)")
         df_r_first_delete = df_r[0:]
-        break_double_top_strength_orders_and_evidence = dp.main_double_peak_inspection_and_order({"df_r": df_r_first_delete})
+        break_double_top_strength_orders_and_evidence = dp.main_double_peak_break_inspection_and_order({"df_r": df_r_first_delete})
         print(s, break_double_top_strength_orders_and_evidence)
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
             # DoubleTopの判定が最優先 (単品）
@@ -623,7 +623,7 @@ def inspection_warp_up_and_make_order_practice(df_r):
 
         # ■ダブルトップ突破型に関する情報を取得する
         print(s, "■DoubleTOpBreakの調査")
-        break_double_top_strength_orders_and_evidence = dp.main_double_peak_inspection_and_order({"df_r": df_r, "peaks": peaks})
+        break_double_top_strength_orders_and_evidence = dp.main_double_peak_break_inspection_and_order({"df_r": df_r, "peaks": peaks})
         # print(s, break_double_top_strength_orders_and_evidence)
 
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
@@ -673,7 +673,7 @@ def inspection_warp_up_and_make_order_practice(df_r):
         print(s, "■Latest3回の場合の実行")
         print(s, "■DoubleTOpBreakの調査(latest3)")
         df_r_first_delete = df_r[0:]
-        break_double_top_strength_orders_and_evidence = dp.main_double_peak_inspection_and_order({"df_r": df_r_first_delete})
+        break_double_top_strength_orders_and_evidence = dp.main_double_peak_break_inspection_and_order({"df_r": df_r_first_delete})
         print(s, break_double_top_strength_orders_and_evidence)
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
             # DoubleTopの判定が最優先 (単品）

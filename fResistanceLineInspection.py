@@ -881,9 +881,13 @@ def main_line_strength_inspection_and_order(dic_args):
     }
 
     # ■　調査を実施する
-    ans_of_predict_line_info_list = judge_line_strength_all_predict_line(dic_args)
-    predict_line_info_list = ans_of_predict_line_info_list['evidence']
+    ans_of_predict_line_info_list = judge_line_strength_all_predict_line(dic_args)  # 調査関数呼び出し
     take_position_flag = ans_of_predict_line_info_list['take_position_flag']
+    if not take_position_flag:
+        return orders_and_evidence
+
+    predict_line_info_list = ans_of_predict_line_info_list['evidence']
+
 
     print(s4, "■最大LineStrengthのオーダー作成")
 
@@ -940,11 +944,14 @@ def main_line_strength_inspection_and_order_practice(dic_args):
     }
 
     # ■　調査を実施する
-    ans_of_predict_line_info_list = judge_line_strength_all_predict_line(dic_args)
-    predict_line_info_list = ans_of_predict_line_info_list['evidence']
+    ans_of_predict_line_info_list = judge_line_strength_all_predict_line(dic_args)  # 調査関数呼び出し
+    ans_of_predict_line_info_list = judge_line_strength_all_predict_line(dic_args)  # 調査関数呼び出し
     take_position_flag = ans_of_predict_line_info_list['take_position_flag']
+    if not take_position_flag:
+        return orders_and_evidence
+    predict_line_info_list = ans_of_predict_line_info_list['evidence']
 
-    print(s4, "■最大LineStrengthのオーダー作成")
+    print(s4, "■【練習】最寄りのラインで判定")
 
     exe_orders = []
     #  predict_line_listは添え字０から現在価格から遠いほうに並んでいる。その為、同値のストレングスがある場合、遠いほう（添え字が０に近い）が選ばれる

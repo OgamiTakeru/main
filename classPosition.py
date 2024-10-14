@@ -140,13 +140,13 @@ class order_information:
         各メソッドからsendすると、「本番環境の場合はLINE送ってPracticeの場合に送らない」が面倒くさいので、いったんここを噛ませる
         """
         if self.is_live:
-            tk.line_send(args)
+            tk.line_send(*args)
         else:
+            args = ("練習用:",) + args
             if args[0] == "■■■解消:":
-                tk.line_send("練習環境@@", args)
+                tk.line_send("練習環境@@", *args)
             else:
                 print("     ", "おかしい？", args)
-
 
     def order_plan_registration(self, plan):
         """

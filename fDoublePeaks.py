@@ -410,7 +410,7 @@ def double_peak_judgement_predict(dic_args):
     # }
 
 
-def main_double_peak_inspection_and_order(dic_args):
+def main_double_peak_break_inspection_and_order(dic_args):
     """
     本番用と練習用でオーダーを分けるために、関数を分割した.
     ダブルピークの判定を実施する
@@ -425,6 +425,13 @@ def main_double_peak_inspection_and_order(dic_args):
     ts = "    "
     s6 = "      "
 
+    answer = {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
+        "take_position_flag": False,
+        "order_before_finalized": "",
+        "double_top_strength": "",
+        "double_top_strength_memo": ""
+    }
+
     # ■関数の開始準備（表示と情報の清流化）
     print(ts, "■ダブルトップ突破形状の確認")
     fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
@@ -434,6 +441,8 @@ def main_double_peak_inspection_and_order(dic_args):
     # ■■DoublePeak系の判断　（これは上記のLineStrengthとは独立の考え方に近い）
     double_peak_info = double_peak_judgement_predict(dic_args)  # 関数呼び出しで形状の判定を実施する
 
+    if not double_peak_info['take_position_flag']:
+        return answer
     # ■オーダー作成パート
     take_position_flag = double_peak_info['take_position_flag']
     confidence = double_peak_info['confidence']
