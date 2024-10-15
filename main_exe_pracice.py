@@ -238,7 +238,7 @@ def exe_manage():
         else:
             past_time = (datetime.datetime.now().replace(microsecond=0) - gl_latest_exe_time).seconds
 
-        if time_min % 8 == 0 and 9 <= time_sec < 30 and past_time > 60:  # キャンドルの確認　秒指定だと飛ぶので、前回から●秒経過&秒数に余裕を追加
+        if time_min % 5 == 0 and 10 <= time_sec < 30 and past_time > 60:  # キャンドルの確認　秒指定だと飛ぶので、前回から●秒経過&秒数に余裕を追加
             print("■■■Candle調査", gl_live, gl_now, past_time)  # 表示用（実行時）
             classPosition.all_update_information(classes)  # 情報アップデート
             d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)  # 時間昇順(直近が最後尾）

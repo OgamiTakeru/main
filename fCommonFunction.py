@@ -28,6 +28,7 @@ def order_base(now_prie):
             'priority': 0,
             "decision_price": now_prie,
             "name": "",
+            "lc_change_waiting_second": 4 * 5 * 60,  # LCChangeが最初に行われるまで、最低でも〇〇秒待つ。
             "lc_change": [
                 # {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
                 {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.1},

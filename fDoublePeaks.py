@@ -168,12 +168,12 @@ def double_peak_judgement_predict(dic_args):
         r_count_max = params['r_count_max']  # ターンは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。
         r_body_max = 0.1
         l_count = params['l_count']
-        flop3_size = 0.12
+        turn_size = 0.12
     else:
         # パラメータがない場合、一番スタンダート（最初）の物で実施する
-        rt_min = 0.1
+        rt_min = 0.07  # 0.1 がもともと。取りやすくした
         rt_max = 0.65  # リバーは、ターンの６割値度(0.65) ⇒
-        lr_min = 0.24  # レイテストは、リバーの最低４割程度
+        lr_min = 0.24  # レイテストは、ある程度リバーに対して戻っている状態
         lr_max = 1  # レイテストは、リバーの最高でも６割程度
         lr_max_extend = 5
         t_count = 5
@@ -181,7 +181,7 @@ def double_peak_judgement_predict(dic_args):
         r_count_max = 7  # リバーは長すぎる(count)と、戻しが強すぎるため、この値以下にしておきたい。（突破できなそう）
         r_body_max = 0.1  # リバーが１０pips以上あるとこれも戻しが強すぎるため、突破できないかも。
         l_count = 2
-        flop3_size = 0.15
+        turn_size = 0.0789  # 調子いいときは0.15 頻度を増やすために色々な場面を見た結果、個の値で試験
 
     # ■■　形状の判定部
     take_position_flag = False  # ポジションフラグを初期値でFalseにする
@@ -211,7 +211,7 @@ def double_peak_judgement_predict(dic_args):
     latest_ratio_based_river = round(latest['gap'] / river['gap'], 3)
     compare_flag = False
     confidence = 0
-    if turn['gap'] > flop3_size:
+    if turn['gap'] > turn_size:
         if rt_min < river_ratio_based_turn < rt_max:
             if lr_min < latest_ratio_based_river < lr_max:
                 compare_flag = True
@@ -270,16 +270,21 @@ def double_peak_judgement_predict(dic_args):
         peak_count_peaks = [item for item in temp_inspection_peaks[:max_index] if item["direction"] == -1]  # Lower側
         peak_count = len(peak_count_peaks)
         memo2 = "," + str(peak_count) + "ピーク有"
-        print(peak_count)
-
-        if lower_gap_total - upper_gap_total > turn_gap * 1.3 and lower_gap_total - upper_gap_total >= 0.28:
-            print(t6, "3回折り返し相当の下がりあり（これ以上下がらない状態）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap)
-            double_top_strength = 1
-            double_top_strength_memo = double_top_strength_memo + ", 下がり切り" + str(upper_lower_gap) + str(turn_gap)
+        lower_upper_gap = abs(lower_gap_total - upper_gap_total)
+        if lower_upper_gap > turn_gap * 1.3 and lower_upper_gap >= 0.28:
+            if flop3['count'] >= 4:  # FLop3が長い場合、独立しているため、ここからの下落も考えられる
+                print(t6, "突破形状維持（前が長いがFLOP3長め、もっと下がる）Upper:", upper_gap_total, "lower:", lower_gap_total, "t", turn_gap, "gap", lower_upper_gap)
+                double_top_strength = -1
+                double_top_strength_memo = double_top_strength_memo + ", 突破(より下)" + str(upper_lower_gap) + str(turn_gap)
+            else:
+                print(t6, "3回折り返し相当の下がりあり（これ以上下がらない状態）Upper:", upper_gap_total, "lower:", lower_gap_total, "t", turn_gap, "gap", lower_upper_gap, flop3['count'])
+                double_top_strength = 1
+                double_top_strength_memo = double_top_strength_memo + ", 下がり切り" + str(upper_lower_gap) + str(turn_gap)
         else:
-            print(t6, "突破形状維持（3回折り返し以内の下がり、もっと下がる）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap)
+            print(t6, "突破形状維持（3回折り返し以内の下がり、もっと下がる）Upper:", upper_gap_total, "lower:", lower_gap_total, "t", turn_gap, "gap", lower_upper_gap)
             double_top_strength = -1
             double_top_strength_memo = double_top_strength_memo + ", 突破(より下)"+ str(upper_lower_gap) + str(turn_gap)
+
     else:
         # 直近が登り方向の場合、折り返し基準のflop3は下がり。その前が下がりメインの場合、下がりきっていると思われる。
         # flop3以前の、最も低い値を算出（その時刻を算出）
@@ -297,12 +302,16 @@ def double_peak_judgement_predict(dic_args):
         peak_count_peaks = [item for item in temp_inspection_peaks[:min_index] if item["direction"] == 1]  # Lower側
         peak_count = len(peak_count_peaks)
         memo2 = "," + str(peak_count) + "ピーク有"
-        print(peak_count)
 
         if upper_gap_total - lower_gap_total> turn_gap * 1.5:
-            print(t6, "3回折り返し相当の上がりあり（これ以上上がらない状態）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap, upper_gap_total - lower_gap_total)
-            double_top_strength = 1
-            double_top_strength_memo = double_top_strength_memo + ", 上がり切り" + str(upper_lower_gap) + str(turn_gap)
+            if flop3['count'] >= 4:  # FLop3が長い場合、独立しているため、ここからの上昇も考えられる
+                print(t6, "突破形状維持（前が長いがFLOP3長め、もっと上がる）Upper:", upper_gap_total, "lower:",lower_gap_total, "t", turn_gap, upper_gap_total - lower_gap_total)
+                double_top_strength = -1
+                double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
+            else:
+                print(t6, "3回折り返し相当の上がりあり（これ以上上がらない状態）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap, upper_gap_total - lower_gap_total, flop3['count'])
+                double_top_strength = 1
+                double_top_strength_memo = double_top_strength_memo + ", 上がり切り" + str(upper_lower_gap) + str(turn_gap)
         else:
             print(t6, "突破形状維持（3回折り返し以内の上がり、もっと上がる）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap, upper_gap_total - lower_gap_total)
             double_top_strength = -1

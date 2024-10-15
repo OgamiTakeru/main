@@ -812,6 +812,7 @@ def judge_line_strength_all_predict_line(dic_args):
                 each_strength_info['line_strength'] = -1  # フラッグ成立時は、通常とは逆
                 each_strength_info['lc'] = flag['lc']
                 each_strength_info['expected_direction'] = peaks[0]['direction']
+                each_strength_info['latest_direction'] = peaks[0]['direction']
                 each_strength_info['remark'] = flag['remark']
                 each_strength_info['priority'] = 2  # 備考を入れておく
                 predict_line_info_list_base['strength_info'] = each_strength_info  # 上書きする
@@ -945,7 +946,6 @@ def main_line_strength_inspection_and_order_practice(dic_args):
 
     # ■　調査を実施する
     ans_of_predict_line_info_list = judge_line_strength_all_predict_line(dic_args)  # 調査関数呼び出し
-    ans_of_predict_line_info_list = judge_line_strength_all_predict_line(dic_args)  # 調査関数呼び出し
     take_position_flag = ans_of_predict_line_info_list['take_position_flag']
     if not take_position_flag:
         return orders_and_evidence
@@ -963,23 +963,53 @@ def main_line_strength_inspection_and_order_practice(dic_args):
         target_strength_info = flag_strength[0]  # flag_strength は配列のため、要素としたいため、[0]とする
         position_type = "STOP"  # フラッグありの場合突破方向のため、STOP
         print(s4, "フラッグがSameList内に存在")
+        print(s4, "オーダー対象", target_strength_info)
+        main_order_base = cf.order_base(cf.now_price())
+        main_order_base['target'] = target_strength_info['line_base_info']['line_base_price']
+        main_order_base['tp'] = 0.5  # 0.09  # LCは広め
+        main_order_base['lc'] = target_strength_info["strength_info"]["lc"]  # * line_strength  # 0.09  # LCは広め
+        main_order_base['type'] = position_type  # 'LIMIT'
+        main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
+        main_order_base['priority'] = target_strength_info['strength_info']['priority']
+        main_order_base['units'] = main_order_base['units'] * 1
+        main_order_base['name'] = target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
     else:
+        # ギザギザ推定(Latestに対して順張り）
         target_strength_info = max_strength
-        position_type = "LIMIT"
+        position_type = "MARKET"
+        print(s4, "オーダー対象", target_strength_info)
+        main_order_base = cf.order_base(cf.now_price())
+        main_order_base['target'] = target_strength_info['line_base_info']['line_base_price']
+        main_order_base['tp'] = 0.20  # 0.09  # LCは広め
+        main_order_base['lc'] = 0.05  # * line_strength   0.09  # LCは広め
+        main_order_base['type'] = position_type  # 'LIMIT'
+        main_order_base['expected_direction'] = target_strength_info['line_base_info']['latest_direction']
+        main_order_base['priority'] = target_strength_info['strength_info']['priority']
+        main_order_base['units'] = main_order_base['units'] * 1
+        main_order_base['name'] = target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
+        main_order_base['lc_change_waiting_second'] = 0  # 開始直後からLCChangeで底上げを狙う
+        main_order_base['lc_change'] = [
+                # {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
+                {"lc_change_exe": True, "lc_trigger_range": 0.01, "lc_ensure_range": -0.01},
+                {"lc_change_exe": True, "lc_trigger_range": 0.04, "lc_ensure_range": 0.03},
+                {"lc_change_exe": True, "lc_trigger_range": 0.07, "lc_ensure_range": 0.05},
+                {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.1},
+            ]
 
-    print(s4, "オーダー対象", target_strength_info)
-    main_order_base = cf.order_base(cf.now_price())
-    main_order_base['target'] = target_strength_info['line_base_info']['line_base_price']
-    main_order_base['tp'] = 0.5  # 0.09  # LCは広め
-    main_order_base['lc'] = target_strength_info["strength_info"]["lc"]  # * line_strength  # 0.09  # LCは広め
-    main_order_base['type'] = position_type  # 'LIMIT'
-    main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
-    main_order_base['priority'] = target_strength_info['strength_info']['priority']
-    main_order_base['units'] = main_order_base['units'] * 1
-    main_order_base['name'] = target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
-    # main_order_base['lc_change'] = []
-    # gene.print_json(cf.order_finalize(main_order_base))
-    # print("ResLinInspec", main_order_base)
+        # # ギザギザ推定（少し離れたところから、Latestに対して逆張り）
+        # target_strength_info = max_strength
+        # position_type = "LIMIT"
+        # print(s4, "オーダー対象", target_strength_info)
+        # main_order_base = cf.order_base(cf.now_price())
+        # main_order_base['target'] = target_strength_info['line_base_info']['line_base_price']
+        # main_order_base['tp'] = 0.03  # 0.09  # LCは広め
+        # main_order_base['lc'] = 0.04  # * line_strength   0.09  # LCは広め
+        # main_order_base['type'] = position_type  # 'LIMIT'
+        # main_order_base['expected_direction'] = target_strength_info['line_base_info']['latest_direction'] * -1
+        # main_order_base['priority'] = target_strength_info['strength_info']['priority']
+        # main_order_base['units'] = main_order_base['units'] * 1
+        # main_order_base['name'] = target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
+
     exe_orders.append(cf.order_finalize(main_order_base))
 
     # 返却する

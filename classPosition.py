@@ -57,7 +57,8 @@ class order_information:
         self.lose_max_plu = 0
 
         # ロスカット変更情報
-        self.lc_change_dic = {}  # 空を持っておくだけ
+        self.lc_change_waiting_second = 0  # LCChangeとセット。LCChangeが始まるまでの待機時間
+        self.lc_change_dic = {}  #lc_change_waiting_secondとセット。
         self.lc_change_dic2 = {}  # 空を持っておくだけ
         # 特殊　カウンターオーダー
         self.counter_order_num = 0  # カウンターオーダーを入れる際、何回実施したかをカウント（1回やったらもうやらない）
@@ -102,6 +103,7 @@ class order_information:
         self.lose_max_plu = 0
 
         # ロスカット変更情報
+        self.lc_change_waiting_second = 0  # LCChangeとセット。LCChangeが始まるまでの待機時間
         self.lc_change_dic = {}  # 空を持っておくだけ
         self.lc_change_dic2 = {}  # 空を持っておくだけ
         self.counter_order_num = 0  # カウンターオーダーを入れる際、何回実施したかをカウント（1回やったらもうやらない）
@@ -142,8 +144,9 @@ class order_information:
         if self.is_live:
             tk.line_send(*args)
         else:
+            print(" 練習用送信関数")
             args = ("練習用:",) + args
-            if args[0] == "■■■解消:":
+            if args[1] == "■■■解消:":
                 tk.line_send("練習環境@@", *args)
             else:
                 print("     ", "おかしい？", args)
@@ -187,7 +190,11 @@ class order_information:
         self.plan['tp_price'] = round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
         self.plan['time'] = datetime.datetime.now()
 
-        # (4)LC_Change情報を格納する
+        # (4)LC_Change情報を格納する (self.lc_change_waiting_second とLCChange本体
+        if "self." in plan:
+            self.lc_change_waiting_second = plan['self.lc_change_waiting_second']
+        else:
+            self.lc_change_waiting_second = 4 * 5 * 60
         if "lc_change" in plan:
             self.lc_change_dic = plan['lc_change']  # 辞書を丸ごと
 
@@ -584,7 +591,8 @@ class order_information:
         :return:         print(" ロスカ変更関数", self.lc_change_dic, self.t_pl_u,self.t_state)
         """
         # print("  ★LC＿Change実行関数")
-        if len(self.lc_change_dic) == 0 or self.t_state != "OPEN" or self.t_time_past_sec < 4 * 5 * 60:  # 足数×〇分足×秒
+        #  self.lc_change_waiting_secondは外部指定がない場合は、デフォルト値が入る
+        if len(self.lc_change_dic) == 0 or self.t_state != "OPEN" or self.t_time_past_sec < self.lc_change_waiting_second:  # 足数×〇分足×秒
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
             return 0
 
