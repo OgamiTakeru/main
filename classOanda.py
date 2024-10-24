@@ -1034,7 +1034,7 @@ class Oanda:
 
             all_info = []
             for item in transactions:
-                print("id=", item["id"])
+                # print("id=", item["id"])
                 # print(item)
                 # 考えるのめんどいので、必要項目だけ辞書形式にしてしまう
                 dict = {

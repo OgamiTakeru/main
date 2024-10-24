@@ -2,7 +2,6 @@ import datetime
 import tokens as tk
 import fGeneric as f
 
-
 class order_information:
     total_yen = 0  # トータルの円
     total_yen_max = 0  # これは０以上を検出したいので、float(-inf)ではNG
@@ -145,11 +144,15 @@ class order_information:
             tk.line_send(*args)
         else:
             print(" 練習用送信関数")
-            args = ("練習用:",) + args
+            # 練習用であることの接頭語の追加
+            args = ("練習環境＠:",) + args
             if args[1] == "■■■解消:":
-                tk.line_send("練習環境@@", *args)
+                # 中身を編集するため、一度リストに変換
+                args_list = list(args)
+                args_list[1] = "□□□解消:"  # ぱっとわかりやすいように変更
+                tk.line_send(*tuple(args_list))
             else:
-                print("     ", "おかしい？", args)
+                print("★★★", args)
 
     def order_plan_registration(self, plan):
         """
@@ -429,7 +432,7 @@ class order_information:
         trade_latest = self.t_json
         if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
-                self.send_line("    (取得)", self.name)
+                self.send_line("    (取得)", self.name, trade_latest['price'])
 
             if "position_state" in trade_latest:
                 if trade_latest['position_state'] == 'CLOSED':  # ポジションクローズ（ポジション取得とほぼ同時にクローズ[異常]）
@@ -534,51 +537,6 @@ class order_information:
         # LCの変更を検討する（マイナスストレートの場合、できるだけ早く処理する）
         # self.lc_change2()
 
-
-    def lc_change2(self):
-        """
-        ロスカット幅をせり上げる（特にストレートに落ちそうな場合）
-        """
-        # {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
-        border_plus = 0.01  # 最大でもプラスが1pipsの状態で
-        trigger_minus = -0.04  # 4pipsマイナスに到達してしまった場合
-        border_sec = 300  # しかもポジション取得から300秒程度の短い間の場合
-        new_lc_range = - 0.06  # 6pipsでLCしてしまう
-
-        if self.t_state != "OPEN" or self.t_time_past_sec < 60:
-            # ポジションがない場合、合は実行しない
-            return 0
-
-        if 'done' in self.lc_change_dic2:
-            # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
-            return 0
-
-        if self.t_pl_u <= trigger_minus:  #不等号向き注意　-0.02 < -0.04基準
-            if self.win_max_plu < border_plus and self.t_time_past_sec < border_sec:
-                # 最大のプラス領域がほぼ０の状態で、早い時間帯で下がっている場合
-                new_lc_price = round(float(self.t_execution_price) + (new_lc_range * self.plan['ask_bid']), 3)
-                if self.plan['ask_bid'] == 1:
-                    # 買い方向の場合、
-                    if new_lc_price <= self.plan['lc_price']:
-                        # 新しいLC価格が、現在のLCよりも下になる（LCが広がり、損失が大きくなる場合）
-                        self.lc_change_dic2['done'] = True  # やったことにする
-                        return 0
-                else:
-                    # 売り方向の場合
-                    if new_lc_price >= self.plan["lc_price"]:
-                        # 新しいLC価格が、現在のLCよりも上にある（LCが広がる方向の場合）
-                        self.lc_change_dic2['done'] = True
-                        return 0
-                data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
-                res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
-                self.lc_change_dic2['done'] = True
-                if res['error'] == -1:
-                    self.send_line("    LC変更ミス＠lc_change")
-                    return 0  # APIエラー時は終了
-                self.send_line("　(ストレートマイナスLC変更)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
-                             "　max plus", self.win_max_plu, "time",self.t_time_past_sec)
-
-
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
         ロスカット底上げを実施する。セルフとレールに近い
@@ -592,7 +550,7 @@ class order_information:
         """
         # print("  ★LC＿Change実行関数")
         #  self.lc_change_waiting_secondは外部指定がない場合は、デフォルト値が入る
-        if len(self.lc_change_dic) == 0 or self.t_state != "OPEN" or self.t_time_past_sec < self.lc_change_waiting_second:  # 足数×〇分足×秒
+        if len(self.lc_change_dic) == 0 or self.t_state != "OPEN":  # 足数×〇分足×秒
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
             return 0
 
@@ -601,9 +559,10 @@ class order_information:
             lc_exe = item['lc_change_exe']
             lc_ensure_range = item['lc_ensure_range']
             lc_trigger_range = item['lc_trigger_range']
+            lc_change_waiting_time_sec = item['time_after']
 
-            # このループで実行しない場合（フラグオフの場合、DoneがTrueの場合
-            if not lc_exe or 'done' in item:
+            # このループで実行しない場合（フラグオフの場合、DoneがTrueの場合^
+            if not lc_exe or 'done' in item or self.t_time_past_sec < lc_change_waiting_time_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
                 continue
 
@@ -712,7 +671,7 @@ def position_check(classes):
                     max_position_time_sec = item.t_time_past_sec  # 何分間持たれているポジションか
                 # トータルの含み損益を表示する
                 total_pl = total_pl + float(item.t_unrealize_pl)
-                print("  ポジション状態", item.t_id, ",PL:", total_pl)
+                # print("  ポジション状態", item.t_id, ",PL:", total_pl)
             elif item.o_state == "PENDING":
                 # オーダーのみ（取得俟ちの場合）取得まち用の配列に入れておく
                 not_open_positions.append({

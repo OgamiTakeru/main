@@ -114,15 +114,17 @@ def cal_str_time_gap(time_str_1, time_str_2):
     if time1 > time2:
         later_time = time1
         older_time = time2
+        r = 1
     else:
         later_time = time2
         older_time = time1
-
+        r = -1
     gap_abs = later_time - older_time  # 正の値が保証された差分
     # gap = time1 - time2  # 渡されたものをそのまま引き算（これエラーになりそうだから消しておく）
 
     return {
-        "gap_abs": gap_abs
+        "gap_abs": gap_abs.seconds,
+        "gap": gap_abs.seconds * r
     }
 
 

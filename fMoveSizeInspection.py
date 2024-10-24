@@ -73,7 +73,7 @@ def cal_move_size(dic_args):
     # ■ピーク4個分が、全てカウント３の場合、ほぼ動いてない相場とみる（相対的なため、Pipsでは指定しない？）
     range_counter = 0
     range_flag = False
-    print(peaks[:4])
+    # print(peaks[:4])
     for i, item in enumerate(peaks[:4]):
         # print("確認")
         # print(item)

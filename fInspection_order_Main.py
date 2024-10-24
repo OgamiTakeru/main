@@ -15,6 +15,7 @@ import fResistanceLineInspection as ri
 import fPeakInspection as p
 import fCommonFunction as cf
 import fMoveSizeInspection as ms
+import fHookFigureInspection as hi
 
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
@@ -439,7 +440,7 @@ def inspection_warp_up_and_make_order(df_r):
     # 表示のインデント
     ts = " "
     s = "  "  # 2個分
-    print(ts, "■調査開始")
+    print(ts, "■■■■調査開始■■■■")
     # 関数が来た時の表示
     print(df_r.head(1))
     print(df_r.tail(1))
@@ -450,27 +451,33 @@ def inspection_warp_up_and_make_order(df_r):
     fixed_information_for3 = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
     peaks_for3 = fixed_information_for3['peaks']
 
+    # 検証環境で、Peaksが少ないことが発生するため、その場合は処理を進めないようにする（検証環境専用）
+    if len(fixed_information['peaks']) == 0 or len(fixed_information_for3['peaks']) == 0:  # 検証で起きるエラーに対応する
+        return flag_and_orders
+    else:
+        peaks = fixed_information['peaks']
+
     if peaks[0]['direction'] == peaks_for3[0]['direction']:
         print("　通常")
     else:
         print(" すぐ折り返しが来ている状態（latest3でやるつもりがlatest2で意図しない状態になるやつ")
 
-    print('調査テスト')
-    print(peaks)
-    print(peaks_for3)
-
     # ■検証とオーダー作成を実行
     if peaks[0]['count'] == 2:  # 予測なので、LatestがN個続いたときに実行してみる
         print(s, "■Latest2回の場合の実行")
         # latestが2個の時に実行されるもの
-        # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
-        print(s, "■Latest基準の同価格Strengthの調査")
-        orders_and_evidence = ri.main_line_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
-        # gene.print_arr(orders_and_evidence['evidence'], 2)
+        # # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
+        # print(s, "■Latest基準の同価格Strengthの調査")
+        # orders_and_evidence = ri.main_line_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        # # gene.print_arr(orders_and_evidence['evidence'], 2)
+        #
+        # # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
+        # print(s, "■river方向（逆）の強度の確認")
+        # river_peak_line_strength = ri.main_river_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
 
-        # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
-        print(s, "■river方向（逆）の強度の確認")
-        river_peak_line_strength = ri.main_river_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
+        # ■上記二つに置き換えて、フック形状判定とする
+        print(s, "■フックやパラレルの調査")
+        orders_and_evidence = hi.main_hook_figure_inspection_and_order({"df_r": df_r, "peaks": peaks})
 
         # ■ダブルトップ突破型に関する情報を取得する
         print(s, "■DoubleTOpBreakの調査")
@@ -529,21 +536,19 @@ def inspection_warp_up_and_make_order(df_r):
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
             # DoubleTopの判定が最優先 (単品）
             tk.line_send("latest3でDoubleTop突破確認")
-            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["take_position_flag"] = False
             flag_and_orders["exe_orders"] = \
                 [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
 
-    print(" ■検証終了")
+    print(" ■解析終了")
     # print(flag_and_orders['take_position_flag'])
     # gene.print_arr(flag_and_orders['exe_orders'])
 
     # プライオリティの追加
-    print("おーだー")
-    print(flag_and_orders["exe_orders"])
     if len(flag_and_orders["exe_orders"]) >= 1:
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority
-        print("max_priority", max_priority)
+        print(s, "max_priority", max_priority)
         # print(flag_and_orders)
 
     # テスト
@@ -552,10 +557,10 @@ def inspection_warp_up_and_make_order(df_r):
         if size_flag['range_flag']:
             # Trueの場合は通常通り
             # tk.line_send("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
-            print("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
+            print(s, "直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
             flag_and_orders['take_position_flag'] = False
         else:
-            print(" 通常の動き")
+            print(s, " 通常の動き")
             pass
     return flag_and_orders
 
@@ -588,7 +593,7 @@ def inspection_warp_up_and_make_order_practice(df_r):
     # 表示のインデント
     ts = " "
     s = "  "  # 2個分
-    print(ts, "■調査開始")
+    print(ts, "■■■■調査開始■■■■")
     # 関数が来た時の表示
     print(df_r.head(1))
     print(df_r.tail(1))
@@ -598,6 +603,12 @@ def inspection_warp_up_and_make_order_practice(df_r):
 
     fixed_information_for3 = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
     peaks_for3 = fixed_information_for3['peaks']
+
+    # 検証環境で、Peaksが少ないことが発生するため、その場合は処理を進めないようにする（検証環境専用）
+    if len(fixed_information['peaks']) == 0 or len(fixed_information_for3['peaks']) == 0:  # 検証で起きるエラーに対応する
+        return flag_and_orders
+    else:
+        peaks = fixed_information['peaks']
 
     if peaks[0]['direction'] == peaks_for3[0]['direction']:
         print("　通常")
@@ -613,13 +624,17 @@ def inspection_warp_up_and_make_order_practice(df_r):
         print(s, "■Latest2回の場合の実行")
         # latestが2個の時に実行されるもの
         # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
-        print(s, "■Latest基準の同価格Strengthの調査")
-        orders_and_evidence = ri.main_line_strength_inspection_and_order_practice({"df_r": df_r, "peaks": peaks})  # 調査！
-        # gene.print_arr(orders_and_evidence['evidence'], 2)
+        # print(s, "■Latest基準の同価格Strengthの調査")
+        # orders_and_evidence = ri.main_line_strength_inspection_and_order_practice({"df_r": df_r, "peaks": peaks})  # 調査！
+        # # gene.print_arr(orders_and_evidence['evidence'], 2)
+        #
+        # # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
+        # print(s, "■river方向（逆）の強度の確認")
+        # river_peak_line_strength = ri.main_river_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
 
-        # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
-        print(s, "■river方向（逆）の強度の確認")
-        river_peak_line_strength = ri.main_river_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
+        # ■上記二つに置き換えて、フック形状判定とする
+        print(s, "■フックやパラレルの調査")
+        orders_and_evidence = hi.main_hook_figure_inspection_and_order_practice({"df_r": df_r, "peaks": peaks})
 
         # ■ダブルトップ突破型に関する情報を取得する
         print(s, "■DoubleTOpBreakの調査")

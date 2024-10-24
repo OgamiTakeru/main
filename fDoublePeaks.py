@@ -269,10 +269,10 @@ def double_peak_judgement_predict(dic_args):
         gene.print_arr(temp_inspection_peaks[:max_index])
         peak_count_peaks = [item for item in temp_inspection_peaks[:max_index] if item["direction"] == -1]  # Lower側
         peak_count = len(peak_count_peaks)
-        memo2 = "," + str(peak_count) + "ピーク有"
         lower_upper_gap = abs(lower_gap_total - upper_gap_total)
-        if lower_upper_gap > turn_gap * 1.3 and lower_upper_gap >= 0.28:
-            if flop3['count'] >= 4:  # FLop3が長い場合、独立しているため、ここからの下落も考えられる
+        print(ts, "おかしい", lower_upper_gap, lower_gap_total, upper_gap_total)
+        if lower_upper_gap / turn_gap >= 2 and lower_upper_gap >= 0.20:
+            if flop3['count'] >= 5:  # and flop3['gap'] > 0.02:  # FLop3が長い場合、独立しているため、ここからの下落も考えられる
                 print(t6, "突破形状維持（前が長いがFLOP3長め、もっと下がる）Upper:", upper_gap_total, "lower:", lower_gap_total, "t", turn_gap, "gap", lower_upper_gap)
                 double_top_strength = -1
                 double_top_strength_memo = double_top_strength_memo + ", 突破(より下)" + str(upper_lower_gap) + str(turn_gap)
@@ -289,7 +289,7 @@ def double_peak_judgement_predict(dic_args):
         # 直近が登り方向の場合、折り返し基準のflop3は下がり。その前が下がりメインの場合、下がりきっていると思われる。
         # flop3以前の、最も低い値を算出（その時刻を算出）
         min_index = min(enumerate(temp_inspection_peaks), key=lambda x: x[1].get('peak', float('-inf')))[0]
-        print(min_index, temp_inspection_peaks[min_index])
+        # print(min_index, temp_inspection_peaks[min_index])
         temp_inspection_peaks = temp_inspection_peaks[:min_index]  # 最大値までの範囲で
         lower_peaks = [item for item in temp_inspection_peaks if item["direction"] == -1]  # Lower側
         lower_gap_total = sum(d['gap'] for d in lower_peaks)
@@ -303,17 +303,22 @@ def double_peak_judgement_predict(dic_args):
         peak_count = len(peak_count_peaks)
         memo2 = "," + str(peak_count) + "ピーク有"
 
-        if upper_gap_total - lower_gap_total> turn_gap * 1.5:
-            if flop3['count'] >= 4:  # FLop3が長い場合、独立しているため、ここからの上昇も考えられる
-                print(t6, "突破形状維持（前が長いがFLOP3長め、もっと上がる）Upper:", upper_gap_total, "lower:",lower_gap_total, "t", turn_gap, upper_gap_total - lower_gap_total)
+        lower_upper_gap = abs(lower_gap_total - upper_gap_total)
+        if lower_upper_gap / turn_gap >= 2  and lower_upper_gap >= 0.20:
+            if flop3['count'] >= 5: # and flop3['gap'] > 0.02::  # FLop3が長い場合、独立しているため、ここからの上昇も考えられる
+                print(t6, "突破形状維持（前が長いがFLOP3長め、もっと上がる）Upper:", upper_gap_total, "lower:",lower_gap_total, "t", turn_gap, lower_upper_gap)
                 double_top_strength = -1
                 double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
+            elif latest['gap'] >= 0.1:
+                print(t6, "レイテストが大きいため、戻す可能性大）Upper:", upper_gap_total, "lower:",lower_gap_total, "t", turn_gap, lower_upper_gap, flop3['count'])
+                double_top_strength = 1
+                double_top_strength_memo = double_top_strength_memo + ", 上がり切り" + str(upper_lower_gap) + str(turn_gap)
             else:
-                print(t6, "3回折り返し相当の上がりあり（これ以上上がらない状態）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap, upper_gap_total - lower_gap_total, flop3['count'])
+                print(t6, "3回折り返し相当の上がりあり（これ以上上がらない状態）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap, lower_upper_gap, flop3['count'])
                 double_top_strength = 1
                 double_top_strength_memo = double_top_strength_memo + ", 上がり切り" + str(upper_lower_gap) + str(turn_gap)
         else:
-            print(t6, "突破形状維持（3回折り返し以内の上がり、もっと上がる）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap, upper_gap_total - lower_gap_total)
+            print(t6, "突破形状維持（3回折り返し以内の上がり、もっと上がる）Upper:",upper_gap_total,"lower:",lower_gap_total, "t", turn_gap, lower_upper_gap)
             double_top_strength = -1
             double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
     # 追加の検討要素②　ターンで突発的な足がある場合、突破しにくいのでは、という判定
@@ -465,38 +470,40 @@ def main_double_peak_break_inspection_and_order(dic_args):
     # ■オーダーの作成を実施する
     # 価格の設定（現在価格、LC、等）
     now_price = cf.now_price()  # 現在価格の取得
-    # lc_target_price =   # 想定されるLCの理想価格（Rangeではない）
+    now_price = peaks[0]['peak']
     order_base_info = cf.order_base(now_price)  # オーダーの初期辞書を取得する(nowPriceはriver['latest_price']で代用)
     # オーダーの可能性がある場合、オーダーを正確に作成する
     if double_top_strength < 0:
         # ストレングスが突破形状の場合(マイナス値）
+        # LC価格の目安を求めるためのベースを計算
+        print(ts, " なんでおかしいの？", river['peak'])
+        lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
+        lc_range_temp = abs(now_price - lc_price_temp)  # 従来の設定ロスカ幅(計算用）
+        lc = gene.cal_at_least(0.07, lc_range_temp)
+
         if confidence == 1:
             # 【突破形状】従来想定の突破形状
             main_order = copy.deepcopy(order_base_info)
             main_order['target'] = turn['peak']
             main_order['tp'] = 0.5
             main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
-            # main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
-            main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             main_order['expected_direction'] = latest['direction']  # 突破方向
             main_order['priority'] = 2  # ほかので割り込まれない
             main_order['units'] = order_base_info['units'] * 1
             main_order['name'] = "突破形状（通常）"
         else:
             # 【突破形状】従来想定より、リバーの動きが速い
-            lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
-            lc_range_temp = abs(now_price - lc_price_temp)  # 従来の設定ロスカ幅(計算用）
-            lc = gene.cal_at_least(0.07, lc_range_temp)
-
             double_top_strength = -0.9  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
             main_order = copy.deepcopy(order_base_info)
             # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
-            main_order['target'] = now_price + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
+            main_order['target'] = latest['peak'] + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
             main_order['tp'] = 0.5
-            main_order['lc'] = lc  #
+            main_order['lc'] = 0.09  #
             # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
-            # main_order['type'] = 'STOP'  # 順張り
-            main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            main_order['type'] = 'STOP'  # 順張り
+            # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             main_order['expected_direction'] = latest['direction']  # 突破方向
             main_order['priority'] = 2  #
             main_order['units'] = order_base_info['units'] * 1
@@ -509,8 +516,8 @@ def main_double_peak_break_inspection_and_order(dic_args):
             main_order['target'] = turn['peak']
             main_order['tp'] = 0.5
             main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
-            # main_order['type'] = 'LIMIT'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
-            main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            main_order['type'] = 'LIMIT'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
             main_order['priority'] = 2  # ほかので割り込まれない
@@ -525,12 +532,12 @@ def main_double_peak_break_inspection_and_order(dic_args):
             lc = gene.cal_at_least(0.07, lc_range_temp)
 
             # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
-            main_order['target'] = now_price + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
+            main_order['target'] = latest['peak'] + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
             main_order['tp'] = 0.5
-            main_order['lc'] = lc
+            main_order['lc'] = 0.09
             # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
-            # main_order['type'] = 'LIMIT'  # 順張り
-            main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+            main_order['type'] = 'LIMIT'  # 順張り
+            # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['tr_range'] = 0.10  # 要検討
             main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
             main_order['priority'] = 2  #

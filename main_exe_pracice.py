@@ -114,30 +114,39 @@ def mode1():
             return 0
     # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
     if classes_info['position_exist']:
-        # 既存のポジションがある場合、互い(新規と既存)プライオリティ次第で注文を発行する
-        if classes_info['open_positions'][0]['pl'] < 0:
-            # 現在のポジションがマイナスの場合
-            if classes_info['open_positions'][0]['direction'] == inspection_result_dic['exe_orders'][0]['expected_direction']:
-                # 新オーダー候補と方向が同じな場合
-                # 新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
-                if inspection_result_dic['max_priority'] > classes_info['max_priority']:
-                    # 新規が重要オーダー。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
-                    pass
-                    # tk.line_send("★[practice]ポジションありだがフラッグ発生のため置換", "Pri", inspection_result_dic['max_priority'])
-                else:
-                    # 新規の重要性は今より低い。ただし、ポジション後２５分以内の物は、プライオリティが同一の場合でも置き変わらない
-                    if classes_info['max_position_time_sec'] < 1500:
-                        # tk.line_send("★[practice]ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri", classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
+        new_exe_order = inspection_result_dic['exe_orders'][0]
+        exist_position = classes_info['open_positions'][0]
+        # ◆既存のポジションがある場合、既存の物と新規のものの方向が同じかを確かめる
+        if exist_position['direction'] != new_exe_order['expected_direction']:
+            # ◆新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
+            if inspection_result_dic['max_priority'] > classes_info['max_priority']:
+                # 新規が重要オーダー。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
+                # tk.line_send("★ポジションありだが高プライオリティのため置換", "Pri", inspection_result_dic['max_priority'],
+                #              exist_position['pl'])
+                pass
+            else:
+                # ◆現在のポジションがマイナスの場合
+                if classes_info['open_positions'][0]['pl'] < 0:
+                    # ◆ポジション後２５分以内の物は、プライオリティが同一の場合でも置き変わらない
+                    if classes_info['max_position_time_sec'] < 6 * 5 * 60:
+                        # tk.line_send("★ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri",
+                        #              classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'],
+                        #              new_exe_order['name'], exist_position['pl'])
                         # classPosition.position_check(classes) で各ポジションの状態を確認可能
                         return 0
                     else:
-                        # tk.line_send("[practice]重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri", classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
+                        # tk.line_send("重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri",
+                        #              classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'],
+                        #              new_exe_order['name'], exist_position['pl'])
                         pass
-            else:
-                # tk.line_send("★[practice]既存のポジションと方向が同じ（マイナスだが）のため様子見", inspection_result_dic['exe_orders'][0]['name'])
-                return 0
+                else:
+                    # tk.line_send("★ポジションありで、プラスのため様子見", inspection_result_dic['exe_orders'][0]['name'],
+                    #              classes_info['open_positions'][0]['pl'])
+                    return 0
         else:
-            # tk.line_send("[practice]★ポジションありで、プラスのため様子見", inspection_result_dic['exe_orders'][0]['name'])
+            # 既存の物と新規のものの方向が同じ場合は、ポジションの上書きを行わない（意味がないため）
+            # tk.line_send("★既存のポジションと方向が同じため、新規オーダーを行わない",
+            #              new_exe_order['name'], exist_position['pl'], exist_position['direction'], new_exe_order['expected_direction'])
             return 0
 
     # ■既存のオーダーがある場合（強制的に削除）

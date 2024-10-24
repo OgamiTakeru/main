@@ -8,7 +8,7 @@ import fGeneric as gene
 import classOanda
 from collections import OrderedDict
 
-basic_unit = 10000
+basic_unit = 1000
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
 
@@ -17,6 +17,7 @@ def order_base(now_prie):
     引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
     従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
     基本はすべて仮の値だが、Unitのみはこれがベースとなる。
+    LCCHange内は、執行まで時間が短い順（Time＿After）で記載する（lc_ensure_rangeは広がる方向で書く場合もあり）
     """
     return {
             "target": 0.00,
@@ -31,19 +32,19 @@ def order_base(now_prie):
             "lc_change_waiting_second": 4 * 5 * 60,  # LCChangeが最初に行われるまで、最低でも〇〇秒待つ。
             "lc_change": [
                 # {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.09},
-                {"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": -0.1},
-                {"lc_change_exe": True, "lc_trigger_range": 0.048, "lc_ensure_range": 0.023},
-                {"lc_change_exe": True, "lc_trigger_range": 0.08, "lc_ensure_range": 0.045},
-                {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.07},
-                {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.10},
-                {"lc_change_exe": True, "lc_trigger_range": 0.20, "lc_ensure_range": 0.16},
-                {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.21},
-                {"lc_change_exe": True, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
-                {"lc_change_exe": True, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
-                {"lc_change_exe": True, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
-                {"lc_change_exe": True, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
-                {"lc_change_exe": True, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
-                {"lc_change_exe": True, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.032, "lc_ensure_range": 0.02},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": 0.03},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.01, "lc_ensure_range": -0.08},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.038, "lc_ensure_range": -0.04},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.048, "lc_ensure_range": 0.04},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.07, "lc_ensure_range": 0.05},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10, "lc_ensure_range": 0.075},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
             ],
     }
 
@@ -160,7 +161,6 @@ def information_fix(dic_args):
     s = "        "  # 5個分
     print(s, "<引数整流化> @CommonFunction")
 
-
     # データフレームに関する処理
     if not "df_r" in dic_args:
         print(s, "Df_rがありません（異常です）")
@@ -173,12 +173,16 @@ def information_fix(dic_args):
         peaks_info = p.peaks_collect_main(dic_args['df_r'], 15)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
         # peaks_info = p.peaks_collect_main_not_skip(dic_args['df_r'], 15)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
         peaks = peaks_info['all_peaks']
-        print(s, "<対象>")
-        print(s, "Latest", peaks[0])
-        print(s, "river ", peaks[1])
-        print(s, "turn", peaks[2])
-        print(s, "flop3", peaks[2])
-        print(s, "すべて")
+        if len(peaks) < 4:
+            print("　ピークの個数が足りない(エラーではない)")
+            return {"df_r": dic_args['df_r'], "peaks": [], "params": {}, "inspection_params": {}}
+        else:
+            print(s, "<対象>")
+            print(s, "Latest", peaks[0])
+            print(s, "river ", peaks[1])
+            print(s, "turn", peaks[2])
+            print(s, "flop3", peaks[3])
+            print(s, "すべて")
         # gene.print_arr(peaks, 5)
 
     # 以下はパラメータ用（あまり使っていない）
@@ -263,6 +267,7 @@ def order_finalize(order_base_info):
             elif order_base_info['type'] == "LIMIT":
                 order_base_info['stop_or_limit'] = -1
             elif order_base_info['type'] == "MARKET":
+                print("    Marketが指定されてます。targetは価格が必要です。Rangeを指定すると['stop_or_limit']がないエラーになる")
                 pass
         elif 'stop_or_limit' in order_base_info:
             order_base_info['type'] = "STOP" if order_base_info['stop_or_limit'] == 1 else "LIMIT"

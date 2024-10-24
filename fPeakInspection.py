@@ -24,6 +24,14 @@ def peaks_collect_main(*args):
         # print(" peaks数指定なし")
         all_peaks = peaks_collect_all(args[0])
 
+    # ピークが1つしか存在しない場合、イレギュラーが発生する
+    if len(all_peaks) == 1:
+        return {"all_peaks": []}
+        # print(" 検証等で起きるイレギュラー")
+        # all_peaks_include_around_base = copy.deepcopy(all_peaks[i])
+        # all_peaks_include_around_base['next'] = {}
+        # all_peaks_include_around_base['previous'] = copy.deepcopy(all_peaks[i + 1])  # ['time']
+
     # all_peaksから大きなデータ（計算に使ったものを付与したもの）を除去しておく
     for i in range(len(all_peaks)):
         del all_peaks[i]['ans']

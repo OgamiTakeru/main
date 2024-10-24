@@ -55,7 +55,7 @@ def find_same_price_list_from_peaks(target_price, target_dir, peaks_all, predict
     # print("　　　　判定閾値", range_yen)
     for i, item in enumerate(peaks_all):
         # 判定を行う
-        # print(" 判定", target_price - range_yen, "<", item['peak'], "<=", target_price + range_yen)
+        # print(" 判定", item['time'], target_price - range_yen, "<", item['peak'], "<=", target_price + range_yen)
         if target_price - range_yen <= item['peak'] <= target_price + range_yen:
             # 同価格があった場合
             if counter == 0:
@@ -231,6 +231,7 @@ def judge_line_strength_based_each_same_price_list(same_price_list, peaks, base_
             print(s6, "最高ではないLine(", base_price, ")")
 
     # ■同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
+    # print(len_of_same_price_list)
     if len_of_same_price_list == 1:
         # ■■同一価格が一つの場合：(シンプルダブルトップ　or カルデラ等）
         info = same_price_list[0]  # 同一価格が１つだけが成立（その情報を取得する）
@@ -303,6 +304,7 @@ def judge_line_strength_based_each_same_price_list(same_price_list, peaks, base_
                 remark = "複強め"
             # print(s6, "複数時　強強度", minus_counter, len(same_list))
 
+    # print("テスト用", remark)
     # 返却値の整理
     return_dic["line_strength"] = line_strength
     return_dic["priority"] = line_strength
@@ -604,13 +606,16 @@ def main_river_strength_inspection_and_order(dic_args):
     }
 
     # ■関数の開始準備（表示と情報の清流化）
-    print(ts, "■river側のLineStrength（latest延長を基本とした場合、river側に戻ってくるかどうか？）")
     fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
     target_df = fixed_information['df_r']
     peaks = fixed_information['peaks']
+    print(ts, "■river側のLineStrength（latest延長を基本とした場合、river側に戻ってくるかどうか？）",peaks[1]['time'],peaks[1]['peak'], peaks[1]['direction'])
 
     # ■実際の調査の開始
+    river_strength = 0
     double_top_same_price_list = find_same_price_list_from_peaks(peaks[1]['peak'], peaks[1]['direction'], peaks, False)
+    # print("同価格一覧")
+    # gene.print_arr(double_top_same_price_list)
     if len(double_top_same_price_list) != 0:
         # 同価格が存在する場合
         oppo_strength_info = judge_line_strength_based_each_same_price_list(
@@ -619,14 +624,18 @@ def main_river_strength_inspection_and_order(dic_args):
             peaks[1]['peak'],
             peaks[1]['direction']
         )  # ■■LINE強度の検証関数の呼び出し
+        river_strength = oppo_strength_info['line_strength']
         # print(s4, oppo_strength_info)
         if oppo_strength_info['line_strength'] >= 0.9:
             now_double_peak_gap = peaks[0]['gap']
             print(s6, "反対側に強い抵抗.価格:",peaks[1]['peak'], "強さ", oppo_strength_info['line_strength'],
                          "Gap", now_double_peak_gap)
+        else:
+            print(s6, "river強度", oppo_strength_info['line_strength'])
     else:
         tk.line_send(s6, "反対が存在しないケース　不思議なケース(下でoppoが使えない)")
 
+    return river_strength
 
 def judge_line_strength_all_predict_line(dic_args):
     """
