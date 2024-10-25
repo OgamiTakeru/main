@@ -299,19 +299,19 @@ def main_analysis_and_create_order():
     global gl_classes, gl_test
 
     # ５秒足を１行ずつループし、５分単位で解析を実行する
-    for index, row_s5 in s5_df.iterrows():
-        print("■■■", row_s5['time_jp'], "■■■")
+    for index, row_s5 in trimmed_s5_df.iterrows():
+        print("■■■", row_s5['time_jp'], "■■■", index, "行目/", len(trimmed_s5_df), "中")
 
         # 【解析処理】分が5の倍数であれば、解析を実施する
         dt = str_to_time(row_s5['time_jp'])  # 時間に変換
         if dt.minute % 5 == 0 and dt.second == 0:  # 各5分0秒で解析を実行する
             analysis_df = find_analysis_dataframe(d5_df_r, row_s5['time_jp'])  # 解析用の5分足データを取得する
             print("★検証", row_s5['time_jp'], "行数", len(analysis_df))
-            print(analysis_df.head(5))
-            print(analysis_df.tail(5))
-            if len(analysis_df) <= 80:
+            # print(analysis_df.head(5))
+            # print(analysis_df.tail(5))
+            if len(analysis_df) < gl_need_to_analysis:
                 # 解析できない行数しかない場合、実施しない（5秒足の飛びや、取得範囲の関係で発生）
-                print("   解析実施しません", len(analysis_df), "行しかないため")
+                print("   解析実施しません", len(analysis_df), "行しかないため（必要行数目安[固定値ではない]", gl_need_to_analysis)
                 continue  # returnではなく、次のループへ
             else:
                 # ★★★ 解析を呼び出す
@@ -421,58 +421,76 @@ gl_test = []
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 gl_total = 0  # トータル価格
 gl_total_per_units = 0  # トータル価格（ユニットによらない）
-gl_need_to_analysis = 85  # 調査に必要な行数
+gl_need_to_analysis = 60  # 調査に必要な行数
 gl_results_list = []
 gl_order_list = []
 
-# 解析のための「5分足」のデータを取得(20時のデータで検証したい場合、
-jp_time = datetime.datetime(2024, 10, 25, 15, 40, 1)  # to
+# 解析のための「5分足」のデータを取得
+m5_count = 80 # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
+jp_time = datetime.datetime(2024, 10, 25, 19, 40, 1)  # to
 euro_time_datetime = jp_time - datetime.timedelta(hours=9)
 euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-params = {"granularity": "M5", "count": 110, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
+params = {"granularity": "M5", "count": m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
 data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, 1)
 d5_df = data_response['data']
 d5_df_r = d5_df.sort_index(ascending=False)  # 時系列を逆にしたものが解析用！
-# d5_df_r = d5_df_r.reset_index(drop=True)
 pd.set_option('display.max_columns', None)
-print("解析用データ")
+print("解析用5分足データ")
+start_time = d5_df.iloc[0]['time_jp']
+end_time = d5_df.iloc[-1]['time_jp']
 print(d5_df_r.head(5))
 print(d5_df_r.tail(5))
-
-# 5分足データの必要情報と、5秒足のデータを何行取得すればいいかを計算
-start_time = d5_df.iloc[0]['time_jp']
-start_time_euro = d5_df.iloc[0]['time']
-end_time = d5_df.iloc[-1]['time_jp']
-end_time_euro = d5_df.iloc[-1]['time']
-between_now = cal_str_time_gap(datetime.datetime.now(), end_time)['gap']
-between_sec = cal_str_time_gap(end_time, start_time)['gap']
-need_feets_5_sec = between_sec / 5
-between_sec = cal_str_time_gap(end_time, start_time)['gap']
-loop_for_5s = math.ceil(between_sec/5/5000)
-print("5分足での取得時刻は", start_time, "-", end_time)
+print("5分足での取得時刻は", start_time, "-", end_time, len(d5_df), "行")
 print("実際の解析時間は", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time)
 
-# # 5秒足のデータを取得する
-params = {"granularity": "S5", "count": 5000, "to": end_time_euro}  # 5秒足で必要な分を取得する
+# 検証のための「5秒足」のデータを取得（解析用と同範囲のデータをとってしまう(最初の方が少し不要とはなる)。解析が5分足の場合×60行分取得すればよい）
+end_time_euro = d5_df.iloc[-1]['time']  # Toに入れるデータ（これは解析用と一致させたいため、基本固定）
+if m5_count * 60 > 5000:
+    # 5000を超えてしまう場合はループ処理が必要(繰り返しデータで使うため、少し多めに取ってしまう。5000単位をN個の粒度）
+    all_need_row = m5_count * 60
+    loop_for_5s = math.ceil(all_need_row / 5000)
+    s5_count = 5000
+    trimming = (5000 * loop_for_5s - all_need_row) + gl_need_to_analysis * 60
+    print("   5S検証：必要な行", all_need_row, "5000行のループ数", loop_for_5s, "多く取得できる行数", 5000 * loop_for_5s - all_need_row)
+else:
+    # 5000以下の場合は、一回で取得できる
+    s5_count = m5_count * 60  # シンプルに5分足の60倍
+    loop_for_5s = 1  # ループ回数は1回
+    trimming = gl_need_to_analysis * 60  # 実際に検証で使う範囲は、解析に必要な分を最初から除いた分。
+# between_now = cal_str_time_gap(datetime.datetime.now(), end_time)['gap']
+# between_sec = cal_str_time_gap(end_time, start_time)['gap']
+# start_time_euro = d5_df.iloc[0]['time']
+# end_time_euro = d5_df.iloc[-1]['time']
+# need_feets_5_sec = between_sec / 5
+# between_sec = cal_str_time_gap(end_time, start_time)['gap']
+# loop_for_5s = math.ceil(between_sec/5/5000)
+params = {"granularity": "S5", "count": s5_count, "to": end_time_euro}  # 5秒足で必要な分を取得する
 data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, loop_for_5s)
-# data_response = oa.InstrumentsCandles_exe("USD_JPY", params)
 s5_df = data_response['data']  # 期間の全5秒足を取得する  (これは解析に利用しないため、時系列を逆にしなくて大丈夫）
+print("")
 print("検証用データ")
-print(s5_df.head(5))
-print(s5_df.tail(5))
+start_s5_time = s5_df.iloc[0]['time_jp']
+end_s5_time = s5_df.iloc[-1]['time_jp']
+# print(s5_df.head(1))
+# print(s5_df.tail(1))
+print("検証時間の総取得期間は", start_s5_time, "-", end_s5_time, len(s5_df), "行")
+trimmed_s5_df = s5_df[trimming:]
+trimmed_s5_df = trimmed_s5_df.reset_index(drop=True)  # インデクスの再振り
+start_trimmed_s5_time = trimmed_s5_df.iloc[0]['time_jp']
+end_trimmed_s5_time = trimmed_s5_df.iloc[-1]['time_jp']
+print("トリム後（実際に使う）5秒足のDFの期間は", start_trimmed_s5_time, end_trimmed_s5_time, len(trimmed_s5_df), "行")
 
 print("")
 print("")
 print("検証開始")
 main_analysis_and_create_order()
-print("オーダーがあった時間")
-gene.print_arr(gl_test)
 
-print("最終結果", round(gl_total, 3), round(gl_total_per_units, 3))
-print("オーダーズ")
+# 結果表示部
+print("●実際の解析時間(再表示)", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time)
+print("●最終的な合計", round(gl_total, 3), round(gl_total_per_units, 3))
+print("●オーダーリスト（約定しなかったものが最下部の結果に表示されないため、オーダーを表示）")
 gene.print_arr(gl_order_list)
-print("結果")
-print("実際の解析時間は", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time)
+print("●結果リスト")
 gene.print_arr(gl_results_list)
 
 # print(kisisute('1.15456'))

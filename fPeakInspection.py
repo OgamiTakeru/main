@@ -24,7 +24,7 @@ def peaks_collect_main(*args):
         # print(" peaks数指定なし")
         all_peaks = peaks_collect_all(args[0])
 
-    # ピークが1つしか存在しない場合、イレギュラーが発生する
+    # ピークが1つしか存在しない場合、イレギュラーが発生するため、空を返却
     if len(all_peaks) == 1:
         return {"all_peaks": []}
         # print(" 検証等で起きるイレギュラー")
