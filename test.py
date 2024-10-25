@@ -426,12 +426,13 @@ gl_results_list = []
 gl_order_list = []
 
 # 解析のための「5分足」のデータを取得
-m5_count = 80 # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
+m5_count = 5000 # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
+m5_loop = 2  # 何ループするか
 jp_time = datetime.datetime(2024, 10, 25, 19, 40, 1)  # to
 euro_time_datetime = jp_time - datetime.timedelta(hours=9)
 euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
 params = {"granularity": "M5", "count": m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
-data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, 1)
+data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, m5_loop)
 d5_df = data_response['data']
 d5_df_r = d5_df.sort_index(ascending=False)  # 時系列を逆にしたものが解析用！
 pd.set_option('display.max_columns', None)
@@ -486,7 +487,8 @@ print("検証開始")
 main_analysis_and_create_order()
 
 # 結果表示部
-print("●実際の解析時間(再表示)", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time)
+print("●実際の解析時間(5分足 再表示)", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time, len(d5_df.iloc[gl_need_to_analysis]), "行(", len(d5_df), "中)")
+print("●実際の検証時間(トリム後5秒足 再表示)", start_trimmed_s5_time, end_trimmed_s5_time, len(trimmed_s5_df), "行(", len(s5_df), "中)")
 print("●最終的な合計", round(gl_total, 3), round(gl_total_per_units, 3))
 print("●オーダーリスト（約定しなかったものが最下部の結果に表示されないため、オーダーを表示）")
 gene.print_arr(gl_order_list)
