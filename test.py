@@ -446,9 +446,9 @@ print("実際の解析時間は", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-
 
 # 検証のための「5秒足」のデータを取得（解析用と同範囲のデータをとってしまう(最初の方が少し不要とはなる)。解析が5分足の場合×60行分取得すればよい）
 end_time_euro = d5_df.iloc[-1]['time']  # Toに入れるデータ（これは解析用と一致させたいため、基本固定）
+all_need_row = m5_count * 60 * m5_loop
 if m5_count * 60 > 5000:
     # 5000を超えてしまう場合はループ処理が必要(繰り返しデータで使うため、少し多めに取ってしまう。5000単位をN個の粒度）
-    all_need_row = m5_count * 60
     loop_for_5s = math.ceil(all_need_row / 5000)
     s5_count = 5000
     trimming = (5000 * loop_for_5s - all_need_row) + gl_need_to_analysis * 60
