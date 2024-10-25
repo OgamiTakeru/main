@@ -1,0 +1,3 @@
+[submodule "fxTradeTest"]
+	path = fxTradeTest
+	url = https://github.com/fxTradeTest/fxTradeTest.git

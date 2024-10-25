@@ -535,7 +535,7 @@ def inspection_warp_up_and_make_order(df_r):
         print(s, break_double_top_strength_orders_and_evidence)
         if break_double_top_strength_orders_and_evidence['take_position_flag']:
             # DoubleTopの判定が最優先 (単品）
-            tk.line_send("latest3でDoubleTop突破確認")
+            # tk.line_send("latest3でDoubleTop突破確認")
             flag_and_orders["take_position_flag"] = False
             flag_and_orders["exe_orders"] = \
                 [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
