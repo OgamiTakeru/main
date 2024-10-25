@@ -415,10 +415,10 @@ demo = {
 
 # 最初の一つをインスタンスを生成する  150.284 149.834
 gl_classes = []
-gl_test = []
 
 # グローバルでの宣言
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
+gl_start_time = datetime.datetime.now()  # 検証時間の計測用
 gl_total = 0  # トータル価格
 gl_total_per_units = 0  # トータル価格（ユニットによらない）
 gl_need_to_analysis = 60  # 調査に必要な行数
@@ -487,6 +487,9 @@ print("検証開始")
 main_analysis_and_create_order()
 
 # 結果表示部
+print("●●検証終了●●")
+fin_time = datetime.datetime.now()
+print("●検証を始めた時間と終わった時間", gl_start_time, fin_time)
 print("●実際の解析時間(5分足 再表示)", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time, len(d5_df.iloc[gl_need_to_analysis]), "行(", len(d5_df), "中)")
 print("●実際の検証時間(トリム後5秒足 再表示)", start_trimmed_s5_time, end_trimmed_s5_time, len(trimmed_s5_df), "行(", len(s5_df), "中)")
 print("●最終的な合計", round(gl_total, 3), round(gl_total_per_units, 3))

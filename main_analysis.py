@@ -464,7 +464,6 @@ def main():
     # 結果の簡易表示用
     tk.line_send("■■inspection fin", )  # LINEは先に送っておく（ログの最終行に表示されないように、先に表示）
     print("★★★RESULT★★★")
-    fin_time = datetime.datetime.now()
     fd_forview = ans_df[ans_df["take_position_flag"] == True]  # 取引有のみを抽出
     if len(fd_forview) == 0:
         return 0
