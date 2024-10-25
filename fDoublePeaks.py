@@ -326,7 +326,7 @@ def double_peak_judgement_predict(dic_args):
     if turn['include_large']:
         # 大きな足をインクルードする場合、抵抗線の信頼度は強い
         print(t6, "急変動を含むため、抵抗側と判断")
-        tk.line_send("急変動を含むため、突破形状だが突破なし")
+        # tk.line_send("急変動を含むため、突破形状だが突破なし")
         double_top_strength = 1
         double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
 
@@ -405,7 +405,7 @@ def main_double_peak_break_inspection_and_order(dic_args):
             main_order = copy.deepcopy(order_base_info)
             main_order['target'] = turn['peak']
             main_order['tp'] = 0.5
-            main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
+            main_order['lc'] = 0.15  # * line_strength  # 0.09  # LCは広め
             main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             main_order['expected_direction'] = latest['direction']  # 突破方向
@@ -419,7 +419,7 @@ def main_double_peak_break_inspection_and_order(dic_args):
             # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
             main_order['target'] = latest['peak'] + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
             main_order['tp'] = 0.5
-            main_order['lc'] = 0.04  #
+            main_order['lc'] = 0.15  #　0.04
             # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
             main_order['type'] = 'STOP'  # 順張り
             # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
@@ -434,7 +434,7 @@ def main_double_peak_break_inspection_and_order(dic_args):
             main_order = copy.deepcopy(order_base_info)
             main_order['target'] = turn['peak']
             main_order['tp'] = 0.5
-            main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
+            main_order['lc'] = 0.15  # * line_strength  # 0.09  # LCは広め
             main_order['type'] = 'LIMIT'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
             # main_order['tr_range'] = 0.10  # 要検討
@@ -453,7 +453,7 @@ def main_double_peak_break_inspection_and_order(dic_args):
             # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
             main_order['target'] = latest['peak'] + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
             main_order['tp'] = 0.5
-            main_order['lc'] = 0.04
+            main_order['lc'] = 0.15  # 0.04
             # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
             main_order['type'] = 'LIMIT'  # 順張り
             # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
