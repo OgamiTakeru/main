@@ -425,9 +425,14 @@ gl_need_to_analysis = 60  # 調査に必要な行数
 gl_results_list = []
 gl_order_list = []
 
+# 現在時刻を取得しておく（データの保存用等）
+gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
+gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
+            str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + "_" + str(gl_now.second).zfill(2)
+
 # 解析のための「5分足」のデータを取得
-m5_count = 5000 # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
-m5_loop = 1  # 何ループするか
+m5_count = 5000  # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
+m5_loop = 5  # 何ループするか
 jp_time = datetime.datetime(2024, 10, 25, 19, 40, 1)  # to
 euro_time_datetime = jp_time - datetime.timedelta(hours=9)
 euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
@@ -500,5 +505,15 @@ print("●オーダーの個数", len(gl_order_list), "、約定した個数", l
 print("●プラスの個数", len([item for item in gl_results_list if item["pl"] >= 0]), ", マイナスの個数", len([item for item in gl_results_list if item["pl"] < 0]))
 print("●最終的な合計", round(gl_total, 3), round(gl_total_per_units, 3))
 
+# 結果処理部
+result_df = pd.DataFrame(gl_results_list)  # 結果の辞書配列をデータフレームに変換
+try:
+    result_df.to_csv(tk.folder_path + gl_now_str + 'main_analysis_ans.csv', index=False, encoding="utf-8")
+    result_df.to_csv(tk.folder_path + 'main_analysis_ans_latest.csv', index=False, encoding="utf-8")
+except:
+    print("書き込みエラーあり")  # 今までExcelを開きっぱなしにしていてエラーが発生。日時を入れることで解消しているが、念のための分岐
+    result_df.to_csv(tk.folder_path + gl_now_str + 'main_analysis_ans.csv', index=False, encoding="utf-8")
+    pass
 
-# print(kisisute('1.15456'))
+# 終了（LINEを送る）
+tk.line_send("【test fin】", gl_start_time, "-", fin_time, "(結果:", round(gl_total, 3), ")")
