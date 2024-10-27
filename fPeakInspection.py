@@ -61,7 +61,7 @@ def peaks_collect_main(*args):
     # ピークの強度を求め、追記しておく（前後が長く、自身が極端に短い場合、一瞬の折り返しとみて強度が弱いこととする）
     for i in range(len(all_peaks_include_around)):
         item = all_peaks_include_around[i]
-        curr_gap = item['gap']
+        curr_gap = item['gap'] if item['gap'] > 0 else 0.00000001  # ０で割った場合のエラーがないようにする。
         prev_gap = item['previous'].get('gap', 0)  # previousがある場合はその値と、ない場合は０を返す）
         next_gap = item['next'].get('gap', 0)  # nextがある場合はその値、ない場合は０を返す
         # print("  PeakInfoMaking（previous_now(1)_next)", round(prev_gap/curr_gap, 1), 1, round(next_gap/curr_gap, 1),
@@ -80,7 +80,7 @@ def peaks_collect_main(*args):
             # そのため一つ前が、上記と同じ条件を満たす場合、とする
             if i != 0:
                 temp_item = all_peaks_include_around[i-1]
-                curr_gap_t = temp_item['gap']
+                curr_gap_t = item['gap'] if item['gap'] > 0 else 0.00000001  # ０で割った場合のエラーがないようにする。
                 prev_gap_t = temp_item['previous'].get('gap', 0)  # previousがある場合はその値と、ない場合は０を返す）
                 next_gap_t = temp_item['next'].get('gap', 0)  # nextがある場合はその値、ない場合は０を返す
                 if (prev_gap_t != 0 and next_gap_t != 0) and (prev_gap_t/curr_gap_t > 3 and next_gap_t/curr_gap_t > 3):

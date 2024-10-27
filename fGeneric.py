@@ -91,6 +91,26 @@ def str_to_time(str_time):
     return time_dt
 
 
+def str_to_filename(str_time):
+    """
+    時刻（文字列 yyyy/mm/dd hh:mm:mm）をファイル名に利用できる数字の羅列にする
+    何故かDFないの日付を扱う時、isoformat関数系が使えない。。なぜだろう
+    :param str_time:
+    :return:
+    """
+    time_file_name = str_time[0:4] + str_time[5:7] + str_time[8:10] + str_time[11:13] + str_time[14:16] + str_time[17:19]
+    return time_file_name
+
+
+def time_to_str(dt_time):
+    """
+    DateTimeを文字列にする（ファイル名にしたりしたい時用）
+    2024-08-10 19:40:00の形式を、20240810194000にする
+    """
+    ans = dt_time.strftime("%Y%m%d%H%M%S")
+    print("時刻を文字に変換テスト")
+    return ans
+
 def str_to_time_hms(str_time):
     """
     時刻（文字列：2023/5/24  21:55:00　形式）をDateTimeに変換する。

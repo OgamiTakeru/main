@@ -9,6 +9,8 @@ import datetime
 import fInspection_order_Main as im
 import math
 from decimal import Decimal, ROUND_DOWN
+import glob
+import os
 
 # グローバルでの宣言
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
@@ -24,6 +26,7 @@ for ic in range(3):
     new_name = "c" + str(ic)
     classes.append(classPosition.order_information(new_name, oa, False))  # 順思想のオーダーを入れるクラス
 
+
 # test_df = oa.get_base_data_multi(1, 1000)
 # test_df.to_csv(tk.folder_path + 'tranzaction.csv', index=False, encoding="utf-8")
 # print(test_df)
@@ -37,7 +40,7 @@ class Order:
         print(order_dic)
         self.take_position_flag = False
         self.position_is_live = False
-        self.position_status = "PENDING" # pending, open ,closed, cancelled
+        self.position_status = "PENDING"  # pending, open ,closed, cancelled
         self.name = order_dic['name']
         self.target_price = order_dic['target_price']
         self.tp_price = order_dic['tp_price']
@@ -169,9 +172,12 @@ def update_position_information(cur_class, cur_row, cur_row_index):
     adjuster = -0.004 if cur_class.direction == 1 else 0.004
     now_price = cur_row['close']  # 暫定としてクローズ価格を現在価格とする ★NowPriceで考えるため、LCやTP priceとは誤差が出る。
     # 現価＞ターゲットだと現価-ターゲットは正の値。買いポジの場合は＋）
-    pl_use_close = round((cur_row['close'] + adjuster - cur_class.target_price) * cur_class.direction, 3)  # 現価＞ターゲットだと現価-ターゲットは正の値。買いポジの場合は＋）
-    pl_use_high = round((cur_row['high'] + adjuster - cur_class.target_price) * cur_class.direction, 3)  # 現価＞ターゲットだと現価-ターゲットは正の値。買いポジの場合は＋）
-    pl_use_low = round((cur_row['low'] + adjuster - cur_class.target_price) * cur_class.direction, 3)  # 現価＞ターゲットだと現価-ターゲットは正の値。買いポジの場合は＋）
+    pl_use_close = round((cur_row['close'] + adjuster - cur_class.target_price) * cur_class.direction,
+                         3)  # 現価＞ターゲットだと現価-ターゲットは正の値。買いポジの場合は＋）
+    pl_use_high = round((cur_row['high'] + adjuster - cur_class.target_price) * cur_class.direction,
+                        3)  # 現価＞ターゲットだと現価-ターゲットは正の値。買いポジの場合は＋）
+    pl_use_low = round((cur_row['low'] + adjuster - cur_class.target_price) * cur_class.direction,
+                       3)  # 現価＞ターゲットだと現価-ターゲットは正の値。買いポジの場合は＋）
 
     # print("  -Update条件", cur_row['low'], cur_row['high'])
     # print("  -Update条件", pl_use_low, pl_use_high, cur_class.direction)
@@ -209,7 +215,7 @@ def update_position_information(cur_class, cur_row, cur_row_index):
         if 'done' in lc_item or cur_class.position_keeping_time_sec <= lc_item['time_after']:
             # print("   　　⇒OUT", cur_class.position_keeping_time_sec, lc_item['time_after'])
             # if 'done' in lc_item:
-                # print("        ⇒OUT", lc_item['done'])
+            # print("        ⇒OUT", lc_item['done'])
             continue
 
         if cur_class.unrealized_pl_low < lc_item['lc_trigger_range'] < cur_class.unrealized_pl_high:
@@ -244,14 +250,14 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
     adjuster = -0.004 if cur_class.direction == 1 else 0.004
 
     # 価格による判定
-    if cur_row['low']+adjuster < lc_price < cur_row["high"]+adjuster:
+    if cur_row['low'] + adjuster < lc_price < cur_row["high"] + adjuster:
         print("　　 ■ロスカットします", cur_class.name, cur_row['time_jp'], cur_row['low'], lc_price, cur_row["high"])
         pl = (lc_price - cur_class.target_price) * cur_class.direction
         settlement_price = lc_price  # ポジション解消価格
         cur_class.position_is_live = False
         cur_class.done = True
         comment = "LC"
-    if cur_row['low']+adjuster < tp_price < cur_row['high']+adjuster and cur_class.position_is_live:  # （ロスカット優先）
+    if cur_row['low'] + adjuster < tp_price < cur_row['high'] + adjuster and cur_class.position_is_live:  # （ロスカット優先）
         print("　　 ■利確します", cur_class.name, cur_row['time_jp'], cur_row['low'], tp_price, cur_row["high"])
         pl = (tp_price - cur_class.target_price) * cur_class.direction
         settlement_price = tp_price  # ポジション解消価格
@@ -263,7 +269,8 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
     # print("   時間的トレード解消判定", cur_class.position_keeping_time_sec, "> 規定Sec", cur_class.position_timeout_sec, cur_class.unrealized_pl)
     if cur_class.position_keeping_time_sec > cur_class.position_timeout_sec and cur_class.unrealized_pl < 0:
         # 本番ではマイナス継続が1分続いた場合だが、ここではマイナスでありかつ時間が経過なので、ある程度ずれる。ただマイナスはほぼ変わりない。
-        print("    Trade解消(マイナス×時間)", cur_class.position_keeping_time_sec, "> 規定Sec", cur_class.position_timeout_sec)
+        print("    Trade解消(マイナス×時間)", cur_class.position_keeping_time_sec, "> 規定Sec",
+              cur_class.position_timeout_sec)
         # 本番では、膠着状態における解消も実施しているが、ここではいったん除外
         settlement_price = cur_row['open']  # ポジション解消価格（ここは暫定的にOpen価格
         cur_class.position_is_live = False
@@ -311,7 +318,8 @@ def main_analysis_and_create_order():
             # print(analysis_df.tail(5))
             if len(analysis_df) < gl_need_to_analysis:
                 # 解析できない行数しかない場合、実施しない（5秒足の飛びや、取得範囲の関係で発生）
-                print("   解析実施しません", len(analysis_df), "行しかないため（必要行数目安[固定値ではない]", gl_need_to_analysis)
+                print("   解析実施しません", len(analysis_df), "行しかないため（必要行数目安[固定値ではない]",
+                      gl_need_to_analysis)
                 continue  # returnではなく、次のループへ
             else:
                 # ★★★ 解析を呼び出す
@@ -394,24 +402,24 @@ def main_analysis_and_create_order():
 
 # オーダーのデモ
 demo = {
-        "target_price": 149.735,
-        "tp_price": 150.284,
-        "lc_price": 149.704,
-        "name": "1番目",
-        "order_time": "2024/10/21 16:45:00",
-        "order_timeout": 150 * 60, "units": 100,
-        "lc_change_waiting_second": 4 * 5 * 60,
-        "priority": 0,
-        "lc_change": [
-            {"lc_change_exe": True, "lc_trigger_range": 0.038, "lc_ensure_range": -0.05},
-            {"lc_change_exe": True, "lc_trigger_range": 0.048, "lc_ensure_range": 0.04},
-            {"lc_change_exe": True, "lc_trigger_range": 0.07, "lc_ensure_range": 0.05},
-            {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.07},
-            {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.10},
-            {"lc_change_exe": True, "lc_trigger_range": 0.20, "lc_ensure_range": 0.16},
-            {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.21}
-        ]
-    }
+    "target_price": 149.735,
+    "tp_price": 150.284,
+    "lc_price": 149.704,
+    "name": "1番目",
+    "order_time": "2024/10/21 16:45:00",
+    "order_timeout": 150 * 60, "units": 100,
+    "lc_change_waiting_second": 4 * 5 * 60,
+    "priority": 0,
+    "lc_change": [
+        {"lc_change_exe": True, "lc_trigger_range": 0.038, "lc_ensure_range": -0.05},
+        {"lc_change_exe": True, "lc_trigger_range": 0.048, "lc_ensure_range": 0.04},
+        {"lc_change_exe": True, "lc_trigger_range": 0.07, "lc_ensure_range": 0.05},
+        {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.07},
+        {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.10},
+        {"lc_change_exe": True, "lc_trigger_range": 0.20, "lc_ensure_range": 0.16},
+        {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.21}
+    ]
+}
 
 # 最初の一つをインスタンスを生成する  150.284 149.834
 gl_classes = []
@@ -428,14 +436,23 @@ gl_order_list = []
 # 現在時刻を取得しておく（データの保存用等）
 gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
 gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
-            str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + "_" + str(gl_now.second).zfill(2)
+             str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + "_" + str(gl_now.second).zfill(2)
 
 # 解析のための「5分足」のデータを取得
 m5_count = 5000  # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
-m5_loop = 5  # 何ループするか
-jp_time = datetime.datetime(2024, 10, 25, 19, 40, 1)  # to
+m5_loop = 2  # 何ループするか
+jp_time = datetime.datetime(2024, 8, 10, 19, 40, 0)  # to
+search_file_name = gene.time_to_str(jp_time)
 euro_time_datetime = jp_time - datetime.timedelta(hours=9)
 euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
+# ファイルが既存かをさがす　（土日の場合を考えると、1行を試しにとって、検討しないといけない。。）
+# test_read = oa.InstrumentsCandles_multi_exe("USD_JPY",{"granularity": "M5", "count": 1, "to": euro_time_datetime_iso}, 1)
+# if glob.glob(os.path.join(tk.folder_path, f'*{search_file_name}*.csv')):
+#     # 試しに取る
+#
+# else:
+#     print("存在しないため、ファイルを取得します")
+#     pass
 params = {"granularity": "M5", "count": m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
 data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, m5_loop)
 d5_df = data_response['data']
@@ -444,6 +461,7 @@ pd.set_option('display.max_columns', None)
 print("解析用5分足データ")
 start_time = d5_df.iloc[0]['time_jp']
 end_time = d5_df.iloc[-1]['time_jp']
+d5_df.to_csv(tk.folder_path + gene.str_to_filename(start_time) + '_test_m5_df.csv', index=False, encoding="utf-8")
 print(d5_df_r.head(5))
 print(d5_df_r.tail(5))
 print("5分足での取得時刻は", start_time, "-", end_time, len(d5_df), "行")
@@ -456,20 +474,14 @@ if m5_count * 60 > 5000:
     # 5000を超えてしまう場合はループ処理が必要(繰り返しデータで使うため、少し多めに取ってしまう。5000単位をN個の粒度）
     loop_for_5s = math.ceil(all_need_row / 5000)
     s5_count = 5000
-    trimming = (5000 * loop_for_5s - all_need_row) + gl_need_to_analysis * 60
-    print("   5S検証：必要な行", all_need_row, "5000行のループ数", loop_for_5s, "多く取得できる行数", 5000 * loop_for_5s - all_need_row)
+    trimming = (5000 * loop_for_5s - all_need_row) + (gl_need_to_analysis * 60)
+    print("   5S検証：必要な行", all_need_row, "5000行のループ数", loop_for_5s, "多く取得できる行数",
+          5000 * loop_for_5s - all_need_row)
 else:
     # 5000以下の場合は、一回で取得できる
     s5_count = m5_count * 60  # シンプルに5分足の60倍
     loop_for_5s = 1  # ループ回数は1回
     trimming = gl_need_to_analysis * 60  # 実際に検証で使う範囲は、解析に必要な分を最初から除いた分。
-# between_now = cal_str_time_gap(datetime.datetime.now(), end_time)['gap']
-# between_sec = cal_str_time_gap(end_time, start_time)['gap']
-# start_time_euro = d5_df.iloc[0]['time']
-# end_time_euro = d5_df.iloc[-1]['time']
-# need_feets_5_sec = between_sec / 5
-# between_sec = cal_str_time_gap(end_time, start_time)['gap']
-# loop_for_5s = math.ceil(between_sec/5/5000)
 params = {"granularity": "S5", "count": s5_count, "to": end_time_euro}  # 5秒足で必要な分を取得する
 data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, loop_for_5s)
 s5_df = data_response['data']  # 期間の全5秒足を取得する  (これは解析に利用しないため、時系列を逆にしなくて大丈夫）
@@ -477,6 +489,7 @@ print("")
 print("検証用データ")
 start_s5_time = s5_df.iloc[0]['time_jp']
 end_s5_time = s5_df.iloc[-1]['time_jp']
+d5_df.to_csv(tk.folder_path + gene.str_to_filename(start_s5_time) + '_test_s5_df.csv', index=False, encoding="utf-8")
 # print(s5_df.head(1))
 # print(s5_df.tail(1))
 print("検証時間の総取得期間は", start_s5_time, "-", end_s5_time, len(s5_df), "行")
@@ -499,16 +512,19 @@ gene.print_arr(gl_order_list)
 print("●結果リスト")
 gene.print_arr(gl_results_list)
 print("●検証を始めた時間と終わった時間", gl_start_time, fin_time)
-print("●実際の解析時間(5分足 再表示)", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time, len(d5_df.iloc[gl_need_to_analysis]), "行(", len(d5_df), "中)")
-print("●実際の検証時間(トリム後5秒足 再表示)", start_trimmed_s5_time, end_trimmed_s5_time, len(trimmed_s5_df), "行(", len(s5_df), "中)")
+print("●実際の解析時間(5分足 再表示)", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time,
+      len(d5_df.iloc[gl_need_to_analysis]), "行(", len(d5_df), "中)")
+print("●実際の検証時間(トリム後5秒足 再表示)", start_trimmed_s5_time, end_trimmed_s5_time, len(trimmed_s5_df), "行(",
+      len(s5_df), "中)")
 print("●オーダーの個数", len(gl_order_list), "、約定した個数", len(gl_results_list))
-print("●プラスの個数", len([item for item in gl_results_list if item["pl"] >= 0]), ", マイナスの個数", len([item for item in gl_results_list if item["pl"] < 0]))
+print("●プラスの個数", len([item for item in gl_results_list if item["pl"] >= 0]), ", マイナスの個数",
+      len([item for item in gl_results_list if item["pl"] < 0]))
 print("●最終的な合計", round(gl_total, 3), round(gl_total_per_units, 3))
 
 # 結果処理部
 result_df = pd.DataFrame(gl_results_list)  # 結果の辞書配列をデータフレームに変換
 try:
-    result_df.to_csv(tk.folder_path + gl_now_str + 'main_analysis_ans.csv', index=False, encoding="utf-8")
+    result_df.to_csv(tk.folder_path + gl_now_str + '_main_analysis_ans.csv', index=False, encoding="utf-8")
     result_df.to_csv(tk.folder_path + 'main_analysis_ans_latest.csv', index=False, encoding="utf-8")
 except:
     print("書き込みエラーあり")  # 今までExcelを開きっぱなしにしていてエラーが発生。日時を入れることで解消しているが、念のための分岐
@@ -516,4 +532,13 @@ except:
     pass
 
 # 終了（LINEを送る）
-tk.line_send("【test fin】", gl_start_time, "-", fin_time, "(結果:", round(gl_total, 3), ")")
+# dataFrameから情報を取得する方法
+plus_df = result_df[result_df["pl"] >= 0]  # PLがプラスのもの（TPではない。LCでもトレール的な場合プラスになっているため）
+minus_df = result_df[result_df["pl"] < 0]
+memo = "通常のLCChange"
+tk.line_send("test fin 【結果】", round(gl_total, 3), ",\n"
+             , "【検証期間】", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time, ",\n"
+             , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), ",\n"
+             , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":", round(minus_df['pl_per_units'].mean(), 3), ",\n"
+             , "【条件】", memo, ",\n参考:処理開始時刻", gl_start_time
+             )
