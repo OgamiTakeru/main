@@ -435,8 +435,8 @@ gl_order_list = []
 
 # 現在時刻を取得しておく（データの保存用等）
 gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
-gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
-             str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + "_" + str(gl_now.second).zfill(2)
+gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
+             str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + str(gl_now.second).zfill(2)
 
 # 解析のための「5分足」のデータを取得
 m5_count = 5000  # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
@@ -524,11 +524,11 @@ print("●最終的な合計", round(gl_total, 3), round(gl_total_per_units, 3))
 # 結果処理部
 result_df = pd.DataFrame(gl_results_list)  # 結果の辞書配列をデータフレームに変換
 try:
-    result_df.to_csv(tk.folder_path + gl_now_str + '_main_analysis_ans.csv', index=False, encoding="utf-8")
+    result_df.to_csv(tk.folder_path + gl_start_time_str + '_main_analysis_ans.csv', index=False, encoding="utf-8")
     result_df.to_csv(tk.folder_path + 'main_analysis_ans_latest.csv', index=False, encoding="utf-8")
 except:
     print("書き込みエラーあり")  # 今までExcelを開きっぱなしにしていてエラーが発生。日時を入れることで解消しているが、念のための分岐
-    result_df.to_csv(tk.folder_path + gl_now_str + 'main_analysis_ans.csv', index=False, encoding="utf-8")
+    result_df.to_csv(tk.folder_path + gl_start_time_str + 'main_analysis_ans.csv', index=False, encoding="utf-8")
     pass
 
 # 終了（LINEを送る）
@@ -540,5 +540,5 @@ tk.line_send("test fin 【結果】", round(gl_total, 3), ",\n"
              , "【検証期間】", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time, ",\n"
              , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), ",\n"
              , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":", round(minus_df['pl_per_units'].mean(), 3), ",\n"
-             , "【条件】", memo, ",\n参考:処理開始時刻", gl_start_time
+             , "【条件】", memo, ",\n参考:処理開始時刻", gl_now
              )
