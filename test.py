@@ -64,8 +64,11 @@ class Order:
         self.order_time = order_dic['order_time']
         self.max_plus = 0  # ポジションを持っている中で、一番プラスになっている時を取得
         self.max_minus = 999  # ポジションを持っている中で、一番マイナスになっている時を取得
+        self.settlement_price = 0
         self.lc_change = order_dic['lc_change']
         self.priority = order_dic['priority']
+
+        self.comment = ""  # クラスごとに残すコメント（決済がLCChangeの場合LCとなるので、ClChangeとしたい、とか）
 
     def lc_change_done(self, i):
         self.lc_change[i]['done'] = True
@@ -222,6 +225,7 @@ def update_position_information(cur_class, cur_row, cur_row_index):
                 # 売り方向の場合
                 new_lc_price = cur_class.target_price - new_lc_range
             print("　　   ★LC底上げ", cur_class.lc_price, "⇒", new_lc_price, cur_row['time_jp'])
+            cur_class.comment = "LC_c"
             cur_class.lc_change_done(i)  # Doneの追加
             cur_class.lc_price = new_lc_price  # 値の更新
 
@@ -248,33 +252,38 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
     if cur_row['low'] + adjuster < lc_price < cur_row["high"] + adjuster:
         print("　　 ■ロスカットします", cur_class.name, cur_row['time_jp'], cur_row['low'], lc_price, cur_row["high"])
         pl = (lc_price - cur_class.target_price) * cur_class.direction
-        settlement_price = lc_price  # ポジション解消価格
+        cur_class.settlement_price = lc_price  # ポジション解消価格
         cur_class.position_is_live = False
         cur_class.done = True
-        comment = "LC"
+        if cur_class.comment == "LC_c":
+            # LCChangeがあった場合は、LCチェンジによるLC.ただしプラス域とは限らない。
+            pass
+        else:
+            cur_class.comment = "LC"
     if cur_row['low'] + adjuster < tp_price < cur_row['high'] + adjuster and cur_class.position_is_live:  # （ロスカット優先）
         print("　　 ■利確します", cur_class.name, cur_row['time_jp'], cur_row['low'], tp_price, cur_row["high"])
         pl = (tp_price - cur_class.target_price) * cur_class.direction
-        settlement_price = tp_price  # ポジション解消価格
+        cur_class.settlement_price = tp_price  # ポジション解消価格
         cur_class.position_is_live = False
         cur_class.done = True
-        comment = "TP"
+        cur_class.comment = "TP"
 
     # 時間による判定
     # print("   時間的トレード解消判定", cur_class.position_keeping_time_sec, "> 規定Sec", cur_class.position_timeout_sec, cur_class.unrealized_pl)
-    if cur_class.position_keeping_time_sec > cur_class.position_timeout_sec:# and cur_class.unrealized_pl < 0:
+    if cur_class.position_keeping_time_sec > cur_class.position_timeout_sec:  # and cur_class.unrealized_pl < 0:
         # 本番ではマイナス継続が1分続いた場合だが、ここではマイナスでありかつ時間が経過なので、ある程度ずれる。ただマイナスはほぼ変わりない。
         print("    Trade解消(マイナス×時間)", cur_class.position_keeping_time_sec, "> 規定Sec",
               cur_class.position_timeout_sec)
         # 本番では、膠着状態における解消も実施しているが、ここではいったん除外
-        settlement_price = cur_row['open']  # ポジション解消価格（ここは暫定的にOpen価格
+        pl = (cur_row['close'] - cur_class.target_price) * cur_class.direction
+        cur_class.settlement_price = cur_row['close']  # ポジション解消価格（ここは暫定的にOpen価格
         cur_class.position_is_live = False
         cur_class.done = True
-        comment = "LC"
+        cur_class.comment = "Tout"
 
     # 情報書き込み＆決済
     if not cur_class.position_is_live:
-        print("　　   取得価格", cur_class.target_price, "決済価格", settlement_price)
+        print("　　   取得価格", cur_class.target_price, "決済価格", cur_class.settlement_price)
         # ポジション解消時にTarget PriceとTP/LC priceでの損益がPLに格納されているので、これを格納する
         cur_class.realized_pl = pl * abs(cur_class.units)  # 含み損益の更新（Unitsをかけたもの）　マイナス値を持つ
         cur_class.realized_pl_per_units = pl  # 含み損益（Unitsに依存しない数） マイナス値を持つ
@@ -283,9 +292,9 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
         gl_total_per_units += cur_class.realized_pl_per_units
         result_dic = {
             "time": cur_class.order_time,
-            "res": comment,
+            "res": cur_class.comment,
             "take": cur_class.target_price,
-            "end": settlement_price,
+            "end": cur_class.settlement_price,
             "end_time": cur_row['time_jp'],
             "name": cur_class.name,
             "pl": round(cur_class.realized_pl, 3),
@@ -295,7 +304,7 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
             "priority": cur_class.priority,
             "position_keeping_time": cur_class.position_keeping_time_sec,
             "take_position_price": cur_class.target_price,
-            "settlement_price": settlement_price,
+            "settlement_price": cur_class.settlement_price,
             "tp_price": cur_class.tp_price,
             "lc_price": cur_class.lc_price
         }
@@ -445,9 +454,9 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
              str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + str(gl_now.second).zfill(2)
 
 # 解析のための「5分足」のデータを取得
-m5_count = 5000  # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
-m5_loop = 5  # 何ループするか
-jp_time = datetime.datetime(2024, 10, 28, 19, 40, 0)  # to
+m5_count = 200  # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
+m5_loop = 1  # 何ループするか
+jp_time = datetime.datetime(2024, 10, 29, 21, 0, 0)  # to
 search_file_name = gene.time_to_str(jp_time)
 euro_time_datetime = jp_time - datetime.timedelta(hours=9)
 euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
