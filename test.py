@@ -71,11 +71,6 @@ class Order:
         self.lc_change[i]['done'] = True
 
 
-def kisisute(deci):
-    """
-    小数点第3位より下を切り捨てる（表示とかちょっとした調整のために作った
-    """
-    return deci.quantize(Decimal('0.0001'), rounding=ROUND_DOWN)
 
 
 def str_to_time(str_time):
@@ -267,7 +262,7 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
 
     # 時間による判定
     # print("   時間的トレード解消判定", cur_class.position_keeping_time_sec, "> 規定Sec", cur_class.position_timeout_sec, cur_class.unrealized_pl)
-    if cur_class.position_keeping_time_sec > cur_class.position_timeout_sec and cur_class.unrealized_pl < 0:
+    if cur_class.position_keeping_time_sec > cur_class.position_timeout_sec:# and cur_class.unrealized_pl < 0:
         # 本番ではマイナス継続が1分続いた場合だが、ここではマイナスでありかつ時間が経過なので、ある程度ずれる。ただマイナスはほぼ変わりない。
         print("    Trade解消(マイナス×時間)", cur_class.position_keeping_time_sec, "> 規定Sec",
               cur_class.position_timeout_sec)
@@ -294,7 +289,16 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
             "end_time": cur_row['time_jp'],
             "name": cur_class.name,
             "pl": round(cur_class.realized_pl, 3),
-            "pl_per_units": round(cur_class.realized_pl_per_units, 3)}
+            "pl_per_units": round(cur_class.realized_pl_per_units, 3),
+            "max_plus": cur_class.max_plus,
+            "max_minus": cur_class.max_minus,
+            "priority": cur_class.priority,
+            "position_keeping_time": cur_class.position_keeping_time_sec,
+            "take_position_price": cur_class.target_price,
+            "settlement_price": settlement_price,
+            "tp_price": cur_class.tp_price,
+            "lc_price": cur_class.lc_price
+        }
         gl_results_list.append(result_dic)
 
 
@@ -307,7 +311,9 @@ def main_analysis_and_create_order():
 
     # ５秒足を１行ずつループし、５分単位で解析を実行する
     for index, row_s5 in trimmed_s5_df.iterrows():
-        print("■■■", row_s5['time_jp'], "■■■", index, "行目/", len(trimmed_s5_df), "中")
+        if index / 1000 == 0:
+            print("■■■", row_s5['time_jp'], "■■■", index, "行目/", len(trimmed_s5_df), "中")
+
 
         # 【解析処理】分が5の倍数であれば、解析を実施する
         dt = str_to_time(row_s5['time_jp'])  # 時間に変換
@@ -391,7 +397,7 @@ def main_analysis_and_create_order():
             # 処理を実施する(ポジション取得～解消まで）
             if not each_c.position_is_live:
                 # ポジションがない場合は、取得判定
-                print("    取得待ち", row_s5['low'], row_s5['high'], each_c.target_price)
+                # print("    取得待ち", row_s5['low'], row_s5['high'], each_c.target_price)
                 update_order_information_and_take_position(each_c, row_s5, index)
             else:
                 # 現状をアップデートする
@@ -440,19 +446,11 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 # 解析のための「5分足」のデータを取得
 m5_count = 5000  # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
-m5_loop = 2  # 何ループするか
-jp_time = datetime.datetime(2024, 8, 10, 19, 40, 0)  # to
+m5_loop = 5  # 何ループするか
+jp_time = datetime.datetime(2024, 10, 28, 19, 40, 0)  # to
 search_file_name = gene.time_to_str(jp_time)
 euro_time_datetime = jp_time - datetime.timedelta(hours=9)
 euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-# ファイルが既存かをさがす　（土日の場合を考えると、1行を試しにとって、検討しないといけない。。）
-# test_read = oa.InstrumentsCandles_multi_exe("USD_JPY",{"granularity": "M5", "count": 1, "to": euro_time_datetime_iso}, 1)
-# if glob.glob(os.path.join(tk.folder_path, f'*{search_file_name}*.csv')):
-#     # 試しに取る
-#
-# else:
-#     print("存在しないため、ファイルを取得します")
-#     pass
 params = {"granularity": "M5", "count": m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
 data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, m5_loop)
 d5_df = data_response['data']
@@ -466,6 +464,7 @@ print(d5_df_r.head(5))
 print(d5_df_r.tail(5))
 print("5分足での取得時刻は", start_time, "-", end_time, len(d5_df), "行")
 print("実際の解析時間は", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time)
+
 
 # 検証のための「5秒足」のデータを取得（解析用と同範囲のデータをとってしまう(最初の方が少し不要とはなる)。解析が5分足の場合×60行分取得すればよい）
 end_time_euro = d5_df.iloc[-1]['time']  # Toに入れるデータ（これは解析用と一致させたいため、基本固定）
@@ -489,7 +488,7 @@ print("")
 print("検証用データ")
 start_s5_time = s5_df.iloc[0]['time_jp']
 end_s5_time = s5_df.iloc[-1]['time_jp']
-d5_df.to_csv(tk.folder_path + gene.str_to_filename(start_s5_time) + '_test_s5_df.csv', index=False, encoding="utf-8")
+s5_df.to_csv(tk.folder_path + gene.str_to_filename(start_s5_time) + '_test_s5_df.csv', index=False, encoding="utf-8")
 # print(s5_df.head(1))
 # print(s5_df.tail(1))
 print("検証時間の総取得期間は", start_s5_time, "-", end_s5_time, len(s5_df), "行")
@@ -535,7 +534,7 @@ except:
 # dataFrameから情報を取得する方法
 plus_df = result_df[result_df["pl"] >= 0]  # PLがプラスのもの（TPではない。LCでもトレール的な場合プラスになっているため）
 minus_df = result_df[result_df["pl"] < 0]
-memo = "通常のLCChange"
+memo = ("現実通りのLCChange+LC縮小")
 tk.line_send("test fin 【結果】", round(gl_total, 3), ",\n"
              , "【検証期間】", d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", end_time, ",\n"
              , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), ",\n"

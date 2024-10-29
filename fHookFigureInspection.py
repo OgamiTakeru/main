@@ -209,7 +209,7 @@ def main_hook_figure_inspection_and_order(dic_args):
             type_str = "LIMIT"
         main_order = copy.deepcopy(order_base_info)
         main_order['target'] = 0.015
-        main_order['tp'] = 0.5
+        main_order['tp'] = 0.01
         main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
         main_order['type'] = type_str  #
         # main_order['type'] = 'MARKET'  #
@@ -221,7 +221,7 @@ def main_hook_figure_inspection_and_order(dic_args):
     elif hook_info['take_position_flag']:
         main_order = copy.deepcopy(order_base_info)
         main_order['target'] = 0.015
-        main_order['tp'] = 0.5
+        main_order['tp'] = 0.01
         main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
         main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
         # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
