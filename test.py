@@ -454,8 +454,8 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
              str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + str(gl_now.second).zfill(2)
 
 # 解析のための「5分足」のデータを取得
-m5_count = 200  # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
-m5_loop = 1  # 何ループするか
+m5_count = 5000  # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
+m5_loop = 2  # 何ループするか
 jp_time = datetime.datetime(2024, 10, 29, 21, 0, 0)  # to
 search_file_name = gene.time_to_str(jp_time)
 euro_time_datetime = jp_time - datetime.timedelta(hours=9)
