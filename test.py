@@ -291,13 +291,13 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
         gl_total += cur_class.realized_pl
         gl_total_per_units += cur_class.realized_pl_per_units
         result_dic = {
-            "time": cur_class.order_time,
+            "order_time": cur_class.order_time,
             "res": cur_class.comment,
+            "pl": round(cur_class.realized_pl, 3),
+            "end_time": cur_row['time_jp'],
             "take": cur_class.target_price,
             "end": cur_class.settlement_price,
-            "end_time": cur_row['time_jp'],
             "name": cur_class.name,
-            "pl": round(cur_class.realized_pl, 3),
             "pl_per_units": round(cur_class.realized_pl_per_units, 3),
             "max_plus": cur_class.max_plus,
             "max_minus": cur_class.max_minus,
@@ -406,9 +406,9 @@ def get_data():
 
     else:
         # 5分足データを取得
-        m5_count = 200  # 何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
+        m5_count = 600  # 5分足を何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
         m5_loop = 1  # 何ループするか
-        jp_time = datetime.datetime(2024, 10, 31, 12, 0, 0)  # to
+        jp_time = datetime.datetime(2024, 10, 31, 20, 25, 0)  # to
         search_file_name = gene.time_to_str(jp_time)
         euro_time_datetime = jp_time - datetime.timedelta(hours=9)
         euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
@@ -513,7 +513,7 @@ def main():
                     # print(analysis_result['exe_orders'][i_order])
                     analysis_result['exe_orders'][i_order]['order_time'] = order_time  # order_time追加（本番marketだとない）
                     gl_classes.append(Order(analysis_result['exe_orders'][i_order]))
-                    gl_order_list.append({"time": order_time, "name": analysis_result['exe_orders'][i_order]['name']})
+                    gl_order_list.append({"order_time": order_time, "name": analysis_result['exe_orders'][i_order]['name']})
 
         # 【実質的な検証処理】各クラスを巡回し取得、解消　を5秒単位で実行する
         for i, each_c in enumerate(gl_classes):
@@ -554,6 +554,8 @@ demo = {
     ]
 }
 
+
+# ＠＠＠＠＠本文開始＠＠＠＠＠
 # 最初の一つをインスタンスを生成する  150.284 149.834
 gl_classes = []
 pd.set_option('display.max_columns', None)
@@ -584,15 +586,19 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
              str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + str(gl_now.second).zfill(2)
 
 
-
 print("--------------------------------検証開始-------------------------------")
 # ■検証処理
 get_data()  # データの取得
 main()  # 解析＋検証を実行し、gl_results_listに結果を蓄積する
 
 # ■結果処理
-# 検証内容をデータフレームに変換　＋　保存
+# 検証内容をデータフレームに変換
 result_df = pd.DataFrame(gl_results_list)  # 結果の辞書配列をデータフレームに変換
+# 解析に使いそうな情報をつけてしまう（オプショナルでなくてもいいかも）
+result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 else 1)  # プラスかマイナスかのカウント用
+result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # 文字列の時刻をdatatimeに変換したもの
+result_df['Hour'] = result_df['order_time_datetime'].dt.hour
+# 保存
 try:
     result_df.to_csv(tk.folder_path + gl_start_time_str + '_main_analysis_ans.csv', index=False, encoding="utf-8")
     result_df.to_csv(tk.folder_path + 'main_analysis_ans_latest.csv', index=False, encoding="utf-8")
@@ -611,8 +617,8 @@ gene.print_arr(gl_order_list)
 print("●結果リスト")
 gene.print_arr(gl_results_list)
 print("●検証を始めた時間と終わった時間", gl_start_time, fin_time)
-print("●5分足データの範囲", gl_5m_start_time, gl_5m_end_time, "(", gl_actual_5m_start_time, ")")
-print("●解析時間", gl_actual_start_time, "-", gl_actual_end_time,
+print("●データの範囲", gl_5m_start_time, gl_5m_end_time)
+print("●実際の解析範囲", gl_actual_5m_start_time, "-", gl_actual_end_time,
       len(gl_inspection_base_df), "行(5分足換算:", round(len(gl_inspection_base_df)/60, 0), ")　参考　うち最初の5時間は行数不足で解析なし")
 # 結果表示（分岐）
 if len(result_df) == 0:
