@@ -6,13 +6,14 @@ import tokens as tk
 import fPeakInspection as p
 import fGeneric as gene
 import classOanda
+import copy
 from collections import OrderedDict
 
 basic_unit = 1000
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
 
-def order_base(now_prie):
+def order_base(now_price, decision_time):
     """
     引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
     従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
@@ -27,7 +28,8 @@ def order_base(now_prie):
             "tp": 0.10,
             "lc": 0.10,
             'priority': 0,
-            "decision_price": now_prie,
+            "decision_price": now_price,
+            "decision_time": decision_time,
             "name": "",
             "lc_change": [
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.00, "lc_ensure_range": -0.06},
@@ -148,6 +150,18 @@ def now_price():
     return price_dic['mid']
 
 
+def information_fix_help_delete_item(peak):
+    """
+    information fix内で、latest等を表示する際、NextとPreviousのせいで、表示が長くなる。
+    この二つを除去する
+    """
+    copy_data = copy.deepcopy(peak)
+    copy_data.pop('next', None)
+    copy_data.pop('previous', None)
+    return copy_data
+
+
+
 def information_fix(dic_args):
     """
     各解析関数から呼ばれる。各解析関数が検証から呼ばれているか、本番から呼ばれているかを判定する
@@ -188,11 +202,14 @@ def information_fix(dic_args):
             print("　ピークの個数が足りない(エラーではない)")
             return {"df_r": dic_args['df_r'], "peaks": [], "params": {}, "inspection_params": {}}
         else:
+            # 'time': '2024/10/31 05:35:00', 'peak': np.float64(153.365), 'peak_peak': np.float64(
+            #     153.344), 'time_old': '2024/10/31 05:30:00', 'peak_old': np.float64(153.383), 'direction': np.float64(
+            #     -1.0), 'body_ave': np.float64(0.025), 'count': 2, 'gap': np.float64(0.018),
             print(s, "<対象>")
-            print(s, "Latest", peaks[0])
-            print(s, "river ", peaks[1])
-            print(s, "turn", peaks[2])
-            print(s, "flop3", peaks[3])
+            print(s, "Latest", information_fix_help_delete_item(peaks[0]))
+            print(s, "river ", information_fix_help_delete_item(peaks[1]))
+            print(s, "turn", information_fix_help_delete_item(peaks[2]))
+            print(s, "flop3", information_fix_help_delete_item(peaks[3]))
             print(s, "すべて")
         # gene.print_arr(peaks, 5)
 
@@ -266,7 +283,6 @@ def order_finalize(order_base_info):
         print("　　　　エラー（項目不足)", 'expected_direction' in order_base_info,
               'decision_price' in order_base_info, 'decision_time' in order_base_info)
         return -1  # エラー
-
 
     # 0 注文方式を指定する
     if not ('stop_or_limit' in order_base_info) and not ("type" in order_base_info):
@@ -360,7 +376,7 @@ def order_finalize(order_base_info):
     order_base_info['order_permission'] = order_base_info['order_permission'] if 'order_permission' in order_base_info else True
     # 表示形式の問題で、、念のため（機能としては不要）
     order_base_info['decision_price'] = float(order_base_info['decision_price'])
-    order_base_info['decision_time'] = 0
+    # order_base_info['decision_time'] = decision_time  orderbase時点で代入済
 
     # ordered_dict = OrderedDict((key, order_base_info[key]) for key in order)
     order_base_info = sorted_dict = {key: order_base_info[key] for key in sorted(order_base_info)}
