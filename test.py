@@ -36,9 +36,10 @@ class Order:
     class_total = 0
 
     def __init__(self, order_dic):
-        print("検証でオーダー受付", order_dic['units'])
+        # print("検証でオーダー受付", order_dic['units'])
         print(order_dic)
         self.take_position_flag = False
+        self.is_live = True  # オーダー発行時（インスタンス生成時）にTrueとなり、Orderキャンセルと、ポジション移行後のクローズでFalseとなる
         self.position_is_live = False
         self.position_status = "PENDING"  # pending, open ,closed, cancelled
         self.name = order_dic['name']
@@ -72,8 +73,6 @@ class Order:
 
     def lc_change_done(self, i):
         self.lc_change[i]['done'] = True
-
-
 
 
 def str_to_time(str_time):
@@ -143,14 +142,15 @@ def update_order_information_and_take_position(cur_class, cur_row, cur_row_index
         print("   ■タイムアウトです", cur_class.name, cur_row['time_jp'])
         # クラス内容の更新
         cur_class.done = True
-
-    # (2)取得判定を実施する　（同一行で取得⇒ロスカの可能性はここでは考えない）
-    target_price = cur_class.target_price
-    if cur_row['low'] + adjuster <= target_price < cur_row["high"] + adjuster:
-        print("　　■取得しました", cur_class.name, cur_row['time_jp'], cur_row['low'], cur_row['high'], target_price)
-        # クラス内容の更新
-        cur_class.position_time = cur_row['time_jp']
-        cur_class.position_is_live = True
+        cur_class.is_live = False  # Lifeをクローズ
+    else:
+        # (2)タイムアウトでなければ、取得判定を実施する　（同一行で取得⇒ロスカの可能性はここでは考えない）
+        target_price = cur_class.target_price
+        if cur_row['low'] + adjuster <= target_price < cur_row["high"] + adjuster:
+            print("　　■取得しました", cur_class.name, cur_row['time_jp'], cur_row['low'], cur_row['high'], target_price)
+            # クラス内容の更新
+            cur_class.position_time = cur_row['time_jp']
+            cur_class.position_is_live = True
 
 
 def update_position_information(cur_class, cur_row, cur_row_index):
@@ -254,6 +254,7 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
         pl = (lc_price - cur_class.target_price) * cur_class.direction
         cur_class.settlement_price = lc_price  # ポジション解消価格
         cur_class.position_is_live = False
+        cur_class.is_live = False
         cur_class.done = True
         if cur_class.comment == "LC_c":
             # LCChangeがあった場合は、LCチェンジによるLC.ただしプラス域とは限らない。
@@ -265,6 +266,7 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
         pl = (tp_price - cur_class.target_price) * cur_class.direction
         cur_class.settlement_price = tp_price  # ポジション解消価格
         cur_class.position_is_live = False
+        cur_class.is_live = False
         cur_class.done = True
         cur_class.comment = "TP"
 
@@ -278,12 +280,13 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
         pl = (cur_row['close'] - cur_class.target_price) * cur_class.direction
         cur_class.settlement_price = cur_row['close']  # ポジション解消価格（ここは暫定的にOpen価格
         cur_class.position_is_live = False
+        cur_class.is_live = False
         cur_class.done = True
         cur_class.comment = "Tout"
 
     # 情報書き込み＆決済
     if not cur_class.position_is_live:
-        print("　　   取得価格", cur_class.target_price, "決済価格", cur_class.settlement_price)
+        print("　　   [結果表示]取得価格", cur_class.target_price, "決済価格", cur_class.settlement_price)
         # ポジション解消時にTarget PriceとTP/LC priceでの損益がPLに格納されているので、これを格納する
         cur_class.realized_pl = pl * abs(cur_class.units)  # 含み損益の更新（Unitsをかけたもの）　マイナス値を持つ
         cur_class.realized_pl_per_units = pl  # 含み損益（Unitsに依存しない数） マイナス値を持つ
@@ -320,18 +323,20 @@ def judge_overwrite_order(analysis_result):
         # 既存のオーダーが存在する場合
         new_exe_order = analysis_result['exe_orders'][0]
         new_exe_order_d = new_exe_order['direction']
-        print("★★★★★追加オーダーテスト")
+        print("★★★★★既存オーダーあり(終わってるかもしれないが、クラスに何かが入っている）のため、オーダー発注可否を判断", )
         # オーダーのサマリ情報を受け取る（サマリ情報にする。いつかはバラで考える必要があるかもしれない）
         for i, item_temp in enumerate(gl_classes):  # exist_position = classes[0] は何がダメ？？
             if i == 0:  # とりあえずオーダーリストの最初（オーダーが一つだけを想定）
-                print(item_temp.name, item_temp.order_time)
-                exist_life = item_temp.position_is_live
+                print("既存オーダー(代表):", item_temp.name, item_temp.order_time, item_temp.position_keeping_time_sec,
+                      item_temp.position_keeping_time_sec, item_temp.unrealized_pl, item_temp.is_live, item_temp.position_is_live)
+                exist_life = item_temp.is_live
+                exist_position_life = item_temp.position_is_live
                 exist_direction = item_temp.direction
                 exist_priority = item_temp.priority
                 exist_pl = item_temp.unrealized_pl
                 exist_keep_position_sec = item_temp.position_keeping_time_sec
 
-        # オーダーサマリに対し、今回の新規オーダーを入れるべきかを判断する
+        # オーダーサマリに対し、今回の新規オーダーを入れるべきかを判断する(既存のオーダーが生きている場合のみ）
         if exist_life:
             # ポジションがある場合のみ
             if exist_direction != new_exe_order_d:
@@ -381,11 +386,11 @@ def get_data():
     global gl_5m_start_time, gl_5m_end_time, gl_actual_5m_start_time
 
     # 解析のための「5分足」のデータを取得
-    exist_data = False
+    exist_data = True
     if exist_data:
         # 既存の5分足データを取得
         rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20231026071000_test_m5_df.csv'  # 大量データ5分
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030172000_test_m5_df.csv'  # 適宜データ5分
+        # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030172000_test_m5_df.csv'  # 適宜データ5分
         gl_d5_df = pd.read_csv(rescsv_path, sep=",", encoding="utf-8")
         gl_5m_start_time = gl_d5_df.iloc[0]['time_jp']
         gl_5m_end_time = gl_d5_df.iloc[-1]['time_jp']
@@ -397,7 +402,7 @@ def get_data():
         print("実際の解析時間は", gl_d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", gl_5m_end_time)
         # 既存の5秒足データを取得
         rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20230912114515_test_s5_df.csv'  # 大量データ5秒
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030113450_test_s5_df.csv'  # 適宜データ5秒
+        # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030113450_test_s5_df.csv'  # 適宜データ5秒
         gl_s5_df = pd.read_csv(rescsv_path, sep=",", encoding="utf-8")
         start_s5_time = gl_s5_df.iloc[0]['time_jp']
         end_s5_time = gl_s5_df.iloc[-1]['time_jp']
@@ -423,7 +428,7 @@ def get_data():
                         encoding="utf-8")
         print("解析用5分足データ")
         print("5分足での取得時刻は", gl_5m_start_time, "-", gl_5m_end_time, len(gl_d5_df), "行")
-        print("(実際の解析時間は", gl_d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", gl_5m_end_time)
+        print("(実際の解析時間は", gl_actual_5m_start_time, "-", gl_5m_end_time)
 
         # 5秒足データを取得
         end_time_euro = gl_d5_df_r.iloc[0]['time']  # Toに入れるデータ（これは解析用と一致させたいため、基本固定）
@@ -459,7 +464,14 @@ def get_data():
     # インデックス以降のデータを取得
     gl_inspection_base_df = gl_inspection_base_df.loc[first_non_nan_index:]
     # テスト用
-    # gl_inspection_base_df = gl_inspection_base_df[:2000]  # ここでは5秒足の足数になるため、広めでOK（解析機関
+    gl_inspection_base_df = gl_inspection_base_df[1286104:1779590]  # ここでは5秒足の足数になるため、広めでOK（解析機関
+    gl_inspection_base_df = gl_inspection_base_df.reset_index(drop=True)
+    print(gl_inspection_base_df.head(5))
+    print(gl_inspection_base_df.tail(5))
+    gl_actual_5m_start_time = gl_inspection_base_df.iloc[0]['time_jp']
+    gl_actual_end_time = gl_inspection_base_df.iloc[-1]['time_jp']
+    tk.line_send("test ", "【検証期間】", gl_actual_5m_start_time, "-", gl_actual_end_time)
+
     # インデックスを振りなおす（OK？）
     gl_inspection_base_df = gl_inspection_base_df.reset_index(drop=True)
     # 実際の調査開始時間と終了時間を取得する
@@ -512,7 +524,8 @@ def main():
                 for i_order in range(len(analysis_result['exe_orders'])):
                     # print(analysis_result['exe_orders'][i_order])
                     analysis_result['exe_orders'][i_order]['order_time'] = order_time  # order_time追加（本番marketだとない）
-                    gl_classes.append(Order(analysis_result['exe_orders'][i_order]))
+                    gl_classes.append(Order(analysis_result['exe_orders'][i_order]))  # インスタンス生成＋配列追加(is_life=True)
+                    # 結果表示用の情報を作成
                     gl_order_list.append({"order_time": order_time, "name": analysis_result['exe_orders'][i_order]['name']})
 
         # 【実質的な検証処理】各クラスを巡回し取得、解消　を5秒単位で実行する
@@ -524,7 +537,7 @@ def main():
             # 処理を実施する(ポジション取得～解消まで）
             if not each_c.position_is_live:
                 # ポジションがない場合は、取得判定
-                # print("    取得待ち", row_s5['low'], row_s5['high'], each_c.target_price)
+                # print("    取得待ち", row_s5['low'], row_s5['high'], each_c.target_price,each_c.position_is_live)
                 update_order_information_and_take_position(each_c, row_s5, index)
             else:
                 # 現状をアップデートする

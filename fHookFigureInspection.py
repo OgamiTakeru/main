@@ -209,8 +209,8 @@ def main_hook_figure_inspection_and_order(dic_args):
             type_str = "LIMIT"
         main_order = copy.deepcopy(order_base_info)
         main_order['target'] = 0.015
-        main_order['tp'] = 0.01
-        main_order['lc'] = 0.08  # * line_strength  # 0.09  # LCは広め
+        main_order['tp'] = 0.10
+        main_order['lc'] = 0.10  # * line_strength  # 0.09  # LCは広め
         main_order['type'] = type_str  #
         # main_order['type'] = 'MARKET'  #
         main_order['expected_direction'] = parallel_move_info['expected_direction']  # 突破方向
