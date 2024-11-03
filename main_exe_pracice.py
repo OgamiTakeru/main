@@ -93,7 +93,7 @@ def mode1():
 
     # ■検証を実行し、結果を取得する
     # なお{"take_position_flag":Boo, "exe_orders":[], "exe_order":{}, "max_priority":(int) }が返却値の予定
-    inspection_result_dic = im.inspection_warp_up_and_make_order_practice(gl_data5r_df)
+    inspection_result_dic = im.for_practice_inspection_warp_up_and_make_order(gl_data5r_df)
     print(inspection_result_dic)
 
     # ■ オーダーフラグがない場合は、ここでこの関数は教師終了

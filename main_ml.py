@@ -7,17 +7,11 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.tree import plot_tree
-import matplotlib.pyplot as plt
 import time, datetime, dateutil.parser, pytz  # 日付関係
 import pickle
 import fGeneric as f
 import tokens as tk
-
-from tqdm import tqdm
-from sklearn.metrics import f1_score
-from sklearn.model_selection import GridSearchCV
-import graphviz
-
+from IPython.display import display, HTML
 
 #機械学習の実施
 def mlExe(data_df):
@@ -29,8 +23,8 @@ def mlExe(data_df):
     :return:
     """
     print("ML開始")
-    ans_col = "tp"  # 教師列の設定
-    create_model_name = "DoublePeak"  # モデル排出名の設定
+    ans_col = "plus_minus"  # 教師列の設定
+    create_model_name = "DoublePeakBreak"  # モデル排出名の設定
 
     # (1)機械学習の実施、モデルの作成
     X = data_df.drop([ans_col], axis=1)  # go_trend_flag
@@ -61,10 +55,10 @@ def mlExe(data_df):
     # 結果の表示
     imp = ""
     for i in range(len(data_df.columns.values) - 1):
-        imp = imp + "," + data_df.columns.values[i] + ":" + str(round(RFC.feature_importances_[i], 3))
+        imp = imp + "," + X.columns.values[i] + ":" + str(round(RFC.feature_importances_[i], 3))
     print(imp)
     # 学習モデルの保存
-    model_path = 'C:/Users/taker/Desktop/oanda_logs/' + create_model_name + '.pickle'
+    model_path = tk.folder_path + create_model_name + '.pickle'
     with open(model_path, mode='wb') as f:
         pickle.dump(RFC, f, protocol=2)
 
@@ -78,7 +72,7 @@ def mlExe(data_df):
     ans = RFC.predict(ml_datas)
     print(ans)
     data_df['ans'] = ans  # 元データに結果を追記する（確認用）
-    data_df.to_csv('C:/Users/taker/Desktop/testMLres.csv', index=False)  # 記録用
+    data_df.to_csv(tk.folder_path + 'testMLres.csv', index=False)  # 記録用
 
     return ans
 
@@ -86,23 +80,17 @@ def mlExe(data_df):
 def delete_cols(data_df):
     # データのNoneを埋める
     data_df.fillna(0, inplace=True)  # 0埋めしておく
-    # 不要項目の削除
-    # data_df.drop(['time', 'time_jp'], axis=1, inplace=True)  # 時間関係
-    # data_df.drop(['open', 'close', 'high', 'low', 'inner_high', 'inner_low', 'bb_upper', 'bb_lower'],axis=1, inplace=True)  # 価格情報ありの項目
-    # data_df.drop(['body_abs'], axis=1, inplace=True)
+
     # ピーク関係にある項目たち
-    data_df.drop(['decision_time', 'decision_price'], axis=1, inplace=True)  #
-    data_df.drop(['lc_range', 'tp_range'], axis=1, inplace=True)  #
-    data_df.drop(['expect_direction'], axis=1, inplace=True)  #
-    data_df.drop(['position', 'position_price', "position_time", "end_time_of_inspection"], axis=1, inplace=True)  #
-    data_df.drop(['max_plus', 'max_plus_time', 'max_plus_past_time'], axis=1, inplace=True)  #
-    data_df.drop(['max_minus', 'max_minus_time', 'max_minus_past_time'], axis=1, inplace=True)  #
-    data_df.drop(['lc_time', 'lc_time_past', 'lc_res'], axis=1, inplace=True)  #
-    data_df.drop(['tp_time', 'tp_time_past', 'tp_res'], axis=1, inplace=True)  #
-    data_df.drop(['max_plus_all_time', 'max_plus_time_all_time', 'max_plus_past_time_all_time'], axis=1, inplace=True)  #
-    data_df.drop(['max_minus_all_time', 'max_minus_time_all_time', 'max_minus_past_time_all_time'], axis=1, inplace=True)  #
-    data_df.drop(['lc'], axis=1, inplace=True)  #
-    # data_df.drop(['tp'], axis=1, inplace=True)  #
+    data_df.drop(['order_time', 'end_time'], axis=1, inplace=True)  #
+    data_df.drop(['take', 'end', 'take_position_price', 'settlement_price'], axis=1, inplace=True)  #
+    data_df.drop(['name', 'res'], axis=1, inplace=True)  #
+    data_df.drop(['pl', 'pl_per_units'], axis=1, inplace=True)  #
+    data_df.drop(['position_keeping_time'], axis=1, inplace=True)  #
+    data_df.drop(['tp_price', 'lc_price'], axis=1, inplace=True)  #
+    data_df.drop(['units'], axis=1, inplace=True)  #
+    data_df.drop(['max_plus', 'max_minus'], axis=1, inplace=True)  #
+    data_df.drop(['double_top_strength', 'order_time_datetime'], axis=1, inplace=True)  #
     return data_df
 
 
@@ -112,12 +100,12 @@ def filterDF(df):
     :param df:
     :return:
     """
-    df = df[df["take_position_flag"] == True]  # Trueだけ
-    df = df[df["river_count"] == 2]
+    # df = df[df["take_position_flag"] == True]  # Trueだけ
+    # df = df[df["river_count"] == 2]
     return df
 
 
-def fileFormatCreate(file_path):
+def date_create(file_path):
     """
     ファイルを読み込み、適切なデータにし、データを返却する
     :return:
@@ -140,7 +128,8 @@ def fileFormatCreate(file_path):
 
 
 # メイン処理
-df = fileFormatCreate(tk.folder_path + 'double_top_main_analysis_ans_latest.csv')
+df = date_create(tk.folder_path + '1103_120202_main_analysis_ans.csv')
+pd.options.display.max_columns = None
 print("DF")
-print(df)
+# df.to_csv(tk.folder_path + 'testML.csv', index=False)  # 記録用
 ml_ans = mlExe(df)

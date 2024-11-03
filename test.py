@@ -1,4 +1,5 @@
 import pandas as pd
+from IPython.display import display, HTML
 
 import datetime
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
@@ -35,7 +36,7 @@ for ic in range(3):
 class Order:
     class_total = 0
 
-    def __init__(self, order_dic):
+    def __init__(self, order_dic, for_inspection_dic):
         # print("検証でオーダー受付", order_dic['units'])
         print(order_dic)
         self.take_position_flag = False
@@ -46,7 +47,6 @@ class Order:
         self.target_price = order_dic['target_price']
         self.tp_price = order_dic['tp_price']
         self.lc_price = order_dic['lc_price']
-        self.done = False
         self.units = order_dic['units'] * order_dic['direction']  # 正の値しか来ないようだ！？ なので、directionをかけておく
         self.direction = order_dic['direction']  # self.units / abs(self.units)
         self.order_keeping_time_sec = 0  # 現在オーダーをキープしている時間
@@ -68,6 +68,8 @@ class Order:
         self.settlement_price = 0
         self.lc_change = order_dic['lc_change']
         self.priority = order_dic['priority']
+
+        self.for_inspection_dic = for_inspection_dic
 
         self.comment = ""  # クラスごとに残すコメント（決済がLCChangeの場合LCとなるので、ClChangeとしたい、とか）
 
@@ -141,7 +143,6 @@ def update_order_information_and_take_position(cur_class, cur_row, cur_row_index
     if order_keeping_time_sec >= cur_class.order_timeout_sec:
         print("   ■タイムアウトです", cur_class.name, cur_row['time_jp'])
         # クラス内容の更新
-        cur_class.done = True
         cur_class.is_live = False  # Lifeをクローズ
     else:
         # (2)タイムアウトでなければ、取得判定を実施する　（同一行で取得⇒ロスカの可能性はここでは考えない）
@@ -255,7 +256,6 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
         cur_class.settlement_price = lc_price  # ポジション解消価格
         cur_class.position_is_live = False
         cur_class.is_live = False
-        cur_class.done = True
         if cur_class.comment == "LC_c":
             # LCChangeがあった場合は、LCチェンジによるLC.ただしプラス域とは限らない。
             pass
@@ -267,10 +267,9 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
         cur_class.settlement_price = tp_price  # ポジション解消価格
         cur_class.position_is_live = False
         cur_class.is_live = False
-        cur_class.done = True
         cur_class.comment = "TP"
 
-    # 時間による判定
+    # 時間による判
     # print("   時間的トレード解消判定", cur_class.position_keeping_time_sec, "> 規定Sec", cur_class.position_timeout_sec, cur_class.unrealized_pl)
     if cur_class.position_keeping_time_sec > cur_class.position_timeout_sec:  # and cur_class.unrealized_pl < 0:
         # 本番ではマイナス継続が1分続いた場合だが、ここではマイナスでありかつ時間が経過なので、ある程度ずれる。ただマイナスはほぼ変わりない。
@@ -281,10 +280,9 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
         cur_class.settlement_price = cur_row['close']  # ポジション解消価格（ここは暫定的にOpen価格
         cur_class.position_is_live = False
         cur_class.is_live = False
-        cur_class.done = True
         cur_class.comment = "Tout"
 
-    # 情報書き込み＆決済
+    # 情報書き込み＆決済 jp
     if not cur_class.position_is_live:
         print("　　   [結果表示]取得価格", cur_class.target_price, "決済価格", cur_class.settlement_price)
         # ポジション解消時にTarget PriceとTP/LC priceでの損益がPLに格納されているので、これを格納する
@@ -309,8 +307,12 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
             "take_position_price": cur_class.target_price,
             "settlement_price": cur_class.settlement_price,
             "tp_price": cur_class.tp_price,
-            "lc_price": cur_class.lc_price
+            "lc_price": cur_class.lc_price,
+            "direction": cur_class.direction,
+            "units": cur_class.units,
         }
+        # 検証用データを結合
+        result_dic = {**result_dic, **cur_class.for_inspection_dic}
         gl_results_list.append(result_dic)
 
 
@@ -384,10 +386,11 @@ def get_data():
     """
     global gl_d5_df, gl_d5_df_r, gl_s5_df, gl_inspection_base_df, gl_actual_start_time, gl_actual_end_time
     global gl_5m_start_time, gl_5m_end_time, gl_actual_5m_start_time
+    global gl_exist_data, gl_jp_time, gl_m5_count, gl_m5_loop  # 変更ないから不要かも？
 
     # 解析のための「5分足」のデータを取得
-    exist_data = True
-    if exist_data:
+    # gl_exist_data = True  # グローバルに変更
+    if gl_exist_data:
         # 既存の5分足データを取得
         rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20231026071000_test_m5_df.csv'  # 大量データ5分
         # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030172000_test_m5_df.csv'  # 適宜データ5分
@@ -411,14 +414,14 @@ def get_data():
 
     else:
         # 5分足データを取得
-        m5_count = 600  # 5分足を何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
-        m5_loop = 1  # 何ループするか
-        jp_time = datetime.datetime(2024, 10, 31, 20, 25, 0)  # to
-        search_file_name = gene.time_to_str(jp_time)
-        euro_time_datetime = jp_time - datetime.timedelta(hours=9)
+        # gl_m5_count = 300  # 5分足を何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
+        # gl_m5_loop = 1  # 何ループするか
+        # gl_jp_time = datetime.datetime(2024, 11, 1, 19, 50, 0)  # TOの時刻（Globalに変更)
+        search_file_name = gene.time_to_str(gl_jp_time)
+        euro_time_datetime = gl_jp_time - datetime.timedelta(hours=9)
         euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-        params = {"granularity": "M5", "count": m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
-        data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, m5_loop)
+        params = {"granularity": "M5", "count": gl_m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
+        data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, gl_m5_loop)
         gl_d5_df = data_response['data']
         gl_d5_df_r = gl_d5_df.sort_index(ascending=False)  # 時系列を逆にしたものが解析用！
         gl_5m_start_time = gl_d5_df.iloc[0]['time_jp']
@@ -432,8 +435,8 @@ def get_data():
 
         # 5秒足データを取得
         end_time_euro = gl_d5_df_r.iloc[0]['time']  # Toに入れるデータ（これは解析用と一致させたいため、基本固定）
-        all_need_row = m5_count * 60 * m5_loop
-        if m5_count * 60 > 5000:
+        all_need_row = gl_m5_count * 60 * gl_m5_loop
+        if gl_m5_count * 60 > 5000:
             # 5000を超えてしまう場合はループ処理が必要(繰り返しデータで使うため、少し多めに取ってしまう。5000単位をN個の粒度）
             loop_for_5s = math.ceil(all_need_row / 5000)
             s5_count = 5000
@@ -442,7 +445,7 @@ def get_data():
                   5000 * loop_for_5s - all_need_row)
         else:
             # 5000以下の場合は、一回で取得できる
-            s5_count = m5_count * 60  # シンプルに5分足の60倍
+            s5_count = gl_m5_count * 60  # シンプルに5分足の60倍
             loop_for_5s = 1  # ループ回数は1回
             trimming = gl_need_to_analysis * 60  # 実際に検証で使う範囲は、解析に必要な分を最初から除いた分。
         params = {"granularity": "S5", "count": s5_count, "to": end_time_euro}  # 5秒足で必要な分を取得する
@@ -464,13 +467,13 @@ def get_data():
     # インデックス以降のデータを取得
     gl_inspection_base_df = gl_inspection_base_df.loc[first_non_nan_index:]
     # テスト用
-    gl_inspection_base_df = gl_inspection_base_df[1286104:1779590]  # ここでは5秒足の足数になるため、広めでOK（解析機関
-    gl_inspection_base_df = gl_inspection_base_df.reset_index(drop=True)
-    print(gl_inspection_base_df.head(5))
-    print(gl_inspection_base_df.tail(5))
-    gl_actual_5m_start_time = gl_inspection_base_df.iloc[0]['time_jp']
-    gl_actual_end_time = gl_inspection_base_df.iloc[-1]['time_jp']
-    tk.line_send("test ", "【検証期間】", gl_actual_5m_start_time, "-", gl_actual_end_time)
+    # gl_inspection_base_df = gl_inspection_base_df[1286104:1779590]  # ここでは5秒足の足数になるため、広めでOK（解析機関
+    # gl_inspection_base_df = gl_inspection_base_df.reset_index(drop=True)
+    # print(gl_inspection_base_df.head(5))
+    # print(gl_inspection_base_df.tail(5))
+    # gl_actual_5m_start_time = gl_inspection_base_df.iloc[0]['time_jp']
+    # gl_actual_end_time = gl_inspection_base_df.iloc[-1]['time_jp']
+    # tk.line_send("test ", "【検証期間】", gl_actual_5m_start_time, "-", gl_actual_end_time)
 
     # インデックスを振りなおす（OK？）
     gl_inspection_base_df = gl_inspection_base_df.reset_index(drop=True)
@@ -496,9 +499,8 @@ def main():
         # 【解析処理】結合した5分足の部分にデータがあれば、解析トライをする   旧（分が5の倍数であれば、解析を実施する）
         dt = str_to_time(row_s5['time_jp'])  # 時間に変換
         # if dt.minute % 5 == 0 and dt.second == 0:  # 各5分0秒で解析を実行する
-        if pd.notna(row_s5['time_y']):
+        if pd.notna(row_s5['time_y']):  # 毎5の倍数分で解析を実行する
             analysis_df = find_analysis_dataframe(gl_d5_df_r, row_s5['time_jp'])  # 解析用の5分足データを取得する
-            print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/", len(gl_inspection_base_df), "中")
             if len(analysis_df) < gl_need_to_analysis:
                 # 解析できない行数しかない場合、実施しない（5秒足の飛びや、取得範囲の関係で発生）
                 print("   解析実施しません", len(analysis_df), "行しかないため（必要行数目安[固定値ではない]",
@@ -506,32 +508,45 @@ def main():
                 continue  # returnではなく、次のループへ
             else:
                 # ★★★ 解析を呼び出す
-                print("★★解析", index)
-                analysis_result = im.inspection_warp_up_and_make_order(analysis_df)
+                print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/", len(gl_inspection_base_df), "中")
+                analysis_result = im.for_inspection_inspection_warp_up_and_make_order(analysis_df)
                 if not analysis_result['take_position_flag']:
                     # オーダー判定なしの場合、次のループへ（5秒後）
                     continue
                 # ■上書き有無を判断
                 overwrite_order = judge_overwrite_order(analysis_result)
+                overwrite_order = False
                 if overwrite_order:
-                    pass
+                    # 上書きする場合
+                    # 既存のクラスをリセットして、改めて登録しなおす
+                    # ★★★ クラスをリセット＆オーダーをクラスに登録する
+                    gl_classes = []  # リセット
+                    order_time = row_s5['time_jp']
+                    for i_order in range(len(analysis_result['exe_orders'])):
+                        # print(analysis_result['exe_orders'][i_order])
+                        analysis_result['exe_orders'][i_order]['order_time'] = order_time  # order_time追加（本番marketだとない）
+                        gl_classes.append(Order(analysis_result['exe_orders'][i_order],
+                                                analysis_result['for_inspection_dic']))  # インスタンス生成＋配列追加(is_life=True)
+                        # 結果表示用の情報を作成
+                        gl_order_list.append(
+                            {"order_time": order_time, "name": analysis_result['exe_orders'][i_order]['name']})
                 else:
-                    continue
-
-                # ★★★ クラスをリセット＆オーダーをクラスに登録する
-                gl_classes = []  # リセット
-                order_time = row_s5['time_jp']
-                for i_order in range(len(analysis_result['exe_orders'])):
-                    # print(analysis_result['exe_orders'][i_order])
-                    analysis_result['exe_orders'][i_order]['order_time'] = order_time  # order_time追加（本番marketだとない）
-                    gl_classes.append(Order(analysis_result['exe_orders'][i_order]))  # インスタンス生成＋配列追加(is_life=True)
-                    # 結果表示用の情報を作成
-                    gl_order_list.append({"order_time": order_time, "name": analysis_result['exe_orders'][i_order]['name']})
+                    # ★上書きしない検証用
+                    # 全てのオーダーに対して、検証を行う。LifeがFalseになったものに上書きしていく
+                    order_time = row_s5['time_jp']
+                    for i_order in range(len(analysis_result['exe_orders'])):
+                        # print(analysis_result['exe_orders'][i_order])
+                        analysis_result['exe_orders'][i_order]['order_time'] = order_time  # order_time追加（本番marketだとない）
+                        gl_classes.append(Order(analysis_result['exe_orders'][i_order],
+                                                analysis_result['for_inspection_dic']))  # 【配列追加】インスタンス生成し、オーダーと検証用データを渡す。
+                        # 結果表示用の情報を作成
+                        gl_order_list.append(
+                            {"order_time": order_time, "name": analysis_result['exe_orders'][i_order]['name']})
 
         # 【実質的な検証処理】各クラスを巡回し取得、解消　を5秒単位で実行する
         for i, each_c in enumerate(gl_classes):
             # すでに実行済の場合は実行しない
-            if each_c.done:
+            if not each_c.is_live:
                 continue
 
             # 処理を実施する(ポジション取得～解消まで）
@@ -600,6 +615,13 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 
 print("--------------------------------検証開始-------------------------------")
+# ■　検証の設定
+gl_exist_data = False
+gl_jp_time = datetime.datetime(2024, 11, 1, 21, 50, 0)  # TOの時刻
+gl_m5_count = 5000
+gl_m5_loop = 1
+memo = "広範囲、パラレルなし、TPLC10程度、TPは10を起点にLCCHANGEあり。10で8.4～のLCChange"
+
 # ■検証処理
 get_data()  # データの取得
 main()  # 解析＋検証を実行し、gl_results_listに結果を蓄積する
@@ -618,39 +640,30 @@ try:
 except:
     print("書き込みエラーあり")  # 今までExcelを開きっぱなしにしていてエラーが発生。日時を入れることで解消しているが、念のための分岐
     result_df.to_csv(tk.folder_path + gl_start_time_str + 'main_analysis_ans.csv', index=False, encoding="utf-8")
-    pass
 
 # 結果表示（共通）
-print("●●検証終了●●")
+print("●●検証終了●●", "   クラス数", len(gl_classes))
 fin_time = datetime.datetime.now()
-print("●スキップされてオーダー")
+print("●スキップされたオーダー")
 gene.print_arr(gl_not_overwrite_orders)
 print("●オーダーリスト（約定しなかったものが最下部の結果に表示されないため、オーダーを表示）")
 gene.print_arr(gl_order_list)
 print("●結果リスト")
 gene.print_arr(gl_results_list)
-print("●検証を始めた時間と終わった時間", gl_start_time, fin_time)
 print("●データの範囲", gl_5m_start_time, gl_5m_end_time)
-print("●実際の解析範囲", gl_actual_5m_start_time, "-", gl_actual_end_time,
-      len(gl_inspection_base_df), "行(5分足換算:", round(len(gl_inspection_base_df)/60, 0), ")　参考　うち最初の5時間は行数不足で解析なし")
+print("●実際の解析範囲", gl_actual_5m_start_time, "-", gl_actual_end_time, "行(5分足換算:", round(len(gl_inspection_base_df)/60, 0), ")")
 # 結果表示（分岐）
 if len(result_df) == 0:
     print("結果０です")
-    # tk.line_send("データなしです")
 else:
     # 簡易的な結果表示用
     plus_df = result_df[result_df["pl"] >= 0]  # PLがプラスのもの（TPではない。LCでもトレール的な場合プラスになっているため）
     minus_df = result_df[result_df["pl"] < 0]
-
     # 結果表示部
     print("●オーダーの個数", len(gl_order_list), "、約定した個数", len(gl_results_list))
     print("●プラスの個数", len(plus_df), ", マイナスの個数", len(minus_df))
     print("●最終的な合計", round(gl_total, 3), round(gl_total_per_units, 3))
-
     # LINEを送る
-    plus_df = result_df[result_df["pl"] >= 0]  # PLがプラスのもの（TPではない。LCでもトレール的な場合プラスになっているため）
-    minus_df = result_df[result_df["pl"] < 0]
-    memo = ("現実通りのLCChange+LC縮小")
     tk.line_send("test fin 【結果】", round(gl_total, 3), ",\n"
                  , "【検証期間】", gl_actual_start_time, "-", gl_actual_end_time, ",\n"
                  , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), ",\n"

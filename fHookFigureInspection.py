@@ -246,7 +246,8 @@ def main_hook_figure_inspection_and_order(dic_args):
     finalized_order = cf.order_finalize(main_order)
     return {
         "take_position_flag": take_position_flag,
-        "exe_orders": [finalized_order]
+        "exe_orders": [finalized_order],
+        "for_inspection_dic": {}
     }
 
 
