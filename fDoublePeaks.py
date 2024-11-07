@@ -740,7 +740,7 @@ def for_inspection_double_peak_judgement_predict(dic_args):
         for_inspection_dic['double_top_strength'] = double_top_strength
 
     # TURNのLINEの強さを再判定
-    temp = ri.main_turn_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
+    temp = ri.cal_turn_strength({"df_r": df_r, "peaks": peaks})
     for_inspection_dic['turn_strength'] = temp['target_line_strength']
     for_inspection_dic['len_turn_same_price_list'] = len(temp['turn_same_price_list'])
 

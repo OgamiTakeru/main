@@ -630,7 +630,7 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
-gl_exist_data = False
+gl_exist_data = True
 gl_jp_time = datetime.datetime(2024, 11, 7, 20, 50, 0)  # TOの時刻
 gl_m5_count = 250
 gl_m5_loop = 1

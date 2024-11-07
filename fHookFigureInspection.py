@@ -143,7 +143,7 @@ def hook_figure_inspection(dic_args):
     flop3 = peaks[3]
 
     # ■Riverの強度を判定
-    river_peak_line_strength = ri.main_river_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
+    river_peak_line_strength = ri.cal_river_strength({"df_r": df_r, "peaks": peaks})
     river_strength = river_peak_line_strength  # いつか辞書が返却されて置き換えたことを想定し、変数を入れ替えておく
 
     # ■レイテストとリバーの関係を確認

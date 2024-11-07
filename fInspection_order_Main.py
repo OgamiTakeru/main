@@ -448,31 +448,26 @@ def analysis_warp_up_and_make_order(df_r):
     # 各数字やデータを取得する
     fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
     peaks = fixed_information['peaks']
+    fixed_information_before = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
+    peaks_before = fixed_information_before['peaks']
 
-    fixed_information_for3 = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
-    peaks_for3 = fixed_information_for3['peaks']
+    print(s, "調査内容のテスト")
+    print(" 直近")
+    print(peaks)
+    print(" ひとつ前から")
+    print(peaks_before)
 
-    # 検証環境で、Peaksが少ないことが発生するため、その場合は処理を進めないようにする（検証環境専用）
-    if len(fixed_information['peaks']) == 0 or len(fixed_information_for3['peaks']) == 0:  # 検証で起きるエラーに対応する
-        return flag_and_orders
-    else:
-        peaks = fixed_information['peaks']
-
-    if peaks[0]['direction'] == peaks_for3[0]['direction']:
-        print("　通常")
-    else:
-        print(" すぐ折り返しが来ている状態（latest3でやるつもりがlatest2で意図しない状態になるやつ")
 
     # ■検証とオーダー作成を実行
     if peaks[0]['count'] == 2:  # 予測なので、LatestがN個続いたときに実行してみる
-        print(s, "■Latest2回の場合の実行")
         # latestが2個の時に実行されるもの
+        print(s, "■Latest2回の場合の実行")
 
-        # # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
+        # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
         print(s, "■Latest基準の同価格Strengthの調査")
-        orders_and_evidence = ri.main_line_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
-        # # gene.print_arr(orders_and_evidence['evidence'], 2)
-        #
+        orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        # gene.print_arr(orders_and_evidence['evidence'], 2)
+
         # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
         # print(s, "■river方向（逆）の強度の確認")
         # river_peak_line_strength = ri.main_river_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
@@ -764,33 +759,29 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
     print(df_r.head(1))
     print(df_r.tail(1))
     # 各数字やデータを取得する
+    # 各数字やデータを取得する
     fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
     peaks = fixed_information['peaks']
+    fixed_information_before = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
+    peaks_before = fixed_information_before['peaks']
 
-    fixed_information_for3 = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
-    peaks_for3 = fixed_information_for3['peaks']
-
-    # 検証環境で、Peaksが少ないことが発生するため、その場合は処理を進めないようにする（検証環境専用）
-    if len(fixed_information['peaks']) == 0 or len(fixed_information_for3['peaks']) == 0:  # 検証で起きるエラーに対応する
-        return flag_and_orders
-    else:
-        peaks = fixed_information['peaks']
-
-    if peaks[0]['direction'] == peaks_for3[0]['direction']:
-        print("　通常")
-    else:
-        print(" すぐ折り返しが来ている状態（latest3でやるつもりがlatest2で意図しない状態になるやつ")
+    print(s, "調査内容のテスト")
+    print(" 直近")
+    print(peaks)
+    print(" ひとつ前から")
+    print(peaks_before)
 
     # ■検証とオーダー作成を実行
     if peaks[0]['count'] == 2:  # 予測なので、LatestがN個続いたときに実行してみる
-        print(s, "■Latest2回の場合の実行")
         # latestが2個の時に実行されるもの
-        # # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
+        print(s, "■Latest2回の場合の実行")
+
+        # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
         print(s, "■Latest基準の同価格Strengthの調査")
-        orders_and_evidence = ri.main_line_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
-        # # gene.print_arr(orders_and_evidence['evidence'], 2)
-        # # gene.print_arr(hooks_orders_and_evidence['evidence'], 2)
-        #
+        orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        # gene.print_arr(orders_and_evidence['evidence'], 2)
+        # gene.print_arr(hooks_orders_and_evidence['evidence'], 2)
+
         # # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
         # print(s, "■river方向（逆）の強度の確認")
         # river_peak_line_strength = ri.main_river_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
@@ -807,6 +798,7 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
         if orders_and_evidence['take_position_flag']:
             flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = orders_and_evidence['exe_orders']
+            flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
                 #[cf.order_finalize(orders_and_evidence['exe_orders'])]
         elif break_double_top_strength_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)")
@@ -851,21 +843,18 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
                     # gene.print_arr(trid_orders_finalized)
                     flag_and_orders["exe_orders"].extend(trid_orders_finalized)  # ここは配列を足すので、appendではなくextend
 
-    elif peaks[0]['count'] == 3:
-        # latestが3この時に実行されるもの
-        # ■ダブルトップ突破型に関する情報を取得する
-        # print(s, "■Latest3回の場合の実行")
-        # print(s, "■DoubleTOpBreakの調査(latest3)")
-        # df_r_first_delete = df_r[0:]
-        # break_double_top_strength_orders_and_evidence = dp.main_double_peak({"df_r": df_r_first_delete})
-        # print(s, break_double_top_strength_orders_and_evidence)
-        # if break_double_top_strength_orders_and_evidence['take_position_flag']:
-        #     # DoubleTopの判定が最優先 (単品）
-        #     # tk.line_send("latest3でDoubleTop突破確認")
-        #     flag_and_orders["take_position_flag"] = False
-        #     flag_and_orders["exe_orders"] = \
-        #         [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
-        pass
+    elif peaks[0]['count'] <= 6:
+        print(s, "■■Latestが3以上6以下の時の実行")
+        # # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
+        print(s, "■Latest基準の同価格Strengthの調査")
+        orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+
+        if orders_and_evidence['take_position_flag']:
+            # orderHoldを確認（latest=2の時に成立していてもNG,していなくてもNG）
+            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["exe_orders"] = orders_and_evidence['exe_orders']
+            flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
+
 
     print(" ■解析終了")
     # print(flag_and_orders['take_position_flag'])
