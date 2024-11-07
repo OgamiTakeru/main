@@ -42,7 +42,7 @@ def cal_move_size(dic_args):
     # 状況に応じた、ピークポイントの指定  # 添え字は0=latest, 1=river, 2=turn, 3=flop3
 
     # ■データフレームの状態で、サイズ感を色々求める
-    filtered_df = df_r[:15]
+    filtered_df = df_r[:48]
     sorted_df = filtered_df.sort_values(by='body_abs', ascending=False)
     max_high = sorted_df["high"].max()
     min_low = sorted_df['low'].min()

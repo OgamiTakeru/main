@@ -338,7 +338,7 @@ def main_analysis_and_create_order():
                 continue  # returnではなく、次のループへ
             else:
                 # ★★★ 解析を呼び出す
-                analysis_result = im.inspection_warp_up_and_make_order(analysis_df)
+                analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
                 if not analysis_result['take_position_flag']:
                     # オーダー判定なしの場合、次のループへ（5秒後）
                     continue

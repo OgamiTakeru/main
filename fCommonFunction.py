@@ -9,7 +9,7 @@ import classOanda
 import copy
 from collections import OrderedDict
 
-basic_unit = 1000
+basic_unit = 10000
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
 
@@ -35,9 +35,9 @@ def order_base(now_price, decision_time):
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.00, "lc_ensure_range": -0.06},
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": 0.03},
 
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.6, "lc_ensure_range": 0.2},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.1, "lc_ensure_range": 0.84},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.12, "lc_ensure_range": 0.104},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},

@@ -217,7 +217,7 @@ def main_hook_figure_inspection_and_order(dic_args):
         main_order['priority'] = 1.9  # かなり高め。ダブルトップブレイク以外には割り込まれない
         main_order['units'] = order_base_info['units'] * 1
         main_order['name'] = "パラレルムーブ"
-        take_position_flag = True
+        take_position_flag = False
     elif hook_info['take_position_flag']:
         main_order = copy.deepcopy(order_base_info)
         main_order['target'] = 0.015
@@ -296,7 +296,7 @@ def main_hook_figure_inspection_and_order_practice(dic_args):
         main_order['priority'] = 1.9  # かなり高め。ダブルトップブレイク以外には割り込まれない
         main_order['units'] = order_base_info['units'] * 1
         main_order['name'] = "パラレルムーブ"
-        take_position_flag = True
+        take_position_flag = False
     elif hook_info['take_position_flag']:
         main_order = copy.deepcopy(order_base_info)
         main_order['target'] = 0.015

@@ -51,7 +51,7 @@ class Order:
         self.direction = order_dic['direction']  # self.units / abs(self.units)
         self.order_keeping_time_sec = 0  # 現在オーダーをキープしている時間
         self.order_timeout_sec = 45 * 60
-        self.position_timeout_sec = 50 * 60
+        self.position_timeout_sec = 120 * 60
 
         self.unrealized_pl = 0  # 含み損益
         self.unrealized_pl_high = 0  # 最大含み損益(検証特有。最もその足でプラスに考えた状態の損益）
@@ -64,7 +64,9 @@ class Order:
         self.position_keeping_time_sec = 0  # 現在ポジションをキープしている時間
         self.order_time = order_dic['order_time']
         self.max_plus = 0  # ポジションを持っている中で、一番プラスになっている時を取得
+        self.max_plus_time_past = 0  # 何分経過時に最大のプラスを記録したか
         self.max_minus = 999  # ポジションを持っている中で、一番マイナスになっている時を取得
+        self.max_minus_time_past = 0  # 何分経過時に、最大の負けを記録したか
         self.settlement_price = 0
         self.lc_change = order_dic['lc_change']
         self.priority = order_dic['priority']
@@ -152,6 +154,9 @@ def update_order_information_and_take_position(cur_class, cur_row, cur_row_index
             # クラス内容の更新
             cur_class.position_time = cur_row['time_jp']
             cur_class.position_is_live = True
+        else:
+            # print(" 取得まち", cur_row['time_jp'], cur_class.name, target_price, cur_row['low'] + adjuster, cur_row["high"] + adjuster)
+            pass
 
 
 def update_position_information(cur_class, cur_row, cur_row_index):
@@ -199,14 +204,18 @@ def update_position_information(cur_class, cur_row, cur_row_index):
         # 買い方向の場合
         if cur_class.max_plus < upper_gap:
             cur_class.max_plus = upper_gap  # 更新
+            cur_class.max_plus_time_past = cur_class.position_keeping_time_sec
         if cur_class.max_minus > lower_gap:
             cur_class.max_minus = lower_gap  # 更新
+            cur_class.max_minus_time_past = cur_class.position_keeping_time_sec
     else:
         # 売り方向の場合
         if cur_class.max_plus < lower_gap:
             cur_class.max_plus = lower_gap  # 更新
+            cur_class.max_plus_time_past = cur_class.position_keeping_time_sec
         if cur_class.max_minus > upper_gap:
             cur_class.max_minus = upper_gap  # 更新
+            cur_class.max_minus_time_past = cur_class.position_keeping_time_sec
 
     # (3)LCチェンジを実行
     for i, lc_item in enumerate(cur_class.lc_change):
@@ -280,7 +289,7 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
         cur_class.settlement_price = cur_row['close']  # ポジション解消価格（ここは暫定的にOpen価格
         cur_class.position_is_live = False
         cur_class.is_live = False
-        cur_class.comment = "Tout"
+        cur_class.comment = "p_Tout"
 
     # 情報書き込み＆決済 jp
     if not cur_class.position_is_live:
@@ -296,15 +305,17 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
             "res": cur_class.comment,
             "pl": round(cur_class.realized_pl, 3),
             "end_time": cur_row['time_jp'],
-            "take": cur_class.target_price,
-            "end": cur_class.settlement_price,
+            "end_price": cur_class.settlement_price,
+            "take_price": cur_class.target_price,
+            "take_time": cur_class.position_time,
             "name": cur_class.name,
             "pl_per_units": round(cur_class.realized_pl_per_units, 3),
             "max_plus": cur_class.max_plus,
+            "max_plus_time_past": cur_class.max_plus_time_past,
             "max_minus": cur_class.max_minus,
+            "max_minus_time_past": cur_class.max_minus_time_past,
             "priority": cur_class.priority,
             "position_keeping_time": cur_class.position_keeping_time_sec,
-            "take_position_price": cur_class.target_price,
             "settlement_price": cur_class.settlement_price,
             "tp_price": cur_class.tp_price,
             "lc_price": cur_class.lc_price,
@@ -368,6 +379,8 @@ def judge_overwrite_order(analysis_result):
                 # 方向が同じときは、上書きしない
                 print(" 同方向のためいれない")
                 new_order = False
+        else:
+            print(" オーダー可")
 
     # 飛ばされた物は飛ばされたオーダーに入れておく
     if not(new_order):
@@ -509,7 +522,8 @@ def main():
             else:
                 # ★★★ 解析を呼び出す
                 print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/", len(gl_inspection_base_df), "中")
-                analysis_result = im.for_inspection_inspection_warp_up_and_make_order(analysis_df)
+                analysis_result = im.for_inspection_analysis_warp_up_and_make_order(analysis_df)  # 検証専用コード
+                # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
                 if not analysis_result['take_position_flag']:
                     # オーダー判定なしの場合、次のループへ（5秒後）
                     continue
@@ -517,7 +531,7 @@ def main():
                 overwrite_order = judge_overwrite_order(analysis_result)
                 overwrite_order = False
                 if overwrite_order:
-                    # 上書きする場合
+                    # 上書きする場合(実運用に近い）
                     # 既存のクラスをリセットして、改めて登録しなおす
                     # ★★★ クラスをリセット＆オーダーをクラスに登録する
                     gl_classes = []  # リセット
@@ -532,7 +546,7 @@ def main():
                             {"order_time": order_time, "name": analysis_result['exe_orders'][i_order]['name']})
                 else:
                     # ★上書きしない検証用
-                    # 全てのオーダーに対して、検証を行う。LifeがFalseになったものに上書きしていく
+                    # 全てのオーダーに対して、検証を行う。LifeがFalseになったものに上書きしていく。ポジ解消タイミングによって、結果の時系列が逆になることも。
                     order_time = row_s5['time_jp']
                     for i_order in range(len(analysis_result['exe_orders'])):
                         # print(analysis_result['exe_orders'][i_order])
@@ -617,10 +631,10 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
 gl_exist_data = False
-gl_jp_time = datetime.datetime(2024, 11, 1, 21, 50, 0)  # TOの時刻
-gl_m5_count = 5000
+gl_jp_time = datetime.datetime(2024, 11, 7, 20, 50, 0)  # TOの時刻
+gl_m5_count = 250
 gl_m5_loop = 1
-memo = "広範囲、パラレルなし、TPLC10程度、TPは10を起点にLCCHANGEあり。10で8.4～のLCChange"
+memo = "データを取りたいやつ(フラッグ）mini"
 
 # ■検証処理
 get_data()  # データの取得
@@ -635,7 +649,7 @@ result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # �
 result_df['Hour'] = result_df['order_time_datetime'].dt.hour
 # 保存
 try:
-    result_df.to_csv(tk.folder_path + gl_start_time_str + '_main_analysis_ans.csv', index=False, encoding="utf-8")
+    result_df.to_csv(tk.folder_path + gl_start_time_str + memo + '_main_analysis_ans.csv', index=False, encoding="utf-8")
     result_df.to_csv(tk.folder_path + 'main_analysis_ans_latest.csv', index=False, encoding="utf-8")
 except:
     print("書き込みエラーあり")  # 今までExcelを開きっぱなしにしていてエラーが発生。日時を入れることで解消しているが、念のための分岐

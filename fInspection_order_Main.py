@@ -412,7 +412,7 @@ oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの�
 #     return flag_and_orders
 
 
-def inspection_warp_up_and_make_order(df_r):
+def analysis_warp_up_and_make_order(df_r):
     """
     主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
     引数
@@ -435,7 +435,8 @@ def inspection_warp_up_and_make_order(df_r):
     flag_and_orders = {
         "take_position_flag": False,
         "exe_orders": [],  # 本番用（本番運用では必須）
-        "exe_order": {}  # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
+        "exe_order": {}, # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
+        'for_inspection_dic': {}
     }
     # 表示のインデント
     ts = " "
@@ -466,12 +467,13 @@ def inspection_warp_up_and_make_order(df_r):
     if peaks[0]['count'] == 2:  # 予測なので、LatestがN個続いたときに実行してみる
         print(s, "■Latest2回の場合の実行")
         # latestが2個の時に実行されるもの
+
         # # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
-        # print(s, "■Latest基準の同価格Strengthの調査")
-        # orders_and_evidence = ri.main_line_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        print(s, "■Latest基準の同価格Strengthの調査")
+        orders_and_evidence = ri.main_line_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
         # # gene.print_arr(orders_and_evidence['evidence'], 2)
         #
-        # # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
+        # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
         # print(s, "■river方向（逆）の強度の確認")
         # river_peak_line_strength = ri.main_river_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
 
@@ -484,7 +486,11 @@ def inspection_warp_up_and_make_order(df_r):
         break_double_top_strength_orders_and_evidence = dp.main_double_peak({"df_r": df_r, "peaks": peaks})
         # print(s, break_double_top_strength_orders_and_evidence)
 
-        if break_double_top_strength_orders_and_evidence['take_position_flag']:
+        if orders_and_evidence['take_position_flag']:
+            flag_and_orders["take_position_flag"] = False
+            flag_and_orders["exe_orders"] = orders_and_evidence['exe_orders']
+                #[cf.order_finalize(orders_and_evidence['exe_orders'])]
+        elif break_double_top_strength_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)")
             # DoubleTopの判定が最優先 (単品）
             flag_and_orders["take_position_flag"] = True
@@ -541,8 +547,8 @@ def inspection_warp_up_and_make_order(df_r):
                 [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
 
     print(" ■解析終了")
-    # print(flag_and_orders['take_position_flag'])
-    # gene.print_arr(flag_and_orders['exe_orders'])
+    print(flag_and_orders['take_position_flag'])
+    gene.print_arr(flag_and_orders['exe_orders'])
 
     # プライオリティの追加
     if len(flag_and_orders["exe_orders"]) >= 1:
@@ -565,7 +571,7 @@ def inspection_warp_up_and_make_order(df_r):
     return flag_and_orders
 
 
-def for_practice_inspection_warp_up_and_make_order(df_r):
+def for_practice_analysis_warp_up_and_make_order(df_r):
     """
     主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
     引数
@@ -724,7 +730,7 @@ def for_practice_inspection_warp_up_and_make_order(df_r):
     return flag_and_orders
 
 
-def for_inspection_inspection_warp_up_and_make_order(df_r):
+def for_inspection_analysis_warp_up_and_make_order(df_r):
     """
     主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
     引数
@@ -747,7 +753,8 @@ def for_inspection_inspection_warp_up_and_make_order(df_r):
     flag_and_orders = {
         "take_position_flag": False,
         "exe_orders": [],  # 本番用（本番運用では必須）
-        "exe_order": {}  # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
+        "exe_order": {},  # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
+        'for_inspection_dic': {}
     }
     # 表示のインデント
     ts = " "
@@ -779,8 +786,9 @@ def for_inspection_inspection_warp_up_and_make_order(df_r):
         print(s, "■Latest2回の場合の実行")
         # latestが2個の時に実行されるもの
         # # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
-        # print(s, "■Latest基準の同価格Strengthの調査")
-        # hooks_orders_and_evidence = ri.main_line_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        print(s, "■Latest基準の同価格Strengthの調査")
+        orders_and_evidence = ri.main_line_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        # # gene.print_arr(orders_and_evidence['evidence'], 2)
         # # gene.print_arr(hooks_orders_and_evidence['evidence'], 2)
         #
         # # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
@@ -796,17 +804,21 @@ def for_inspection_inspection_warp_up_and_make_order(df_r):
         break_double_top_strength_orders_and_evidence = dp.for_inspection_main_double_peak({"df_r": df_r, "peaks": peaks})
         # print(s, break_double_top_strength_orders_and_evidence)
 
-        if break_double_top_strength_orders_and_evidence['take_position_flag']:
+        if orders_and_evidence['take_position_flag']:
+            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["exe_orders"] = orders_and_evidence['exe_orders']
+                #[cf.order_finalize(orders_and_evidence['exe_orders'])]
+        elif break_double_top_strength_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)")
             # DoubleTopの判定が最優先 (単品）
-            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["take_position_flag"] = False
             flag_and_orders["exe_orders"] = \
                 [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
             flag_and_orders['for_inspection_dic'] = break_double_top_strength_orders_and_evidence['for_inspection_dic']
         elif hooks_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:通常ストレングス(flag含む)】")
             # シンプルなLineStrengthによるオーダー発行
-            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["take_position_flag"] = False
             flag_and_orders["exe_orders"] = hooks_orders_and_evidence["exe_orders"]
             flag_and_orders['for_inspection_dic'] = hooks_orders_and_evidence['for_inspection_dic']
             # ■■最も強いストレングスが遠い場合、最も強いストレングスに向かう方向へトラリピを設定

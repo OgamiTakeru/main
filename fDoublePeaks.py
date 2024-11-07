@@ -7,6 +7,7 @@ import fCommonFunction as cf
 import fMoveSizeInspection as ms
 import statistics
 import pandas as pd
+import fResistanceLineInspection as ri
 import copy
 
 oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
@@ -713,8 +714,8 @@ def for_inspection_double_peak_judgement_predict(dic_args):
         memo2 = "," + str(peak_count) + "ピーク有"
 
         lower_upper_gap = abs(lower_gap_total - upper_gap_total)
-        if lower_upper_gap / turn_gap >= 2  and lower_upper_gap >= 0.20:
-            if flop3['count'] >= 5: # and flop3['gap'] > 0.02::  # FLop3が長い場合、独立しているため、ここからの上昇も考えられる
+        if lower_upper_gap / turn_gap >= 2 and lower_upper_gap >= 0.20:
+            if flop3['count'] >= 5:  # and flop3['gap'] > 0.02::  # FLop3が長い場合、独立しているため、ここからの上昇も考えられる
                 print(t6, "突破形状維持（前が長いがFLOP3長め、もっと上がる）Upper:", upper_gap_total, "lower:",lower_gap_total, "t", turn_gap, lower_upper_gap)
                 double_top_strength = -1
                 double_top_strength_memo = double_top_strength_memo + ", 突破(より上)" + str(upper_lower_gap) + str(turn_gap)
@@ -738,6 +739,10 @@ def for_inspection_double_peak_judgement_predict(dic_args):
         for_inspection_dic['upper_gap_total'] = upper_gap_total
         for_inspection_dic['double_top_strength'] = double_top_strength
 
+    # TURNのLINEの強さを再判定
+    temp = ri.main_turn_strength_inspection_and_order({"df_r": df_r, "peaks": peaks})
+    for_inspection_dic['turn_strength'] = temp['target_line_strength']
+    for_inspection_dic['len_turn_same_price_list'] = len(temp['turn_same_price_list'])
 
     # 追加の検討要素②　ターンで突発的な足がある場合、突破しにくいのでは、という判定
     # gene.print_json(turn)
@@ -750,6 +755,9 @@ def for_inspection_double_peak_judgement_predict(dic_args):
     # 検証用の値を格納
     for_inspection_dic['include_large'] = turn['include_large']
     for_inspection_dic['double_top_strength'] = double_top_strength
+
+    # 直近5時間の中で、どの程度の高さにいるか（最大最小を4等分し、うち側の二つに入っているかどうか）
+
 
     return {
         "take_position_flag": take_position_flag,
@@ -806,76 +814,88 @@ def for_inspection_main_double_peak(dic_args):
     now_price = peaks[0]['peak']
     order_base_info = cf.order_base(now_price, target_df.iloc[0]['time_jp'])  # オーダーの初期辞書を取得する(nowPriceはriver['latest_price']で代用)
     # オーダーの可能性がある場合、オーダーを正確に作成する
-    if double_top_strength < 0:
-        # ストレングスが突破形状の場合(マイナス値）
-        # LC価格の目安を求めるためのベースを計算
-        print(ts, " なんでおかしいの？", river['peak'])
-        lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
-        lc_range_temp = abs(now_price - lc_price_temp)  # 従来の設定ロスカ幅(計算用）
-        lc = gene.cal_at_least(0.07, lc_range_temp)
+    # 【突破形状】従来想定の突破形状
+    main_order = copy.deepcopy(order_base_info)
+    main_order['target'] = turn['peak']
+    main_order['tp'] = 0.20
+    main_order['lc'] = 0.20  # * line_strength  # 0.09  # LCは広め
+    # main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    main_order['expected_direction'] = latest['direction'] * -1  # 突破方向
+    main_order['priority'] = 2  # ほかので割り込まれない
+    main_order['units'] = order_base_info['units'] * 1
+    main_order['name'] = "共通条件（突破）"
 
-        if confidence == 1:
-            # 【突破形状】従来想定の突破形状
-            main_order = copy.deepcopy(order_base_info)
-            main_order['target'] = turn['peak']
-            main_order['tp'] = 0.40
-            main_order['lc'] = 0.12  # * line_strength  # 0.09  # LCは広め
-            main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
-            # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
-            main_order['expected_direction'] = latest['direction']  # 突破方向
-            main_order['priority'] = 2  # ほかので割り込まれない
-            main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "突破形状（通常）"
-        else:
-            # 【突破形状】従来想定より、リバーの動きが速い (LCを小さくとる）
-            double_top_strength = -0.9  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
-            main_order = copy.deepcopy(order_base_info)
-            # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
-            main_order['target'] = latest['peak'] + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
-            main_order['tp'] = 0.40
-            main_order['lc'] = 0.12  #　0.04
-            # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
-            main_order['type'] = 'STOP'  # 順張り
-            # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
-            main_order['expected_direction'] = latest['direction']  # 突破方向
-            main_order['priority'] = 2  #
-            main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "突破形状（latest大 LC小）"
-    else:
-        # ストレングスが抵抗形状の場合
-        if confidence == 1:
-            # 従来想定の突破形状の未遂（抵抗）
-            main_order = copy.deepcopy(order_base_info)
-            main_order['target'] = turn['peak']
-            main_order['tp'] = 0.40
-            main_order['lc'] = 0.12  # * line_strength  # 0.09  # LCは広め
-            main_order['type'] = 'LIMIT'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
-            # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
-            # main_order['tr_range'] = 0.10  # 要検討
-            main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
-            main_order['priority'] = 2  # ほかので割り込まれない
-            main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "NOT突破（突破形状だが）"
-        else:
-            # 従来想定より、リバーの動きが速いの未遂（抵抗）
-            double_top_strength = 1  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
-            main_order = copy.deepcopy(order_base_info)
-            lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
-            lc_range_temp = abs(now_price - lc_price_temp)  # 従来の設定ロスカ幅(計算用）
-            lc = gene.cal_at_least(0.07, lc_range_temp)
-
-            # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
-            main_order['target'] = latest['peak'] + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
-            main_order['tp'] = 0.40
-            main_order['lc'] = 0.12  # 0.04
-            # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
-            main_order['type'] = 'LIMIT'  # 順張り
-            # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
-            # main_order['tr_range'] = 0.10  # 要検討
-            main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
-            main_order['priority'] = 2  #
-            main_order['units'] = order_base_info['units'] * 1
-            main_order['name'] = "NOT突破（latest大の突破形状だが　LC小）"
+    # if double_top_strength < 0:
+    #     # ストレングスが突破形状の場合(マイナス値）
+    #     # LC価格の目安を求めるためのベースを計算
+    #     print(ts, " なんでおかしいの？", river['peak'])
+    #     lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
+    #     lc_range_temp = abs(now_price - lc_price_temp)  # 従来の設定ロスカ幅(計算用）
+    #     lc = gene.cal_at_least(0.07, lc_range_temp)
+    #
+    #     if confidence == 1:
+    #         # 【突破形状】従来想定の突破形状
+    #         main_order = copy.deepcopy(order_base_info)
+    #         main_order['target'] = turn['peak']
+    #         main_order['tp'] = 0.40
+    #         main_order['lc'] = 0.12  # * line_strength  # 0.09  # LCは広め
+    #         main_order['type'] = 'STOP'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         main_order['expected_direction'] = latest['direction']  # 突破方向
+    #         main_order['priority'] = 2  # ほかので割り込まれない
+    #         main_order['units'] = order_base_info['units'] * 1
+    #         main_order['name'] = "突破形状（通常）"
+    #     else:
+    #         # 【突破形状】従来想定より、リバーの動きが速い (LCを小さくとる）
+    #         double_top_strength = -0.9  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
+    #         main_order = copy.deepcopy(order_base_info)
+    #         # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
+    #         main_order['target'] = latest['peak'] + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
+    #         main_order['tp'] = 0.40
+    #         main_order['lc'] = 0.12  #　0.04
+    #         # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
+    #         main_order['type'] = 'STOP'  # 順張り
+    #         # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         main_order['expected_direction'] = latest['direction']  # 突破方向
+    #         main_order['priority'] = 2  #
+    #         main_order['units'] = order_base_info['units'] * 1
+    #         main_order['name'] = "突破形状（latest大 LC小）"
+    # else:
+    #     # ストレングスが抵抗形状の場合
+    #     if confidence == 1:
+    #         # 従来想定の突破形状の未遂（抵抗）
+    #         main_order = copy.deepcopy(order_base_info)
+    #         main_order['target'] = turn['peak']
+    #         main_order['tp'] = 0.40
+    #         main_order['lc'] = 0.12  # * line_strength  # 0.09  # LCは広め
+    #         main_order['type'] = 'LIMIT'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         # main_order['tr_range'] = 0.10  # 要検討
+    #         main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
+    #         main_order['priority'] = 2  # ほかので割り込まれない
+    #         main_order['units'] = order_base_info['units'] * 1
+    #         main_order['name'] = "NOT突破（突破形状だが）"
+    #     else:
+    #         # 従来想定より、リバーの動きが速いの未遂（抵抗）
+    #         double_top_strength = 1  # ★この場合のみ、このタイミングでストレングスを編集(いずれにせよ突破コース）
+    #         main_order = copy.deepcopy(order_base_info)
+    #         lc_price_temp = river['peak'] + (0.03 * -1 * latest['direction'])  # 従来の設定ロスカット価格(直接価格指定）
+    #         lc_range_temp = abs(now_price - lc_price_temp)  # 従来の設定ロスカ幅(計算用）
+    #         lc = gene.cal_at_least(0.07, lc_range_temp)
+    #
+    #         # main_order['target'] = river["peak"] + (0.02 * -1 * latest['direction']) # river(最新の折り返し地点）位まで戻る前提
+    #         main_order['target'] = latest['peak'] + (0.022 * 1 * latest['direction'])  # 現在価格で挑戦する！（その代わりLCをturn価格に)
+    #         main_order['tp'] = 0.40
+    #         main_order['lc'] = 0.12  # 0.04
+    #         # main_order['lc'] = river['peak'] + (0.03 * -1 * latest['direction'])
+    #         main_order['type'] = 'LIMIT'  # 順張り
+    #         # main_order['type'] = 'MARKET'  # 順張り（勢いがいい場合通過している場合もあるかもだが）
+    #         # main_order['tr_range'] = 0.10  # 要検討
+    #         main_order['expected_direction'] = latest['direction'] * -1  # 抵抗方向
+    #         main_order['priority'] = 2  #
+    #         main_order['units'] = order_base_info['units'] * 1
+    #         main_order['name'] = "NOT突破（latest大の突破形状だが　LC小）"
 
     return {  # take_position_flagの返却は必須。Trueの場合注文情報が必要。
         "take_position_flag": take_position_flag,
