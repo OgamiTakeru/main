@@ -50,8 +50,8 @@ class Order:
         self.units = order_dic['units'] * order_dic['direction']  # 正の値しか来ないようだ！？ なので、directionをかけておく
         self.direction = order_dic['direction']  # self.units / abs(self.units)
         self.order_keeping_time_sec = 0  # 現在オーダーをキープしている時間
-        self.order_timeout_sec = 45 * 60
-        self.position_timeout_sec = 120 * 60
+        self.order_timeout_sec = 50 * 60
+        self.position_timeout_sec = 120 * 60  # 45 * 60
 
         self.unrealized_pl = 0  # 含み損益
         self.unrealized_pl_high = 0  # 最大含み損益(検証特有。最もその足でプラスに考えた状態の損益）
@@ -199,6 +199,8 @@ def update_position_information(cur_class, cur_row, cur_row_index):
     cur_class.position_keeping_time_sec = position_keeping_time_sec  # 所持継続時間の更新
     cur_class.unrealized_pl = pl_use_close * abs(cur_class.units)  # 含み損益の更新（Unitsをかけたもの）　マイナス値を持つ
     cur_class.unrealized_pl_per_units = pl_use_close  # 含み損益（Unitsに依存しない数） マイナス値を持つ
+    cur_class.pl = cur_class.unrealized_pl  # 途中でTest範囲が過ぎると、結果が入らなくなるため、この段階から入れておく
+    cur_class.pl_per_units = cur_class.unrealized_pl_per_units  # 途中でTest範囲が過ぎると、結果が入らなくなるため、この段階から入れておく
     # print(pl * abs(cur_class.units), pl, cur_row['time_jp'])
     if cur_class.direction == 1:
         # 買い方向の場合
@@ -632,7 +634,7 @@ print("--------------------------------検証開始-----------------------------
 # ■　検証の設定
 gl_exist_data = True
 gl_jp_time = datetime.datetime(2024, 11, 7, 20, 50, 0)  # TOの時刻
-gl_m5_count = 250
+gl_m5_count = 5000
 gl_m5_loop = 1
 memo = "データを取りたいやつ(フラッグ）mini"
 

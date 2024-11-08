@@ -362,28 +362,81 @@ def update_line_strength(predict_line_info_list, double_peak_flag):
     return predict_line_info_list
 
 
-def judge_flag_figure(peaks, target_direction, line_strength):
+def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
     """
     フラッグ形状かどうかを判定する。
+    df_r:調査用のデータフレーム
     peaks:元となるピークス。
     target_direction: この方向のピーク群が斜め上がり傾向になっているかを検証する（Upperが水平でLowerを検証したい場合、ここはー１が渡される）
     返り値は、成立しているかどうかのBoolean
+
+    ロングとショートで今のところ実施している
+
+
+    フラッグはLatest＝２の時の調査のみではない必要がある。その為以下のルールを設定
+    ・ひとつ前の状態でフラッグが発生している場合（連続発生）、二回目は実施しない。（連続の場合は何回あっても初回のみが実現可能）
+    ・Latest＝２の時になく、latest=3以降である場合は、何かおかしいためやめる（ただしいい影響がある可能性もあり）
     """
     s6 = "      "
-    flag_figure_total = False  # これは返り値
+    # ■返却値の設定
+    flag = False  # これは返り値
+    remark = "不成立"
+    memo = ""
 
-    long_range_flag_info = judge_flag_figure_sub_function(peaks, target_direction, 5)
+    # ■情報の準備（ひとつ前の足分）
+    fixed_information_prev = cf.information_fix({"df_r": df_r[1:]})  # DFとPeaksが必ず返却される
+    peaks_prev = fixed_information_prev['peaks']
+
+    # ■ロング（Peaks５での判定）
+    # ■■現状でテストを実施 (latest=N)
+    long_range_flag_info = judge_flag_figure(peaks, target_direction, 5)
     long_range_flag = long_range_flag_info['flag_figure']
-    short_range_flag_info = judge_flag_figure_sub_function(peaks, target_direction, 3)
-    short_range_flag = short_range_flag_info['flag_figure']
+    # ■■ひとつ前（latest=N-1)
+    long_range_flag_info_prev = judge_flag_figure(peaks_prev, peaks_prev[0]['direction'], 5)
+    long_range_flag_prev = long_range_flag_info_prev['flag_figure']
+    # ■■前回と今回の関係をチェックする
+    if long_range_flag and long_range_flag_prev:
+        # どっちも成立している場合、すでにオーダーが入っているため、新規のオーダーは行わない
+        print(s6, "すでに成立済みのため、今回はスルー(long)", long_range_flag, long_range_flag_prev)
+        memo = memo + " LONG既に成立"
+        long_range_flag_res = False
+    else:
+        print(s6, "初成立フラッグ(long)", long_range_flag, long_range_flag_prev)
+        memo = memo + " LONG初成立"
+        long_range_flag_res = True
 
+    # ■ショート（Peaks3での判定）
+    # ■■現状でテストを実施 (latest=N)
+    short_range_flag_info = judge_flag_figure(peaks, target_direction, 3)
+    short_range_flag = short_range_flag_info['flag_figure']
+    # ■■ひとつ前（latest=N-1)
+    short_range_flag_info_prev = judge_flag_figure(peaks_prev, peaks_prev[0]['direction'], 3)
+    short_range_flag_prev = short_range_flag_info_prev['flag_figure']
+    # ■■前回と今回の関係をチェックする
+    if short_range_flag and short_range_flag_prev:
+        # どっちも成立している場合、すでにオーダーが入っているため、新規のオーダーは行わない
+        print(s6, "すでに成立済みのため、今回はスルー(Short)", short_range_flag, short_range_flag_prev)
+        memo = memo + " SHORT既に成立"
+        short_range_flag_res = False
+    else:
+        print(s6, "初成立フラッグ(Short)", short_range_flag, short_range_flag_prev)
+        memo = memo + " SHORT初成立"
+        short_range_flag_res = True
+
+    # ■最終ジャッジ
+    # 以下3行をコメントインすると、重なりは全て見ないことになる
+    # if long_range_flag_res:
+    #     flag = long_range_flag
+    #     remark = long_range_flag_info['remark']
+
+    # 以下数行をコメントインすると、最もプラスの可能性が上がる。
     if line_strength == 1:
         # 最も強い抵抗線を持っている場合,ロングレンジでの判定のみ
         flag = long_range_flag
         remark = long_range_flag_info['remark']
     else:
         # ピークが2個程度の場合、ロング＋ショートレンジで必要
-        if long_range_flag and short_range_flag:
+        if long_range_flag_res and short_range_flag_res:
             flag = True
         else:
             flag = False
@@ -392,8 +445,8 @@ def judge_flag_figure(peaks, target_direction, line_strength):
         # 【暫定処理】フラッグが少なくてさみしいので、、ロングでなってればOKにする（めんどくさいからフラグ上書き）
         flag = long_range_flag
 
-    print(s6, "Flag形状確認", long_range_flag, short_range_flag, "結論", flag)
-
+    # ■結果を返却する
+    print(s6, "Flag形状確認", long_range_flag_res, short_range_flag_res, "結論", flag, memo)
     return {
         "flag_figure": flag,
         "lc": short_range_flag_info['lc'],  # こっちのほうがlongよりLC幅が狭いので。いつかリスクを追う場合は、Longに？）
@@ -401,7 +454,7 @@ def judge_flag_figure(peaks, target_direction, line_strength):
     }
 
 
-def judge_flag_figure_sub_function(peaks, latest_direction, num):
+def judge_flag_figure(peaks, latest_direction, num):
     """
     旗の形状を探索するための、サポート関数
     peaks: ピークス
@@ -566,7 +619,7 @@ def judge_flag_figure_sub_function(peaks, latest_direction, num):
             if on_line / total_peaks_num * 100 >= 40:
                 print(s7, "(ri)upperの継続した下落とみられる⇒　このLINEは下に突破される方向になる")
                 flag_figure = True
-                remark = "フラッグ形状(Upper下落)"
+                remark = "フラッグ形状(上側下落)"
                 # tk.line_send(s7, "(ri)フラッグ型（lower水平upper下落）の検出", num)
             else:
                 print(s7, "(ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
@@ -905,7 +958,7 @@ def cal_tpf_line_strength_all_predict_line(dic_args):
         # if each_strength_info['all_range_strong_line'] == 0 and each_strength_info['line_on_num'] >= 3:  # 旧条件　かなり厳しい
         # if each_strength_info['line_on_num'] >= 3 and each_strength_info['line_strength'] == 1:  # 旧条件２　少し厳しい
         if each_strength_info['line_on_num'] >= 2 and each_strength_info['line_strength'] >= 0.9:  # allRangeは不要か
-            flag = judge_flag_figure(peaks, peaks[0]['direction'], each_strength_info['line_strength'])
+            flag = judge_flag_figure_wrap_up(peaks, peaks[0]['direction'], each_strength_info['line_strength'], target_df)
             print(s6, "[Flagテスト]", each_predict_line_info['line_base_info']["line_base_price"])
             # フラッグの結果次第で、LineStrengthに横やりを入れる形で、値を買い替える
             if flag['flag_figure']:
@@ -995,7 +1048,7 @@ def main_line_strength_analysis_and_order(dic_args):
     main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction'] * -1
     main_order_base['priority'] = target_strength_info['strength_info']['priority']
     main_order_base['units'] = main_order_base['units'] * 1
-    main_order_base['name'] = "２２２" + target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
+    main_order_base['name'] = "222カウンター" + target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
     exe_orders.append(cf.order_finalize(main_order_base))
 
     # 返却する

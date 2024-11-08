@@ -448,15 +448,8 @@ def analysis_warp_up_and_make_order(df_r):
     # 各数字やデータを取得する
     fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
     peaks = fixed_information['peaks']
-    fixed_information_before = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
-    peaks_before = fixed_information_before['peaks']
-
-    print(s, "調査内容のテスト")
-    print(" 直近")
-    print(peaks)
-    print(" ひとつ前から")
-    print(peaks_before)
-
+    # fixed_information_before = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
+    # peaks_before = fixed_information_before['peaks']
 
     # ■検証とオーダー作成を実行
     if peaks[0]['count'] == 2:  # 予測なので、LatestがN個続いたときに実行してみる
@@ -465,7 +458,7 @@ def analysis_warp_up_and_make_order(df_r):
 
         # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
         print(s, "■Latest基準の同価格Strengthの調査")
-        orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        line_strength_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
         # gene.print_arr(orders_and_evidence['evidence'], 2)
 
         # ■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
@@ -481,21 +474,23 @@ def analysis_warp_up_and_make_order(df_r):
         break_double_top_strength_orders_and_evidence = dp.main_double_peak({"df_r": df_r, "peaks": peaks})
         # print(s, break_double_top_strength_orders_and_evidence)
 
-        if orders_and_evidence['take_position_flag']:
+        if line_strength_orders_and_evidence['take_position_flag']:
             flag_and_orders["take_position_flag"] = False
-            flag_and_orders["exe_orders"] = orders_and_evidence['exe_orders']
-                #[cf.order_finalize(orders_and_evidence['exe_orders'])]
+            flag_and_orders["exe_orders"] = line_strength_orders_and_evidence['exe_orders']
+            flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
         elif break_double_top_strength_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)")
             # DoubleTopの判定が最優先 (単品）
             flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = \
                 [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
+            flag_and_orders['for_inspection_dic'] = break_double_top_strength_orders_and_evidence['for_inspection_dic']
         elif hooks_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:通常ストレングス(flag含む)】")
             # シンプルなLineStrengthによるオーダー発行
             flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = hooks_orders_and_evidence["exe_orders"]
+            flag_and_orders['for_inspection_dic'] = hooks_orders_and_evidence['for_inspection_dic']
             # ■■最も強いストレングスが遠い場合、最も強いストレングスに向かう方向へトラリピを設定
             trid_do = False
             if trid_do and hooks_orders_and_evidence["target_strength"]["strength_info"]["line_strength"] >= 0:  # フラッグではない場合（こっちはフラッグの可能性もあり)
@@ -526,20 +521,16 @@ def analysis_warp_up_and_make_order(df_r):
                     # gene.print_arr(trid_orders_finalized)
                     flag_and_orders["exe_orders"].extend(trid_orders_finalized)  # ここは配列を足すので、appendではなくextend
 
-    elif peaks[0]['count'] == 3:
-        # latestが3この時に実行されるもの
-        # ■ダブルトップ突破型に関する情報を取得する
-        print(s, "■Latest3回の場合の実行")
-        print(s, "■DoubleTOpBreakの調査(latest3)")
-        df_r_first_delete = df_r[0:]
-        break_double_top_strength_orders_and_evidence = dp.main_double_peak({"df_r": df_r_first_delete})
-        print(s, break_double_top_strength_orders_and_evidence)
-        if break_double_top_strength_orders_and_evidence['take_position_flag']:
-            # DoubleTopの判定が最優先 (単品）
-            # tk.line_send("latest3でDoubleTop突破確認")
-            flag_and_orders["take_position_flag"] = False
-            flag_and_orders["exe_orders"] = \
-                [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
+    elif peaks[0]['count'] <= 6:
+        print(s, "■■Latestが3以上6以下の時の実行")
+        # # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
+        print(s, "■Latest基準の同価格Strengthの調査")
+        line_strength_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        if line_strength_orders_and_evidence['take_position_flag']:
+            # orderHoldを確認（latest=2の時に成立していてもNG,していなくてもNG）
+            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["exe_orders"] = line_strength_orders_and_evidence['exe_orders']
+            flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
 
     print(" ■解析終了")
     print(flag_and_orders['take_position_flag'])
@@ -560,8 +551,10 @@ def analysis_warp_up_and_make_order(df_r):
             # tk.line_send("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
             print(s, "直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
             flag_and_orders['take_position_flag'] = False
+            flag_and_orders['for_inspection_dic']['narrow'] = True  # 検証用データに情報追加
         else:
             print(s, " 通常の動き")
+            flag_and_orders['for_inspection_dic']['narrow'] = False  # 検証用データに情報追加
             pass
     return flag_and_orders
 
@@ -762,14 +755,8 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
     # 各数字やデータを取得する
     fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
     peaks = fixed_information['peaks']
-    fixed_information_before = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
-    peaks_before = fixed_information_before['peaks']
-
-    print(s, "調査内容のテスト")
-    print(" 直近")
-    print(peaks)
-    print(" ひとつ前から")
-    print(peaks_before)
+    # fixed_information_before = cf.information_fix({"df_r": df_r[1:]})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
+    # peaks_before = fixed_information_before['peaks']
 
     # ■検証とオーダー作成を実行
     if peaks[0]['count'] == 2:  # 予測なので、LatestがN個続いたときに実行してみる
@@ -778,7 +765,7 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
 
         # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
         print(s, "■Latest基準の同価格Strengthの調査")
-        orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        line_strength_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
         # gene.print_arr(orders_and_evidence['evidence'], 2)
         # gene.print_arr(hooks_orders_and_evidence['evidence'], 2)
 
@@ -795,9 +782,9 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
         break_double_top_strength_orders_and_evidence = dp.for_inspection_main_double_peak({"df_r": df_r, "peaks": peaks})
         # print(s, break_double_top_strength_orders_and_evidence)
 
-        if orders_and_evidence['take_position_flag']:
+        if line_strength_orders_and_evidence['take_position_flag']:
             flag_and_orders["take_position_flag"] = True
-            flag_and_orders["exe_orders"] = orders_and_evidence['exe_orders']
+            flag_and_orders["exe_orders"] = line_strength_orders_and_evidence['exe_orders']
             flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
                 #[cf.order_finalize(orders_and_evidence['exe_orders'])]
         elif break_double_top_strength_orders_and_evidence['take_position_flag']:
@@ -847,12 +834,12 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
         print(s, "■■Latestが3以上6以下の時の実行")
         # # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
         print(s, "■Latest基準の同価格Strengthの調査")
-        orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        line_strength_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
 
-        if orders_and_evidence['take_position_flag']:
+        if line_strength_orders_and_evidence['take_position_flag']:
             # orderHoldを確認（latest=2の時に成立していてもNG,していなくてもNG）
             flag_and_orders["take_position_flag"] = True
-            flag_and_orders["exe_orders"] = orders_and_evidence['exe_orders']
+            flag_and_orders["exe_orders"] = line_strength_orders_and_evidence['exe_orders']
             flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
 
 

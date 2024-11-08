@@ -165,7 +165,6 @@ def information_fix_help_delete_item(peak):
     return copy_data
 
 
-
 def information_fix(dic_args):
     """
     各解析関数から呼ばれる。各解析関数が検証から呼ばれているか、本番から呼ばれているかを判定する
