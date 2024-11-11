@@ -381,13 +381,14 @@ def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
     # ■返却値の設定
     flag = False  # これは返り値
     remark = "不成立"
+    is_first = True  # 最初の成立か（この場合、突破はしにくいことが検証から判明）
     memo = ""
 
     # ■情報の準備（ひとつ前の足分）
     fixed_information_prev = cf.information_fix({"df_r": df_r[1:]})  # DFとPeaksが必ず返却される
     peaks_prev = fixed_information_prev['peaks']
 
-    # ■ロング（Peaks５での判定）
+    # ■ロング（Peaks５(正確にはOppositeのPeaksが５）での判定）
     # ■■現状でテストを実施 (latest=N)
     long_range_flag_info = judge_flag_figure(peaks, target_direction, 5)
     long_range_flag = long_range_flag_info['flag_figure']
@@ -398,14 +399,16 @@ def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
     if long_range_flag and long_range_flag_prev:
         # どっちも成立している場合、すでにオーダーが入っているため、新規のオーダーは行わない
         print(s6, "すでに成立済みのため、今回はスルー(long)", long_range_flag, long_range_flag_prev)
-        memo = memo + " LONG既に成立"
-        long_range_flag_res = False
+        memo = memo + " LONG2回目以降"
+        # long_range_flag_res = False  # これFalseにすると、勝率が下がる
+        long_range_flag_res = True
+        is_first = False
     else:
         print(s6, "初成立フラッグ(long)", long_range_flag, long_range_flag_prev)
         memo = memo + " LONG初成立"
         long_range_flag_res = True
 
-    # ■ショート（Peaks3での判定）
+    # ■ショート（Peaks3(正確にはOppositeのPeaksが３）)での判定）
     # ■■現状でテストを実施 (latest=N)
     short_range_flag_info = judge_flag_figure(peaks, target_direction, 3)
     short_range_flag = short_range_flag_info['flag_figure']
@@ -416,39 +419,41 @@ def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
     if short_range_flag and short_range_flag_prev:
         # どっちも成立している場合、すでにオーダーが入っているため、新規のオーダーは行わない
         print(s6, "すでに成立済みのため、今回はスルー(Short)", short_range_flag, short_range_flag_prev)
-        memo = memo + " SHORT既に成立"
-        short_range_flag_res = False
+        memo = memo + " SHORT2回目以降"
+        # short_range_flag_res = False  # これFalseにすると、勝率が下がる
+        short_range_flag_res = True
     else:
         print(s6, "初成立フラッグ(Short)", short_range_flag, short_range_flag_prev)
         memo = memo + " SHORT初成立"
         short_range_flag_res = True
 
     # ■最終ジャッジ
-    # 以下3行をコメントインすると、重なりは全て見ないことになる
+    # 以下3行をコメントインすると、重なりは全て見ないことになる（負け傾向にあり。原因は初回は突破方向のポジションには至るが、それがプラスにならない？）
     # if long_range_flag_res:
     #     flag = long_range_flag
-    #     remark = long_range_flag_info['remark']
+    #     remark = long_range_flag_info['remark'] + memo
 
     # 以下数行をコメントインすると、最もプラスの可能性が上がる。
-    if line_strength == 1:
-        # 最も強い抵抗線を持っている場合,ロングレンジでの判定のみ
+    if long_range_flag:
+        # とりあえずロングの成立（初回でも、初回以降でも）は全てOKとする
         flag = long_range_flag
-        remark = long_range_flag_info['remark']
-    else:
-        # ピークが2個程度の場合、ロング＋ショートレンジで必要
-        if long_range_flag_res and short_range_flag_res:
-            flag = True
+        if line_strength == 1:
+            # 最も強い抵抗線を持っている場合
+            remark = "強線" + long_range_flag_info['remark'] + memo
         else:
-            flag = False
-        # 備考（ポジションの名前になる）を生成
-        remark = gene.str_merge("Short:", short_range_flag_info['remark'], "Long", long_range_flag_info['remark'])
-        # 【暫定処理】フラッグが少なくてさみしいので、、ロングでなってればOKにする（めんどくさいからフラグ上書き）
-        flag = long_range_flag
+            # ピークが2個程度の場合、ロングレンジとショートレンジ両方が成立した場合にフラッグ成立と判断する
+            if short_range_flag:
+                flag = True
+            else:
+                flag = True  # ショートの成立がなければ元々Falseだった。取引回数を増やしたいため、LongのみでOKにしている（その為True）
+            # 備考（ポジションの名前になる）を生成
+            remark = gene.str_merge("Short:", short_range_flag_info['remark'], "Long", long_range_flag_info['remark'], memo)
 
     # ■結果を返却する
     print(s6, "Flag形状確認", long_range_flag_res, short_range_flag_res, "結論", flag, memo)
     return {
         "flag_figure": flag,
+        "is_first": is_first,
         "lc": short_range_flag_info['lc'],  # こっちのほうがlongよりLC幅が狭いので。いつかリスクを追う場合は、Longに？）
         "remark": remark
     }
@@ -812,6 +817,7 @@ def cal_tpf_line_strength_all_predict_line(dic_args):
                 "same_time_latest": 0,
                 "all_range_strong_line": 0,
                 "remark": "",
+                "is_first_for_flag": False,  # フラッグ形状の場合にのみ含まれる
                 "lc": 0,  # 途中でStrengthInfoに追加される。価格の場合と、レンジの場合が混在する
             }
         }
@@ -890,8 +896,8 @@ def cal_tpf_line_strength_all_predict_line(dic_args):
 
         if len(same_price_list) >= 1:
             # 同価格リストが1つ以上発見された場合、範囲飛ばしと、返却値ベースへの登録を行う
-            predict_line_info_list_base['line_base_info']['line_base_price'] = round(target_price, 3)  # 上書き
-            predict_line_info_list_base['same_price_list'] = same_price_list
+            predict_line_info_list_base['line_base_info']['line_base_price'] = round(target_price, 3)  # 仮情報に上書き
+            predict_line_info_list_base['same_price_list'] = same_price_list  #
             predict_line_info_list.append(copy.deepcopy(predict_line_info_list_base))  # 一部の情報を返り値情報に追加
             # print("     (rip) --SkipperOn---")
             # print(same_price_list)
@@ -932,54 +938,55 @@ def cal_tpf_line_strength_all_predict_line(dic_args):
         gene.print_arr(each_predict_line_info['same_price_list'], 7)
         # print("   シンプルな強度（形状をあまり見ない判定）")
         # ■■ライン強度検証の関数の呼び出し（ここで初めてストレングスを取得する）
-        each_strength_info = cal_strength_of_same_price_list(
+        each_strength_info_result = cal_strength_of_same_price_list(
             each_predict_line_info['same_price_list'],
             peaks,
             each_predict_line_info['line_base_info']["line_base_price"],
             each_predict_line_info['line_base_info']["latest_direction"]
         )
-        print("         強度結果", each_strength_info)
+        print("         強度結果", each_strength_info_result)
         # ■■■　【注文に必要な情報】ExpectedDirectionとLCを求め、StrengthInfoに初めて追加する（処理が遠い順のため、一つ遠いものがロスカット価格となる）
         far_lc_range = 0.07  # 一番遠い物のLC幅
         range_margin = 0.05
         # ■expectedDirectionを追加する（この後のフラッグで上書きされる可能性ある）
-        each_strength_info['expected_direction'] = peaks[0]['direction'] * -1  # 逆
+        each_strength_info_result['expected_direction'] = peaks[0]['direction'] * -1  # 逆
         # ■LCの追加
         if i == 0:
             # 初回のみ（一番遠い値）は、LCを適当に設定する（本当はこれが一番大事？！）
-            each_strength_info['lc'] = far_lc_range
+            each_strength_info_result['lc'] = far_lc_range
         else:
-            if each_strength_info['expected_direction'] == 1:
-                each_strength_info['lc'] = round(predict_line_info_list[i - 1]['line_base_info']["line_base_price"] + range_margin, 3)
+            if each_strength_info_result['expected_direction'] == 1:
+                each_strength_info_result['lc'] = round(predict_line_info_list[i - 1]['line_base_info']["line_base_price"] + range_margin, 3)
             else:
-                each_strength_info['lc'] = round(predict_line_info_list[i - 1]['line_base_info']["line_base_price"] - range_margin, 3)
+                each_strength_info_result['lc'] = round(predict_line_info_list[i - 1]['line_base_info']["line_base_price"] - range_margin, 3)
 
         # ■■■フラッグかどうかを判定（Line強度とは別の関数にする）
         # if each_strength_info['all_range_strong_line'] == 0 and each_strength_info['line_on_num'] >= 3:  # 旧条件　かなり厳しい
         # if each_strength_info['line_on_num'] >= 3 and each_strength_info['line_strength'] == 1:  # 旧条件２　少し厳しい
-        if each_strength_info['line_on_num'] >= 2 and each_strength_info['line_strength'] >= 0.9:  # allRangeは不要か
-            flag = judge_flag_figure_wrap_up(peaks, peaks[0]['direction'], each_strength_info['line_strength'], target_df)
+        if each_strength_info_result['line_on_num'] >= 2 and each_strength_info_result['line_strength'] >= 0.9:  # allRangeは不要か
+            flag = judge_flag_figure_wrap_up(peaks, peaks[0]['direction'], each_strength_info_result['line_strength'], target_df)
             print(s6, "[Flagテスト]", each_predict_line_info['line_base_info']["line_base_price"])
             # フラッグの結果次第で、LineStrengthに横やりを入れる形で、値を買い替える
             if flag['flag_figure']:
                 print(s6, "Flag成立")
                 # 【注文に必要な情報】フラッグ形状の場合は上書きする
-                each_strength_info['line_strength'] = -1  # フラッグ成立時は、通常とは逆
-                each_strength_info['lc'] = flag['lc']
-                each_strength_info['expected_direction'] = peaks[0]['direction']
-                each_strength_info['latest_direction'] = peaks[0]['direction']
-                each_strength_info['remark'] = flag['remark']
-                each_strength_info['priority'] = 2  # 備考を入れておく
-                predict_line_info_list_base['strength_info'] = each_strength_info  # 上書きする
+                each_strength_info_result['line_strength'] = -1  # フラッグ成立時は、通常とは逆
+                each_strength_info_result['lc'] = flag['lc']
+                each_strength_info_result['expected_direction'] = peaks[0]['direction']
+                each_strength_info_result['latest_direction'] = peaks[0]['direction']
+                each_strength_info_result['remark'] = flag['remark']
+                each_strength_info_result['priority'] = 3  # 備考を入れておく
+                each_strength_info_result['is_first_for_flag'] = flag['is_first']  # 備考を入れておく
         else:
-            print(s6, "flagtestなし", each_strength_info['line_on_num'], each_strength_info['line_strength'])
+            print(s6, "flagtestなし", each_strength_info_result['line_on_num'], each_strength_info_result['line_strength'])
 
         # ■　結果を返却用配列に追加する(各要素に対して書き換えを行う。eachはpredict_line_info_list_baseと同様）
-        each_predict_line_info['strength_info'] = each_strength_info  # Strengthに追加（上書き）
+        each_predict_line_info['strength_info'] = each_strength_info_result  # predict_line_info_listの一つを更新
 
     # ■返却する
     orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
     orders_and_evidence["evidence"] = predict_line_info_list
+
     return orders_and_evidence
 
 
@@ -1015,43 +1022,61 @@ def main_line_strength_analysis_and_order(dic_args):
     #  predict_line_listは添え字０から現在価格から遠いほうに並んでいる。その為、同値のストレングスがある場合、遠いほう（添え字が０に近い）が選ばれる
     max_index, max_strength = max(enumerate(predict_line_info_list[:]), key=lambda x: x[1]["strength_info"]["line_strength"])
     min_index, min_strength = min(enumerate(predict_line_info_list[:]), key=lambda x: x[1]["strength_info"]["line_strength"])  # 念のために取得
-    flag_strength = [d for d in predict_line_info_list if d["strength_info"]["line_strength"] == -1]  # フラッグ形状の場合はこれが存在
+    flag_strength = [d for d in predict_line_info_list if d["strength_info"]["line_strength"] == -1]  # -1はフラッグ形状を示す
     # オーダーの元情報を取得する。フラッグの場合と通常の場合で、方向(expected_direction)が異なるため、Limit等も変わる。
     if len(flag_strength) != 0:
+        # フラッグ形状が発見された場合
         target_strength_info = flag_strength[0]  # flag_strength は配列のため、要素としたいため、[0]とする
         position_type = "STOP"  # フラッグありの場合突破方向のため、STOP
         print(s4, "フラッグがSameList内に存在")
+        # ■■突破方向のオーダー
+        if target_strength_info['strength_info']['is_first_for_flag']:
+            # 初回成立の場合は、突破はオーダーなし(これはテスト用。終わったらIf文含めて消したほうがいいかも）
+            pass
+            # フラッグ用（突破方向 記録用のため、コメントアウトされた状態が正）
+            # main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
+            # main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.05 * target_strength_info['line_base_info']['line_base_direction'])
+            # main_order_base['tp'] = 0.53  # 0.09  # LCは広め
+            # main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
+            # main_order_base['type'] = position_type
+            # main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
+            # main_order_base['priority'] = target_strength_info['strength_info']['priority']
+            # main_order_base['units'] = 100
+            # main_order_base['name'] = target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
+            # exe_orders.append(cf.order_finalize(main_order_base))
+        else:
+            # フラッグ用（突破方向）
+            main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
+            main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.05 * target_strength_info['line_base_info']['line_base_direction'])
+            main_order_base['tp'] = 0.53  # 0.09  # LCは広め
+            main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
+            main_order_base['type'] = position_type
+            main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
+            main_order_base['priority'] = target_strength_info['strength_info']['priority']
+            main_order_base['units'] = main_order_base['units'] * 1
+            main_order_base['name'] = target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
+            exe_orders.append(cf.order_finalize(main_order_base))
+
+        # ■■フラッグの場合は、カウンタオーダー（突破じゃないほうも入れておく
+        main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
+        main_order_base['target'] = peaks[1]['peak'] - (0.05 * target_strength_info['line_base_info']['line_base_direction'])  # river価格＋マージン
+        main_order_base['tp'] = 0.53  # 0.09  # LCは広め
+        main_order_base['lc'] = target_strength_info['line_base_info']['line_base_price']
+        # main_order_base['lc'] = gene.cal_at_most(0.08, target_strength_info['line_base_info']['line_base_price']) # ←ダメだった！！！！
+        main_order_base['type'] = position_type
+        main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction'] * -1
+        main_order_base['priority'] = target_strength_info['strength_info']['priority']
+        main_order_base['units'] = main_order_base['units'] * 1
+        main_order_base['name'] = "カウンター" + target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
+        exe_orders.append(cf.order_finalize(main_order_base))
     else:
+        # それ以外
         target_strength_info = max_strength
         position_type = "LIMIT"
         return orders_and_evidence  # とりあえずフラッグのみを採用する
 
-    print(s4, "オーダー対象", target_strength_info)
-    # フラッグ用（突破方向）
-    main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-    main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.05 * target_strength_info['line_base_info']['line_base_direction'])
-    main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-    main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
-    main_order_base['type'] = position_type  # 'LIMIT'
-    main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
-    main_order_base['priority'] = target_strength_info['strength_info']['priority']
-    main_order_base['units'] = main_order_base['units'] * 1
-    main_order_base['name'] = "111" + target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
-    exe_orders.append(cf.order_finalize(main_order_base))
-
-    # フラッグの場合は、カウンタオーダー（突破じゃないほうも入れておく
-    main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-    main_order_base['target'] = peaks[1]['peak'] - (0.05 * target_strength_info['line_base_info']['line_base_direction'])  # river価格＋マージン
-    main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-    main_order_base['lc'] = target_strength_info['line_base_info']['line_base_price']
-    main_order_base['type'] = position_type  # 'LIMIT'
-    main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction'] * -1
-    main_order_base['priority'] = target_strength_info['strength_info']['priority']
-    main_order_base['units'] = main_order_base['units'] * 1
-    main_order_base['name'] = "222カウンター" + target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
-    exe_orders.append(cf.order_finalize(main_order_base))
-
     # 返却する
+    print(s4, "オーダー対象", target_strength_info)
     orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
     orders_and_evidence["exe_orders"] = exe_orders
     orders_and_evidence["evidence"] = predict_line_info_list

@@ -9,7 +9,7 @@ import classOanda
 import copy
 from collections import OrderedDict
 
-basic_unit = 10000
+basic_unit = 1000
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
 

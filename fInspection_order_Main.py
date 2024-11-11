@@ -475,22 +475,22 @@ def analysis_warp_up_and_make_order(df_r):
         # print(s, break_double_top_strength_orders_and_evidence)
 
         if line_strength_orders_and_evidence['take_position_flag']:
-            flag_and_orders["take_position_flag"] = False
+            flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = line_strength_orders_and_evidence['exe_orders']
             flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
         elif break_double_top_strength_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)")
             # DoubleTopの判定が最優先 (単品）
-            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["take_position_flag"] = False
             flag_and_orders["exe_orders"] = \
                 [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
-            flag_and_orders['for_inspection_dic'] = break_double_top_strength_orders_and_evidence['for_inspection_dic']
+            # flag_and_orders['for_inspection_dic'] = break_double_top_strength_orders_and_evidence['for_inspection_dic']
         elif hooks_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:通常ストレングス(flag含む)】")
             # シンプルなLineStrengthによるオーダー発行
-            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["take_position_flag"] = False
             flag_and_orders["exe_orders"] = hooks_orders_and_evidence["exe_orders"]
-            flag_and_orders['for_inspection_dic'] = hooks_orders_and_evidence['for_inspection_dic']
+            # flag_and_orders['for_inspection_dic'] = hooks_orders_and_evidence['for_inspection_dic']
             # ■■最も強いストレングスが遠い場合、最も強いストレングスに向かう方向へトラリピを設定
             trid_do = False
             if trid_do and hooks_orders_and_evidence["target_strength"]["strength_info"]["line_strength"] >= 0:  # フラッグではない場合（こっちはフラッグの可能性もあり)
@@ -847,7 +847,7 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
     # print(flag_and_orders['take_position_flag'])
     # gene.print_arr(flag_and_orders['exe_orders'])
 
-    # プライオリティの追加
+    # オーダー群の最大プライオリティの追加ー集計
     if len(flag_and_orders["exe_orders"]) >= 1:
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority

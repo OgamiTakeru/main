@@ -221,13 +221,13 @@ class order_information:
         position_num = position_num_dic['data']  # 現在のオーダー数を取得
         if position_num >= 10:
             # エラー等で大量のオーダーが入るのを防ぐ(６個以上のオーダーは防ぐ）
-            self.send_line(" 【注】大量ポジション入る可能性", position_num_dic)
+            self.send_line(" 【注】大量ポジションがある可能性", position_num_dic)
             return {"order_name": "error", "order_id": 0}
         # (2)オーダー数の確認
         order_num = self.oa.OrderCount_All_exe()
         if order_num >= 10:
             # エラー等で大量のオーダーが入るのを防ぐ
-            self.send_line(" 【注】大量オーダー入る可能性", order_num)
+            self.send_line(" 【注】大量オーダーがある可能性", order_num)
             return {"order_name": "error", "order_id": 0}
 
         # (3)オーダー発行処理★
@@ -638,18 +638,19 @@ def position_check(classes):
     """
     open_positions = []
     not_open_positions = []
-    max_priority = 0
+    max_priority_order = 0
+    max_priority_position = 0
     max_position_time_sec = 0
     max_order_time_sec = 0
     total_pl = 0
     for item in classes:
         if item.life:  #lifeがTrueの場合、ポジションかオーダーが存在
-            # プライオリティも最高値を取得
-            if item.priority > max_priority:
-                max_priority = item.priority  # ポジションの有る最大のプライオリティを取得する
             # 各情報
             if item.t_state == "OPEN":
                 # ポジションがある場合、ポジションの情報を取得する
+                # プライオリティも最高値を取得
+                if item.priority > max_priority_position:
+                    max_priority_position = item.priority  # ポジションの有る最大のプライオリティを取得する
                 open_positions.append({
                     "name": item.name,
                     "life": item.life,
@@ -667,6 +668,10 @@ def position_check(classes):
                 # print("  ポジション状態", item.t_id, ",PL:", total_pl)
             elif item.o_state == "PENDING":
                 # オーダーのみ（取得俟ちの場合）取得まち用の配列に入れておく
+                # プライオリティも最高値を取得
+                if item.priority > max_priority_order:
+                    max_priority_order = item.priority  # ポジションの有る最大のプライオリティを取得する
+
                 not_open_positions.append({
                     "name": item.name,
                     "life": item.life,
@@ -679,6 +684,8 @@ def position_check(classes):
                 # ポジションの所有時間（ポジションがある中で最大）も取得しておく
                 if item.o_time_past_sec > max_order_time_sec:
                     max_order_time_sec = item.o_time_past_sec  # 何分間オーダー待ちか
+            else:
+                print(" 謎の状態")
 
     # print(" ★★★★★一時テスト（classPosition)")
     # print(open_positions)
@@ -699,8 +706,9 @@ def position_check(classes):
         "position_exist": position_exist,
         "order_exist": order_exist,
         "open_positions": open_positions,
-        "not_open_positions": not_open_positions,
-        "max_priority": max_priority,
+        "max_priority_position": max_priority_position,
+        "not_open_positions": not_open_positions,  # 取得待ちの状態
+        "max_priority_order": max_priority_order,
         "max_position_time_sec": max_position_time_sec,
         "max_order_time_sec": max_order_time_sec,
         "total_pl": total_pl,

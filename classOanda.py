@@ -455,13 +455,15 @@ class Oanda:
                 # 正確にオーダーが入ったためオーダーIDを取得
                 canceled = False
                 order_id = res_json['orderCreateTransaction']['id']
-                order_time = res_json['orderCreateTransaction']['time']
+                order_time = iso_to_jstdt_single(res_json['orderCreateTransaction']['time'])
+                # print("ISO時刻_ordertime", res_json['orderCreateTransaction']['time'])
+                # print("JT時刻", order_time)
                 # オーダーと同時に約定した場合、orderFillTransactionから約定価格を取得する。
                 if "orderFillTransaction" in res_json:
                     execution_price = float(res_json['orderFillTransaction']['price'])
                 else:  # 約定がない場合、planの値通りか、成り行きの場合は（通常の指値注文等の場合）
                     execution_price = 0  #
-                print("   ★Order発行完了", order_id, order_time, execution_price)
+                # print("   ★Order発行完了", order_id, order_time, execution_price)
 
             # オーダー情報履歴をまとめておく
             order_info = {"price": str(round(plan['price'], 3)),
@@ -817,7 +819,7 @@ class Oanda:
             res_json = eval(json.dumps(self.api.request(ep), indent=2))
             # いくつか項目を追加しておく
             # timepastを追加する
-            res_json['trade']['time_past'] = cal_past_time_single(iso_to_jstdt_single(res_json['trade']['openTime']))
+            res_json['trade']['time_past'] = cal_past_time_single(iso_to_jstdt_single(res_json['trade']['t_time']))
             # PL / unit を追加する(Open時はunrealizedPL,Close時はrealizePLを利用する)
             temp = res_json['trade']
             if temp['state'] == "OPEN":
@@ -827,6 +829,7 @@ class Oanda:
             else:
                 print("    Tradeの状態を確認＠oandaClass TradeDetails_exe")
                 res_json['trade']['PLu'] == 0
+            res_json['trade']['openTime'] = iso_to_jstdt_single(res_json['trade']['openTime'])  # OpenTimeを日本時刻に変換
             return {"data": res_json, "error": 0}  # 単品が対象なので、Jsonで返した方がよい（DataFrameで返すと、単品なのに行の指定が必要）
         except Exception as e:
             print(trade_id)

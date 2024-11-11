@@ -64,6 +64,87 @@ def order_line_send(class_order_arr, add_info):
     tk.line_send(peak_inspection)
 
 
+def how_to_new_order_judge(inspection_result_dic):
+    """
+    新規のオーダーを、現在残存しているオーダーやポジションに上書きするかを判定する
+    inspection_result_dicは、入れようとしている新規オーダーの情報
+    """
+    how_to_new_order_str = True  # Trueで上書き（残存のオーダーを削除し、今回のオーダーを投入する。既存ポジションは放置）
+    how_to_new_order_str = "add"  # 既存オーダーが新規同等でオーダー追加⇒add、既存オーダーが新規未満でクリア＆新規⇒replace、既存が新規以上⇒cancel
+    classes_info = classPosition.position_check(classes)  # 現在（既存）の情報を取得
+
+    # # （１）パターン１　一番最初の判定で、オーダーがある場合は同方向やポジションマイナス時等は、新規オーダーを受け付けない仕様）
+    # # ■■■既存オーダーが存在する場合、プライオリティ、現在のプラスマイナス、入れようとしている向きが同方向かを比較する
+    # if classes_info['order_exist']:
+    #     # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
+    #     # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
+    #     if classes_info['max_priority_order'] > inspection_result_dic['max_priority']:
+    #         # 同じだったら入れ替えたいので、「すでに入力されているものが大きかったら(>)」となる。
+    #         tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority_order'], inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
+    #         order_plan = False
+    #
+    # # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
+    # if classes_info['position_exist']:
+    #     new_exe_order = inspection_result_dic['exe_orders'][0]
+    #     exist_position = classes_info['open_positions'][0]
+    #     # ◆既存のポジションがある場合、既存の物と新規のものの方向が同じかを確かめる
+    #     if exist_position['direction'] != new_exe_order['expected_direction']:
+    #         # ◆新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
+    #         if inspection_result_dic['max_priority_order'] > classes_info['max_priority_position']:
+    #             # 新規が重要オーダー。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
+    #             tk.line_send("★ポジションありだが高プライオリティのため置換", "Pri", inspection_result_dic['max_priority'],
+    #                          exist_position['pl'], classes_info['max_priority_position'])
+    #             order_plan = True
+    #             pass
+    #         else:
+    #             # ◆現在のポジションがマイナスの場合
+    #             if classes_info['open_positions'][0]['pl'] < 0:
+    #                 # ◆ポジション後２５分以内の物は、プライオリティが同一の場合でも置き変わらない
+    #                 if classes_info['max_position_time_sec'] < 6 * 5 * 60:
+    #                     tk.line_send("ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri",
+    #                                  classes_info['max_priority_position'], "Pri", inspection_result_dic['max_priority'],
+    #                                  new_exe_order['name'], exist_position['pl'])
+    #                     # classPosition.position_check(classes) で各ポジションの状態を確認可能
+    #                     order_plan = False
+    #                 else:
+    #                     tk.line_send("重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri",
+    #                                  classes_info['max_priority_position'], "新Pri", inspection_result_dic['max_priority'],
+    #                                  new_exe_order['name'], exist_position['pl'])
+    #                     order_plan = False
+    #             else:
+    #                 tk.line_send("★ポジションありで、プラスのため様子見", inspection_result_dic['exe_orders'][0]['name'],
+    #                              classes_info['open_positions'][0]['pl'])
+    #                 order_plan = False
+    #     else:
+    #         # 既存の物と新規のものの方向が同じ場合は、ポジションの上書きを行わない（意味がないため）
+    #         tk.line_send("★既存のポジションと方向が同じため、新規オーダーを行わない",
+    #                      new_exe_order['name'], exist_position['pl'], exist_position['direction'], new_exe_order['expected_direction'])
+    #         order_plan = False
+
+    # （２）パターン2　フラッグ形状は重ねていくオーダーの場合最大の効果があるため、同方向の場合はガンガン入れていく。
+    # ■■■既存オーダーが存在する場合、プライオリティ、現在のプラスマイナス、入れようとしている向きが同方向かを比較する
+    if classes_info['order_exist']:
+        # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
+        if classes_info['max_priority_order'] > inspection_result_dic['max_priority']:
+            # 既存オーダーが、新規よりも重要度が高いため、新規は断念する（同じだったら入れ替えたいため、＞＝ではなく＞）
+            tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority_order'], inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
+            how_to_new_order_str = "cancel"
+        elif classes_info['max_priority_order'] == inspection_result_dic['max_priority']:
+            print(" 既存オーダーが、新規同等の重要度のため、取り消さず今回のオーダーを追加する")
+            how_to_new_order_str = "add"
+        else:
+            print("既存オーダーが、新規より重要度が低いため、既存オーダーを削除し、新規オーダーを入れる")
+            how_to_new_order_str = "replace"
+
+    # ■■■既存のポジションが存在する場合　現在注文があるかを確認する
+    # 特に気にせず入れるが、ポジション数が6個以上は入れないようにする（Classでもポカヨケ入るが、ここでも念のため）
+    if len(classes_info['open_positions']) >= 6:
+        tk.line_send("新規オーダー見送り（既存ポジションが6個以上あり）", classes_info['max_priority_order'], classes_info['max_order_time_sec'])
+        how_to_new_order_str = "cancel"
+
+    return how_to_new_order_str
+
+
 def mode1():
     """
     低頻度モード（ローソクを解析し、注文を行う関数）
@@ -96,87 +177,125 @@ def mode1():
     inspection_result_dic = im.analysis_warp_up_and_make_order(gl_data5r_df)
     print(inspection_result_dic)
 
-    # ■ オーダーフラグがない場合は、ここでこの関数は教師終了
+    # ■ オーダーフラグがない場合は、ここでこの関数は強制終了
     if not inspection_result_dic['take_position_flag']:
         # 発注がない場合は、終了 (ポケ除け的な部分）
         return 0
     # return 0  # テストモード（動かすがオーダーは入れない）の場合、このリターンをコメントインすし終了させるとオーダーしない。。
 
-    # ■既存のオーダーやポジションとの兼ね合いの検証
-    classes_info = classPosition.position_check(classes)  # 現在の情報を取得
-    # ■■■既存オーダーが存在する場合、プライオリティ、現在のプラスマイナス、入れようとしている向きが同方向かを比較する
-    if classes_info['order_exist']:
-        # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
-        # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
-        if classes_info['max_priority'] > inspection_result_dic['max_priority']:
-            # 同じだったら入れ替えたいので、「すでに入力されているものが大きかったら(>)」となる。
-            tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority'], inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
-            return 0
-    # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
-    if classes_info['position_exist']:
-        new_exe_order = inspection_result_dic['exe_orders'][0]
-        exist_position = classes_info['open_positions'][0]
-        # ◆既存のポジションがある場合、既存の物と新規のものの方向が同じかを確かめる
-        if exist_position['direction'] != new_exe_order['expected_direction']:
-            # ◆新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
-            if inspection_result_dic['max_priority'] > classes_info['max_priority']:
-                # 新規が重要オーダー。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
-                tk.line_send("★ポジションありだが高プライオリティのため置換", "Pri", inspection_result_dic['max_priority'],
-                             exist_position['pl'])
-                pass
-            else:
-                # ◆現在のポジションがマイナスの場合
-                if classes_info['open_positions'][0]['pl'] < 0:
-                    # ◆ポジション後２５分以内の物は、プライオリティが同一の場合でも置き変わらない
-                    if classes_info['max_position_time_sec'] < 6 * 5 * 60:
-                        tk.line_send("★ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri",
-                                     classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'],
-                                     new_exe_order['name'], exist_position['pl'])
-                        # classPosition.position_check(classes) で各ポジションの状態を確認可能
-                        return 0
-                    else:
-                        tk.line_send("重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri",
-                                     classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'],
-                                     new_exe_order['name'], exist_position['pl'])
-                        pass
-                else:
-                    tk.line_send("★ポジションありで、プラスのため様子見", inspection_result_dic['exe_orders'][0]['name'],
-                                 classes_info['open_positions'][0]['pl'])
-                    return 0
-        else:
-            # 既存の物と新規のものの方向が同じ場合は、ポジションの上書きを行わない（意味がないため）
-            tk.line_send("★既存のポジションと方向が同じため、新規オーダーを行わない",
-                         new_exe_order['name'], exist_position['pl'], exist_position['direction'], new_exe_order['expected_direction'])
-            return 0
-
+    # # ■既存のオーダーやポジションとの兼ね合いの検証
+    # classes_info = classPosition.position_check(classes)  # 現在の情報を取得
+    # # ■■■既存オーダーが存在する場合、プライオリティ、現在のプラスマイナス、入れようとしている向きが同方向かを比較する
+    # if classes_info['order_exist']:
+    #     # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
+    #     # 取り急ぎ、フラッグ形状の２のみが優先対象（置き換わらない）
+    #     if classes_info['max_priority'] > inspection_result_dic['max_priority']:
+    #         # 同じだったら入れ替えたいので、「すでに入力されているものが大きかったら(>)」となる。
+    #         tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority'], inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
+    #         return 0
+    # # ■■■既存のポジションが存在する場合　現在注文があるかを確認する(なんでポジション何だっけ？）
+    # if classes_info['position_exist']:
+    #     new_exe_order = inspection_result_dic['exe_orders'][0]
+    #     exist_position = classes_info['open_positions'][0]
+    #     # ◆既存のポジションがある場合、既存の物と新規のものの方向が同じかを確かめる
+    #     if exist_position['direction'] != new_exe_order['expected_direction']:
+    #         # ◆新オーダーのプライオリティが既存の物より高い場合、新規で置き換える
+    #         if inspection_result_dic['max_priority'] > classes_info['max_priority']:
+    #             # 新規が重要オーダー。このまま処理を継続し、既存のオーダーとポジションを消去し、新規オーダーを挿入
+    #             tk.line_send("★ポジションありだが高プライオリティのため置換", "Pri", inspection_result_dic['max_priority'],
+    #                          exist_position['pl'])
+    #             pass
+    #         else:
+    #             # ◆現在のポジションがマイナスの場合
+    #             if classes_info['open_positions'][0]['pl'] < 0:
+    #                 # ◆ポジション後２５分以内の物は、プライオリティが同一の場合でも置き変わらない
+    #                 if classes_info['max_position_time_sec'] < 6 * 5 * 60:
+    #                     tk.line_send("★ポジションありの為様子見 秒:", classes_info['max_position_time_sec'], "現pri",
+    #                                  classes_info['max_priority'], "Pri", inspection_result_dic['max_priority'],
+    #                                  new_exe_order['name'], exist_position['pl'])
+    #                     # classPosition.position_check(classes) で各ポジションの状態を確認可能
+    #                     return 0
+    #                 else:
+    #                     tk.line_send("重要度低いが、時間的に経過しているため、ポジション解消し新規オーダー投入", "現pri",
+    #                                  classes_info['max_priority'], "新Pri", inspection_result_dic['max_priority'],
+    #                                  new_exe_order['name'], exist_position['pl'])
+    #                     pass
+    #             else:
+    #                 tk.line_send("★ポジションありで、プラスのため様子見", inspection_result_dic['exe_orders'][0]['name'],
+    #                              classes_info['open_positions'][0]['pl'])
+    #                 return 0
+    #     else:
+    #         # 既存の物と新規のものの方向が同じ場合は、ポジションの上書きを行わない（意味がないため）
+    #         tk.line_send("★既存のポジションと方向が同じため、新規オーダーを行わない",
+    #                      new_exe_order['name'], exist_position['pl'], exist_position['direction'], new_exe_order['expected_direction'])
+    #         return 0
     # ■既存のオーダーがある場合（強制的に削除）
-    classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
+    #classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
 
-    # ■注文を実行する
+    how_to_new_order_str = how_to_new_order_judge(inspection_result_dic)
+    if how_to_new_order_str == "cancel":
+        # 新規を入れない場合（既存のオーダーが、新規オーダーよりも優先度が高い場合）
+        print("新規登録をキャンセル（既存オーダーと兼ね合いが取れないため）", how_to_new_order_str)
+        return 0
+    elif how_to_new_order_str == "add":
+        # 新規を追加する場合（既存のオーダーが、新規オーダーと同等のため、既存を消さずに追加）
+        print("新規を既存オーダーに追加へ", how_to_new_order_str)
+        pass  # 既存オーダーに関する処理をせず、継続
+    else:
+        # 既存オーダー＆ポジションをクリアし、新規を追加（既存のオーダーが、新規よりも優先度が低い場合）
+        classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
+        print("既存のオーダークリアし、新規登録へ", how_to_new_order_str)
+
+    # ■注文を実行する(ひとつづつ実行し、ひとつづつLINEを送信する）
     gl_trade_num += 1
     line_send = ""  # LINE送信用の注文結果の情報
-    print("  オーダー数", len(inspection_result_dic['exe_orders']))
-    for n in range(len(inspection_result_dic['exe_orders'])):  # ここ（正規実行）では「配列」でOrder情報を受け取る（testでは辞書単品で受け取る）　
-        print("  要求されたオーダー(each)")
-        print(inspection_result_dic['exe_orders'][n])
-        res_dic = classes[n].order_plan_registration(inspection_result_dic['exe_orders'][n])  #
-        print("  オーダー結果")
-        print(res_dic)
-        # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
-        # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
-        line_send = line_send + "◆" + res_dic['order_name'] + \
-                    "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
-                    ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
-                    ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
-                    "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
-                    ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
-                    "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
-                    ", OrderID:" + str(res_dic['order_id']) + \
-                    ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") "
+    tk.line_send("新規オーダー発生（新規を追加、または置換）")  # ★★いつかコメントアウト　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　き
 
-        # 注文結果を送信す
-    tk.line_send("★オーダー発行", gl_trade_num, "回目: ",  " 　　　",  line_send,
-                 ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread))
+
+    print("  新規オーダー数", len(inspection_result_dic['exe_orders']))
+    # テスト表示用（クラス上書きがうまくいくかの確認用。現在のクラスの状態を表示しておく）
+    for class_index, each_class in enumerate(classes):
+        print("     ", each_class.life, each_class.name, each_class.o_time, each_class.o_state, each_class.t_state)
+    # 新オーダーをひとつづつ読み込む
+    for order_n in range(len(inspection_result_dic['exe_orders'])):  # ここ（正規実行）では「配列」でOrder情報を受け取る（testでは辞書単品で受け取る）　
+        # クラスにオーダーを登録し、オーダー発行する（この際、life=Falseを探し、リセット＆上書きしていく）
+        for class_index, each_class in enumerate(classes):
+            # クラスが全て埋まっていないかを確認（この場合は、エラーとなる）
+            if class_index == len(classes) - 1:
+                print("クラスが全て埋まっています", len(classes))
+                tk.line_send("クラスが全て埋まっているエラーが発生", len(classes), class_index)
+                return 0
+            # 空いてるかを確認する
+            if each_class.life:
+                # lifeがTrueの場合、次のClassに探していく
+                print(" クラス埋まりあり", each_class.name, each_class.o_time, each_class.o_state, each_class.t_state, class_index)
+                continue
+            else:
+                # lifeがFalseの場合、既にクローズされたもの
+                # ローズしたオーダー（ポジション）のため、上書きして利用する。登録するとリセットも同時に行われる。
+                print(" 空きクラスあり★★", class_index, each_class.life, each_class.name, each_class.o_time, each_class.o_state, each_class.t_state)
+                res_dic = classes[class_index].order_plan_registration(inspection_result_dic['exe_orders'][order_n])
+                print("  要求されたオーダー(each)")
+                print(inspection_result_dic['exe_orders'][class_index])
+                print("  オーダー結果")
+                print(res_dic)
+                # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
+                # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
+                line_send = line_send + "◆" + res_dic['order_name'] + \
+                            "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
+                            ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
+                            ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
+                            "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
+                            ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
+                            "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
+                            ", OrderID:" + str(res_dic['order_id']) + \
+                            ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") "
+                break
+
+    # 注文結果を送信する（複数のオーダーでも一つにまとめて送信する）
+    tk.line_send("★オーダー発行", gl_trade_num, "回目: ", " 　　　", line_send,
+                 ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread), "[システム]classNo:", class_index)
+
     print("MODE1 END")
     print("")
 
@@ -369,7 +488,7 @@ else:  # Live
 
 # ■ポジションクラスの生成
 classes = []
-for i in range(10):
+for i in range(12):
     # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
     # クラス名を確定し、クラスを生成する。
     new_name = "c" + str(i)

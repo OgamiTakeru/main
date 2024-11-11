@@ -15,10 +15,10 @@ import os
 
 # グローバルでの宣言
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
-now_price_dic = oa.NowPrice_exe("USD_JPY")
-now_price = now_price_dic['data']['mid']
-print(now_price)
-gl_start_time = datetime.datetime.now()
+# now_price_dic = oa.NowPrice_exe("USD_JPY")
+# now_price = now_price_dic['data']['mid']
+# print(now_price)
+# gl_start_time = datetime.datetime.now()
 # クラスの定義
 classes = []
 for ic in range(3):
@@ -407,7 +407,7 @@ def get_data():
     # gl_exist_data = True  # グローバルに変更
     if gl_exist_data:
         # 既存の5分足データを取得
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20231026071000_test_m5_df.csv'  # 大量データ5分
+        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ5分
         # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030172000_test_m5_df.csv'  # 適宜データ5分
         gl_d5_df = pd.read_csv(rescsv_path, sep=",", encoding="utf-8")
         gl_5m_start_time = gl_d5_df.iloc[0]['time_jp']
@@ -419,7 +419,7 @@ def get_data():
         print("5分足での取得時刻は", gl_5m_start_time, "-", gl_5m_end_time, len(gl_d5_df_r), "行")
         print("実際の解析時間は", gl_d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", gl_5m_end_time)
         # 既存の5秒足データを取得
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20230912114515_test_s5_df.csv'  # 大量データ5秒
+        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ5秒
         # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030113450_test_s5_df.csv'  # 適宜データ5秒
         gl_s5_df = pd.read_csv(rescsv_path, sep=",", encoding="utf-8")
         start_s5_time = gl_s5_df.iloc[0]['time_jp']
@@ -632,11 +632,11 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
-gl_exist_data = True
-gl_jp_time = datetime.datetime(2024, 11, 7, 20, 50, 0)  # TOの時刻
-gl_m5_count = 5000
+gl_exist_data = False
+gl_jp_time = datetime.datetime(2024, 11, 11, 17, 50, 0)  # TOの時刻
+gl_m5_count = 500
 gl_m5_loop = 1
-memo = "データを取りたいやつ(フラッグ）mini"
+memo = "フラッグ"
 
 # ■検証処理
 get_data()  # データの取得

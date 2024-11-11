@@ -64,7 +64,7 @@ def parallel_move(dic_args):
         else:
             if first_gap == 0:
                 first_gap = gap
-            print(item)
+            # print(item)
 
             if gap < 0 and first_gap < 0:
                 # マイナスで、なおかつ最初と同じ方向だった場合、
