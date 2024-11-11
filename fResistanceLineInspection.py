@@ -38,6 +38,7 @@ def make_same_price_list_from_target_price(target_price, target_dir, peaks_all, 
         # 予測値を用いた場合は、アジャスタを0にし(latest分)、検索のレンジも少し大きめにする
         start_adjuster = 0
         range_yen = 0.025  # 24/8/21 13:15のデータをもとに設定(0.04 = 指定の0.02×2(上と下分）) 　24/9/18　2.5まで広げてみる（フラッグ見つけやすく）
+        # range_yen = 0.013  # 24/8/21 13:15のデータをもとに設定(0.04 = 指定の0.02×2(上と下分）) 　24/9/18　2.5まで広げてみる（フラッグ見つけやすく）
     else:
         start_adjuster = 1
         range_yen = gene.cal_at_least_most(0.01, round(ave * 0.153, 3), 0.041)  # 0.153倍が一番よかった(大きすぎないレベル）。。
@@ -396,11 +397,11 @@ def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
     long_range_flag_info_prev = judge_flag_figure(peaks_prev, peaks_prev[0]['direction'], 5)
     long_range_flag_prev = long_range_flag_info_prev['flag_figure']
     # ■■前回と今回の関係をチェックする
-    if long_range_flag and long_range_flag_prev:
-        # どっちも成立している場合、すでにオーダーが入っているため、新規のオーダーは行わない
+    if (long_range_flag and long_range_flag_prev) and (target_direction == peaks_prev[0]['direction']):
+        # どっちも成立している場合、すでにオーダーが入っているため、新規のオーダーは行わない(方向も同じ場合[違うことがまれにある2024/11/11 19:10と19:15]
         print(s6, "すでに成立済みのため、今回はスルー(long)", long_range_flag, long_range_flag_prev)
         memo = memo + " LONG2回目以降"
-        # long_range_flag_res = False  # これFalseにすると、勝率が下がる
+        # long_range_flag_res = False  # これFalseにすると、勝率が下がる。元々の思想は、二回目以降は重複しないように、これはFalseだったが。。
         long_range_flag_res = True
         is_first = False
     else:
@@ -416,11 +417,11 @@ def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
     short_range_flag_info_prev = judge_flag_figure(peaks_prev, peaks_prev[0]['direction'], 3)
     short_range_flag_prev = short_range_flag_info_prev['flag_figure']
     # ■■前回と今回の関係をチェックする
-    if short_range_flag and short_range_flag_prev:
-        # どっちも成立している場合、すでにオーダーが入っているため、新規のオーダーは行わない
+    if (short_range_flag and short_range_flag_prev) and (target_direction == peaks_prev[0]['direction']):
+        # どっちも成立している場合、すでにオーダーが入っているため、新規のオーダーは行わない(方向も同じ場合[違うことがまれにある2024/11/11 19:10と19:15]
         print(s6, "すでに成立済みのため、今回はスルー(Short)", short_range_flag, short_range_flag_prev)
         memo = memo + " SHORT2回目以降"
-        # short_range_flag_res = False  # これFalseにすると、勝率が下がる
+        # short_range_flag_res = False  # これFalseにすると、勝率が下がる。元々の思想は、二回目以降は重複しないように、これはFalseだったが。。
         short_range_flag_res = True
     else:
         print(s6, "初成立フラッグ(Short)", short_range_flag, short_range_flag_prev)

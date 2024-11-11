@@ -819,7 +819,7 @@ class Oanda:
             res_json = eval(json.dumps(self.api.request(ep), indent=2))
             # いくつか項目を追加しておく
             # timepastを追加する
-            res_json['trade']['time_past'] = cal_past_time_single(iso_to_jstdt_single(res_json['trade']['t_time']))
+            res_json['trade']['time_past'] = cal_past_time_single(iso_to_jstdt_single(res_json['trade']['openTime']))
             # PL / unit を追加する(Open時はunrealizedPL,Close時はrealizePLを利用する)
             temp = res_json['trade']
             if temp['state'] == "OPEN":

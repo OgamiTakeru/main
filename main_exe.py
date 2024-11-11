@@ -276,7 +276,7 @@ def mode1():
                 print(" 空きクラスあり★★", class_index, each_class.life, each_class.name, each_class.o_time, each_class.o_state, each_class.t_state)
                 res_dic = classes[class_index].order_plan_registration(inspection_result_dic['exe_orders'][order_n])
                 print("  要求されたオーダー(each)")
-                print(inspection_result_dic['exe_orders'][class_index])
+                print(inspection_result_dic['exe_orders'][order_n])
                 print("  オーダー結果")
                 print(res_dic)
                 # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
@@ -400,14 +400,14 @@ def exe_manage():
             else:
                 d5_df = d5_df['data']
             # ↓時間指定
-            jp_time = datetime.datetime(2024, 8, 14, 8, 20, 0)
+            jp_time = datetime.datetime(2024, 11, 11, 21, 55, 0)
             euro_time_datetime = jp_time - datetime.timedelta(hours=9)
             euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
             param = {"granularity": "M5", "count": 85, "to": euro_time_datetime_iso}
             d5_df = oa.InstrumentsCandles_exe("USD_JPY", param)
             # ↑時間指定
             # ↓現在時刻
-            d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)
+            # d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)
             # ↑現在時刻
             d5_df = d5_df['data']
             print(d5_df.head(5))
