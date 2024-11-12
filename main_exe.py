@@ -249,8 +249,7 @@ def mode1():
     # ■注文を実行する(ひとつづつ実行し、ひとつづつLINEを送信する）
     gl_trade_num += 1
     line_send = ""  # LINE送信用の注文結果の情報
-    tk.line_send("新規オーダー発生（新規を追加、または置換）")  # ★★いつかコメントアウト　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　き
-
+    # tk.line_send("新規オーダー発生（新規を追加、または置換）")  # ★★いつかコメントアウト　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　き
 
     print("  新規オーダー数", len(inspection_result_dic['exe_orders']))
     # テスト表示用（クラス上書きがうまくいくかの確認用。現在のクラスの状態を表示しておく）
@@ -263,7 +262,7 @@ def mode1():
             # クラスが全て埋まっていないかを確認（この場合は、エラーとなる）
             if class_index == len(classes) - 1:
                 print("クラスが全て埋まっています", len(classes))
-                tk.line_send("クラスが全て埋まっているエラーが発生", len(classes), class_index)
+                tk.line_send("クラスが全て埋まっているエラーが発生⇒オーダーキャンセル", len(classes), class_index)
                 return 0
             # 空いてるかを確認する
             if each_class.life:
@@ -281,7 +280,8 @@ def mode1():
                 print(res_dic)
                 # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
                 # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
-                line_send = line_send + "◆" + res_dic['order_name'] + \
+                print(res_dic['order_name'])
+                line_send = line_send + "◆【" + str(res_dic['order_name']) + "】,\n" +\
                             "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
                             ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
                             ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
@@ -289,12 +289,13 @@ def mode1():
                             ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
                             "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
                             ", OrderID:" + str(res_dic['order_id']) + \
-                            ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") "
+                            ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") " + "[システム]classNo:" + str(class_index) + ",\n"
+                            # "\n"
                 break
 
     # 注文結果を送信する（複数のオーダーでも一つにまとめて送信する）
     tk.line_send("★オーダー発行", gl_trade_num, "回目: ", " 　　　", line_send,
-                 ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread), "[システム]classNo:", class_index)
+                 ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread))
 
     print("MODE1 END")
     print("")

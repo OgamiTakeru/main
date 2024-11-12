@@ -362,7 +362,7 @@ class order_information:
             if close_res['error'] == -1:  # APIエラーの場合終了。ただし、
                 self.send_line("  ★ポジション解消ミスNone＠close_position", self.name, self.t_id, self.t_pl_u)
                 return 0
-            self.send_line("  ポジション解消指示", self.name, self.t_id, self.t_pl_u)
+            # self.send_line("  ポジション解消指示", self.name, self.t_id, self.t_pl_u)
             self.after_close_trade_function()
 
         # 部分解除の場合（LINE送信無し）
@@ -377,7 +377,7 @@ class order_information:
             else:
                 # 部分解消が正常に実行できる注文数の場合
                 close_res = self.oa.TradeClose_exe(self.t_id, {"units": units})  # ★オーダーを実行
-
+                self.send_line('部分解消')
             if close_res['error'] == -1:  # APIエラーの場合終了。ただし、
                 self.send_line("  ★ポジション解消ミス部分＠close_position", self.name, self.t_id, self.t_pl_u)
                 return 0

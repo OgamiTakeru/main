@@ -420,12 +420,12 @@ def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
     if (short_range_flag and short_range_flag_prev) and (target_direction == peaks_prev[0]['direction']):
         # どっちも成立している場合、すでにオーダーが入っているため、新規のオーダーは行わない(方向も同じ場合[違うことがまれにある2024/11/11 19:10と19:15]
         print(s6, "すでに成立済みのため、今回はスルー(Short)", short_range_flag, short_range_flag_prev)
-        memo = memo + " SHORT2回目以降"
+        # memo = memo + " SHORT2回目以降"
         # short_range_flag_res = False  # これFalseにすると、勝率が下がる。元々の思想は、二回目以降は重複しないように、これはFalseだったが。。
         short_range_flag_res = True
     else:
         print(s6, "初成立フラッグ(Short)", short_range_flag, short_range_flag_prev)
-        memo = memo + " SHORT初成立"
+        # memo = memo + " SHORT初成立"
         short_range_flag_res = True
 
     # ■最終ジャッジ
@@ -440,7 +440,7 @@ def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
         flag = long_range_flag
         if line_strength == 1:
             # 最も強い抵抗線を持っている場合
-            remark = "強線" + long_range_flag_info['remark'] + memo
+            remark = long_range_flag_info['remark'] + memo + "強線"
         else:
             # ピークが2個程度の場合、ロングレンジとショートレンジ両方が成立した場合にフラッグ成立と判断する
             if short_range_flag:
@@ -448,7 +448,10 @@ def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
             else:
                 flag = True  # ショートの成立がなければ元々Falseだった。取引回数を増やしたいため、LongのみでOKにしている（その為True）
             # 備考（ポジションの名前になる）を生成
-            remark = gene.str_merge("Short:", short_range_flag_info['remark'], "Long", long_range_flag_info['remark'], memo)
+            # remark = gene.str_merge("Short:", short_range_flag_info['remark'], "Long", long_range_flag_info['remark'], memo)
+            remark = gene.str_merge(long_range_flag_info['remark'], memo)
+
+    order_time=str(gene.delYearDay(peaks[0]['time']))
 
     # ■結果を返却する
     print(s6, "Flag形状確認", long_range_flag_res, short_range_flag_res, "結論", flag, memo)
@@ -456,7 +459,7 @@ def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
         "flag_figure": flag,
         "is_first": is_first,
         "lc": short_range_flag_info['lc'],  # こっちのほうがlongよりLC幅が狭いので。いつかリスクを追う場合は、Longに？）
-        "remark": remark
+        "remark": remark+"_"+order_time
     }
 
 
@@ -484,12 +487,13 @@ def judge_flag_figure(peaks, latest_direction, num):
         print(s7, "サイズ感の比率がおかしい")
         return return_result
     # ②Latestの戻り具合を確認（latest=2だと、厳しい場合多い？）
-    reverse_ratio = round(peaks[0]['gap']/peaks[1]['gap'], 3)
-    if reverse_ratio <= 0.6:
-        print(s7, "latestの戻りが弱い。（もう少し戻ったら成立間際）")
-        return return_result
-    else:
-        print(s7, "latestの戻りは", reverse_ratio)
+    # ⇒Lineとpeak[0]['peak'] の距離が近いかどうかの判定だが、ここではなく呼び出し元で、Gap値で判定する
+    # reverse_ratio = round(peaks[0]['gap']/peaks[1]['gap'], 3)
+    # if reverse_ratio <= 0.6:
+    #     print(s7, "latestの戻りが弱い。（もう少し戻ったら成立間際）", reverse_ratio, peaks[0]['gap'], peaks[1]['gap'])
+    #     return return_result
+    # else:
+    #     print(s7, "latestの戻りは", reverse_ratio)
 
     # 形状の詳細
     if latest_direction == 1:
@@ -978,6 +982,10 @@ def cal_tpf_line_strength_all_predict_line(dic_args):
                 each_strength_info_result['remark'] = flag['remark']
                 each_strength_info_result['priority'] = 3  # 備考を入れておく
                 each_strength_info_result['is_first_for_flag'] = flag['is_first']  # 備考を入れておく
+                each_strength_info_result['line_is_close_for_flag']\
+                    = True if 0.07 > abs(each_predict_line_info['line_base_info']["line_base_price"] - peaks[0]['peak']) else False  # breakラインまで近いかどうか
+                # print(" LINE is Close Check", abs(each_predict_line_info['line_base_info']["line_base_price"] - peaks[0]['peak']))
+                # print(" 直近ピーク", peaks[0]['peak'], each_strength_info_result['line_is_close_for_flag'])
         else:
             print(s6, "flagtestなし", each_strength_info_result['line_on_num'], each_strength_info_result['line_strength'])
 
@@ -1032,33 +1040,37 @@ def main_line_strength_analysis_and_order(dic_args):
         print(s4, "フラッグがSameList内に存在")
         # ■■突破方向のオーダー
         if target_strength_info['strength_info']['is_first_for_flag']:
-            # 初回成立の場合は、突破はオーダーなし(これはテスト用。終わったらIf文含めて消したほうがいいかも）
-            pass
-            # フラッグ用（突破方向 記録用のため、コメントアウトされた状態が正）
-            # main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-            # main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.05 * target_strength_info['line_base_info']['line_base_direction'])
-            # main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-            # main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
-            # main_order_base['type'] = position_type
-            # main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
-            # main_order_base['priority'] = target_strength_info['strength_info']['priority']
-            # main_order_base['units'] = 100
-            # main_order_base['name'] = target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
-            # exe_orders.append(cf.order_finalize(main_order_base))
+            # 初回成立の場合は、Lineまで遠い場合は、突破はオーダーなし(これはテスト用。終わったらIf文含めて消したほうがいいかも）
+            if target_strength_info['strength_info']['line_is_close_for_flag']:
+                # 初回でも近い場合は、抵抗線Break側のオーダーを出す
+                # フラッグ用（突破方向 記録用のため、コメントアウトされた状態が正）
+                main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
+                main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
+                main_order_base['tp'] = 0.53  # 0.09  # LCは広め
+                main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
+                main_order_base['type'] = position_type
+                main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
+                main_order_base['priority'] = target_strength_info['strength_info']['priority']
+                main_order_base['units'] = main_order_base['units'] * 1
+                main_order_base['name'] = target_strength_info['strength_info']['remark'] + '[初回特別](' + str(main_order_base['priority']) + ')'
+                exe_orders.append(cf.order_finalize(main_order_base))
+            else:
+                # 初回でなおかつ、距離が遠い場合はオーダーしない
+                pass
         else:
             # フラッグ用（突破方向）
             main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-            main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.05 * target_strength_info['line_base_info']['line_base_direction'])
+            main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
             main_order_base['tp'] = 0.53  # 0.09  # LCは広め
             main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
             main_order_base['type'] = position_type
             main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
             main_order_base['priority'] = target_strength_info['strength_info']['priority']
             main_order_base['units'] = main_order_base['units'] * 1
-            main_order_base['name'] = target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
+            main_order_base['name'] = target_strength_info['strength_info']['remark'] + '(' + str(main_order_base['priority']) + ')'
             exe_orders.append(cf.order_finalize(main_order_base))
 
-        # ■■フラッグの場合は、カウンタオーダー（突破じゃないほうも入れておく
+        # ■■フラッグの場合は、カウンタオーダーも入れる（突破じゃないほうも入れておく
         main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
         main_order_base['target'] = peaks[1]['peak'] - (0.05 * target_strength_info['line_base_info']['line_base_direction'])  # river価格＋マージン
         main_order_base['tp'] = 0.53  # 0.09  # LCは広め
@@ -1068,7 +1080,7 @@ def main_line_strength_analysis_and_order(dic_args):
         main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction'] * -1
         main_order_base['priority'] = target_strength_info['strength_info']['priority']
         main_order_base['units'] = main_order_base['units'] * 1
-        main_order_base['name'] = "カウンター" + target_strength_info['strength_info']['remark'] + str(main_order_base['priority'])
+        main_order_base['name'] = "カウンター" + target_strength_info['strength_info']['remark']+ '(' + str(main_order_base['priority']) + ')'
         exe_orders.append(cf.order_finalize(main_order_base))
     else:
         # それ以外

@@ -428,7 +428,7 @@ def get_data():
         print("検証時間の総取得期間は", start_s5_time, "-", end_s5_time, len(gl_s5_df), "行")
 
     else:
-        # 5分足データを取得
+        # 5分足データを新規で取得
         # gl_m5_count = 300  # 5分足を何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
         # gl_m5_loop = 1  # 何ループするか
         # gl_jp_time = datetime.datetime(2024, 11, 1, 19, 50, 0)  # TOの時刻（Globalに変更)
@@ -632,11 +632,11 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
-gl_exist_data = True
-gl_jp_time = datetime.datetime(2024, 11, 11, 17, 50, 0)  # TOの時刻
-gl_m5_count = 500
-gl_m5_loop = 1
-memo = "フラッグ基準の抵抗Lineの閾値を2.5pips⇒1.3で少なくした"
+gl_exist_data = False
+gl_jp_time = datetime.datetime(2024, 11, 12, 17, 30, 0)  # TOの時刻
+gl_m5_count = 5000
+gl_m5_loop = 30
+memo = "フラッグ　初回LineCloseは取得。TargetMargin0.035、LCChange0.05追加"
 
 # ■検証処理
 get_data()  # データの取得
