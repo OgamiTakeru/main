@@ -136,7 +136,7 @@ def how_to_new_order_judge(inspection_result_dic):
             print("既存オーダーが、新規より重要度が低いため、既存オーダーを削除し、新規オーダーを入れる")
             how_to_new_order_str = "replace"
 
-    # ■■■既存のポジションが存在する場合　現在注文があるかを確認する
+    # [共通]既存のポジションが存在する場合　現在注文があるかを確認する
     # 特に気にせず入れるが、ポジション数が6個以上は入れないようにする（Classでもポカヨケ入るが、ここでも念のため）
     if len(classes_info['open_positions']) >= 6:
         tk.line_send("新規オーダー見送り（既存ポジションが6個以上あり）", classes_info['max_priority_order'], classes_info['max_order_time_sec'])
@@ -408,7 +408,7 @@ def exe_manage():
             d5_df = oa.InstrumentsCandles_exe("USD_JPY", param)
             # ↑時間指定
             # ↓現在時刻
-            # d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)
+            d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)
             # ↑現在時刻
             d5_df = d5_df['data']
             print(d5_df.head(5))

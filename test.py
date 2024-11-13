@@ -632,11 +632,11 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
-gl_exist_data = False
+gl_exist_data = True
 gl_jp_time = datetime.datetime(2024, 11, 12, 17, 30, 0)  # TOの時刻
 gl_m5_count = 5000
 gl_m5_loop = 30
-memo = "フラッグ　初回LineCloseは取得。TargetMargin0.035、LCChange0.05追加"
+memo = "フラッグ　初回LineCloseは取得。TargetMargin0.035、LCChange0.05を外して再度"
 
 # ■検証処理
 get_data()  # データの取得

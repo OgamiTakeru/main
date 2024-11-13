@@ -1,6 +1,7 @@
 import datetime
 import tokens as tk
-import fGeneric as f
+import fGeneric as gene
+import gc
 
 class order_information:
     total_yen = 0  # トータルの円
@@ -205,8 +206,12 @@ class order_information:
         # (Final)オーダーを発行する
         if self.order_permission:
             order_res = self.make_order()
+            if "order_result" in order_res:
+                pass
+            else:
+                order_res['order_result'] = "この処理はオーダー失敗の可能性大"
         else:
-            order_res = {"order_id": 0}  # 返り値を揃えるため、強引だが辞書型を入れておく
+            order_res = {"order_id": 0, 'order_result': 0}  # 返り値を揃えるため、強引だが辞書型を入れておく
 
         return {"order_name": self.name, "order_id": order_res['order_id'], "order_result": order_res['order_result']}
 
@@ -318,8 +323,8 @@ class order_information:
             res6 = "【合計】累積最大円:" + str(order_information.total_yen_max) + ",最小円:" + str(order_information.total_yen_min)
             res7 = "【合計】累計最大PL:" + str(order_information.total_PLu_max) + ",最小PL:" + str(order_information.total_PLu_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(order_information.minus_yen_position_num)
-            self.send_line("■■■解消:", self.name, '\n', f.now(), '\n',
-                         res4, res5, res1, id_info, res2, res3, res6, res7, res8)
+            self.send_line("■■■解消:", self.name, '\n', gene.now(), '\n',
+                           res4, res5, res1, id_info, res2, res3, res6, res7, res8, position_check_no_args()['name_list'])
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
             res1 = "強制Close【Unit】" + str(trade_latest['initialUnits'])
@@ -335,8 +340,8 @@ class order_information:
                 order_information.total_PLu_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(order_information.minus_yen_position_num)
 
-            self.send_line("■■■解消:", self.name, '\n', f.now(), '\n',
-                         res4, res5, res1, id_info, res2, res3, res6, res7, res8)
+            self.send_line("■■■解消:", self.name, '\n', gene.now(), '\n',
+                           res4, res5, res1, id_info, res2, res3, res6, res7, res8, position_check_no_args()['name_list'])
 
     def counter_order_exe(self):
         # カウンターオーダーを1回だけ入れる
@@ -448,7 +453,8 @@ class order_information:
         if order_latest['state'] == "PENDING":
             # print("    時間的な解消を検討", self.o_time_past, self.o_state, "基準", self.order_timeout_min * 60)
             if self.o_time_past_sec > self.order_timeout_min * 60 and (self.o_state == "" or self.o_state == "PENDING"):
-                self.send_line("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min)
+                self.send_line("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min
+                               , position_check_no_args()['name_list'])
                 self.close_order()
 
     def trade_update_and_close(self):
@@ -471,7 +477,8 @@ class order_information:
         if trade_latest['state'] == "OPEN":
             # 規定時間を過ぎ、マイナス継続時間も１分程度ある場合は、もう強制ロスカットにする
             if self.t_time_past_sec > self.trade_timeout_min * 60 and self.lose_hold_time_sec > 60:
-                self.send_line("   Trade解消(マイナス×時間)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold", self.lose_hold_time_sec)
+                self.send_line("   Trade解消(マイナス×時間)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold", self.lose_hold_time_sec
+                               , position_check_no_args()['name_list'])
                 self.close_trade(None)
             # 規定時間を過ぎ、大きくプラスもなくふらふらしている場合
             if self.t_time_past_sec > self.trade_timeout_min * 60:  # 時間が経過している
@@ -630,91 +637,6 @@ def life_check(classes):
     return ans
 
 
-def position_check(classes):
-    """
-    W、ターン未遂以外のオーダーが存在するかを確認する.
-    :param classes:
-    :return:
-    """
-    open_positions = []
-    not_open_positions = []
-    max_priority_order = 0
-    max_priority_position = 0
-    max_position_time_sec = 0
-    max_order_time_sec = 0
-    total_pl = 0
-    for item in classes:
-        if item.life:  #lifeがTrueの場合、ポジションかオーダーが存在
-            # 各情報
-            if item.t_state == "OPEN":
-                # ポジションがある場合、ポジションの情報を取得する
-                # プライオリティも最高値を取得
-                if item.priority > max_priority_position:
-                    max_priority_position = item.priority  # ポジションの有る最大のプライオリティを取得する
-                open_positions.append({
-                    "name": item.name,
-                    "life": item.life,
-                    "priority": item.priority,
-                    "o_state": item.o_state,
-                    "t_state": item.t_state,
-                    "pl": item.t_pl_u,
-                    "direction": item.plan['direction']
-                })
-                # ポジションの所有時間（ポジションがある中で最大）も取得しておく
-                if item.t_time_past_sec > max_position_time_sec:
-                    max_position_time_sec = item.t_time_past_sec  # 何分間持たれているポジションか
-                # トータルの含み損益を表示する
-                total_pl = total_pl + float(item.t_unrealize_pl)
-                # print("  ポジション状態", item.t_id, ",PL:", total_pl)
-            elif item.o_state == "PENDING":
-                # オーダーのみ（取得俟ちの場合）取得まち用の配列に入れておく
-                # プライオリティも最高値を取得
-                if item.priority > max_priority_order:
-                    max_priority_order = item.priority  # ポジションの有る最大のプライオリティを取得する
-
-                not_open_positions.append({
-                    "name": item.name,
-                    "life": item.life,
-                    "priority": item.priority,
-                    "o_state": item.o_state,
-                    "t_state": item.t_state,
-                    "pl": item.t_pl_u,
-                    "direction": item.plan['direction']
-                })
-                # ポジションの所有時間（ポジションがある中で最大）も取得しておく
-                if item.o_time_past_sec > max_order_time_sec:
-                    max_order_time_sec = item.o_time_past_sec  # 何分間オーダー待ちか
-            else:
-                print(" 謎の状態")
-
-    # print(" ★★★★★一時テスト（classPosition)")
-    # print(open_positions)
-    # print(not_open_positions)
-    # print("ここまで")
-    # 結果の集約
-    if len(open_positions) != 0:
-        position_exist = True  # ポジションが一つでもOpenになっている場合は、True
-    else:
-        position_exist = False
-
-    if len(not_open_positions) != 0:
-        order_exist = True
-    else:
-        order_exist = False
-
-    return {
-        "position_exist": position_exist,
-        "order_exist": order_exist,
-        "open_positions": open_positions,
-        "max_priority_position": max_priority_position,
-        "not_open_positions": not_open_positions,  # 取得待ちの状態
-        "max_priority_order": max_priority_order,
-        "max_position_time_sec": max_position_time_sec,
-        "max_order_time_sec": max_order_time_sec,
-        "total_pl": total_pl,
-    }
-
-
 def close_opposite_order(classes):
     # 現在のポジションの方向を確認（基本的に同方向のポジションしかない前提）
     position_direction = 0
@@ -736,9 +658,6 @@ def close_opposite_order(classes):
                     item.close_order()
                     # print("  CloseOppsite実行")
     # print("   CloseOppsit", position_direction, position_count, lives)
-
-
-
 
 
 def position_info(classes):
@@ -764,3 +683,211 @@ def position_info(classes):
                     temp = "\n" + temp  # 二個目以降を次の行とするために、改行を入れる
                 ans = ans + temp
     return ans
+
+
+# 特定のクラスのインスタンス一覧を取得する関数(現在メモリ上にあるクラスのインスタンスのリストを返す）
+def get_instances_of_class():
+    """
+    引数は無し。
+    """
+    return [obj for obj in gc.get_objects() if isinstance(obj, order_information)]
+
+
+def position_check_no_args():
+    """
+    引数を取らないバージョンのポジションチェック（試作中）
+    クラスのリストはガベージコレクションで拾ってくる  + \
+                            position_check_no_args()['name_list']
+    W、ターン未遂以外のオーダーが存在するかを確認する.
+    :param :
+    :return:
+    """
+    # 存在するOrderInformationのクラスのインスタンス達を検索する
+    classes = get_instances_of_class()
+
+    # 実処理
+    open_positions = []
+    not_open_positions = []
+    max_priority_order = 0
+    max_priority_position = 0
+    max_position_time_sec = 0
+    max_order_time_sec = 0
+    open_class_names = closed_class_names = pending_class_names = ""
+    total_pl = 0
+    for item in classes:
+        if item.life:  #lifeがTrueの場合、ポジションかオーダーが存在
+            # 各情報
+            if item.t_state == "OPEN":
+                # ポジションがある場合、ポジションの情報を取得する
+                # プライオリティも最高値を取得
+                if item.priority > max_priority_position:
+                    max_priority_position = item.priority  # ポジションの有る最大のプライオリティを取得する
+                open_positions.append({
+                    "name": item.name,
+                    "life": item.life,
+                    "priority": item.priority,
+                    "o_state": item.o_state,
+                    "t_state": item.t_state,
+                    "pl": item.t_pl_u,
+                    "direction": item.plan['direction']
+                })
+                # ポジションの所有時間（ポジションがある中で最大）も取得しておく
+                if item.t_time_past_sec > max_position_time_sec:
+                    max_position_time_sec = item.t_time_past_sec  # 何分間持たれているポジションか
+                # トータルの含み損益を表示する
+                total_pl = total_pl + float(item.t_unrealize_pl)
+                # オーダー時間リストを作る（表示用）
+                open_class_names = open_class_names + "," + gene.delYearDay(item.o_time)
+                # print("  ポジション状態", item.t_id, ",PL:", total_pl)
+            elif item.o_state == "PENDING":
+                # オーダーのみ（取得俟ちの場合）取得まち用の配列に入れておく
+                # プライオリティも最高値を取得
+                if item.priority > max_priority_order:
+                    max_priority_order = item.priority  # ポジションの有る最大のプライオリティを取得する
+
+                not_open_positions.append({
+                    "name": item.name,
+                    "life": item.life,
+                    "priority": item.priority,
+                    "o_state": item.o_state,
+                    "t_state": item.t_state,
+                    "pl": item.t_pl_u,
+                    "direction": item.plan['direction']
+                })
+                # ポジションの所有時間（ポジションがある中で最大）も取得しておく
+                if item.o_time_past_sec > max_order_time_sec:
+                    max_order_time_sec = item.o_time_past_sec  # 何分間オーダー待ちか
+                # オーダー時間リストを作成する（表示用）
+                pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
+            else:
+                print(" 謎の状態")
+        # else:
+        #     # Lifeが終わっているもの
+
+    # print(" ★★★★★一時テスト（classPosition)")
+    # print(open_positions)
+    # print(not_open_positions)
+    # print("ここまで")
+    # 結果の集約
+    if len(open_positions) != 0:
+        position_exist = True  # ポジションが一つでもOpenになっている場合は、True
+    else:
+        position_exist = False
+
+    if len(not_open_positions) != 0:
+        order_exist = True
+    else:
+        order_exist = False
+
+    # 表示用の名前リストの作成
+    name_list = "\n[P待ち]" + pending_class_names + "\n[P中]" + open_class_names + "\n[P中]"
+
+    return {
+        "position_exist": position_exist,
+        "order_exist": order_exist,
+        "open_positions": open_positions,
+        "max_priority_position": max_priority_position,
+        "not_open_positions": not_open_positions,  # 取得待ちの状態
+        "max_priority_order": max_priority_order,
+        "max_position_time_sec": max_position_time_sec,
+        "max_order_time_sec": max_order_time_sec,
+        "total_pl": total_pl,
+        "name_list": name_list
+    }
+
+
+def position_check(classes):
+    """
+    W、ターン未遂以外のオーダーが存在するかを確認する.
+    :param classes:
+    :return:
+    """
+    open_positions = []
+    not_open_positions = []
+    max_priority_order = 0
+    max_priority_position = 0
+    max_position_time_sec = 0
+    max_order_time_sec = 0
+    open_class_names = closed_class_names = pending_class_names = ""
+    total_pl = 0
+    for item in classes:
+        if item.life:  #lifeがTrueの場合、ポジションかオーダーが存在
+            # 各情報
+            if item.t_state == "OPEN":
+                # ポジションがある場合、ポジションの情報を取得する
+                # プライオリティも最高値を取得
+                if item.priority > max_priority_position:
+                    max_priority_position = item.priority  # ポジションの有る最大のプライオリティを取得する
+                open_positions.append({
+                    "name": item.name,
+                    "life": item.life,
+                    "priority": item.priority,
+                    "o_state": item.o_state,
+                    "t_state": item.t_state,
+                    "pl": item.t_pl_u,
+                    "direction": item.plan['direction']
+                })
+                # ポジションの所有時間（ポジションがある中で最大）も取得しておく
+                if item.t_time_past_sec > max_position_time_sec:
+                    max_position_time_sec = item.t_time_past_sec  # 何分間持たれているポジションか
+                # トータルの含み損益を表示する
+                total_pl = total_pl + float(item.t_unrealize_pl)
+                # オーダー時間リストを作る（表示用）
+                open_class_names = open_class_names + "," + gene.delYearDay(item.o_time)
+                # print("  ポジション状態", item.t_id, ",PL:", total_pl)
+            elif item.o_state == "PENDING":
+                # オーダーのみ（取得俟ちの場合）取得まち用の配列に入れておく
+                # プライオリティも最高値を取得
+                if item.priority > max_priority_order:
+                    max_priority_order = item.priority  # ポジションの有る最大のプライオリティを取得する
+
+                not_open_positions.append({
+                    "name": item.name,
+                    "life": item.life,
+                    "priority": item.priority,
+                    "o_state": item.o_state,
+                    "t_state": item.t_state,
+                    "pl": item.t_pl_u,
+                    "direction": item.plan['direction']
+                })
+                # ポジションの所有時間（ポジションがある中で最大）も取得しておく
+                if item.o_time_past_sec > max_order_time_sec:
+                    max_order_time_sec = item.o_time_past_sec  # 何分間オーダー待ちか
+                # オーダー時間リストを作成する（表示用）
+                pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
+            else:
+                print(" 謎の状態")
+        else:
+            closed_class_names = closed_class_names + "," + gene.delYearDay(item.o_time)
+
+    # print(" ★★★★★一時テスト（classPosition)")
+    # print(open_positions)
+    # print(not_open_positions)
+    # print("ここまで")
+    # 結果の集約
+    if len(open_positions) != 0:
+        position_exist = True  # ポジションが一つでもOpenになっている場合は、True
+    else:
+        position_exist = False
+
+    if len(not_open_positions) != 0:
+        order_exist = True
+    else:
+        order_exist = False
+
+    # 表示用の名前リストの作成
+    name_list = "[終了済]" + closed_class_names + "\n[P待ち]" + pending_class_names + "\n[P中]" + open_class_names
+
+    return {
+        "position_exist": position_exist,
+        "order_exist": order_exist,
+        "open_positions": open_positions,
+        "max_priority_position": max_priority_position,
+        "not_open_positions": not_open_positions,  # 取得待ちの状態
+        "max_priority_order": max_priority_order,
+        "max_position_time_sec": max_position_time_sec,
+        "max_order_time_sec": max_order_time_sec,
+        "total_pl": total_pl,
+        "name_list": name_list
+    }
+

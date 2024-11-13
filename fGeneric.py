@@ -200,6 +200,7 @@ def delYearDay(original_time):
     :return:
     """
     # 2023/01/01 09:10:12
+    print(" 渡された値", original_time)
     day = original_time[5:10]  # 01/01
     day = day.replace("0", "")  # 1/1
     time = original_time[11:16]  # 09:10
