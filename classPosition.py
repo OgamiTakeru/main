@@ -580,9 +580,9 @@ class order_information:
                     return 0  # APIエラー時は終了
                 item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
                 # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-                self.send_line("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
-                             "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice", self.t_execution_price,
-                             "予定価格", self.plan['price'])
+                # self.send_line("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
+                #              "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice", self.t_execution_price,
+                #              "予定価格", self.plan['price'])
                 break
 
 
@@ -857,8 +857,8 @@ def position_check(classes):
                 pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
             else:
                 print(" 謎の状態")
-        else:
-            closed_class_names = closed_class_names + "," + gene.delYearDay(item.o_time)
+        # else:
+        #     closed_class_names = closed_class_names + "," + gene.delYearDay(item.o_time)
 
     # print(" ★★★★★一時テスト（classPosition)")
     # print(open_positions)
