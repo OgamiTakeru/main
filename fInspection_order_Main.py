@@ -790,14 +790,14 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
         elif break_double_top_strength_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)")
             # DoubleTopの判定が最優先 (単品）
-            flag_and_orders["take_position_flag"] = False
+            flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = \
                 [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
             flag_and_orders['for_inspection_dic'] = break_double_top_strength_orders_and_evidence['for_inspection_dic']
         elif hooks_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:通常ストレングス(flag含む)】")
             # シンプルなLineStrengthによるオーダー発行
-            flag_and_orders["take_position_flag"] = False
+            flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = hooks_orders_and_evidence["exe_orders"]
             flag_and_orders['for_inspection_dic'] = hooks_orders_and_evidence['for_inspection_dic']
             # ■■最も強いストレングスが遠い場合、最も強いストレングスに向かう方向へトラリピを設定

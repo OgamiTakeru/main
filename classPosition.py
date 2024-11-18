@@ -480,6 +480,7 @@ class order_information:
                 self.send_line("   Trade解消(マイナス×時間)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold", self.lose_hold_time_sec
                                , position_check_no_args()['name_list'])
                 self.close_trade(None)
+        if trade_latest['state'] == "OPEN":
             # 規定時間を過ぎ、大きくプラスもなくふらふらしている場合
             if self.t_time_past_sec > self.trade_timeout_min * 60:  # 時間が経過している
                 if self.win_max_plu <= 0.05 and self.t_pl_u <= 0.03:
@@ -780,7 +781,7 @@ def position_check_no_args():
         order_exist = False
 
     # 表示用の名前リストの作成
-    name_list = "\n[P待ち]" + pending_class_names + "\n[P中]" + open_class_names + "\n[P中]"
+    name_list = "\n[P待ち]" + pending_class_names + "\n[P中]" + open_class_names + "\n"
 
     return {
         "position_exist": position_exist,
@@ -876,7 +877,7 @@ def position_check(classes):
         order_exist = False
 
     # 表示用の名前リストの作成
-    name_list = "[終了済]" + closed_class_names + "\n[P待ち]" + pending_class_names + "\n[P中]" + open_class_names
+    name_list = "\n[P待ち]" + pending_class_names + "\n[P中]" + open_class_names + "\n"
 
     return {
         "position_exist": position_exist,

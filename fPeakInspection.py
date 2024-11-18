@@ -324,6 +324,57 @@ def peaks_collect_all_not_skip(*args):
     return peaks
 
 
+def hard_skip_after_peaks_cal(peaks_origin):
+    """
+    peaksを基にスキップを行う
+    ↓このようなケース。②のカウントが３以下、①のピークより③のピークがが低い
+      ② / ①
+     /\/　
+    /③
+    この場合、簡易的なPeaksを生成する
+    """
+    # print("初期値")
+    peaks = peaks_origin.copy()
+    # gene.print_arr(peaks)
+    adjaster = 0
+    for index in range(len(peaks)):  # 中で配列を買い替えるため、for i in peaksは使えない！！
+        target_index = index + adjaster
+        if len(peaks) - target_index < 3:  # one,two, thrを確保するため、三つは必要
+            # print(" 終了")
+            break
+
+        one = peaks[target_index]
+        two = peaks[target_index + 1]
+        thr = peaks[target_index + 2]
+        print(target_index, one, two, thr)
+
+        if two['count'] <= 3 or (two['count'] <= 5 and two['gap'] <= 0.07):  # カウントがアウトでも、ギャップが少なければ飛ばせるとみなす
+            # print(" ２が３カウント以下⇒結合判定へ", two['count'])
+            if (two['gap'] / one['gap'] <= 0.3 and two['gap'] / thr['gap'] <= 0.56) or (two['gap'] / one['gap'] <= 0.56 and two['gap'] / thr['gap'] <= 0.3):
+                # print(" 結合可能", one['time'], "twoを削除し、oneとThreeをつなげる", target_index)
+                # 1に情報を集約
+                peaks[target_index]['peak_old'] = thr['peak_old']
+                peaks[target_index]['time_old'] = thr['time_old']
+                peaks[target_index]['count'] = one['count'] + two['count'] + thr['count']
+                peaks[target_index]['previous'] = thr['previous']
+                peaks[target_index]['gap'] = abs(one['peak'] - one['peak_old'])
+                # ２と３を削除する
+                del peaks[target_index+1:target_index + 3]
+                # アジャスターを調整
+                adjaster = adjaster
+            else:
+                pass
+                # print(" 結合不可", round(two['gap'] / one['gap'], 3), round(two['gap'] / thr['gap'], 3))
+        else:
+            pass
+            # print(" ２が３カウント以上⇒結合不可", two['count'], two['gap'])
+    # print("最終配列")
+    # gene.print_arr(peaks)
+
+    return peaks
+
+
+
 
 # ピーク一覧で作成したものを、TopとBottomに分割する
 # def peaks_collect_separate(peaks):

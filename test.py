@@ -242,6 +242,52 @@ def update_position_information(cur_class, cur_row, cur_row_index):
             cur_class.lc_price = new_lc_price  # 値の更新
 
 
+def all_close(cur_row):
+    global gl_total, gl_total_per_units, gl_results_list  # グローバル変数の変更宣言
+    for i, cur_class in enumerate(gl_classes):
+        if not cur_class.position_is_live:
+            # 本番では、膠着状態における解消も実施しているが、ここではいったん除外
+            pl = (cur_row['close'] - cur_class.target_price) * cur_class.direction
+            cur_class.settlement_price = cur_row['close']  # ポジション解消価格（ここは暫定的にOpen価格
+            cur_class.position_is_live = False
+            cur_class.is_live = False
+            cur_class.comment = "allclear"
+
+            # print("　　   [結果表示]取得価格", cur_class.target_price, "決済価格", cur_class.settlement_price)
+            # ポジション解消時にTarget PriceとTP/LC priceでの損益がPLに格納されているので、これを格納する
+            cur_class.realized_pl = pl * abs(cur_class.units)  # 含み損益の更新（Unitsをかけたもの）　マイナス値を持つ
+            cur_class.realized_pl_per_units = pl  # 含み損益（Unitsに依存しない数） マイナス値を持つ
+            # print(pl * abs(cur_class.units), pl, cur_row['time_jp'])
+            gl_total += cur_class.realized_pl
+            gl_total_per_units += cur_class.realized_pl_per_units
+            result_dic = {
+                "order_time": cur_class.order_time,
+                "res": cur_class.comment,
+                "pl": round(cur_class.realized_pl, 3),
+                "end_time": cur_row['time_jp'],
+                "end_price": cur_class.settlement_price,
+                "take_price": cur_class.target_price,
+                "take_time": cur_class.position_time,
+                "name": cur_class.name,
+                "pl_per_units": round(cur_class.realized_pl_per_units, 3),
+                "max_plus": cur_class.max_plus,
+                "max_plus_time_past": cur_class.max_plus_time_past,
+                "max_minus": cur_class.max_minus,
+                "max_minus_time_past": cur_class.max_minus_time_past,
+                "priority": cur_class.priority,
+                "position_keeping_time": cur_class.position_keeping_time_sec,
+                "settlement_price": cur_class.settlement_price,
+                "tp_price": cur_class.tp_price,
+                "lc_price": cur_class.lc_price,
+                "direction": cur_class.direction,
+                "units": cur_class.units,
+            }
+            # 検証用データを結合
+            result_dic = {**result_dic, **cur_class.for_inspection_dic}
+            gl_results_list.append(result_dic)
+
+
+
 def execute_position_finish(cur_class, cur_row, cur_row_index):
     """
     クラスに更新された情報を基に、ポジションに対する操作を行う
@@ -329,7 +375,7 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
         gl_results_list.append(result_dic)
 
 
-def judge_overwrite_order(analysis_result):
+def judge_overwrite_order(analysis_result, cur_row):
     global gl_not_overwrite_orders
 
     new_order = True  # 初期値はTrue
@@ -353,34 +399,46 @@ def judge_overwrite_order(analysis_result):
 
         # オーダーサマリに対し、今回の新規オーダーを入れるべきかを判断する(既存のオーダーが生きている場合のみ）
         if exist_life:
-            # ポジションがある場合のみ
-            if exist_direction != new_exe_order_d:
-                # 方向が異なるときは、入れる可能性あり
-                print(" 方向が異なる")
-                pass
-                if new_exe_order['priority'] > exist_priority:
-                    # 新規が重要オーダーの場合、このまま登録する（new_orderフラグは初期値のまま）
-                    print("　　高プライオリティ　入れる")
-                    pass
-                else:
-                    if exist_pl < 0:
-                        # マイナスの場合
-                        if exist_keep_position_sec < 6 * 5 * 60:
-                            # 経過時間が立っていない場合、横いれしない
-                            print("  時間経過なし　いれない")
-                            new_order = False
-                        else:
-                            # 経過時間がたっている場合、上書きする（new_orderフラグは初期値のまま）
-                            print("  時間経過　入れる")
-                            pass
-                    else:
-                        # プラスの時 は様子見
-                        print("  プラス域のため様子見")
-                        new_order = False
-            else:
-                # 方向が同じときは、上書きしない
-                print(" 同方向のためいれない")
+            # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
+            if exist_priority > new_exe_order['priority']:
+                # 既存オーダーが、新規よりも重要度が高いため、新規は断念する（同じだったら入れ替えたいため、＞＝ではなく＞）
+                how_to_new_order_str = "cancel"
                 new_order = False
+            elif exist_priority == new_exe_order['priority']:
+                print(" 既存オーダーが、新規同等の重要度のため、取り消さず今回のオーダーを追加する")
+                how_to_new_order_str = "add"
+            else:
+                print("既存オーダーが、新規より重要度が低いため、既存オーダーを削除し、新規オーダーを入れる")
+                how_to_new_order_str = "replace"
+                all_close(cur_row)
+            # # ポジションがある場合のみ
+            # if exist_direction != new_exe_order_d:
+            #     # 方向が異なるときは、入れる可能性あり
+            #     print(" 方向が異なる")
+            #     pass
+            #     if new_exe_order['priority'] > exist_priority:
+            #         # 新規が重要オーダーの場合、このまま登録する（new_orderフラグは初期値のまま）
+            #         print("　　高プライオリティ　入れる")
+            #         pass
+            #     else:
+            #         if exist_pl < 0:
+            #             # マイナスの場合
+            #             if exist_keep_position_sec < 6 * 5 * 60:
+            #                 # 経過時間が立っていない場合、横いれしない
+            #                 print("  時間経過なし　いれない")
+            #                 new_order = False
+            #             else:
+            #                 # 経過時間がたっている場合、上書きする（new_orderフラグは初期値のまま）
+            #                 print("  時間経過　入れる")
+            #                 pass
+            #         else:
+            #             # プラスの時 は様子見
+            #             print("  プラス域のため様子見")
+            #             new_order = False
+            # else:
+            #     # 方向が同じときは、上書きしない
+            #     print(" 同方向のためいれない")
+            #     new_order = False
         else:
             print(" オーダー可")
 
@@ -407,7 +465,9 @@ def get_data():
     # gl_exist_data = True  # グローバルに変更
     if gl_exist_data:
         # 既存の5分足データを取得
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ5分
+        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
+        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
+        # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/2年分_m5_df.csv'  # 超大量データ(22_24)5分
         # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030172000_test_m5_df.csv'  # 適宜データ5分
         gl_d5_df = pd.read_csv(rescsv_path, sep=",", encoding="utf-8")
         gl_5m_start_time = gl_d5_df.iloc[0]['time_jp']
@@ -419,7 +479,9 @@ def get_data():
         print("5分足での取得時刻は", gl_5m_start_time, "-", gl_5m_end_time, len(gl_d5_df_r), "行")
         print("実際の解析時間は", gl_d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", gl_5m_end_time)
         # 既存の5秒足データを取得
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ5秒
+        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
+        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
+        # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/2年分_s5_df.csv'  # 超大量データ(22_24)5秒
         # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030113450_test_s5_df.csv'  # 適宜データ5秒
         gl_s5_df = pd.read_csv(rescsv_path, sep=",", encoding="utf-8")
         start_s5_time = gl_s5_df.iloc[0]['time_jp']
@@ -530,7 +592,7 @@ def main():
                     # オーダー判定なしの場合、次のループへ（5秒後）
                     continue
                 # ■上書き有無を判断
-                overwrite_order = judge_overwrite_order(analysis_result)
+                overwrite_order = judge_overwrite_order(analysis_result, row_s5)
                 overwrite_order = False
                 if overwrite_order:
                     # 上書きする場合(実運用に近い）
@@ -577,28 +639,6 @@ def main():
                 execute_position_finish(each_c, row_s5, index)
 
 
-# オーダーのデモ
-demo = {
-    "target_price": 149.735,
-    "tp_price": 150.284,
-    "lc_price": 149.704,
-    "name": "1番目",
-    "order_time": "2024/10/21 16:45:00",
-    "order_timeout": 150 * 60, "units": 100,
-    "lc_change_waiting_second": 4 * 5 * 60,
-    "priority": 0,
-    "lc_change": [
-        {"lc_change_exe": True, "lc_trigger_range": 0.038, "lc_ensure_range": -0.05},
-        {"lc_change_exe": True, "lc_trigger_range": 0.048, "lc_ensure_range": 0.04},
-        {"lc_change_exe": True, "lc_trigger_range": 0.07, "lc_ensure_range": 0.05},
-        {"lc_change_exe": True, "lc_trigger_range": 0.10, "lc_ensure_range": 0.07},
-        {"lc_change_exe": True, "lc_trigger_range": 0.15, "lc_ensure_range": 0.10},
-        {"lc_change_exe": True, "lc_trigger_range": 0.20, "lc_ensure_range": 0.16},
-        {"lc_change_exe": True, "lc_trigger_range": 0.25, "lc_ensure_range": 0.21}
-    ]
-}
-
-
 # ＠＠＠＠＠本文開始＠＠＠＠＠
 # 最初の一つをインスタンスを生成する  150.284 149.834
 gl_classes = []
@@ -633,9 +673,9 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
 gl_exist_data = True
-gl_jp_time = datetime.datetime(2024, 11, 12, 17, 30, 0)  # TOの時刻
+gl_jp_time = datetime.datetime(2023, 11, 14, 12, 20, 0)  # TOの時刻
 gl_m5_count = 5000
-gl_m5_loop = 30
+gl_m5_loop = 15
 memo = "フラッグ　初回LineCloseは取得。TargetMargin0.035、LCChange0.05を外して再度"
 
 # ■検証処理

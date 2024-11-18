@@ -451,7 +451,8 @@ def judge_flag_figure_wrap_up(peaks, target_direction, line_strength, df_r):
             # remark = gene.str_merge("Short:", short_range_flag_info['remark'], "Long", long_range_flag_info['remark'], memo)
             remark = gene.str_merge(long_range_flag_info['remark'], memo)
 
-    order_time=str(gene.delYearDay(peaks[0]['time']))
+    # order_time=str(gene.delYearDay(peaks[0]['time']))
+    order_time = str(gene.delYearDay(df_r.iloc[0]['time_jp']))
 
     # ■結果を返却する
     print(s6, "Flag形状確認", long_range_flag_res, short_range_flag_res, "結論", flag, memo)
