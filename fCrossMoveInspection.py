@@ -25,11 +25,13 @@ def judge_cross_figure_wrap_up(peaks, df_r):
     print(" まずはリバーピークから", peaks[1]['direction'])
     upper_info = judge_flag_figure(peaks[1:], peaks[1]['direction'], upper_num)  # latestは無視
     upper_oldest_peak_info = upper_info['oldest_peak_info']
+    upper_latest_peak_info = upper_info['latest_peak_info']
     print(upper_info)
 
     print(" 次にターンピーク", peaks[2]["direction"])
     lower_info = judge_flag_figure(peaks[1:], peaks[2]['direction'], lower_num)  # latestは無視
     lower_oldest_peak_info = lower_info['oldest_peak_info']
+    lower_latest_peak_info = lower_info['latest_peak_info']
     print(lower_info)
 
     if upper_info['flag_figure'] and lower_info['flag_figure']:
@@ -46,13 +48,23 @@ def judge_cross_figure_wrap_up(peaks, df_r):
     latest_gap = peaks[1]["gap"]
     print("oldest_info", oldest_gap, upper_oldest_peak_info['time'], lower_oldest_peak_info['time'])
     print("latest_info", latest_gap, peaks[1]['peak'], peaks[1]['peak_old'])
-
-    if latest_gap/oldest_gap <= 0.35:
+    # すぼみ判定１
+    if latest_gap/oldest_gap <= 0.4:
         print("すぼみ形状確認（広さが半減）")
         subomi_flag = True
     else:
         print(" すぼみではない", round(oldest_gap/latest_gap, 3))
         pass
+    # すぼみ判定２（上の最大値から直近の上側まで、下の最小値から直近の下側まで、それぞれ5ピップ以上の下降が認められるかどうか）
+    if abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]) >= 0.05:
+        print(" 上側は角度的にもOKな下降", abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]))
+    else:
+        print(" 上側はやや水平気味", abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]))
+
+    if abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]) >= 0.05:
+        print(" 下側は角度的にもOKな下降", abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]))
+    else:
+        print(" 下側はやや水平気味", abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]))
 
     # ■判定
     if figure_flag and subomi_flag:
@@ -61,7 +73,7 @@ def judge_cross_figure_wrap_up(peaks, df_r):
         ans_flag = False
 
     return {
-        "flag" :ans_flag,
+        "flag": ans_flag,
         "oldest_gap": oldest_gap
     }
 
@@ -136,9 +148,12 @@ def judge_flag_figure(peaks, target_direction, num):
                 failed_peaks_num += 1
                 # print(s7, "(ri)上にあるため除外（不合格）", item)
             # ■線上といえるか
-            c2 = -0.05
-            jd_y_max = tilt * a + c2
-            if jd_y_max < b < jd_y:
+            margin = abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']) * 0.3  # 0.3がちょうどよさそう
+            # print("計算結果", abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']), margin)
+            # margin = 0.07
+            jd_y_max = tilt * a + margin
+            jd_y_min = tilt * a + (margin * -1)
+            if jd_y_max > b > jd_y_min:
                 print(s7, "(ri)線上にあります", item['time'])
                 on_line += 1
             else:
@@ -212,14 +227,17 @@ def judge_flag_figure(peaks, target_direction, num):
             else:
                 failed_peaks_num += 1
                 # print(s7, "(ri)下にあるため除外", item)
-            # ■線上といえるか
-            c2 = 0.06
-            jd_y_max = tilt * a + c2
-            if jd_y_max > b > jd_y:
-                print(s7, "(ri)線上にあります", item['time'])
+            # ■線上といえるか(余裕度は変動する。直近Peakと最小PeakのGapの15％とする）
+            margin = abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']) * 0.3  # 0.3がちょうどよさそう
+            # print("計算結果", abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']), margin)
+            # margin = 0.07
+            jd_y_max = tilt * a + margin
+            jd_y_min = tilt * a + (margin * -1)
+            if jd_y_max > b > jd_y_min:
+                print(s7, "(ri)線上にありますg", item['time'])
                 on_line += 1
             else:
-                print(s7, "(ri)線上にはありません", item['time'])
+                print(s7, "(ri)線上にはありませんg", item['time'])
                 pass
         # 集計結果
         print(s7, "(ri)全部で", total_peaks_num, '個のピークがあり、合格（上の方にあった）のは', clear_peaks_num,
@@ -252,6 +270,7 @@ def judge_flag_figure(peaks, target_direction, num):
         "flag_figure": flag_figure,  # フラッグ形状かどうかの判定（Boo）
         "lc": ave_peak_price,  # LC価格の提案を行う
         "oldest_peak_info": target_peaks[oldest_peak_index],
+        "latest_peak_info": target_peaks[0],
         "remark": remark
     }
 
@@ -359,7 +378,7 @@ def main_cross_move_analysis_and_order(dic_args):
 
     main_order_base = cf.order_base(peaks[0]['peak'], peaks[0]['time'])
     direction = 1  # 上向きを期待するオーダー
-    main_order_base['target'] = peaks[0]['peak'] + 0.05
+    main_order_base['target'] = peaks[0]['peak'] + peaks[0]['gap']  # + 0.05
     main_order_base['tp'] = 0.53  # 0.09  # LCは広め
     main_order_base['lc'] = cross_figure_flag['oldest_gap'] / 3.6  # 0.06  # * line_strength  # 0.09  # LCは広め
     main_order_base['type'] = "STOP"
@@ -371,7 +390,7 @@ def main_cross_move_analysis_and_order(dic_args):
 
     main_order_base = cf.order_base(peaks[0]['peak'], peaks[0]['time'])
     direction = -1  # 上向きを期待するオーダー
-    main_order_base['target'] = peaks[0]['peak'] + (0.05 * direction)
+    main_order_base['target'] = peaks[0]['peak'] - peaks[0]['gap']
     main_order_base['tp'] = 0.53  # 0.09  # LCは広め
     main_order_base['lc'] = cross_figure_flag['oldest_gap'] / 3.6  # 0.06  # * line_strength  # 0.09  # LCは広め
     main_order_base['type'] = "STOP"

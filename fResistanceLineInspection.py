@@ -862,7 +862,7 @@ def cal_tpf_line_strength_all_predict_line(dic_args):
     if target_dir == 1:
         # latestが登り方向の場合
         search_max_price = max_peak_info_in_latest4['peak'] + grid  # 探索する最高値
-        search_min_price = peaks[0]['peak']  # 探索する最低値。(現在価格）
+        search_min_price = peaks[0]['peak'] - grid   # 探索する最低値。(現在価格）　「24/11/19」-gridを増やした
         if max_to_min_search:
             # 簡単に切り替えられるように（変更点が複数あるため、一括で変更できるようにした）
             target_price = search_max_price  # - grid  # MAX側から調査（登りの場合、上から調査）
@@ -870,7 +870,7 @@ def cal_tpf_line_strength_all_predict_line(dic_args):
             target_price = search_min_price  # + grid  # 登りの場合でもMinからスタート
     else:
         # latestが下り方向の場合
-        search_max_price = peaks[0]['peak']  # 探索する最低値
+        search_max_price = peaks[0]['peak'] + grid  # 探索する最低値 [24/11/19]+girdを増やした
         search_min_price = min_peak_info_in_latest4['peak'] - grid  # 探索する最低値。
         if max_to_min_search:
             target_price = search_min_price  # + grid  # 下（Min）からスタート
@@ -1044,16 +1044,28 @@ def main_line_strength_analysis_and_order(dic_args):
             # 初回成立の場合は、Lineまで遠い場合は、突破はオーダーなし(これはテスト用。終わったらIf文含めて消したほうがいいかも）
             if target_strength_info['strength_info']['line_is_close_for_flag']:
                 # 初回でも近い場合は、抵抗線Break側のオーダーを出す
-                # フラッグ用（突破方向 記録用のため、コメントアウトされた状態が正）
+                # フラッグ用
+                # main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
+                # main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
+                # main_order_base['tp'] = 0.53  # 0.09  # LCは広め
+                # main_order_base['lc'] = 0.06 # * line_strength  # 0.09  # LCは広め
+                # main_order_base['type'] = position_type
+                # main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
+                # main_order_base['priority'] = target_strength_info['strength_info']['priority']
+                # main_order_base['units'] = main_order_base['units'] * 1
+                # main_order_base['name'] = target_strength_info['strength_info']['remark'] + '[初回特別](' + str(main_order_base['priority']) + ')'
+                # exe_orders.append(cf.order_finalize(main_order_base))
+
                 main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-                main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
+                main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] - (0.01 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
                 main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-                main_order_base['lc'] = 0.06 # * line_strength  # 0.09  # LCは広め
+                main_order_base['lc'] = peaks[1]['peak'] # * line_strength  # 0.09  # LCは広め
                 main_order_base['type'] = position_type
                 main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
                 main_order_base['priority'] = target_strength_info['strength_info']['priority']
                 main_order_base['units'] = main_order_base['units'] * 1
                 main_order_base['name'] = target_strength_info['strength_info']['remark'] + '[初回特別](' + str(main_order_base['priority']) + ')'
+                main_order_base['lc_change'] = [{"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04}] + main_order_base['lc_change']
                 exe_orders.append(cf.order_finalize(main_order_base))
             else:
                 # 初回でなおかつ、距離が遠い場合はオーダーしない

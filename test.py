@@ -584,10 +584,10 @@ def main():
                       gl_need_to_analysis, "データ数", len(analysis_df), "行数:", index, "行目/", len(gl_inspection_base_df), "中")
                 continue  # returnではなく、次のループへ
             else:
-                # ★★★ 解析を呼び出す
+                # ★★★ 解析を呼び出す★★★★★
                 print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/", len(gl_inspection_base_df), "中")
-                analysis_result = im.for_inspection_analysis_warp_up_and_make_order(analysis_df)  # 検証専用コード
-                # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
+                # analysis_result = im.for_inspection_analysis_warp_up_and_make_order(analysis_df)  # 検証専用コード
+                analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
                 if not analysis_result['take_position_flag']:
                     # オーダー判定なしの場合、次のループへ（5秒後）
                     continue
