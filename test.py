@@ -466,7 +466,7 @@ def get_data():
     if gl_exist_data:
         # 既存の5分足データを取得
         rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
+        # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
         # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/2年分_m5_df.csv'  # 超大量データ(22_24)5分
         # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030172000_test_m5_df.csv'  # 適宜データ5分
         gl_d5_df = pd.read_csv(rescsv_path, sep=",", encoding="utf-8")
@@ -480,7 +480,7 @@ def get_data():
         print("実際の解析時間は", gl_d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", gl_5m_end_time)
         # 既存の5秒足データを取得
         rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
+        # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
         # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/2年分_s5_df.csv'  # 超大量データ(22_24)5秒
         # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030113450_test_s5_df.csv'  # 適宜データ5秒
         gl_s5_df = pd.read_csv(rescsv_path, sep=",", encoding="utf-8")
@@ -673,10 +673,10 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
 gl_exist_data = True
-gl_jp_time = datetime.datetime(2023, 11, 14, 12, 20, 0)  # TOの時刻
-gl_m5_count = 5000
-gl_m5_loop = 15
-memo = "フラッグ　初回LineCloseは取得。TargetMargin0.035、LCChange0.05を外して再度"
+gl_jp_time = datetime.datetime(2024, 11, 15, 15, 50, 0)  # TOの時刻
+gl_m5_count = 200
+gl_m5_loop = 1
+memo = "クロス形状、すぼみ強めで、LCはOldestの半分とすした場合"
 
 # ■検証処理
 get_data()  # データの取得

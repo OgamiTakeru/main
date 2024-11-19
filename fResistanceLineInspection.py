@@ -37,7 +37,7 @@ def make_same_price_list_from_target_price(target_price, target_dir, peaks_all, 
     if predict_flag:
         # 予測値を用いた場合は、アジャスタを0にし(latest分)、検索のレンジも少し大きめにする
         start_adjuster = 0
-        range_yen = 0.025  # 24/8/21 13:15のデータをもとに設定(0.04 = 指定の0.02×2(上と下分）) 　24/9/18　2.5まで広げてみる（フラッグ見つけやすく）
+        range_yen = 0.027  # 24/8/21 13:15のデータをもとに設定(0.04 = 指定の0.02×2(上と下分）) 　24/9/18　2.5まで広げてみる（フラッグ見つけやすく）
         # range_yen = 0.013  # 24/8/21 13:15のデータをもとに設定(0.04 = 指定の0.02×2(上と下分）) 　24/9/18　2.5まで広げてみる（フラッグ見つけやすく）
     else:
         start_adjuster = 1
@@ -1048,7 +1048,7 @@ def main_line_strength_analysis_and_order(dic_args):
                 main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
                 main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
                 main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-                main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
+                main_order_base['lc'] = 0.06 # * line_strength  # 0.09  # LCは広め
                 main_order_base['type'] = position_type
                 main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
                 main_order_base['priority'] = target_strength_info['strength_info']['priority']
@@ -1059,6 +1059,7 @@ def main_line_strength_analysis_and_order(dic_args):
                 # 初回でなおかつ、距離が遠い場合はオーダーしない
                 pass
         else:
+            # 初回ではない場合
             # フラッグ用（突破方向）
             main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
             main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05

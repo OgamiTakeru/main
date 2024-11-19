@@ -453,9 +453,10 @@ class order_information:
         if order_latest['state'] == "PENDING":
             # print("    時間的な解消を検討", self.o_time_past, self.o_state, "基準", self.order_timeout_min * 60)
             if self.o_time_past_sec > self.order_timeout_min * 60 and (self.o_state == "" or self.o_state == "PENDING"):
+                self.close_order()
                 self.send_line("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min
                                , position_check_no_args()['name_list'])
-                self.close_order()
+
 
     def trade_update_and_close(self):
         trade_latest = self.t_json  # とりあえず入れ替え（update関数で取得した最新の情報）

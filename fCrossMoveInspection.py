@@ -17,13 +17,9 @@ def judge_cross_figure_wrap_up(peaks, df_r):
     # ■形状の判定　（上側は持続的な下落、かつ、下側は持続的な上昇）
     # Latestの方向が-1の場合、River(1)から上側４個、下側３個
     # Latestの方向が１の場合、River(-1)から下側４個、上側３個
-
-    if peaks[0]["direction"] == -1:
-        upper_num = 4
-        lower_num = 3
-    else:
-        upper_num = 3
-        lower_num = 4
+    figure_flag = False
+    upper_num = 3  # 最初は４だったが、HardSkipPeaks機能を追加したので、３程度にする
+    lower_num = 3  # 最初は４だったが、HardSkipPeaks機能を追加したので、３程度にする
 
     print(" Latestは無視(形成途中の可能性があるため")
     print(" まずはリバーピークから", peaks[1]['direction'])
@@ -38,20 +34,36 @@ def judge_cross_figure_wrap_up(peaks, df_r):
 
     if upper_info['flag_figure'] and lower_info['flag_figure']:
         print(" 形状的には成立っぽい")
+        figure_flag = True
     else:
         print(" 形状不成立", upper_info['flag_figure'], lower_info['flag_figure'])
+        pass
 
     # ■形状（すぼまり具合）
+    subomi_flag = False
     print("Oldestピークのインデックス", upper_oldest_peak_info['time'], lower_oldest_peak_info['time'])
     oldest_gap = round(upper_oldest_peak_info['peak'] - lower_oldest_peak_info['peak'], 3)  # これが最大になっている必要がある。
     latest_gap = peaks[1]["gap"]
     print("oldest_info", oldest_gap, upper_oldest_peak_info['time'], lower_oldest_peak_info['time'])
     print("latest_info", latest_gap, peaks[1]['peak'], peaks[1]['peak_old'])
 
-    if oldest_gap/latest_gap >= 1.8:
+    if latest_gap/oldest_gap <= 0.35:
         print("すぼみ形状確認（広さが半減）")
+        subomi_flag = True
     else:
         print(" すぼみではない", round(oldest_gap/latest_gap, 3))
+        pass
+
+    # ■判定
+    if figure_flag and subomi_flag:
+        ans_flag = True
+    else:
+        ans_flag = False
+
+    return {
+        "flag" :ans_flag,
+        "oldest_gap": oldest_gap
+    }
 
 
 def judge_flag_figure(peaks, target_direction, num):
@@ -133,10 +145,10 @@ def judge_flag_figure(peaks, target_direction, num):
                 print(s7, "(ri)線上にはありません", item['time'])
                 pass
         # 集計結果
-        # print(s7, "(ri)全部で", total_peaks_num, 'このピークがあり、合格（上にあった）のは', clear_peaks_num,
-        #       "不合格は", failed_peaks_num)
-        # print(s7, "(ri)割合", clear_peaks_num / total_peaks_num * 100)
-        # print(s7, "(ri)線上割合", on_line, on_line / total_peaks_num * 100)
+        print(s7, "(ri)全部で", total_peaks_num, 'このピークがあり、合格（上にあった）のは', clear_peaks_num,
+              "不合格は", failed_peaks_num)
+        print(s7, "(ri)割合", clear_peaks_num / total_peaks_num * 100)
+        print(s7, "(ri)線上割合", on_line, on_line / total_peaks_num * 100)
         if clear_peaks_num / total_peaks_num * 100 >= 100:  # 全てLINEの下側（突破ありは弱くなる）
             if on_line / total_peaks_num * 100 >= 65:  # 最低でも３個中２個が線上（N数はMaxIndexの場所によって変わるが、最低でも６６パーセント）
                 print(s7, "(ri)upperの継続した下落とみられる")
@@ -304,9 +316,12 @@ def cal_tpf_line_strength_all_predict_line(dic_args):
     # 専用のPeakを算出
     peaks = peak_inspection.hard_skip_after_peaks_cal(peaks)
 
-    judge_cross_figure_wrap_up(peaks, target_df)
+    ans = judge_cross_figure_wrap_up(peaks, target_df)
 
-    return orders_and_evidence
+    return {
+        "cross_figure_flag": ans['flag'],
+        "oldest_gap": ans['oldest_gap']
+    }
 
 
 def main_cross_move_analysis_and_order(dic_args):
@@ -331,78 +346,46 @@ def main_cross_move_analysis_and_order(dic_args):
     df_r = fixed_information['df_r']
     peaks = fixed_information['peaks']
 
+    # ■実行タイミング⇒LatestCountが２の場合のみ（フラッグ形状とは異なる）
+    if peaks[0]['count'] != 2:
+        print(" 実行無し（LatestCount＝２以外）")
+        return orders_and_evidence
+
     # ■調査を実施する
-    ans_of_predict_line_info_list = cal_tpf_line_strength_all_predict_line({"df_r": df_r, "peaks": peaks})  # 調査関数呼び出し
-    if not ans_of_predict_line_info_list['take_position_flag']:
+    cross_figure_flag = cal_tpf_line_strength_all_predict_line({"df_r": df_r, "peaks": peaks})  # 調査関数呼び出し
+    if not cross_figure_flag['cross_figure_flag']:  # 終了
         return orders_and_evidence
     print(s4, "LineStrengthのオーダー確定")
-    predict_line_info_list = ans_of_predict_line_info_list['evidence']
 
-    #  predict_line_listは添え字０から現在価格から遠いほうに並んでいる。その為、同値のストレングスがある場合、遠いほう（添え字が０に近い）が選ばれる
-    max_index, max_strength = max(enumerate(predict_line_info_list[:]), key=lambda x: x[1]["strength_info"]["line_strength"])
-    min_index, min_strength = min(enumerate(predict_line_info_list[:]), key=lambda x: x[1]["strength_info"]["line_strength"])  # 念のために取得
-    flag_strength = [d for d in predict_line_info_list if d["strength_info"]["line_strength"] == -1]  # -1はフラッグ形状を示す
-    # オーダーの元情報を取得する。フラッグの場合と通常の場合で、方向(expected_direction)が異なるため、Limit等も変わる。
-    if len(flag_strength) != 0:
-        # フラッグ形状が発見された場合
-        target_strength_info = flag_strength[0]  # flag_strength は配列のため、要素としたいため、[0]とする
-        position_type = "STOP"  # フラッグありの場合突破方向のため、STOP
-        print(s4, "フラッグがSameList内に存在")
-        # ■■突破方向のオーダー
-        if target_strength_info['strength_info']['is_first_for_flag']:
-            # 初回成立の場合は、Lineまで遠い場合は、突破はオーダーなし(これはテスト用。終わったらIf文含めて消したほうがいいかも）
-            if target_strength_info['strength_info']['line_is_close_for_flag']:
-                # 初回でも近い場合は、抵抗線Break側のオーダーを出す
-                # フラッグ用（突破方向 記録用のため、コメントアウトされた状態が正）
-                main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-                main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
-                main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-                main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
-                main_order_base['type'] = position_type
-                main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
-                main_order_base['priority'] = target_strength_info['strength_info']['priority']
-                main_order_base['units'] = main_order_base['units'] * 1
-                main_order_base['name'] = target_strength_info['strength_info']['remark'] + '[初回特別](' + str(main_order_base['priority']) + ')'
-                exe_orders.append(cf.order_finalize(main_order_base))
-            else:
-                # 初回でなおかつ、距離が遠い場合はオーダーしない
-                pass
-        else:
-            # フラッグ用（突破方向）
-            main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-            main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
-            main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-            main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
-            main_order_base['type'] = position_type
-            main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
-            main_order_base['priority'] = target_strength_info['strength_info']['priority']
-            main_order_base['units'] = main_order_base['units'] * 1
-            main_order_base['name'] = target_strength_info['strength_info']['remark'] + '(' + str(main_order_base['priority']) + ')'
-            exe_orders.append(cf.order_finalize(main_order_base))
+    main_order_base = cf.order_base(peaks[0]['peak'], peaks[0]['time'])
+    direction = 1  # 上向きを期待するオーダー
+    main_order_base['target'] = peaks[0]['peak'] + 0.05
+    main_order_base['tp'] = 0.53  # 0.09  # LCは広め
+    main_order_base['lc'] = cross_figure_flag['oldest_gap'] / 3.6  # 0.06  # * line_strength  # 0.09  # LCは広め
+    main_order_base['type'] = "STOP"
+    main_order_base['expected_direction'] = direction
+    main_order_base['priority'] = 3
+    main_order_base['units'] = main_order_base['units'] * 1
+    main_order_base['name'] = 'クロス形状上向き' + str(main_order_base['priority']) + ')'
+    exe_orders.append(cf.order_finalize(main_order_base))
 
-        # ■■フラッグの場合は、カウンタオーダーも入れる（突破じゃないほうも入れておく
-        main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-        main_order_base['target'] = peaks[1]['peak'] - (0.05 * target_strength_info['line_base_info']['line_base_direction'])  # river価格＋マージン
-        main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-        main_order_base['lc'] = target_strength_info['line_base_info']['line_base_price']
-        # main_order_base['lc'] = gene.cal_at_most(0.08, target_strength_info['line_base_info']['line_base_price']) # ←ダメだった！！！！
-        main_order_base['type'] = position_type
-        main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction'] * -1
-        main_order_base['priority'] = target_strength_info['strength_info']['priority']
-        main_order_base['units'] = main_order_base['units'] * 1
-        main_order_base['name'] = "カウンター" + target_strength_info['strength_info']['remark']+ '(' + str(main_order_base['priority']) + ')'
-        exe_orders.append(cf.order_finalize(main_order_base))
-    else:
-        # それ以外
-        target_strength_info = max_strength
-        position_type = "LIMIT"
-        return orders_and_evidence  # とりあえずフラッグのみを採用する
+    main_order_base = cf.order_base(peaks[0]['peak'], peaks[0]['time'])
+    direction = -1  # 上向きを期待するオーダー
+    main_order_base['target'] = peaks[0]['peak'] + (0.05 * direction)
+    main_order_base['tp'] = 0.53  # 0.09  # LCは広め
+    main_order_base['lc'] = cross_figure_flag['oldest_gap'] / 3.6  # 0.06  # * line_strength  # 0.09  # LCは広め
+    main_order_base['type'] = "STOP"
+    main_order_base['expected_direction'] = direction
+    main_order_base['priority'] = 3
+    main_order_base['units'] = main_order_base['units'] * 1
+    main_order_base['name'] = 'クロス形状下向き' + str(main_order_base['priority']) + ')'
+    exe_orders.append(cf.order_finalize(main_order_base))
 
     # 返却する
-    print(s4, "オーダー対象", target_strength_info)
+    print(s4, "オーダー対象")
     orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
     orders_and_evidence["exe_orders"] = exe_orders
-    orders_and_evidence["evidence"] = predict_line_info_list
+    orders_and_evidence["evidence"] = []
 
     print("オーダー表示")
     gene.print_arr(orders_and_evidence["exe_orders"])

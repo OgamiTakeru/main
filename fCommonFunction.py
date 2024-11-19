@@ -380,9 +380,13 @@ def order_finalize(order_base_info):
     order_base_info['order_permission'] = order_base_info['order_permission'] if 'order_permission' in order_base_info else True
     # 表示形式の問題で、、念のため（機能としては不要）
     order_base_info['decision_price'] = float(order_base_info['decision_price'])
-    # order_base_info['decision_time'] = decision_time  orderbase時点で代入済
 
     # ordered_dict = OrderedDict((key, order_base_info[key]) for key in order)
     order_base_info = sorted_dict = {key: order_base_info[key] for key in sorted(order_base_info)}
+
+    # コマンドラインで見にくいので、表示の順番を変えたい、、、（書き方雑だけど）
+    temp = order_base_info['lc_change']  # いったん保存
+    del order_base_info["lc_change"]
+    order_base_info['lc_change'] = temp
 
     return order_base_info
