@@ -586,8 +586,8 @@ def main():
             else:
                 # ★★★ 解析を呼び出す★★★★★
                 print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/", len(gl_inspection_base_df), "中")
-                # analysis_result = im.for_inspection_analysis_warp_up_and_make_order(analysis_df)  # 検証専用コード
-                analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
+                analysis_result = im.for_inspection_analysis_warp_up_and_make_order(analysis_df)  # 検証専用コード
+                # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
                 if not analysis_result['take_position_flag']:
                     # オーダー判定なしの場合、次のループへ（5秒後）
                     continue
@@ -597,7 +597,7 @@ def main():
                 if overwrite_order:
                     # 上書きする場合(実運用に近い）
                     # 既存のクラスをリセットして、改めて登録しなおす
-                    # ★★★ クラスをリセット＆オーダーをクラスに登録する
+                    # クラスをリセット＆オーダーをクラスに登録する
                     gl_classes = []  # リセット
                     order_time = row_s5['time_jp']
                     for i_order in range(len(analysis_result['exe_orders'])):
@@ -673,10 +673,10 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
 gl_exist_data = True
-gl_jp_time = datetime.datetime(2024, 11, 15, 15, 50, 0)  # TOの時刻
-gl_m5_count = 200
+gl_jp_time = datetime.datetime(2024, 11, 20, 15, 50, 0)  # TOの時刻
+gl_m5_count = 500
 gl_m5_loop = 1
-memo = "クロス形状、すぼみ強めで、LCはOldestの半分とすした場合"
+memo = "フラッグ検証　初回をほぼ除外　一昨年"
 
 # ■検証処理
 get_data()  # データの取得
@@ -689,6 +689,7 @@ result_df = pd.DataFrame(gl_results_list)  # 結果の辞書配列をデータ�
 result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 else 1)  # プラスかマイナスかのカウント用
 result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # 文字列の時刻をdatatimeに変換したもの
 result_df['Hour'] = result_df['order_time_datetime'].dt.hour
+result_df['name_only'] = result_df['name'].str.split('_').str[0]
 # 保存
 try:
     result_df.to_csv(tk.folder_path + gl_start_time_str + memo + '_main_analysis_ans.csv', index=False, encoding="utf-8")

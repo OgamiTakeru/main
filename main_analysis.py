@@ -9,6 +9,7 @@ import fDoublePeaks as dp
 import fMoveSizeInspection as ms
 import fBlockInspection as bi
 import fHookFigureInspection as ff
+import fFlagInspection as fi
 import math
 import fCrossMoveInspection as cm
 
@@ -47,12 +48,18 @@ def analysis_part(df_r):
     # ans = cm.main_cross_move_analysis_and_order({"df_r": df_r})
     # print(ans)
 
-    # ans = im.analysis_warp_up_and_make_order(df_r)
-    ans = im.for_inspection_analysis_warp_up_and_make_order(df_r)
-    print("最終（main_analysis)")
+    ans = fi.main_flag_analysis({"df_r": df_r})
     print(ans)
-    oa.OrderCreate_dic_support(ans['exe_orders'][0])
-    return ans
+
+    ans = ri.main_line_strength_analysis_and_order({"df_r": df_r})
+    print(ans)
+
+    # ans = im.analysis_warp_up_and_make_order(df_r)
+    # ans = im.for_inspection_analysis_warp_up_and_make_order(df_r)
+    # print("最終（main_analysis)")
+    # print(ans)
+    # oa.OrderCreate_dic_support(ans['exe_orders'][0])
+    # return ans
 
 
 
@@ -501,7 +508,8 @@ gl_count = gl_res_part_low + gl_analysis_part_low + 1
 gl_times = 1  # Count(最大5000件）を何セット取るか  大体2225×３で１か月位。　10時間は120足 1時間は12
 # ■■取得時間の指定
 gl_use_now = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 11, 19, 1, 30, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2024, 11, 20, 20, 25, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+# gl_target_time = datetime.datetime(2024, 11, 13, 14, 20, 6)
 # ■■方法の指定
 gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。
 # gl_inspection_only = False  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。

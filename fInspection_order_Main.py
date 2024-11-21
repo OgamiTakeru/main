@@ -17,6 +17,7 @@ import fCommonFunction as cf
 import fMoveSizeInspection as ms
 import fHookFigureInspection as hi
 import fCrossMoveInspection as cm
+import fFlagInspection as fi
 
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
@@ -490,7 +491,7 @@ def analysis_warp_up_and_make_order(df_r):
         elif cross_order['take_position_flag']:
             print(s, "【最終的判断:クロス形状の確認")
             # DoubleTopの判定が最優先 (単品）
-            flag_and_orders["take_position_flag"] = False
+            flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = cross_order['exe_orders']
         elif hooks_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:通常ストレングス(flag含む)】")
@@ -772,9 +773,9 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
 
         # ■■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
         print(s, "■Latest基準の同価格Strengthの調査")
-        line_strength_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
-        # gene.print_arr(orders_and_evidence['evidence'], 2)
-        # gene.print_arr(hooks_orders_and_evidence['evidence'], 2)
+        flag_orders_and_evidence = fi.main_flag_analysis({"df_r": df_r, "peaks": peaks})  # 調査！
+        # flag_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+
 
         # # ■■river時点の価格を含むLineの強度を確認する　(peak[1]はリバー。まだオーダーまで作成せず、参考値）
         # print(s, "■river方向（逆）の強度の確認")
@@ -793,11 +794,10 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
         print(s, "■クロス形状の判定")
         cross_order = cm.main_cross_move_analysis_and_order({"df_r": df_r, "peaks": peaks})
 
-
         # ■
-        if line_strength_orders_and_evidence['take_position_flag']:
-            flag_and_orders["take_position_flag"] = False
-            flag_and_orders["exe_orders"] = line_strength_orders_and_evidence['exe_orders']
+        if flag_orders_and_evidence['take_position_flag']:
+            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["exe_orders"] = flag_orders_and_evidence['exe_orders']
             flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
                 #[cf.order_finalize(orders_and_evidence['exe_orders'])]
         elif break_double_top_strength_orders_and_evidence['take_position_flag']:
@@ -810,7 +810,7 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
         elif cross_order['take_position_flag']:
             print(s, "【最終的判断:クロス形状の確認")
             # DoubleTopの判定が最優先 (単品）
-            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["take_position_flag"] = False
             flag_and_orders["exe_orders"] = cross_order['exe_orders']
         elif hooks_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:通常ストレングス(flag含む)】")
@@ -852,12 +852,13 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
         print(s, "■■Latestが3以上6以下の時の実行")
         # # ■latest延長の予測Lineとその強度を求める（フラッグ形状も加味する）（直近のピークの延長）
         print(s, "■Latest基準の同価格Strengthの調査")
-        line_strength_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
+        flag_orders_and_evidence = fi.main_flag_analysis({"df_r": df_r, "peaks": peaks})
+        # flag_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})  # 調査！
 
-        if line_strength_orders_and_evidence['take_position_flag']:
+        if flag_orders_and_evidence['take_position_flag']:
             # orderHoldを確認（latest=2の時に成立していてもNG,していなくてもNG）
-            flag_and_orders["take_position_flag"] = False
-            flag_and_orders["exe_orders"] = line_strength_orders_and_evidence['exe_orders']
+            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["exe_orders"] = flag_orders_and_evidence['exe_orders']
             flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
 
 

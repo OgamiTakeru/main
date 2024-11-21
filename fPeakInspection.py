@@ -346,7 +346,7 @@ def hard_skip_after_peaks_cal(peaks_origin):
         one = peaks[target_index]
         two = peaks[target_index + 1]
         thr = peaks[target_index + 2]
-        print(target_index, one, two, thr)
+        # print(target_index, one, two, thr)
 
         if two['count'] <= 3 or (two['count'] <= 5 and two['gap'] <= 0.07):  # カウントがアウトでも、ギャップが少なければ飛ばせるとみなす
             # print(" ２が３カウント以下⇒結合判定へ", two['count'])

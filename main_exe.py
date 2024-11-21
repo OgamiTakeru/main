@@ -288,15 +288,14 @@ def exe_manage():
         return 0
 
     # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
-    # if 6 <= time_hour <= 7:
-    #     if gl_midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
-    #         classPosition.reset_all_position(classes)
-    #         tk.line_send("■深夜のポジション・オーダー解消を実施")
-    #         gl_midnight_close_flag = 1  # 実施済みフラグを立てる
-
+    if 6 <= time_hour <= 7:
+        if gl_midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
+            classPosition.reset_all_position(classes)
+            tk.line_send("■深夜のポジション・オーダー解消を実施")
+            gl_midnight_close_flag = 1  # 実施済みフラグを立てる
     # ■実行を行う
     else:
-        gl_midnight_close_flag = 0  # 実行可能時には深夜フラグを解除しておく（毎回やってしまうけどいいや）
+        gl_midnight_close_flag = 0  # 実行可能開始時以降は深夜フラグを解除（毎回やってしまうけどいいや）
 
         # ■時間内でスプレッドが広がっている場合は強制終了し実行しない　（現価を取得しスプレッドを算出する＋グローバル価格情報を取得する）
         price_dic = oa.NowPrice_exe("USD_JPY")

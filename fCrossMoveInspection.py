@@ -56,12 +56,12 @@ def judge_cross_figure_wrap_up(peaks, df_r):
         print(" すぼみではない", round(oldest_gap/latest_gap, 3))
         pass
     # すぼみ判定２（上の最大値から直近の上側まで、下の最小値から直近の下側まで、それぞれ5ピップ以上の下降が認められるかどうか）
-    if abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]) >= 0.05:
+    if abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]) >= 0.0398:
         print(" 上側は角度的にもOKな下降", abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]))
     else:
         print(" 上側はやや水平気味", abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]))
 
-    if abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]) >= 0.05:
+    if abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]) >= 0.0398:
         print(" 下側は角度的にもOKな下降", abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]))
     else:
         print(" 下側はやや水平気味", abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]))
@@ -148,7 +148,7 @@ def judge_flag_figure(peaks, target_direction, num):
                 failed_peaks_num += 1
                 # print(s7, "(ri)上にあるため除外（不合格）", item)
             # ■線上といえるか
-            margin = abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']) * 0.3  # 0.3がちょうどよさそう
+            margin = abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']) * 0.405  #  * 0.405がちょうどよさそう
             # print("計算結果", abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']), margin)
             # margin = 0.07
             jd_y_max = tilt * a + margin
@@ -228,7 +228,7 @@ def judge_flag_figure(peaks, target_direction, num):
                 failed_peaks_num += 1
                 # print(s7, "(ri)下にあるため除外", item)
             # ■線上といえるか(余裕度は変動する。直近Peakと最小PeakのGapの15％とする）
-            margin = abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']) * 0.3  # 0.3がちょうどよさそう
+            margin = abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']) * 0.405  #  * 0.405がちょうどよさそう
             # print("計算結果", abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']), margin)
             # margin = 0.07
             jd_y_max = tilt * a + margin
