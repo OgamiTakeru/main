@@ -1145,32 +1145,36 @@ def main_line_strength_analysis_and_order(dic_args):
             # 初回成立の場合は、Lineまで遠い場合は、突破はオーダーなし(これはテスト用。終わったらIf文含めて消したほうがいいかも）
             if target_strength_info['strength_info']['line_is_close_for_flag']:
                 # 初回でも近い場合は、抵抗線Break側のオーダーを出す
-                # フラッグ用
+                # フラッグ用 ↓元々（初期によかったやつだけど、解析するとあんまりよくなかった？）
                 # main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-                # main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
+                # main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] - (0.01 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
                 # main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-                # main_order_base['lc'] = 0.06 # * line_strength  # 0.09  # LCは広め
+                # main_order_base['lc'] = gene.cal_at_least(0.06, peaks[1]['peak']) # * line_strength  # 0.09  # LCは広め
                 # main_order_base['type'] = position_type
                 # main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
                 # main_order_base['priority'] = target_strength_info['strength_info']['priority']
                 # main_order_base['units'] = main_order_base['units'] * 1
-                # main_order_base['name'] = target_strength_info['strength_info']['remark'] + '[初回特別](' + str(main_order_base['priority']) + ')'
+                # main_order_base['name'] = '初回特別' + target_strength_info['strength_info']['remark'] + '(' + str(main_order_base['priority']) + ')'
+                # main_order_base['lc_change'] = [{"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04}] + main_order_base['lc_change']
                 # exe_orders.append(cf.order_finalize(main_order_base))
-
                 main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
                 main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] - (0.01 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
                 main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-                main_order_base['lc'] = gene.cal_at_least(0.06, peaks[1]['peak']) # * line_strength  # 0.09  # LCは広め
+                # main_order_base['lc'] = gene.cal_at_least(0.06, peaks[1]['peak']) # * line_strength  # 0.09  # LCは広め
+                main_order_base['lc'] = 0.03
                 main_order_base['type'] = position_type
                 main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction']
                 main_order_base['priority'] = target_strength_info['strength_info']['priority']
                 main_order_base['units'] = main_order_base['units'] * 1
-                main_order_base['name'] = '初回特別' + target_strength_info['strength_info']['remark'] + '(' + str(main_order_base['priority']) + ')'
+                main_order_base['name'] = '初回特別' + target_strength_info['strength_info']['remark'] + '(' + str(
+                    main_order_base['priority']) + ')'
+                main_order_base['lc_change'] = [{"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.01, "lc_ensure_range": -0.007}] + main_order_base['lc_change']
                 main_order_base['lc_change'] = [{"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04}] + main_order_base['lc_change']
                 exe_orders.append(cf.order_finalize(main_order_base))
             else:
                 # 初回でなおかつ、距離が遠い場合はオーダーしない
                 pass
+                return orders_and_evidence
         else:
             # 初回ではない場合
             # フラッグ用（突破方向）
@@ -1185,18 +1189,18 @@ def main_line_strength_analysis_and_order(dic_args):
             main_order_base['name'] = target_strength_info['strength_info']['remark'] + '(' + str(main_order_base['priority']) + ')'
             exe_orders.append(cf.order_finalize(main_order_base))
 
-        # ■■フラッグの場合は、カウンタオーダーも入れる（突破じゃないほうも入れておく
-        main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-        main_order_base['target'] = peaks[1]['peak'] - (0.05 * target_strength_info['line_base_info']['line_base_direction'])  # river価格＋マージン
-        main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-        main_order_base['lc'] = target_strength_info['line_base_info']['line_base_price'] - 0.02 * (target_strength_info['strength_info']['expected_direction'] * -1)  # -0.02を追加してみた
-        # main_order_base['lc'] = gene.cal_at_most(0.08, target_strength_info['line_base_info']['line_base_price']) # ←ダメだった！！！！
-        main_order_base['type'] = position_type
-        main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction'] * -1
-        main_order_base['priority'] = target_strength_info['strength_info']['priority']
-        main_order_base['units'] = main_order_base['units'] * 1
-        main_order_base['name'] = "カウンター" + target_strength_info['strength_info']['remark']+ '(' + str(main_order_base['priority']) + ')'
-        exe_orders.append(cf.order_finalize(main_order_base))
+            # ■■フラッグの場合は、カウンタオーダーも入れる（突破じゃないほうも入れておく
+            main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
+            main_order_base['target'] = peaks[1]['peak'] - (0.05 * target_strength_info['line_base_info']['line_base_direction'])  # river価格＋マージン
+            main_order_base['tp'] = 0.53  # 0.09  # LCは広め
+            main_order_base['lc'] = target_strength_info['line_base_info']['line_base_price'] - 0.02 * (target_strength_info['strength_info']['expected_direction'] * -1)  # -0.02を追加してみた
+            # main_order_base['lc'] = gene.cal_at_most(0.08, target_strength_info['line_base_info']['line_base_price']) # ←ダメだった！！！！
+            main_order_base['type'] = position_type
+            main_order_base['expected_direction'] = target_strength_info['strength_info']['expected_direction'] * -1
+            main_order_base['priority'] = target_strength_info['strength_info']['priority']
+            main_order_base['units'] = main_order_base['units'] * 1
+            main_order_base['name'] = "カウンター" + target_strength_info['strength_info']['remark']+ '(' + str(main_order_base['priority']) + ')'
+            exe_orders.append(cf.order_finalize(main_order_base))
     else:
         # それ以外
         target_strength_info = max_strength

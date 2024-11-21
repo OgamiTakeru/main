@@ -491,7 +491,7 @@ def analysis_warp_up_and_make_order(df_r):
         elif cross_order['take_position_flag']:
             print(s, "【最終的判断:クロス形状の確認")
             # DoubleTopの判定が最優先 (単品）
-            flag_and_orders["take_position_flag"] = True
+            flag_and_orders["take_position_flag"] = False
             flag_and_orders["exe_orders"] = cross_order['exe_orders']
         elif hooks_orders_and_evidence['take_position_flag']:
             print(s, "【最終的判断:通常ストレングス(flag含む)】")
