@@ -367,7 +367,8 @@ def tilt_cal(peaks, target_direction):
         gene.print_arr(target_peaks, 7)
         print(s7, "先頭の情報", target_peaks[0]['peak'], target_peaks[0]['time'])
         print(s7, "最後尾の情報", oldest_info['peak'], oldest_info['time'])
-        if abs(target_peaks[0]['peak'] - oldest_info['peak']) <= 0.03:
+        y_change = target_peaks[0]['peak'] - oldest_info['peak']
+        if abs(y_change) <= 0.015:
             print(s7, "傾きが少なすぎる")
             ans = {"ans": False,
                    "count": target_num,
@@ -377,8 +378,9 @@ def tilt_cal(peaks, target_direction):
                    "on_line_ratio": 0,
                    "near_line_ratio": 0,
                    "lc_price": 0,
-                   "latest_info": 0,
-                   "oldest_info": 0,
+                   "latest_info": {},
+                   "oldest_info": {},
+                   'y_change': y_change,
                    "remark": 0
                    }
             ans_list.append(ans)
@@ -390,7 +392,7 @@ def tilt_cal(peaks, target_direction):
         # OLDESTの価格を原点として、直近Peaksへの直線の傾きを算出する　yの増加量(価格の差分)　/ xの増加量(時間の差分)
         x_change_sec = (gene.cal_at_least(0.001,
                                           gene.cal_str_time_gap(oldest_info['time'], target_peaks[0]['time'])['gap_abs']))  # ０にならない最低値を設定する
-        tilt = (target_peaks[0]['peak'] - oldest_info['peak']) / x_change_sec
+        tilt = y_change / x_change_sec
 
         # 集計用の変数を定義する
         total_peaks_num = target_num
@@ -471,6 +473,7 @@ def tilt_cal(peaks, target_direction):
                "lc_price": ave_peak_price,
                "latest_info": target_peaks[0],
                "oldest_info": oldest_info,
+               'y_change': y_change,
                "remark": remark
         }
         ans_list.append(ans)
@@ -575,12 +578,15 @@ def judge_flag_figure_wrap_up_hard_skip(peaks, target_direction, line_strength, 
         # 現状の傾きが不成立の場合はFalseを返却
         return {"tilt_flag": False}
 
+    print( tilt_ans['oldest_peak_info'])
+
     return {
         "tilt_flag": tilt_flag,
         "is_first": is_first,
         "lc": tilt_ans['lc_price_or_range'],  # こっちのほうがlongよりLC幅が狭いので。いつかリスクを追う場合は、Longに？）
         "remark": tilt_ans['remark'],
-        "strength": tilt_ans['strength']
+        "strength": tilt_ans['strength'],
+        "y_change": tilt_ans['oldest_peak_info']['y_change']
     }
 
 
@@ -764,6 +770,7 @@ def analysis_part(dic_args):
                 each_strength_info_result['priority'] = 3  # 備考を入れておく
                 each_strength_info_result['is_first_for_flag'] = flag_info['is_first']  # 備考を入れておく
                 each_strength_info_result['strength'] = flag_info['strength']  # 備考を入れておく
+                each_strength_info_result['y_change'] = flag_info['y_change']
                 each_strength_info_result['line_is_close_for_flag']\
                     = True if 0.07 > abs(each_predict_line_info['line_base_info']["line_base_price"] - peaks[0]['peak']) else False  # breakラインまで近いかどうか
 
@@ -822,19 +829,21 @@ def main_flag_analysis(dic_args):
         if flag_info['strength_info']['line_is_close_for_flag']:
             # 初回でも近い場合は、抵抗線Break側のオーダーを出す
             # フラッグ用
-            main_order_base = cf.order_base(flag_info['line_base_info']['decision_price'], flag_info['line_base_info']['line_base_time'])
-            main_order_base['target'] = flag_info['line_base_info']['line_base_price'] - (0.01 * flag_info['line_base_info']['line_base_direction'])  # 0.05
-            main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-            # main_order_base['lc'] = gene.cal_at_least(0.06, peaks[1]['peak']) # * line_strength  # 0.09  # LCは広め
-            main_order_base['lc'] = 0.03
-            main_order_base['type'] = position_type
-            main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction']
-            main_order_base['priority'] = flag_info['strength_info']['priority']
-            main_order_base['units'] = main_order_base['units'] * 1
-            main_order_base['name'] = '初回特別' + flag_info['strength_info']['remark'] + '(' + str(main_order_base['priority']) + ')'
-            main_order_base['lc_change'] = [{"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.01, "lc_ensure_range": -0.007}] + main_order_base['lc_change']
-            main_order_base['lc_change'] = [{"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04}] + main_order_base['lc_change']
-            exe_orders.append(cf.order_finalize(main_order_base))
+            # main_order_base = cf.order_base(flag_info['line_base_info']['decision_price'], flag_info['line_base_info']['line_base_time'])
+            # main_order_base['target'] = flag_info['line_base_info']['line_base_price'] - (0.01 * flag_info['line_base_info']['line_base_direction'])  # 0.05
+            # main_order_base['tp'] = 0.53  # 0.09  # LCは広め
+            # # main_order_base['lc'] = gene.cal_at_least(0.06, peaks[1]['peak']) # * line_strength  # 0.09  # LCは広め
+            # main_order_base['lc'] = 0.03
+            # main_order_base['type'] = position_type
+            # main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction']
+            # main_order_base['priority'] = flag_info['strength_info']['priority']
+            # main_order_base['units'] = main_order_base['units'] * -1
+            # main_order_base['name'] = '初回特別' + flag_info['strength_info']['remark'] + '(' + str(main_order_base['priority']) + ')'
+            # main_order_base['lc_change'] = [{"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.01, "lc_ensure_range": -0.007}] + main_order_base['lc_change']
+            # main_order_base['lc_change'] = [{"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04}] + main_order_base['lc_change']
+            # main_order_base['y_change'] = flag_info['strength_info']['y_change']
+            # exe_orders.append(cf.order_finalize(main_order_base))
+            return orders_and_evidence
         else:
             # 初回でなおかつ、距離が遠い場合はオーダーしない
             return orders_and_evidence
@@ -851,20 +860,22 @@ def main_flag_analysis(dic_args):
         main_order_base['priority'] = flag_info['strength_info']['priority']
         main_order_base['units'] = main_order_base['units'] * 1
         main_order_base['name'] = flag_info['strength_info']['remark'] + '(' + str(main_order_base['priority']) + ')'
+        main_order_base['y_change'] = flag_info['strength_info']['y_change']
         exe_orders.append(cf.order_finalize(main_order_base))
 
         # ■■カウンタオーダーも入れる（二回目以降のみ）
         main_order_base = cf.order_base(flag_info['line_base_info']['decision_price'], flag_info['line_base_info']['line_base_time'])
-        main_order_base['target'] = peaks[1]['peak'] - (0.027 * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン
+        main_order_base['target'] = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
         main_order_base['tp'] = 0.53  # 0.09  # LCは広め
         # main_order_base['lc'] = gene.cal_at_most(0.09, flag_info['line_base_info']['line_base_price'] - 0.02 * (flag_info['strength_info']['expected_direction'] * -1))  # -0.02を追加してみた
         # main_order_base['lc'] = gene.cal_at_most(0.08, target_strength_info['line_base_info']['line_base_price']) # ←ダメだった！！！！
-        main_order_base['lc'] = flag_info['line_base_info']['line_base_price'] - 0.02 * (flag_info['strength_info']['expected_direction'] * -1)  # ←よかったけど、さらに上を！
+        main_order_base['lc'] = flag_info['line_base_info']['line_base_price'] - 0.05 * (flag_info['strength_info']['expected_direction'] * -1)  # ←よかったけど、さらに上を！
         main_order_base['type'] = position_type
         main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction'] * -1
         main_order_base['priority'] = flag_info['strength_info']['priority']
         main_order_base['units'] = main_order_base['units'] * 1
         main_order_base['name'] = "カウンター" + flag_info['strength_info']['remark']+ '(' + str(main_order_base['priority']) + ')'
+        main_order_base['y_change'] = flag_info['strength_info']['y_change']
         exe_orders.append(cf.order_finalize(main_order_base))
 
 

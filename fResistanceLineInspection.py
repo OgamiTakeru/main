@@ -1179,7 +1179,7 @@ def main_line_strength_analysis_and_order(dic_args):
             # 初回ではない場合
             # フラッグ用（突破方向）
             main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
-            main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
+            main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.045 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
             main_order_base['tp'] = 0.53  # 0.09  # LCは広め
             main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
             main_order_base['type'] = position_type

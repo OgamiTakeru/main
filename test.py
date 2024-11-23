@@ -676,7 +676,7 @@ gl_exist_data = True
 gl_jp_time = datetime.datetime(2024, 11, 20, 15, 50, 0)  # TOの時刻
 gl_m5_count = 500
 gl_m5_loop = 1
-memo = "フラッグ検証　初回をほぼ除外　一昨年"
+memo = "フラッグ検証　初回なし、マージン０．3５どちらも　カウンターLC０．５"
 
 # ■検証処理
 get_data()  # データの取得
