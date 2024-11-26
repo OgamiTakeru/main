@@ -635,6 +635,7 @@ def life_check(classes):
         ans = False  # 一つもLifeがOnでない。
     else:
         ans = True  # 一つでもLifeがある場合はＴｒｕｅ
+        # print(" 残っているLIFE", life)
 
     return ans
 
@@ -762,7 +763,7 @@ def position_check_no_args():
                 # オーダー時間リストを作成する（表示用）
                 pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
             else:
-                print(" 謎の状態")
+                print(" 謎の状態(t_state)", item.t_state, item.name)
         # else:
         #     # Lifeが終わっているもの
 
@@ -858,7 +859,7 @@ def position_check(classes):
                 # オーダー時間リストを作成する（表示用）
                 pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
             else:
-                print(" 謎の状態")
+                print(" 謎の状態(order_state)", item.o_state, item.name)
         # else:
         #     closed_class_names = closed_class_names + "," + gene.delYearDay(item.o_time)
 

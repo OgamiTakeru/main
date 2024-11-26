@@ -37,6 +37,7 @@ def order_base(now_price, decision_time):
                 # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
                 # 2022-2023は 0.05トリガーにすると、マイナスになる！！
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},

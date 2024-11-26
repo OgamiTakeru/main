@@ -524,9 +524,9 @@ def for_inspection_double_peak_judgement_predict(dic_args):
     # テスト用パラメータの取得
     params = fixed_information['params']  # パラメータ情報の取得
     inspection_params = fixed_information['inspection_params']
-    print(t6, "l", latest)
-    print(t6, "r", river)
-    print(t6, "t", turn)
+    # print(t6, "l", latest)
+    # print(t6, "r", river)
+    # print(t6, "t", turn)
 
     # (2)パラメータ指定。
     # ①　パラメータを設定する(検証用。売買に関するパラメータ）

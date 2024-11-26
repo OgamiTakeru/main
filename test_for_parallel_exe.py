@@ -676,7 +676,7 @@ gl_exist_data = True
 gl_jp_time = datetime.datetime(2024, 11, 20, 15, 50, 0)  # TOの時刻
 gl_m5_count = 100
 gl_m5_loop = 1
-memo = ("クロス　peaks[0]['count'] <= 4")
+memo = ("クロス　peaks[0]['count'] == 4")
 
 # ■検証処理
 get_data()  # データの取得

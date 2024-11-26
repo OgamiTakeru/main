@@ -13,72 +13,7 @@ import fCommonFunction as cf
 import fMoveSizeInspection as ms
 
 
-def judge_cross_figure_wrap_up(peaks, df_r):
-    # ■形状の判定　（上側は持続的な下落、かつ、下側は持続的な上昇）
-    # Latestの方向が-1の場合、River(1)から上側４個、下側３個
-    # Latestの方向が１の場合、River(-1)から下側４個、上側３個
-    figure_flag = False
-    upper_num = 3  # 最初は４だったが、HardSkipPeaks機能を追加したので、３程度にする
-    lower_num = 3  # 最初は４だったが、HardSkipPeaks機能を追加したので、３程度にする
-
-    print(" Latestは無視(形成途中の可能性があるため")
-    print(" まずはリバーピークから", peaks[1]['direction'])
-    upper_info = judge_flag_figure(peaks[1:], peaks[1]['direction'], upper_num)  # latestは無視
-    upper_oldest_peak_info = upper_info['oldest_peak_info']
-    upper_latest_peak_info = upper_info['latest_peak_info']
-    print(upper_info)
-
-    print(" 次にターンピーク", peaks[2]["direction"])
-    lower_info = judge_flag_figure(peaks[1:], peaks[2]['direction'], lower_num)  # latestは無視
-    lower_oldest_peak_info = lower_info['oldest_peak_info']
-    lower_latest_peak_info = lower_info['latest_peak_info']
-    print(lower_info)
-
-    if upper_info['flag_figure'] and lower_info['flag_figure']:
-        print(" 形状的には成立っぽい")
-        figure_flag = True
-    else:
-        print(" 形状不成立", upper_info['flag_figure'], lower_info['flag_figure'])
-        pass
-
-    # ■形状（すぼまり具合）
-    subomi_flag = False
-    print("Oldestピークのインデックス", upper_oldest_peak_info['time'], lower_oldest_peak_info['time'])
-    oldest_gap = round(upper_oldest_peak_info['peak'] - lower_oldest_peak_info['peak'], 3)  # これが最大になっている必要がある。
-    latest_gap = peaks[1]["gap"]
-    print("oldest_info", oldest_gap, upper_oldest_peak_info['time'], lower_oldest_peak_info['time'])
-    print("latest_info", latest_gap, peaks[1]['peak'], peaks[1]['peak_old'])
-    # すぼみ判定１
-    if latest_gap/oldest_gap <= 0.4:
-        print("すぼみ形状確認（広さが半減）")
-        subomi_flag = True
-    else:
-        print(" すぼみではない", round(oldest_gap/latest_gap, 3))
-        pass
-    # すぼみ判定２（上の最大値から直近の上側まで、下の最小値から直近の下側まで、それぞれ5ピップ以上の下降が認められるかどうか）
-    if abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]) >= 0.0398:
-        print(" 上側は角度的にもOKな下降", abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]))
-    else:
-        print(" 上側はやや水平気味", abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]))
-
-    if abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]) >= 0.0398:
-        print(" 下側は角度的にもOKな下降", abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]))
-    else:
-        print(" 下側はやや水平気味", abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]))
-
-    # ■判定
-    if figure_flag and subomi_flag:
-        ans_flag = True
-    else:
-        ans_flag = False
-
-    return {
-        "flag": ans_flag,
-        "oldest_gap": oldest_gap
-    }
-
-
-def judge_flag_figure(peaks, target_direction, num):
+def judge_flag_figure(peaks, target_direction):
     """
     旗の形状を探索するための、サポート関数
     peaks: ピークス
@@ -86,196 +21,287 @@ def judge_flag_figure(peaks, target_direction, num):
     remark: コメント
     返り値は、成立しているかどうかのBoolean
     """
-    flag_figure = False  # これは返り値
+    print(" 新フラッグ調査関数")
+    # ■関数事前準備
     remark = "フラッグ不成立"
     s7 = "      "
-    return_result = {
-        "flag_figure": False,  # フラッグ形状かどうかの判定（Boo）
-        "lc": 0,  # LC価格の提案を行う
-        "remark": remark
+
+    # ■■情報の整理と取得（関数の頭には必須）
+    # #直接のテストで　argsが渡される場合
+    # fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
+    # df_r = fixed_information['df_r']
+    # peaks = fixed_information['peaks'][1:]
+    # latest_direction = peaks[0]['direction']
+    # 実運用でPeak渡される場合
+    peaks = peak_inspection.hard_skip_after_peaks_cal(peaks)  # HARDスキップの場合
+    latest_direction = peaks[0]['direction']
+
+    # 返却値の基本
+    return_base = {
+        "is_tilt_line": False,
+        "remark": ""
     }
 
-    print(s7, "□　Flag確認関数")
-    # サイズ関東、全体的な話
-
-    # 形状の詳細
-    if target_direction == 1:
-        # ■■■直近の同価格ピークがLower側だった場合の、反対のUpperPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
-        target_peaks = [item for item in peaks if item["direction"] == 1]  # 利用するのは、Upper側
-        target_peaks = target_peaks[:num]  # 直近5個くらいでないと、昔すぎるのを参照してしまう（線より下の個数が増え、判定が厳しくなる）
-        print(s7, "対象の上側のピークス")
+    # ■TILTの判定を行う
+    direction_integrity = True  # 方向性が一致しているかどうか（下側は上昇、上側が下降がここでは正とする）
+    d = target_direction  # １の場合は上側、-1の場合は下側のピークスを対象として、調査をする
+    tilt_result_list = []
+    # for target_num in [3]:
+    for target_num in range(4, 7):
+        # num = i + 1  # iは０からスタートするため
+        # ■■　情報を作成する
+        target_peaks = [item for item in peaks if item["direction"] == d]  # 利用するのは、Lower側
+        target_peaks = target_peaks[:target_num]
+        if d == 1:
+            # 上方向（が下がってきているかを確認）の場合、Max値
+            min_index, min_or_max_info = max(enumerate(target_peaks), key=lambda x: x[1]["peak"])  # サイズ感把握のために取得
+        else:
+            # 下方向（が上ってきているかを確認）の場合、Min値
+            min_index, min_or_max_info = min(enumerate(target_peaks), key=lambda x: x[1]["peak"])  # サイズ感把握のために取得
+        oldest_info = target_peaks[-1]
+        print(s7, "@調査するピークス", d, target_num)
         gene.print_arr(target_peaks, 7)
-
-        # 直近の一番下の値と何番目のピークだったかを求める
-        max_index, max_info = max(enumerate(target_peaks), key=lambda x: x[1]["peak"])
-        oldest_peak_index = max_index  # ピーク値のインデックス
-        print("    (ri)最大値とそのインデックス", max_info['peak'], max_index)
-        # そのMinを原点として、直近Peakまでの直線の傾きを算出する(座標で言うx軸は秒単位）
-        # yの増加量(価格の差分)　/ xの増加量(時間の差分)
-        x_change_sec = gene.cal_at_least(1, gene.cal_str_time_gap(max_info['time'], target_peaks[0]['time'])['gap_abs'])
-        tilt = (target_peaks[0]['peak'] - max_info['peak']) / x_change_sec  # こちらはマイナスが期待される（下りのため）
-        if tilt >= 0:
-            # print(s7, "(ri)tiltがプラス値。広がっていく価格でこちらは想定外")
-            pass
+        print(s7, "先頭の情報", target_peaks[0]['peak'], target_peaks[0]['time'])
+        print(s7, "最後尾の情報", oldest_info['peak'], oldest_info['time'])
+        y_change = target_peaks[0]['peak'] - oldest_info['peak']
+        if abs(y_change) <= 0.007:
+            print(s7, "傾きが少なすぎる", abs(y_change))
+            ans = {"is_tilt_line_each": False,
+                   "count": target_num,
+                   "tilt_pm": 0,
+                   "direction": d,
+                   "direction_integrity": 0,
+                   "on_line_ratio": 0,
+                   "near_line_ratio": 0,
+                   "lc_price": 0,
+                   "latest_info": {},
+                   "oldest_info": {},
+                   'y_change': y_change,
+                   "remark": "remark"
+                   }
+            tilt_result_list.append(ans)
+            continue
         else:
-            # print(s7, "(ri)tiltがマイナス値。Upperが上から降りてくる、フラッグ形状")
-            pass
-        # 集計用の変数を定義する
-        if max_index > 1:
-            total_peaks_num = max_index
-        else:
-            total_peaks_num = 1  # devision 0エラーを防止
-        clear_peaks_num = failed_peaks_num = 0  # 上側にある（＝合格）と下側にある（＝不合格）の個数
-        on_line = 0  # 線上にあるものもカウントし、よりフラッグ形状であることを示したい
-        # 各要素がその直線（0.05pipsの切片分だけ余裕をとる）より上にあるかを確認する
-        for i, item in enumerate(target_peaks):
-            # iがmin_indexを超える場合は終了する
-            if i >= max_index:
-                # print(s7, "(ri)検証終了？breakします", i, max_index)
-                break
-            # thisの座標(a,b)を取得する
-            a = gene.cal_str_time_gap(max_info['time'], item['time'])['gap_abs']  # 時間差分
-            b = item["peak"] - max_info['peak']  # ここではマイナス値がデフォルト（変化後ー変化前）
-            # print(s7, "(ri)a:", a, ",b:", b)
-            # 判定する
-            c = 0.02  # プラス値のほうが余裕が出る（ある程度した上に突き抜けていたとしてもセーフ）
-            jd_y = tilt * a + c  # Cは切片。0.02程度だけ下回ってもいいようにする
-            # ■最低限の位置関係を保っているか（線より上にいる場合は超えている、下にいる場合が正常）
-            if b < jd_y:
-                clear_peaks_num += 1
-                # print(s7, "(ri)下にあるため合格", item)
-            else:
-                failed_peaks_num += 1
-                # print(s7, "(ri)上にあるため除外（不合格）", item)
-            # ■線上といえるか
-            margin = abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']) * 0.405  #  * 0.405がちょうどよさそう
-            # print("計算結果", abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']), margin)
-            # margin = 0.07
-            jd_y_max = tilt * a + margin
-            jd_y_min = tilt * a + (margin * -1)
-            if jd_y_max > b > jd_y_min:
-                print(s7, "(ri)線上にあります", item['time'])
-                on_line += 1
-            else:
-                print(s7, "(ri)線上にはありません", item['time'])
-                pass
-        # 集計結果
-        print(s7, "(ri)全部で", total_peaks_num, 'このピークがあり、合格（上にあった）のは', clear_peaks_num,
-              "不合格は", failed_peaks_num)
-        print(s7, "(ri)割合", clear_peaks_num / total_peaks_num * 100)
-        print(s7, "(ri)線上割合", on_line, on_line / total_peaks_num * 100)
-        if clear_peaks_num / total_peaks_num * 100 >= 100:  # 全てLINEの下側（突破ありは弱くなる）
-            if on_line / total_peaks_num * 100 >= 65:  # 最低でも３個中２個が線上（N数はMaxIndexの場所によって変わるが、最低でも６６パーセント）
-                print(s7, "(ri)upperの継続した下落とみられる")
-                flag_figure = True
-                remark = "フラッグ形状(上側下落)"
-                # tk.line_send(s7, "(ri)フラッグ型（lower水平upper下落）の検出", num)
-            else:
-                print(s7, "(ri)upperの継続した下落だが、突発的な高さがあった可能性あり 3個以上のピークで強力なLINE　　ストレングス変更なし")
-                # tk.line_send(s7, "(ri)フラッグ型なり損ね、lowerはサポート", num)
-                pass
-        else:
-            print(s7, "(ri)upperに傾向性のある下降なし。レンジとみなせる。　ストレングス変更なし", num)
-            pass
+            print(s7, "いい傾き")
 
-    else:
-        # ■■■直近の同価格ピークがUpper側だった場合の、反対のLowerのPeaksを求める　（一つ（すべて向きは同じはず）の方向を確認、）
-        target_peaks = [item for item in peaks if item["direction"] == -1]  # 利用するのは、Lower側
-        target_peaks = target_peaks[:num]  # 直近5個くらいでないと、昔すぎるのを参照してしまう（線より下の個数が増え、判定が厳しくなる）
-        print(s7, "対象の下側のピーク")
-        gene.print_arr(target_peaks, 7)
-
-        # 直近の一番下の値と何番目のピークだったかを求める
-        min_index, min_info = min(enumerate(target_peaks), key=lambda x: x[1]["peak"])
-        oldest_peak_index = min_index  # ピーク値のインデックス
-        print("    (ri)最小値とそのインデックス", min_info['peak'], min_index)
-        # そのMinを原点として、直近Peakまでの直線の傾きを算出する(座標で言うx軸は秒単位）
-        # yの増加量(価格の差分)　/ xの増加量(時間の差分)
+        # ■■計算を算出する
+        # OLDESTの価格を原点として、直近Peaksへの直線の傾きを算出する　yの増加量(価格の差分)　/ xの増加量(時間の差分)
         x_change_sec = (gene.cal_at_least(0.001,
-                                          gene.cal_str_time_gap(min_info['time'], target_peaks[0]['time'])['gap_abs']))  # ０にならない最低値を設定する
-        tilt = (target_peaks[0]['peak'] - min_info['peak']) / x_change_sec
-        if tilt >= 0:
-            # print(s7, "(ri)tiltがプラス値。想定されるLowerのせり上がり")
-            pass
-        else:
-            # print(s7, "(ri)tiltがマイナス値。広がっていく価格で、こちらは想定外")
-            pass
+                                          gene.cal_str_time_gap(oldest_info['time'], target_peaks[0]['time'])['gap_abs']))  # ０にならない最低値を設定する
+        tilt = y_change / x_change_sec
+
         # 集計用の変数を定義する
-        if min_index > 1:
-            total_peaks_num = min_index
-        else:
-            total_peaks_num = 1  # devision 0エラーを防止
-        clear_peaks_num = failed_peaks_num = 0  # 上側にある（＝合格）と下側にある（＝不合格）の個数
-        on_line = 0  # 線上にあるものもカウントし、よりフラッグ形状であることを示したい
+        total_peaks_num = target_num
+        on_line_num = near_line_num = 0  # 線上にあるものもカウントし、よりフラッグ形状であることを示したい
+        is_tilt_line_each = False
         # 各要素がその直線（0.05pipsの切片分だけ余裕をとる）より上にあるかを確認する
         for i, item in enumerate(target_peaks):
-            # iがmin_indexを超える場合は終了する
-            if i >= min_index:
-                # print(s7, "(ri)breakします", i, min_index)
-                break
-            # thisの座標(a,b)を取得する
-            a = gene.cal_str_time_gap(min_info['time'], item['time'])['gap_abs']  # 時間差分
-            b = item["peak"] - min_info['peak']  # ここでは
+            # ■座標(a,b)を取得する
+            a = gene.cal_str_time_gap(oldest_info['time'], item['time'])['gap_abs']  # 時間差分
+            b = item["peak"] - oldest_info['peak']  # ここでは
             # print(s7, "(ri)a:", a, ",b:", b)
-            # 判定する
-            # ■上にあるか
-            c = -0.02  # ここはマイナス値にすることで余裕が出る
-            jd_y = tilt * a + c  # Cは切片。0.02程度だけ下回ってもいいようにする
-            if b > jd_y:
-                clear_peaks_num += 1
-                # print(s7, "(ri)上にあります（合格）", item)
-            else:
-                failed_peaks_num += 1
-                # print(s7, "(ri)下にあるため除外", item)
-            # ■線上といえるか(余裕度は変動する。直近Peakと最小PeakのGapの15％とする）
-            margin = abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']) * 0.405  #  * 0.405がちょうどよさそう
-            # print("計算結果", abs(target_peaks[0]['peak'] - target_peaks[-1]['peak']), margin)
-            # margin = 0.07
+
+            # ■線上といえるか[判定]
+            margin = 0.02
             jd_y_max = tilt * a + margin
             jd_y_min = tilt * a + (margin * -1)
             if jd_y_max > b > jd_y_min:
-                print(s7, "(ri)線上にありますg", item['time'])
-                on_line += 1
+                # print(s7, "(ri)線上にあります", item['time'])
+                on_line_num += 1
             else:
-                print(s7, "(ri)線上にはありませんg", item['time'])
+                # print(s7, "(ri)線上にはありません", item['time'])
+                pass
+
+            # ■線の近くにあるか[判定]
+            margin = abs(target_peaks[0]['peak'] - min_or_max_info['peak']) * 0.405  # * 0.405がちょうどよさそう
+            margin = gene.cal_at_least(0.05, margin)  # 下側の下落、上側の上昇の場合、最小最大が逆になると０になる可能性がある
+            # print(target_peaks[0]['time'], target_peaks[0]['peak'], min_or_max_info['time'], min_or_max_info['peak'])
+            # print("MARGIN:", abs(target_peaks[0]['peak'] - min_or_max_info['peak']), margin)
+            jd_y_max = tilt * a + margin
+            jd_y_min = tilt * a + (margin * -1)
+            if jd_y_max > b > jd_y_min:
+                # print(s7, "(ri)　線近くにあります", item['time'])
+                near_line_num += 1
+            else:
+                # print(s7, "(ri)　線近くにはありません", item['time'])
                 pass
         # 集計結果
-        print(s7, "(ri)全部で", total_peaks_num, '個のピークがあり、合格（上の方にあった）のは', clear_peaks_num,
-              "不合格は", failed_peaks_num)
-        print(s7, "(ri)割合", clear_peaks_num / total_peaks_num * 100)
-        print(s7, "(ri)線上にあった数は", on_line, "割合的には", on_line / total_peaks_num * 100)
-        if clear_peaks_num / total_peaks_num * 100 >= 100:  # 全て上側（突破がある場合は弱くなる）
-            if on_line / total_peaks_num * 100 >= 65:  # さらに傾きの線上に多い場合⇒間違えなくフラッグといえる
-                print(s7, "(ri)Lowerの継続した上昇とみられる")
-                flag_figure = True
-                remark = "フラッグ型（下側上昇）"
-                # tk.line_send("    (ri)フラッグ型（upper水平lower上昇）の検出", num)
-            else:
-                print(s7, "(ri)Lowerの継続した上昇だが、突発的な深さがあった可能性あり　ストレングス変更なし")
-                # tk.line_send("    (ri)フラッグ型なり損ね。シンプルにupper強めのレンジとみなす", num)
-                pass
+        # print(s7, "(ri)全部で", total_peaks_num, 'ピーク。線上：', on_line_num, "線近", near_line_num)
+        # print(s7, "(ri)割合　線上:", on_line_num/total_peaks_num, "　線近:", near_line_num/total_peaks_num)
+        on_line_ratio = round(on_line_num/total_peaks_num, 3)
+        near_line_ratio = round(near_line_num/total_peaks_num, 3)
+        # 最終判定
+        tilt_pm = tilt / abs(tilt)  # tiltの方向を算出する（上側が下傾斜、下側の上傾斜の情報のみが必要）
+        print(s7, "調査側は", d, "傾き方向は", tilt_pm)
+        if d == tilt_pm:
+            print(s7, "下側が下方向、上側が上方向に行っている（今回は収束と見たいため、不向き）")
+            remark = "発散方向"
+            direction_integrity = False  # 方向の整合性
         else:
-            pass
-            print(s7, "(ri)Lowerに特に傾向性のある上昇なし。Upper強めのレンジとみなす　ストレングス変更なし", num)
+            # 傾斜は合格、ピークスを包括できるかを確認
+            if on_line_ratio >= 0.4 and near_line_ratio >= 0.6:
+            # if on_line_ratio >= 0.55 and near_line_ratio >= 0.7:  # 0.35, 60
+            # if on_line_ratio >= 0.35 and near_line_ratio >= 0.6:  # 緩いほう（従来の結果がよかった条件）
+                is_tilt_line_each = True
+                # remark = "継続した傾斜と判断"
+                if tilt < 0:
+                    remark = "上側下落"
+                else:
+                    remark = "下側上昇"
+                print(s7, "継続した傾斜と判断", d)
+            else:
+                remark = "線上、線近くのどちらかが未達"
+                print(s7, "線上、線近くのどちらかが未達", on_line_ratio, near_line_ratio)
 
-    # gene.print_arr(target_peaks)
-    # LC値の参考地のため、opposite_peaksについて調査する
-    total_peak = sum(item["peak"] for item in target_peaks)
-    count = len(target_peaks)
-    ave_peak_price = round(total_peak / count, 3)
-    lc_margin = 0.01 * target_direction * -1
-    ave_peak_price = ave_peak_price + lc_margin
-    print(s7, "OppositePeakAve", ave_peak_price)
-    return {
-        "flag_figure": flag_figure,  # フラッグ形状かどうかの判定（Boo）
-        "lc": ave_peak_price,  # LC価格の提案を行う
-        "oldest_peak_info": target_peaks[oldest_peak_index],
-        "latest_peak_info": target_peaks[0],
-        "remark": remark
+        # ■LC値の参考値を算出（対象のピーク群の中間値）
+        total_peak = sum(item["peak"] for item in target_peaks)
+        ave_peak_price = round(total_peak / len(target_peaks), 3)
+        # lc_margin = 0.01 * latest_direction * -1
+        # ave_peak_price = ave_peak_price + lc_margin
+
+        # ■累積(numごと）
+        ans = {"is_tilt_line_each": is_tilt_line_each,
+               "count": target_num,
+               "tilt_pm": tilt_pm,
+               "direction": d,
+               "direction_integrity": direction_integrity,
+               "on_line_ratio": on_line_ratio,
+               "near_line_ratio": near_line_ratio,
+               "lc_price": ave_peak_price,
+               "latest_info": target_peaks[0],
+               "oldest_info": oldest_info,
+               'y_change': y_change,
+               "remark": remark
+            }
+        tilt_result_list.append(ans)
+        # ループここまで
+    print("tilt_result_list")
+    gene.print_arr(tilt_result_list)
+
+    # ■情報を整理する（例えば3peak～5peaksの各直線で、複数の傾斜直線がある場合、傾斜直線成立としt、代表としてOldestな物を返却する)
+    all_ans_num = len(tilt_result_list)
+    true_num = sum(item["is_tilt_line_each"] for item in tilt_result_list)  #
+    gene.print_arr(tilt_result_list)
+    print(s7, all_ans_num, true_num, true_num/all_ans_num)
+    # if true_num / all_ans_num >= 0.5:  # 0.5だと、従来取れていたものも取りこぼす(良くも悪くも)
+    if true_num / all_ans_num >= 0.1:
+        print(s7, "斜面成立(", all_ans_num, "の内", true_num, "個の成立")
+        is_tilt_line = True
+    else:
+        # 成立が認められない場合でも、Onlineが10割のものがあれば、採用する
+        temp = next((item for item in tilt_result_list if item["on_line_ratio"] == 1), None)
+        if temp and temp['direction_integrity']:
+            # ある場合は、それの方向性の整合が取れているかを確認する
+            is_tilt_line = True
+            print(s7, "満点があった")
+        else:
+            print(s7, "満点ない")
+            return return_base
+
+    # ■成立している中で、一番比較ピークが多いもの、少ないものを抽出しておく
+    first_item = next((item for item in tilt_result_list if item["is_tilt_line_each"]), None)  # 最もLatestなTiltTrue
+    oldest_item = next((item for item in reversed(tilt_result_list) if item["is_tilt_line_each"]), None)  # 最もOldestなTiltTrue
+    oldest_item = max(
+        (item for item in tilt_result_list if item['is_tilt_line_each']),  # fが真の要素をフィルタ
+        key=lambda x: x['y_change'],                  # kが最大のものを取得
+        default=None                           # 空の場合はNoneを返す
+    )
+    # print(first_item)
+    # print(oldest_item)
+
+    # ■推奨のロスカット価格を集合から計算しておく
+    # 最大でもLCRange換算で10pips以内したい
+    now_price = peaks[0]['peak']
+    temp_lc_price = oldest_item['lc_price']  # lcPriceは収束の中間点
+    lc_range = temp_lc_price - now_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
+    if abs(lc_range) >= 0.1:
+        # LCが大きすぎると判断される場合(10pips以上離れている）
+        lc_range = 0.1  # LCRnageを指定
+        if lc_range < 0:
+            # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+            lc_price = now_price - abs(lc_range)
+        else:
+            # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+            lc_price = now_price + abs(lc_range)
+    else:
+        # LCRangeが許容範囲内の場合、そのまま利用
+        lc_price = temp_lc_price
+    print(s7, "LC(価格orRange）", lc_price)
+
+    ans_info = {
+        "is_tilt_line": is_tilt_line,
+        "tilt_list": tilt_result_list,
+        "oldest_peak_info": oldest_item,
+        "latest_peak_info": first_item,
+        "lc_price": lc_price,  # 計算で大きすぎた場合、10pipsが入る
+        "remark": oldest_item['remark'],  # 一番古いのを採用
     }
+    return ans_info
 
 
-def cal_tpf_line_strength_all_predict_line(dic_args):
+# def judge_cross_figure_wrap_up(peaks, df_r):
+#     # ■形状の判定　（上側は持続的な下落、かつ、下側は持続的な上昇）
+#     # Latestの方向が-1の場合、River(1)から上側４個、下側３個
+#     # Latestの方向が１の場合、River(-1)から下側４個、上側３個
+#     figure_flag = False
+#     upper_num = 3  # 最初は４だったが、HardSkipPeaks機能を追加したので、３程度にする
+#     lower_num = 3  # 最初は４だったが、HardSkipPeaks機能を追加したので、３程度にする
+#
+#     print(" Latestは無視(形成途中の可能性があるため")
+#
+#     upper_tilt_line_info = judge_flag_figure(peaks[1:], peaks[1]['direction'], upper_num)  # latestは無視
+#     print(" リバーピークから", peaks[1]['direction'])
+#     print(upper_tilt_line_info)
+#
+#     lower_tilt_line_info = judge_flag_figure(peaks[1:], peaks[2]['direction'], lower_num)  # latestは無視
+#     print(" ターンピーク", peaks[2]["direction"])
+#     print(lower_tilt_line_info)
+#
+#     if upper_tilt_line_info['flag_figure'] and lower_tilt_line_info['flag_figure']:
+#         print(" 形状的には成立っぽい")
+#         figure_flag = True
+#     else:
+#         print(" 形状不成立", upper_tilt_line_info['flag_figure'], lower_tilt_line_info['flag_figure'])
+#         pass
+#
+#     # ■形状（すぼまり具合）
+#     subomi_flag = False
+#     print("Oldestピークのインデックス", upper_oldest_peak_info['time'], lower_oldest_peak_info['time'])
+#     oldest_gap = round(upper_oldest_peak_info['peak'] - lower_oldest_peak_info['peak'], 3)  # これが最大になっている必要がある。
+#     latest_gap = peaks[1]["gap"]
+#     print("oldest_info", oldest_gap, upper_oldest_peak_info['time'], lower_oldest_peak_info['time'])
+#     print("latest_info", latest_gap, peaks[1]['peak'], peaks[1]['peak_old'])
+#     # すぼみ判定１
+#     if latest_gap/oldest_gap <= 0.4:
+#         print("すぼみ形状確認（広さが半減）")
+#         subomi_flag = True
+#     else:
+#         print(" すぼみではない", round(oldest_gap/latest_gap, 3))
+#         pass
+#     # すぼみ判定２（上の最大値から直近の上側まで、下の最小値から直近の下側まで、それぞれ5ピップ以上の下降が認められるかどうか）
+#     if abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]) >= 0.0398:
+#         print(" 上側は角度的にもOKな下降", abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]))
+#     else:
+#         print(" 上側はやや水平気味", abs(upper_oldest_peak_info["peak"] - upper_latest_peak_info["peak"]))
+#
+#     if abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]) >= 0.0398:
+#         print(" 下側は角度的にもOKな下降", abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]))
+#     else:
+#         print(" 下側はやや水平気味", abs(lower_oldest_peak_info["peak"] - lower_latest_peak_info["peak"]))
+#
+#     # ■判定
+#     if figure_flag and subomi_flag:
+#         ans_flag = True
+#     else:
+#         ans_flag = False
+#
+#     return {
+#         "flag": ans_flag,
+#         "oldest_gap": oldest_gap
+#     }
+
+
+def analysis_cross(dic_args):
     """
     引数はDFやピークスなど
     """
@@ -283,67 +309,81 @@ def cal_tpf_line_strength_all_predict_line(dic_args):
     # 表示時のインデント
     s4 = "    "
     s6 = "      "
-    print(s4, "■find_predict_line_based_latest関数")
+    print(s4, "■クロス解析関数")
 
-    # ■関数事前準備
-    # ■■よく使う型
-    predict_line_info_list_base = {
-            "line_base_info": {
-                "line_base_time": 0,  # 予測では将来的に到達する場所のため、設定不可（とりあえず現在時刻？）
-                "line_base_price": 0,  # 予測ではループで探すことになる（後で上書きする）、通常ではRiver価格
-                "line_base_direction": 0,  # 予測ではLatest、通常はRiver。値が1の場合UpperLine（＝上値抵抗）
-                "latest_direction": 0,  # 渡されたPeaksの直近の方向（＝直近の方向）
-                "latest_time_in_df": 0,  # Latest。直近の時間（渡されたDFで判断）
-                "decision_price": 0,
-            },
-            "same_price_list": [],
-            "strength_info": {  # strength関数で取得（その後の上書きあり）
-                "line_strength": 0,
-                "priority": 0,  # 基本はLineStrengthの写し。ただしフラッグ形状の場合は２が上書きされる
-                "line_position_strength": 0,
-                "line_on_num": 0,
-                "same_time_latest": 0,
-                "all_range_strong_line": 0,
-                "remark": "",
-                "is_first_for_flag": False,  # フラッグ形状の場合にのみ含まれる
-                "lc": 0,  # 途中でStrengthInfoに追加される。価格の場合と、レンジの場合が混在する
-            }
-        }
-    # ■■返却値用
-    #  リストの原型（これを上書きし、下のリストに追加していく）
-    predict_line_info_list = []  # 実際に返却されるリスト
-    #  返却値
+    # ■関数事前準備■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    # ■■返却値
     orders_and_evidence = {
-        "take_position_flag": False,
-        # "exe_orders": [],
-        # "target_strength_info": {},  # オーダーにつながった、最強Line単品の情報
-        "evidence": predict_line_info_list  # 全同一価格
+        "cross_figure_flag": False,
+        "information": {}  #
     }
     # ■■情報の整理と取得（関数の頭には必須）
     fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
     target_df = fixed_information['df_r']
-    peaks = fixed_information['peaks']
-    target_dir = peaks[0]['direction']  # Lineの方向 予測ではLatest。値が1の場合UpperLine（＝上値抵抗）
-    grid = 0.01  # 調査の細かさ
+    peaks = fixed_information['peaks']  # 通常のピークス
+    peaks_hard_skip = peak_inspection.hard_skip_after_peaks_cal(peaks)  # スキップしたピークス
 
-    # ■調査を開始
-    # 条件を達成していない場合は実行せず
-    if len(peaks) < 4:
-        # ■ループの際、数が少ないとエラーの原因になる。３個切る場合ば終了（最低３個必要）
+    # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    # ■形状判定の初期値
+    judge_flag = False
+    # ■(1)形状の判定　（上側は持続的な下落、かつ、下側は持続的な上昇になっているかの判定）
+    upper_tilt_line_info = judge_flag_figure(peaks[1:], peaks[1]['direction'])  # latestは無視
+    print(s6, " ◇リバーピークから", peaks[1]['direction'], "結果", upper_tilt_line_info['is_tilt_line'])
+    # print(upper_tilt_line_info)
+
+    lower_tilt_line_info = judge_flag_figure(peaks[1:], peaks[2]['direction'])  # latestは無視
+    print(s6, " ◇ターンピークから", peaks[2]["direction"], "結果", lower_tilt_line_info['is_tilt_line'])
+    # gene.print_json(lower_tilt_line_info)
+
+    if upper_tilt_line_info['is_tilt_line'] and lower_tilt_line_info['is_tilt_line']:
+        print(s6, " 形状的には成立っぽい")
+        figure_flag = True
+    else:
+        print(s6, " 形状不成立", upper_tilt_line_info['is_tilt_line'], lower_tilt_line_info['is_tilt_line'])
         return orders_and_evidence
+        pass
 
-    # 専用のPeakを算出
-    peaks = peak_inspection.hard_skip_after_peaks_cal(peaks)
-
-    ans = judge_cross_figure_wrap_up(peaks, target_df)
+    # ■(2)形状の判定（Oldestに対し、Latestの部分が、すぼまっている事）⇒収束度合いを確認したい
+    squeeze_flag = False
+    # print("型の確認", type(upper_tilt_line_info['oldest_peak_info']))
+    upper_oldest_peak_info = upper_tilt_line_info['oldest_peak_info']['oldest_info']
+    lower_oldest_peak_info = lower_tilt_line_info['oldest_peak_info']['oldest_info']
+    print(s6, "Oldestピークのインデックス", upper_oldest_peak_info['time'], lower_oldest_peak_info['time'])
+    oldest_gap = round(upper_oldest_peak_info['peak'] - lower_oldest_peak_info['peak'], 3)  # これが最大になっている必要がある。
+    latest_gap = peaks[1]["gap"]
+    print(s6, "oldest_info", oldest_gap, upper_oldest_peak_info['time'], lower_oldest_peak_info['time'])
+    print(s6, "latest_info", latest_gap, peaks[1]['peak'], peaks[1]['peak_old'])
+    # すぼみ判定１
+    if latest_gap / oldest_gap <= 0.4:
+        print(s6, "すぼみ形状確認（広さが半減）")
+        squeeze_flag = True
+    else:
+        print(s6, " すぼみではない", round(oldest_gap / latest_gap, 3))
+        pass
+    # すぼみ判定２（最後の上下差が、10pips以内になっていること）
+    river_gap = peaks[1]['gap']
+    turn_gap = peaks[2]['gap']
+    if river_gap <= 0.1 or turn_gap <= 0.1:
+        squeeze_flag = True
+        print(s6, "スクイーズ幅成立", river_gap, turn_gap)
+    else:
+        squeeze_flag = False
+        print(s6, "スクイーズ幅不成立", river_gap, turn_gap)
+    # ■判定
+    if figure_flag and squeeze_flag:
+        cross_figure_flag = True
+    else:
+        cross_figure_flag = False
 
     return {
-        "cross_figure_flag": ans['flag'],
-        "oldest_gap": ans['oldest_gap']
+        "cross_figure_flag": cross_figure_flag,
+        "oldest_gap": oldest_gap,
+        "upper_oldest_peak_price": upper_oldest_peak_info['peak'],
+        "lower_oldest_peak_price": lower_oldest_peak_info['peak'],
     }
 
 
-def main_cross_move_analysis_and_order(dic_args):
+def main_cross(dic_args):
     """
     引数はDFやピークスなど
     """
@@ -352,26 +392,30 @@ def main_cross_move_analysis_and_order(dic_args):
     s4 = "    "
     s6 = "      "
 
-    # ■関数事前準備
+    # ■関数事前準備■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     # ■■返却値 とその周辺の値
     exe_orders = []
     orders_and_evidence = {
         "take_position_flag": False,
         "exe_orders": exe_orders,
-        "evidence": []  # 将来的に、predict_line_info_list
+        "information": []
     }
     # ■■情報の整理と取得（関数の頭には必須）
     fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
     df_r = fixed_information['df_r']
     peaks = fixed_information['peaks']
 
-    # ■実行タイミング⇒LatestCountが２の場合のみ（フラッグ形状とは異なる）
-    if peaks[0]['count'] != 2:
-        print(" 実行無し（LatestCount＝２以外）")
+    # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    # ■実行しない場合、強制的に終了させる
+    #  実行タイミング⇒LatestCountが２の場合のみ（フラッグ形状とは異なる）
+    if peaks[0]['count'] == 4:  # != 2:
+        print(" 実行Latestの決定")
         return orders_and_evidence
-
+    #  ループの際、数が少ないとエラーの原因になる。３個切る場合ば終了（最低３個必要）
+    if len(peaks) < 4:
+        return orders_and_evidence
     # ■調査を実施する
-    cross_figure_flag = cal_tpf_line_strength_all_predict_line({"df_r": df_r, "peaks": peaks})  # 調査関数呼び出し
+    cross_figure_flag = analysis_cross({"df_r": df_r, "peaks": peaks})  # 調査関数呼び出し
     if not cross_figure_flag['cross_figure_flag']:  # 終了
         return orders_and_evidence
     print(s4, "LineStrengthのオーダー確定")
@@ -380,24 +424,24 @@ def main_cross_move_analysis_and_order(dic_args):
     direction = 1  # 上向きを期待するオーダー
     main_order_base['target'] = peaks[0]['peak'] + peaks[0]['gap']  # + 0.05
     main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-    main_order_base['lc'] = cross_figure_flag['oldest_gap'] / 3.6  # 0.06  # * line_strength  # 0.09  # LCは広め
+    main_order_base['lc'] = gene.cal_at_least(0.05, cross_figure_flag['oldest_gap'] / 3.6)  # 0.06  # * line_strength  # 0.09  # LCは広め
     main_order_base['type'] = "STOP"
     main_order_base['expected_direction'] = direction
     main_order_base['priority'] = 3
     main_order_base['units'] = main_order_base['units'] * 1
-    main_order_base['name'] = 'クロス形状上向き' + str(main_order_base['priority']) + ')'
+    main_order_base['name'] = 'クロス形状上向き(count:' + peaks[0]['count'] + ')'
     exe_orders.append(cf.order_finalize(main_order_base))
 
     main_order_base = cf.order_base(peaks[0]['peak'], peaks[0]['time'])
     direction = -1  # 上向きを期待するオーダー
     main_order_base['target'] = peaks[0]['peak'] - peaks[0]['gap']
     main_order_base['tp'] = 0.53  # 0.09  # LCは広め
-    main_order_base['lc'] = cross_figure_flag['oldest_gap'] / 3.6  # 0.06  # * line_strength  # 0.09  # LCは広め
+    main_order_base['lc'] = gene.cal_at_least(0.05, cross_figure_flag['oldest_gap'] / 3.6)  # 0.06  # * line_strength  # 0.09  # LCは広め
     main_order_base['type'] = "STOP"
     main_order_base['expected_direction'] = direction
     main_order_base['priority'] = 3
     main_order_base['units'] = main_order_base['units'] * 1
-    main_order_base['name'] = 'クロス形状下向き' + str(main_order_base['priority']) + ')'
+    main_order_base['name'] = 'クロス形状下向き(count:' + peaks[0]['count'] + ')'
     exe_orders.append(cf.order_finalize(main_order_base))
 
     # 返却する
