@@ -902,7 +902,7 @@ def main_flag(dic_args):
         main_order_base['lc'] = flag_info['strength_info']['lc_price']  # 0.06 ←0.06は結構本命  # 0.09  # LCは広め　　  # 入れる側の文字は　LCのみ
         main_order_base['type'] = position_type
         main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction']
-        main_order_base['priority'] = flag_info['strength_info']['priority']
+        main_order_base['priority'] = 5  # flag_info['strength_info']['priority']
         main_order_base['units'] = main_order_base['units'] * 1
         main_order_base['name'] = flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
         main_order_base['y_change'] = flag_info['strength_info']['y_change']
@@ -952,7 +952,7 @@ def main_flag(dic_args):
         main_order_base['lc'] = lc_price  # ←悪くなさそうだが、広すぎる？
         main_order_base['type'] = position_type
         main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction'] * -1
-        main_order_base['priority'] = flag_info['strength_info']['priority']
+        main_order_base['priority'] = 5  # ['strength_info']['priority']
         main_order_base['units'] = main_order_base['units'] * 1
         main_order_base['name'] = "カウンター" + flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
         main_order_base['y_change'] = flag_info['strength_info']['y_change']
