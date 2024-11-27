@@ -25,7 +25,7 @@ def order_base(now_price, decision_time):
             "type": "STOP",
             "units": basic_unit,
             "expected_direction": 1,
-            "tp": 0.10,
+            "tp": 0.9,
             "lc": 0.10,
             'priority': 0,
             "decision_price": now_price,

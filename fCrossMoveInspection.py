@@ -202,9 +202,9 @@ def judge_flag_figure(peaks, target_direction):
     first_item = next((item for item in tilt_result_list if item["is_tilt_line_each"]), None)  # 最もLatestなTiltTrue
     oldest_item = next((item for item in reversed(tilt_result_list) if item["is_tilt_line_each"]), None)  # 最もOldestなTiltTrue
     oldest_item = max(
-        (item for item in tilt_result_list if item['is_tilt_line_each']),  # fが真の要素をフィルタ
+        (item for item in reversed(tilt_result_list) if item['is_tilt_line_each']),  # fが真の要素をフィルタ
         key=lambda x: x['y_change'],                  # kが最大のものを取得
-        default=None                           # 空の場合はNoneを返す
+        default=None                           # 空の場合はNoneを返す(空欄はこの前段階で除去されるのでありえない）
     )
     # print(first_item)
     # print(oldest_item)
@@ -408,8 +408,8 @@ def main_cross(dic_args):
     # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     # ■実行しない場合、強制的に終了させる
     #  実行タイミング⇒LatestCountが２の場合のみ（フラッグ形状とは異なる）
-    if peaks[0]['count'] == 4:  # != 2:
-        print(" 実行Latestの決定")
+    if peaks[0]['count'] >= 4:  # != 2:
+        print(" 実行しないLatest条件")
         return orders_and_evidence
     #  ループの際、数が少ないとエラーの原因になる。３個切る場合ば終了（最低３個必要）
     if len(peaks) < 4:
@@ -420,28 +420,26 @@ def main_cross(dic_args):
         return orders_and_evidence
     print(s4, "LineStrengthのオーダー確定")
 
-    main_order_base = cf.order_base(peaks[0]['peak'], peaks[0]['time'])
+    main_order_base = cf.order_base(peaks[0]['peak'], peaks[0]['time'])  # tpはLCChange任せのため、Baseのまま
     direction = 1  # 上向きを期待するオーダー
     main_order_base['target'] = peaks[0]['peak'] + peaks[0]['gap']  # + 0.05
-    main_order_base['tp'] = 0.53  # 0.09  # LCは広め
     main_order_base['lc'] = gene.cal_at_least(0.05, cross_figure_flag['oldest_gap'] / 3.6)  # 0.06  # * line_strength  # 0.09  # LCは広め
     main_order_base['type'] = "STOP"
     main_order_base['expected_direction'] = direction
     main_order_base['priority'] = 3
     main_order_base['units'] = main_order_base['units'] * 1
-    main_order_base['name'] = 'クロス形状上向き(count:' + peaks[0]['count'] + ')'
+    main_order_base['name'] = 'クロス形状上向き(count:' + str(peaks[0]['count']) + ')'
     exe_orders.append(cf.order_finalize(main_order_base))
 
-    main_order_base = cf.order_base(peaks[0]['peak'], peaks[0]['time'])
+    main_order_base = cf.order_base(peaks[0]['peak'], peaks[0]['time'])  # tpはLCChange任せのため、Baseのまま
     direction = -1  # 上向きを期待するオーダー
     main_order_base['target'] = peaks[0]['peak'] - peaks[0]['gap']
-    main_order_base['tp'] = 0.53  # 0.09  # LCは広め
     main_order_base['lc'] = gene.cal_at_least(0.05, cross_figure_flag['oldest_gap'] / 3.6)  # 0.06  # * line_strength  # 0.09  # LCは広め
     main_order_base['type'] = "STOP"
     main_order_base['expected_direction'] = direction
     main_order_base['priority'] = 3
     main_order_base['units'] = main_order_base['units'] * 1
-    main_order_base['name'] = 'クロス形状下向き(count:' + peaks[0]['count'] + ')'
+    main_order_base['name'] = 'クロス形状下向き(count:' + str(peaks[0]['count']) + ')'
     exe_orders.append(cf.order_finalize(main_order_base))
 
     # 返却する
