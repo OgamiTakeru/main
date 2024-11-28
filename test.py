@@ -672,9 +672,9 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
-gl_exist_data = True
-gl_jp_time = datetime.datetime(2024, 11, 26, 21, 00, 0)  # TOの時刻
-gl_m5_count = 100
+gl_exist_data = False
+gl_jp_time = datetime.datetime(2024, 11, 28, 10, 00, 0)  # TOの時刻
+gl_m5_count = 3000
 gl_m5_loop = 1
 memo = "フラッグ　カウンターLCを0.06以上0.13以下に変更（もともと0.08以下のみだったが、0.02で無駄に負けたから変更）"
 

@@ -897,7 +897,7 @@ def main_flag(dic_args):
     else:
         # 初回ではない場合
         # フラッグ用（突破方向）
-        main_order_base = cf.order_base(flag_info['line_base_info']['decision_price'], flag_info['line_base_info']['line_base_time'])    # tpはLCChange任せのため、Baseのまま
+        main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])    # tpはLCChange任せのため、Baseのまま
         main_order_base['target'] = flag_info['line_base_info']['line_base_price'] + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
         main_order_base['lc'] = flag_info['strength_info']['lc_price']  # 0.06 ←0.06は結構本命  # 0.09  # LCは広め　　  # 入れる側の文字は　LCのみ
         main_order_base['type'] = position_type
@@ -942,7 +942,7 @@ def main_flag(dic_args):
             lc_price = temp_lc_price
             print(s6, "そのままのLCを利用する", lc_price)
 
-        main_order_base = cf.order_base(flag_info['line_base_info']['decision_price'], flag_info['line_base_info']['line_base_time'])  # tpはLCChange任せのため、Baseのまま
+        main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
         main_order_base['target'] = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
         # main_order_base['lc'] = gene.cal_at_most(0.09, flag_info['line_base_info']['line_base_price'] - 0.02 * (flag_info['strength_info']['expected_direction'] * -1))  # -0.02を追加してみた
         # main_order_base['lc'] = gene.cal_at_most(0.08, target_strength_info['line_base_info']['line_base_price']) # ←ダメだった！！！！
