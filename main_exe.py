@@ -261,7 +261,8 @@ def mode2():
         # オーダー以上がある場合。表示用（１分に１回表示させたい）
         temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
         if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒と２秒)
-            have_position = classPosition.position_check(classes)
+            # have_position = classPosition.position_check(classes)
+            have_position = classPosition.position_check_no_args()
             print("■■■Mode2(いずれかポジション有)", f.now(), "これは１分に１回表示")
             # if have_position['position_exist']:
                 # ポジションがある場合

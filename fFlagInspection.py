@@ -748,8 +748,8 @@ def analysis_flag(dic_args):
             else:
                 target_price = target_price - grid_adj
 
-    print(s6, "■【最終】samePrimeLists結果", len(predict_line_info_list))
-    gene.print_arr(predict_line_info_list, 6)
+    # print(s6, "■【最終】samePrimeLists結果", len(predict_line_info_list))
+    # gene.print_arr(predict_line_info_list, 6)
 
     # ■各Lineのストレングスを求める　（Lineが存在しない場合、終了）
     if len(predict_line_info_list) == 0:
@@ -759,14 +759,13 @@ def analysis_flag(dic_args):
         # return orders_and_info
     # ■■各同価格帯の強度を求める(この時点でSamePriceListが存在す＝Strengthは０以外が必ず付与される）
     for i, each_predict_line_info in enumerate(predict_line_info_list): # each_predict_line_infoはpredict_line_info_list_base同等
-        print(s6, "■■各同一価格リストの強度確認", len(predict_line_info_list))
-        print(s6, "各ベース価格")
-        print(s6, each_predict_line_info['line_base_info']["line_base_price"],
-              each_predict_line_info['line_base_info'])
-        print(s6, "各同価格リスト↓")
-        for i, item_each in enumerate(each_predict_line_info['same_price_list']):
-            print(s6, item_each['time'], item_each['peak'])
-        # gene.print_arr(each_predict_line_info['same_price_list'], 7)
+        # print(s6, "■■各同一価格リストの強度確認", len(predict_line_info_list))
+        # print(s6, "各ベース価格")
+        # print(s6, each_predict_line_info['line_base_info']["line_base_price"],
+        #       each_predict_line_info['line_base_info'])
+        # print(s6, "各同価格リスト↓")
+        # for i, item_each in enumerate(each_predict_line_info['same_price_list']):
+        #     print(s6, item_each['time'], item_each['peak'])
 
         # ■■ライン強度検証の関数の呼び出し（ここで初めてストレングスを取得する）
         each_strength_info_result = cal_strength_of_same_price_list(
@@ -1015,7 +1014,7 @@ def for_practice_main_line_strength_analysis_and_order(dic_args):
             if target_strength_info['strength_info']['line_is_close_for_flag']:
                 # 初回でも近い場合は、抵抗線Break側のオーダーを出す
                 # フラッグ用（突破方向 記録用のため、コメントアウトされた状態が正）
-                main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
+                main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])
                 main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
                 main_order_base['tp'] = 0.53  # 0.09  # LCは広め
                 main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め
@@ -1030,7 +1029,7 @@ def for_practice_main_line_strength_analysis_and_order(dic_args):
                 pass
         else:
             # フラッグ用（突破方向）
-            main_order_base = cf.order_base(target_strength_info['line_base_info']['decision_price'], target_strength_info['line_base_info']['line_base_time'])
+            main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])
             main_order_base['target'] = target_strength_info['line_base_info']['line_base_price'] + (0.035 * target_strength_info['line_base_info']['line_base_direction'])  # 0.05
             main_order_base['tp'] = 0.53  # 0.09  # LCは広め
             main_order_base['lc'] = 0.06  # * line_strength  # 0.09  # LCは広め

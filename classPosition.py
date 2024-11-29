@@ -393,7 +393,6 @@ class order_information:
             price = res_json['orderFillTransaction']['tradeReduced']['price']
             self.send_line("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL, "price", price)
 
-
     def updateWinLoseTime(self, new_pl):
         """
         最新の勝ち負け情報（PLu)を渡される。
@@ -456,7 +455,8 @@ class order_information:
                 self.close_order()
                 self.send_line("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min
                                , position_check_no_args()['name_list'])
-
+        if order_latest['state'] == "CANCELLED":
+            self.close_order()
 
     def trade_update_and_close(self):
         trade_latest = self.t_json  # とりあえず入れ替え（update関数で取得した最新の情報）
@@ -470,9 +470,17 @@ class order_information:
         self.t_execution_price = trade_latest['price']  # 初回だけでよい？
         if trade_latest['state'] == "OPEN":
             self.t_unrealize_pl = trade_latest['unrealizedPL']
-        elif trade_latest['state'] == "CLOSED":  # いる？
+        elif trade_latest['state'] == "CLOSED":
             self.t_realize_pl = trade_latest['realizedPL']
+            self.close_trade(None)
         self.t_pl_u = trade_latest['PLu']
+
+        # クローズの場合はクローズ処理を実施
+        if trade_latest['state'] == "CLOSED":
+            if self.life:
+                # Lifeがある場合は、確実に消しに行く
+                print(" ポジションがクローズなので消しに行く（classPosition 480行目)")
+                self.close_trade(None)
 
         # tradeのクローズを検討する
         if trade_latest['state'] == "OPEN":
@@ -531,7 +539,9 @@ class order_information:
         # (3)情報をUpdate and Closeする
         self.order_update_and_close()
         self.trade_update_and_close()
-
+        if self.o_state == "FILLED" and self.t_state == "CLOSED" and self.life:
+            self.life = False
+            self.send_line("Filled Closed Trueの謎状態あり⇒強制的にLifeにFalseを入れて終了　classPosition 537行目")
         # 変化による情報（勝ち負けの各最大値、継続時間等の取得）
         self.updateWinLoseTime(trade_latest['PLu'])  # PLU(realizePL / Unit)の推移を記録する
         # LCの変更を検討する(プラス域にいった場合のTP底上げ≒トレールに近い）
@@ -763,7 +773,7 @@ def position_check_no_args():
                 # オーダー時間リストを作成する（表示用）
                 pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
             else:
-                print(" 謎の状態(t_state)", item.t_state, item.name)
+                print(" 謎の状態(t_state)", item.t_state, "o_state", item.o_state, item.name)
         # else:
         #     # Lifeが終わっているもの
 

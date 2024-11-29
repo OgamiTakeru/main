@@ -21,10 +21,11 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
     remark: コメント
     返り値は、成立しているかどうかのBoolean
     """
-    print(" 新フラッグ調査関数")
+
     # ■関数事前準備
     remark = "フラッグ不成立"
     s7 = "      "
+    print(s7, " 新フラッグ調査関数")
 
     # ■■情報の整理と取得（関数の頭には必須）
     # #直接のテストで　argsが渡される場合
@@ -274,46 +275,53 @@ def analysis_cross(dic_args):
     # ■(1)形状の判定　（上側は持続的な下落、かつ、下側は持続的な上昇になっているかの判定）
     # ■■　river側はN個、turn側はN-1個の調査とする（riverが3個の場合、turnは2個分の調査でよい）
     figure_results_list = []
-    for i in range(2, 1):
-        base = i  # 基本的に１（Riverを示す）　⇒ひとつ前でも成り立つかを確認するときはbaseを２にする
+    temp_latest_cross = False
+    for i in range(2):
+        base = i + 1  # 基本的に１（Riverを示す）　⇒ひとつ前でも成り立つかを確認するときはbaseを２にする
+        print("クロス調査ループ回数", i, "riverPeak", peaks[base]['time'], "turnPeak", peaks[base]['time'])
         if peaks[base]['direction'] == 1:
             # riverがUpperの場合、最低、upperは3個、Lowerは2個の調査 ⇒lower側に調整Trueを入れる
             upper_tilt_line_info = judge_flag_figure(peaks[base:], peaks[base]['direction'], False)  # latestは無視
-            print(s6, " リバーピークから", peaks[base]['direction'], "結果", upper_tilt_line_info['is_tilt_line'])
-            # print(upper_tilt_line_info)
+            print("↑●リバーピーク", peaks[base]['direction'], "結果", upper_tilt_line_info['is_tilt_line'])
             lower_tilt_line_info = judge_flag_figure(peaks[base:], peaks[base+1]['direction'], True)  # latestは無視
-            print(s6, " ターンピークから", peaks[base+1]["direction"], "結果", lower_tilt_line_info['is_tilt_line'])
-            # gene.print_json(lower_tilt_line_info)
+            print("↑●ターンピーク", peaks[base+1]["direction"], "結果", lower_tilt_line_info['is_tilt_line'])
         else:
             # riverがlowerの場合、最低、lowerは3個、upperは2個の調査 ⇒upper側に調整Trueを入れる
             upper_tilt_line_info = judge_flag_figure(peaks[base:], peaks[base]['direction'], True)  # latestは無視
-            print(s6, " リバーピークから", peaks[base]['direction'], "結果", upper_tilt_line_info['is_tilt_line'])
-            # print(upper_tilt_line_info)
+            print("↑●リバーピークから", peaks[base]['direction'], "結果", upper_tilt_line_info['is_tilt_line'])
             lower_tilt_line_info = judge_flag_figure(peaks[base:], peaks[base+1]['direction'], False)  # latestは無視
-            print(s6, " ターンピークから", peaks[base+1]["direction"], "結果", lower_tilt_line_info['is_tilt_line'])
-            # gene.print_json(lower_tilt_line_info)
-
+            print("↑●ターンピークから", peaks[base+1]["direction"], "結果", lower_tilt_line_info['is_tilt_line'])
         if upper_tilt_line_info['is_tilt_line'] and lower_tilt_line_info['is_tilt_line']:
-            print(s6, " ▲形状的には成立っぽい")
+            print(s6, "▲形状的には成立っぽい")
             # figure_flag = True
             figure_results_list.append(True)
+            if i == 1:
+                # 初回(latestの時）のみ
+                temp_latest_cross = True
         else:
-            print(s6, " ▲形状不成立", upper_tilt_line_info['is_tilt_line'], lower_tilt_line_info['is_tilt_line'])
+            print(s6, "▲形状不成立", upper_tilt_line_info['is_tilt_line'], lower_tilt_line_info['is_tilt_line'])
             # return orders_and_evidence
             figure_results_list.append(False)
             pass
     # 過去分含めて、成立と言えるか
+    if not(temp_latest_cross):
+        # 初回すら見つからない場合は、この時点で返却
+        return orders_and_evidence
+    # 最低でも初回が見つかっている状態
     if figure_results_list[0] and figure_results_list[1]:
         # figure_results_list[0]は直近のもの。[1]は直近よりひとつ前のPeaksでやったもの。二つともOKの場合は重複になりすぎる
         figure_flag = False
         figure_remark = "不成立・繰り返し成立(1peak前)"
+        print("  ", figure_remark)
     elif figure_results_list[0] and not(figure_results_list[1]):
         # 直近のみが成立（これが◎◎）
         figure_flag = True
         figure_remark = "初回成立"
+        print("  ", figure_remark)
     else:
         figure_flag = False
         figure_remark = "不成立・直前不成立"
+        print("  ", figure_remark)
 
     # ■(2)形状の判定（Oldestに対し、Latestの部分が、すぼまっている事）⇒収束度合いを確認したい
     squeeze_flag = False
@@ -385,6 +393,7 @@ def main_cross(dic_args):
         return orders_and_evidence
     #  ループの際、数が少ないとエラーの原因になる。３個切る場合ば終了（最低３個必要）
     if len(peaks) < 4:
+        print(" 実行しないPEAK少ない")
         return orders_and_evidence
     # ■調査を実施する
     cross_figure_flag = analysis_cross({"df_r": df_r, "peaks": peaks})  # 調査関数呼び出し
