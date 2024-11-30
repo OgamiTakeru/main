@@ -18,6 +18,7 @@ import fMoveSizeInspection as ms
 import fHookFigureInspection as hi
 import fCrossMoveInspection as cm
 import fFlagInspection as fi
+import fFlagInspection_AnotherFoot as fia
 
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
@@ -706,9 +707,10 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
     break_double_top_strength_orders_and_evidence = dp.for_inspection_main_double_peak({"df_r": df_r, "peaks": peaks})
     # print(s, "■フラッグ形状の調査")
     # flag_orders_and_evidence = fi.main_flag({"df_r": df_r, "peaks": peaks})  # 調査
-    flag_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})
-    print(s, "■クロス形状の判定")
-    cross_order = cm.main_cross({"df_r": df_r, "peaks": peaks})
+    print(s, "■フラッグ形状の調査(５分足以外)")
+    flag_orders_and_evidence_another = fia.main_flag({"df_r": df_r, "peaks": peaks})  # 調査
+    # print(s, "■クロス形状の判定")
+    # cross_order = cm.main_cross({"df_r": df_r, "peaks": peaks})
 
     # ■各結果からオーダーを生成する（＋検証用のデータfor_inspection_dicも）
     if break_double_top_strength_orders_and_evidence['take_position_flag']:
@@ -723,11 +725,16 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
     #     flag_and_orders["exe_orders"] = flag_orders_and_evidence['exe_orders']
     #     flag_and_orders['for_inspection_dic'] = flag_orders_and_evidence['information']
     #     flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
-    elif cross_order['take_position_flag']:
-        print(s, "【最終的判断:クロス形状の確認")
-        # DoubleTopの判定が最優先 (単品）
+    elif flag_orders_and_evidence_another['take_position_flag']:
         flag_and_orders["take_position_flag"] = True
-        flag_and_orders["exe_orders"] = cross_order['exe_orders']
+        flag_and_orders["exe_orders"] = flag_orders_and_evidence_another['exe_orders']
+        flag_and_orders['for_inspection_dic'] = flag_orders_and_evidence_another['information']
+        flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
+    # elif cross_order['take_position_flag']:
+    #     print(s, "【最終的判断:クロス形状の確認")
+    #     # DoubleTopの判定が最優先 (単品）
+    #     flag_and_orders["take_position_flag"] = True
+    #     flag_and_orders["exe_orders"] = cross_order['exe_orders']
 
     # ■■■■
     # ■オーダー群の最大プライオリティの追加ー集計

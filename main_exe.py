@@ -284,7 +284,7 @@ def exe_manage():
     global gl_now_spread
 
     # ■土日は実行しない（ループにはいるが、API実行はしない）
-    if gl_now.weekday() >= 5:
+    if gl_now.weekday() == 6:
         # print("■土日の為API実行無し")
         return 0
 

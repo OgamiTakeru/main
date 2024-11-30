@@ -70,16 +70,17 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
         oldest_info = target_peaks[-1]
         print(s7, "@調査するピークス", d, target_num)
         gene.print_arr(target_peaks, 7)
-        print(s7, "先頭の情報", target_peaks[0]['peak'], target_peaks[0]['time'])
-        print(s7, "最後尾の情報", oldest_info['peak'], oldest_info['time'])
+        print(s7, "  先頭の情報", target_peaks[0]['peak'], target_peaks[0]['time'])
+        print(s7, "  最後尾の情報", oldest_info['peak'], oldest_info['time'])
         y_change = target_peaks[0]['peak'] - oldest_info['peak']
         if abs(y_change) <= 0.02:
-            print(s7, "傾きが少なすぎる", abs(y_change))
+            print(s7, "NG　傾きが少なすぎる", abs(y_change))
             ans = {"is_tilt_line_each": False,
                    "count": target_num,
+                   "tilt": 0,
                    "tilt_pm": 0,
                    "direction": d,
-                   "direction_integrity": 0,
+                   # "direction_integrity": 0,
                    "on_line_ratio": 0,
                    "near_line_ratio": 0,
                    "lc_price": 0,
@@ -91,7 +92,7 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
             tilt_result_list.append(ans)
             continue
         else:
-            print(s7, "いい傾き", abs(y_change))
+            print(s7, "OK　傾きはクリア（水平ではない）", abs(y_change))
 
         # ■■計算を算出する
         # OLDESTの価格を原点として、直近Peaksへの直線の傾きを算出する　yの増加量(価格の差分)　/ xの増加量(時間の差分)
@@ -115,7 +116,7 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
             jd_y_max = tilt * a + margin
             jd_y_min = tilt * a + (margin * -1)
             if jd_y_max > b > jd_y_min:
-                # print(s7, "(ri)線上にあります", item['time'])
+                print(s7, "(ri)線上にあります", item['time'])
                 on_line_num += 1
             else:
                 # print(s7, "(ri)線上にはありません", item['time'])
@@ -129,7 +130,7 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
             jd_y_max = tilt * a + margin
             jd_y_min = tilt * a + (margin * -1)
             if jd_y_max > b > jd_y_min:
-                # print(s7, "(ri)　線近くにあります", item['time'])
+                print(s7, "(ri)　線近くにあります", item['time'])
                 near_line_num += 1
             else:
                 # print(s7, "(ri)　線近くにはありません", item['time'])
@@ -141,26 +142,22 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
         near_line_ratio = round(near_line_num/total_peaks_num, 3)
         # 最終判定
         tilt_pm = tilt / abs(tilt)  # tiltの方向を算出する（上側が下傾斜、下側の上傾斜の情報のみが必要）
-        print(s7, "調査側は", d, "(d=1は上g側) 傾き方向は", tilt_pm)
-        if d == tilt_pm:
-            print(s7, "下側が下方向、上側が上方向に行っている（今回は収束と見たいため、不向き）")
-            remark = "発散方向"
-            direction_integrity = False  # 方向の整合性
-        else:
-            # 傾斜は合格、ピークスを包括できるかを確認
-            if on_line_ratio >= 0.4 and near_line_ratio >= 0.6:
-            # if on_line_ratio >= 0.55 and near_line_ratio >= 0.7:  # 0.35, 60
-            # if on_line_ratio >= 0.35 and near_line_ratio >= 0.6:  # 緩いほう（従来の結果がよかった条件）
-                is_tilt_line_each = True
-                # remark = "継続した傾斜と判断"
-                if tilt < 0:
-                    remark = "上側下落"
-                else:
-                    remark = "下側上昇"
-                print(s7, "継続した傾斜と判断", d)
+        print(s7, "調査側は", d, "(d=1は上g側) 傾き方向は", tilt_pm, on_line_ratio, near_line_ratio)
+
+        # 傾斜は合格、ピークスを包括できるかを確認
+        if on_line_ratio >= 0.5 and near_line_ratio >= 0.6:
+        # if on_line_ratio >= 0.55 and near_line_ratio >= 0.7:  # 0.35, 60
+        # if on_line_ratio >= 0.35 and near_line_ratio >= 0.6:  # 緩いほう（従来の結果がよかった条件）
+            is_tilt_line_each = True
+            # remark = "継続した傾斜と判断"
+            if tilt < 0:
+                remark = "上側下落"
             else:
-                remark = "線上、線近くのどちらかが未達"
-                print(s7, "線上、線近くのどちらかが未達", on_line_ratio, near_line_ratio)
+                remark = "下側上昇"
+            print(s7, "継続した傾斜と判断", d, on_line_ratio,on_line_num, near_line_ratio, near_line_num)
+        else:
+            remark = "線上、線近くのどちらかが未達"
+            print(s7, "線上、線近くのどちらかが未達", on_line_ratio, near_line_ratio)
 
         # ■LC値の参考値を算出（対象のピーク群の中間値）
         total_peak = sum(item["peak"] for item in target_peaks)
@@ -171,9 +168,10 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
         # ■累積(numごと）
         ans = {"is_tilt_line_each": is_tilt_line_each,
                "count": target_num,
+               "tilt": tilt,
                "tilt_pm": tilt_pm,
                "direction": d,
-               "direction_integrity": direction_integrity,
+               # "direction_integrity": direction_integrity,
                "on_line_ratio": on_line_ratio,
                "near_line_ratio": near_line_ratio,
                "lc_price": ave_peak_price,
@@ -274,9 +272,11 @@ def analysis_cross(dic_args):
     judge_flag = False
     # ■(1)形状の判定　（上側は持続的な下落、かつ、下側は持続的な上昇になっているかの判定）
     # ■■　river側はN個、turn側はN-1個の調査とする（riverが3個の場合、turnは2個分の調査でよい）
+    upper_result_list = []
+    lower_result_list = []
     figure_results_list = []
     temp_latest_cross = False
-    for i in range(2):
+    for i in range(1):
         base = i + 1  # 基本的に１（Riverを示す）　⇒ひとつ前でも成り立つかを確認するときはbaseを２にする
         print("クロス調査ループ回数", i, "riverPeak", peaks[base]['time'], "turnPeak", peaks[base]['time'])
         if peaks[base]['direction'] == 1:
@@ -291,6 +291,8 @@ def analysis_cross(dic_args):
             print("↑●リバーピークから", peaks[base]['direction'], "結果", upper_tilt_line_info['is_tilt_line'])
             lower_tilt_line_info = judge_flag_figure(peaks[base:], peaks[base+1]['direction'], False)  # latestは無視
             print("↑●ターンピークから", peaks[base+1]["direction"], "結果", lower_tilt_line_info['is_tilt_line'])
+        upper_result_list.append(upper_tilt_line_info)
+        lower_result_list.append(lower_tilt_line_info)
         if upper_tilt_line_info['is_tilt_line'] and lower_tilt_line_info['is_tilt_line']:
             print(s6, "▲形状的には成立っぽい")
             # figure_flag = True
@@ -303,6 +305,12 @@ def analysis_cross(dic_args):
             # return orders_and_evidence
             figure_results_list.append(False)
             pass
+    # 新テスト
+    print("新テスト")
+    print(upper_result_list[0]['oldest_peak_info'])
+    print(lower_result_list[0]['oldest_peak_info'])
+
+
     # 過去分含めて、成立と言えるか
     if not(temp_latest_cross):
         # 初回すら見つからない場合は、この時点で返却

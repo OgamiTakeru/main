@@ -465,11 +465,7 @@ def get_data():
     # gl_exist_data = True  # グローバルに変更
     if gl_exist_data:
         # 既存の5分足データを取得
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
-        # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/2年分_m5_df.csv'  # 超大量データ(22_24)5分
-        # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030172000_test_m5_df.csv'  # 適宜データ5分
-        gl_d5_df = pd.read_csv(rescsv_path, sep=",", encoding="utf-8")
+        gl_d5_df = pd.read_csv(gl_main_csv_path, sep=",", encoding="utf-8")
         gl_5m_start_time = gl_d5_df.iloc[0]['time_jp']
         gl_5m_end_time = gl_d5_df.iloc[-1]['time_jp']
         gl_actual_5m_start_time = gl_d5_df.iloc[gl_need_to_analysis]['time_jp']
@@ -479,11 +475,7 @@ def get_data():
         print("5分足での取得時刻は", gl_5m_start_time, "-", gl_5m_end_time, len(gl_d5_df_r), "行")
         print("実際の解析時間は", gl_d5_df.iloc[gl_need_to_analysis]['time_jp'], "-", gl_5m_end_time)
         # 既存の5秒足データを取得
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
-        rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
-        # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/2年分_s5_df.csv'  # 超大量データ(22_24)5秒
-        # rescsv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030113450_test_s5_df.csv'  # 適宜データ5秒
-        gl_s5_df = pd.read_csv(rescsv_path, sep=",", encoding="utf-8")
+        gl_s5_df = pd.read_csv(gl_s5_csv_path, sep=",", encoding="utf-8")
         start_s5_time = gl_s5_df.iloc[0]['time_jp']
         end_s5_time = gl_s5_df.iloc[-1]['time_jp']
         print("検証用データ")
@@ -497,7 +489,7 @@ def get_data():
         search_file_name = gene.time_to_str(gl_jp_time)
         euro_time_datetime = gl_jp_time - datetime.timedelta(hours=9)
         euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-        params = {"granularity": "M5", "count": gl_m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
+        params = {"granularity": gl_haba, "count": gl_m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
         data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, gl_m5_loop)
         gl_d5_df = data_response['data']
         gl_d5_df_r = gl_d5_df.sort_index(ascending=False)  # 時系列を逆にしたものが解析用！
@@ -511,9 +503,16 @@ def get_data():
         print("(実際の解析時間は", gl_actual_5m_start_time, "-", gl_5m_end_time)
 
         # 5秒足データを取得
+        if gl_haba == "M5":
+            over5000judge = 60
+        elif gl_haba == "M30":
+            over5000judge = 360
+        else:
+            over5000judge = 60
+
         end_time_euro = gl_d5_df_r.iloc[0]['time']  # Toに入れるデータ（これは解析用と一致させたいため、基本固定）
-        all_need_row = gl_m5_count * 60 * gl_m5_loop
-        if gl_m5_count * 60 > 5000:
+        all_need_row = gl_m5_count * over5000judge * gl_m5_loop
+        if gl_m5_count * over5000judge > 5000:
             # 5000を超えてしまう場合はループ処理が必要(繰り返しデータで使うため、少し多めに取ってしまう。5000単位をN個の粒度）
             loop_for_5s = math.ceil(all_need_row / 5000)
             s5_count = 5000
@@ -522,9 +521,9 @@ def get_data():
                   5000 * loop_for_5s - all_need_row)
         else:
             # 5000以下の場合は、一回で取得できる
-            s5_count = gl_m5_count * 60  # シンプルに5分足の60倍
+            s5_count = gl_m5_count * over5000judge  # シンプルに5分足の60倍
             loop_for_5s = 1  # ループ回数は1回
-            trimming = gl_need_to_analysis * 60  # 実際に検証で使う範囲は、解析に必要な分を最初から除いた分。
+            trimming = gl_need_to_analysis * over5000judge  # 実際に検証で使う範囲は、解析に必要な分を最初から除いた分。
         params = {"granularity": "S5", "count": s5_count, "to": end_time_euro}  # 5秒足で必要な分を取得する
         data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, loop_for_5s)
         gl_s5_df = data_response['data']  # 期間の全5秒足を取得する  (これは解析に利用しないため、時系列を逆にしなくて大丈夫）
@@ -676,7 +675,20 @@ gl_exist_data = True
 gl_jp_time = datetime.datetime(2024, 11, 20, 15, 50, 0)  # TOの時刻
 gl_m5_count = 100
 gl_m5_loop = 1
-memo = "フラッグ　カウンターLCを0.06以上0.13以下に変更（もともと0.08以下のみだったが、0.02で無駄に負けたから変更）"
+gl_haba = "M5"
+memo = "フラッグ　通常フラッグのLC価格がおかしかったので修正"
+
+# gl_exist_date = Trueの場合の読み込みファイル
+# ■■■メイン（5分足や30分足）
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
+gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/m30_5000行分.csv'  # 超大量データ(22_24)5分
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030172000_test_m5_df.csv'  # 適宜データ5分
+# ■■■検証用5秒足
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
+gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/s5_m30の5000行分.csv'  # 超大量データ(22_24)5秒
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030113450_test_s5_df.csv'  # 適宜データ5秒
 
 # ■検証処理
 get_data()  # データの取得

@@ -13,6 +13,7 @@ import fCommonFunction as cf
 import fMoveSizeInspection as ms
 
 
+
 def make_same_price_list_from_target_price(target_price, target_dir, peaks_all, predict_flag):
     """
     価格が指定され、それと同じpeakをpeaksから探し出し、リストとして返却する。方向（上端か下端か）は問わない（情報としては取得する）
@@ -32,16 +33,18 @@ def make_same_price_list_from_target_price(target_price, target_dir, peaks_all, 
         sum += item['gap']
     ave = sum / len(peaks_all)
 
+    bai = 2  # 30分足の場合、大体５分足の倍で色々考えればいい気がする
+
     # ②-1 探索用の変数の準備
     # between_numのカウントをする際の、アジャスタを調整。
     if predict_flag:
         # 予測値を用いた場合は、アジャスタを0にし(latest分)、検索のレンジも少し大きめにする
         start_adjuster = 0
-        range_yen = 0.027  # 24/8/21 13:15のデータをもとに設定(0.04 = 指定の0.02×2(上と下分）) 　24/9/18　2.5まで広げてみる（フラッグ見つけやすく）
+        range_yen = 0.027 * bai  # 24/8/21 13:15のデータをもとに設定(0.04 = 指定の0.02×2(上と下分）) 　24/9/18　2.5まで広げてみる（フラッグ見つけやすく）
         # range_yen = 0.013  # 24/8/21 13:15のデータをもとに設定(0.04 = 指定の0.02×2(上と下分）) 　24/9/18　2.5まで広げてみる（フラッグ見つけやすく）
     else:
         start_adjuster = 1
-        range_yen = gene.cal_at_least_most(0.01, round(ave * 0.153, 3), 0.041)  # 0.153倍が一番よかった(大きすぎないレベル）。。
+        range_yen = gene.cal_at_least_most(0.01 * bai, round(ave * 0.153, 3), 0.041 * bai)  # 0.153倍が一番よかった(大きすぎないレベル）。。
     counter = 0  # 何回同等の値が出現したかを把握する
     depth_point_gap = 0  # 今のピークと一番離れている値、かつ、逆方向のポイント（同価格発見のタイミングでリセット）
     depth_point = 0
@@ -161,11 +164,11 @@ def make_same_price_list_from_target_price(target_price, target_dir, peaks_all, 
                                   "peak_strength": 0  # peakStrength＝０は、同価格ではない、最後の調査対象価格
                                   })
     # 同価格リスト
-    # print("    (ri)ベース価格", target_price, target_price - range_yen, "<r<",
-    #       target_price + range_yen,
-    #       "許容ギャップ", range_yen, "方向", target_dir, " 平均ピークGap", ave)
-    # print("    (ri)同価格リスト↓")
-    # gene.print_arr(same_list)
+    print("    (ri)ベース価格", target_price, target_price - range_yen, "<r<",
+          target_price + range_yen,
+          "許容ギャップ", range_yen, "方向", target_dir, " 平均ピークGap", ave)
+    print("    (ri)同価格リスト↓")
+    gene.print_arr(same_list)
     return same_list
 
 
@@ -210,11 +213,13 @@ def cal_strength_of_same_price_list(same_price_list, peaks, base_price, latest_d
         # 同価格がない場合、ストレングスをミニマムで返却する
         return return_dic
 
+    bai = 2
+
     # ■BasePriceがPeaksの中の高さのどこにいるのかを確かめる（一番上の場合、LinePositionStrength＝１とする。）
     if latest_direction == -1:
         # 直近が下方向の場合、下側から確認している（下のLineが最低値かどうかの判定）
         min_index, min_peak = min(enumerate(peaks[:]), key=lambda x: x[1]["peak"])
-        if min_peak['peak'] + 0.04 > base_price:
+        if min_peak['peak'] + 0.04 * bai > base_price:
             # 最低値の範囲内であれば（0.04は余裕を持っている。同価格のスキップが0.05なので、それ以下に設定している）
             line_position_strength = 1
             print(s6, "最低Line(", base_price, ")", )
@@ -224,7 +229,7 @@ def cal_strength_of_same_price_list(same_price_list, peaks, base_price, latest_d
     else:
         # 直近が上方向の場合、上側から確認している（上のLineが最高値かどうかの判定）
         max_index, max_peak = max(enumerate(peaks[:]), key=lambda x: x[1]["peak"])
-        if max_peak['peak'] - 0.04 < base_price:
+        if max_peak['peak'] - 0.04 * bai < base_price:
             # 最高値の範囲（最低値より少し下よりも上）であれば
             line_position_strength = 1
             print(s6, "最高Line(", base_price, ")")
@@ -264,22 +269,6 @@ def cal_strength_of_same_price_list(same_price_list, peaks, base_price, latest_d
             # 過去最高店で、他にない（あるの・・？）
             line_strength = 0.01
             remark = "最高単一ポイント（要チェック）"
-    # elif len_of_same_price_list == 2:
-    #     # ■■同一価格が２個ある場合
-    #     for i in range(len_of_same_price_list):
-    #         if same_price_list[i]['near_point_gap'] < 0:
-    #             minus_counter += 1  # マイナスはLINEを超えた回数
-    #     if minus_counter > len_of_same_price_list * 0.5:
-    #         # LINE越えが過半数の場合、LINEの信頼度つぃては高くない
-    #         line_strength = 0.1
-    #         # print(s6, "複数時　弱強度", minus_counter, len(same_list))
-    #     elif minus_counter >= 1:
-    #         line_strength = 0.3
-    #         # print(s6, "複数時　１つ以上LINE越えあり", minus_counter)
-    #     else:
-    #         # LINE越えがない為、LINEの信頼度が比較的高い
-    #         line_strength = 1
-    #         # print(s6, "複数時　強強度", minus_counter, len(same_list))
     elif len_of_same_price_list >= 2:
         # ■■同一価格が2個以上ある場合 (もともとフラッグを探すのは3個以上だったが、2個でもある場合もあったため、2個以上に変更）
         # ■■■まず、シンプルなトップの形状のみで判断
@@ -291,11 +280,11 @@ def cal_strength_of_same_price_list(same_price_list, peaks, base_price, latest_d
             # LINE越えが過半数の場合、LINEの信頼度つぃては高くない
             line_strength = 0.1
             remark = "複で越多め"
-            # print(s6, "複数時　弱強度", minus_counter, len(same_list))
-        elif minus_counter >= 1:
-            line_strength = 0.3
-            remark = "複でやや越多め"
-            # print(s6, "複数時　１つ以上LINE越えあり", minus_counter)
+            print(s6, "複数時　弱強度", minus_counter)
+        # elif minus_counter >= 1:
+        #     line_strength = 0.3
+        #     remark = "複でやや越多め"
+        #     print(s6, "複数時　１つ以上LINE越えあり", minus_counter)
         else:
             # LINE越えがない為、LINEの信頼度が比較的高い
             if len_of_same_price_list == 2:
@@ -351,6 +340,7 @@ def tilt_cal(peaks, target_direction):
     direction_integrity = True  # 方向性が一致しているかどうか（下側は上昇、上側が下降がここでは正とする）
     d = target_direction  # １の場合は上側、-1の場合は下側のピークスを対象として、調査をする
     ans_list = []
+    bai = 2
     # for target_num in [5]:
     for target_num in range(4, 7):
         print("■◇s", target_num)
@@ -372,7 +362,7 @@ def tilt_cal(peaks, target_direction):
         print(s7, "先頭の情報", target_peaks[0]['peak'], target_peaks[0]['time'])
         print(s7, "最後尾の情報", oldest_info['peak'], oldest_info['time'])
         y_change = target_peaks[0]['peak'] - oldest_info['peak']
-        if abs(y_change) <= 0.015:
+        if abs(y_change) <= 0.015 * bai:
             print(s7, "傾きが少なすぎる")
             ans = {"is_tilt_line_each": False,
                    "count": target_num,
@@ -410,7 +400,7 @@ def tilt_cal(peaks, target_direction):
             # print(s7, "(ri)a:", a, ",b:", b)
 
             # ■線上といえるか[判定]
-            margin = 0.02
+            margin = 0.02 * bai
             jd_y_max = tilt * a + margin
             jd_y_min = tilt * a + (margin * -1)
             if jd_y_max > b > jd_y_min:
@@ -422,7 +412,7 @@ def tilt_cal(peaks, target_direction):
 
             # ■線の近くにあるか[判定]
             margin = abs(target_peaks[0]['peak'] - min_or_max_info['peak']) * 0.405  # * 0.405がちょうどよさそう
-            margin = gene.cal_at_least(0.05, margin)  # 下側の下落、上側の上昇の場合、最小最大が逆になると０になる可能性がある
+            margin = gene.cal_at_least(0.05 * bai, margin)  # 下側の下落、上側の上昇の場合、最小最大が逆になると０になる可能性がある
             # print(target_peaks[0]['time'], target_peaks[0]['peak'], min_or_max_info['time'], min_or_max_info['peak'])
             # print("MARGIN:", abs(target_peaks[0]['peak'] - min_or_max_info['peak']), margin)
             jd_y_max = tilt * a + margin
@@ -461,9 +451,10 @@ def tilt_cal(peaks, target_direction):
                 print(s7, "線上、線近くのどちらかが未達", on_line_ratio, near_line_ratio)
 
         # ■LC値の参考値を算出（対象のピーク群の中間値）
+        print(" LC確認用")
         total_peak = sum(item["peak"] for item in target_peaks)
         ave_peak_price = round(total_peak / len(target_peaks), 3)
-        lc_margin = 0.01 * latest_direction * -1
+        lc_margin = 0.01 * bai * latest_direction * -1
         ave_peak_price = ave_peak_price + lc_margin
 
         # ■累積(numごと）
@@ -518,17 +509,18 @@ def tilt_cal(peaks, target_direction):
     # 最大でもLCRange換算で10pips以内したい
     now_price = peaks[0]['peak']
     temp_lc_price = oldest_item['lc_price']  # lcPriceは収束の中間点
+    print("LC調査", temp_lc_price)
     lc_range = temp_lc_price - now_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
-    max_lc_range = 0.1
-    if abs(lc_range) >= max_lc_range:
+    lc_range_max = 0.25
+    if abs(lc_range) >= lc_range_max:
         # LCが大きすぎると判断される場合(10pips以上離れている）
-        # lc_range = 0.1  # LCRnageを指定　←旧　これがコメントイン（←けどおかしい）
+        # lc_range = 0.1  # LCRnageを指定
         if lc_range < 0:
             # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-            lc_price = now_price - abs(max_lc_range)  # 旧 abs(lc_range)←でもおかしい
+            lc_price = now_price - abs(lc_range_max)
         else:
             # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-            lc_price = now_price + abs(max_lc_range)  # 旧　abs(lc_range)←でもおかしい
+            lc_price = now_price + abs(lc_range_max)
     else:
         # LCRangeが許容範囲内の場合、そのまま利用
         lc_price = temp_lc_price
@@ -760,13 +752,13 @@ def analysis_flag(dic_args):
         # return orders_and_info
     # ■■各同価格帯の強度を求める(この時点でSamePriceListが存在す＝Strengthは０以外が必ず付与される）
     for i, each_predict_line_info in enumerate(predict_line_info_list): # each_predict_line_infoはpredict_line_info_list_base同等
-        # print(s6, "■■各同一価格リストの強度確認", len(predict_line_info_list))
-        # print(s6, "各ベース価格")
-        # print(s6, each_predict_line_info['line_base_info']["line_base_price"],
-        #       each_predict_line_info['line_base_info'])
-        # print(s6, "各同価格リスト↓")
-        # for i, item_each in enumerate(each_predict_line_info['same_price_list']):
-        #     print(s6, item_each['time'], item_each['peak'])
+        print(s6, "■■各同一価格リストの強度確認", len(predict_line_info_list))
+        print(s6, "各ベース価格")
+        print(s6, each_predict_line_info['line_base_info']["line_base_price"],
+              each_predict_line_info['line_base_info'])
+        print(s6, "各同価格リスト↓")
+        for i, item_each in enumerate(each_predict_line_info['same_price_list']):
+            print(s6, item_each['time'], item_each['peak'])
 
         # ■■ライン強度検証の関数の呼び出し（ここで初めてストレングスを取得する）
         each_strength_info_result = cal_strength_of_same_price_list(
@@ -882,9 +874,10 @@ def main_flag(dic_args):
             pass
     else:
         # 初回ではない場合
+        bai = 2
         # ■■フラッグ用（突破方向）
         main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])    # tpはLCChange任せのため、Baseのまま
-        main_order_base['target'] = flag_info['line_base_info']['line_base_price'] + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
+        main_order_base['target'] = flag_info['line_base_info']['line_base_price'] + (0.035 * bai * flag_info['line_base_info']['line_base_direction'])  # 0.05
         main_order_base['lc'] = flag_info['strength_info']['lc_price']  # 0.06 ←0.06は結構本命  # 0.09  # LCは広め　　  # 入れる側の文字は　LCのみ
         main_order_base['type'] = position_type
         main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction']
@@ -896,11 +889,11 @@ def main_flag(dic_args):
 
         # ■■カウンタオーダーも入れる（二回目以降のみ）
         # 最大でもLCRange換算で10pips以内したい
-        now_price = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # Nowpriceというより、取得価格
+        now_price = peaks[1]['peak'] - (0.035 * bai * flag_info['line_base_info']['line_base_direction'])  # Nowpriceというより、取得価格
         temp_lc_price = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # lcPriceは収束の中間点
         lc_range = temp_lc_price - now_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
         print(s6, "LC検討", now_price, temp_lc_price, lc_range)
-        lc_range_border = 0.12
+        lc_range_border = 0.12 * bai
         if abs(lc_range) >= lc_range_border:
             # LCが大きすぎると判断される場合(10pips以上離れている）
             lc_range = lc_range_border  # LCRnageを指定
@@ -912,9 +905,9 @@ def main_flag(dic_args):
                 # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
                 lc_price = now_price + abs(lc_range_border)
                 print(s6, "LC価格(Dir-1)", now_price, "+", abs(lc_range_border))
-        elif abs(lc_range) <= 0.06:
+        elif abs(lc_range) <= 0.06 * bai:
             # LCが小さすぎる
-            lc_range = 0.07  # LCRnageを指定
+            lc_range = 0.07 * bai  # LCRnageを指定
             if lc_range < 0:
                 # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
                 lc_price = now_price - abs(lc_range_border)
@@ -929,7 +922,7 @@ def main_flag(dic_args):
             print(s6, "そのままのLCを利用する", lc_price)
 
         main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
-        main_order_base['target'] = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
+        main_order_base['target'] = peaks[1]['peak'] - (0.035 * bai * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
         # main_order_base['lc'] = gene.cal_at_most(0.09, flag_info['line_base_info']['line_base_price'] - 0.02 * (flag_info['strength_info']['expected_direction'] * -1))  # -0.02を追加してみた
         # main_order_base['lc'] = gene.cal_at_most(0.08, target_strength_info['line_base_info']['line_base_price']) # ←ダメだった！！！！
         # main_order_base['lc'] = flag_info['line_base_info']['line_base_price'] - 0.05 * (flag_info['strength_info']['expected_direction'] * -1)  # ←よかったけど、さらに上を！

@@ -12,6 +12,7 @@ import fHookFigureInspection as ff
 import fFlagInspection as fi
 import math
 import fCrossMoveInspection as cm
+import fFlagInspection_AnotherFoot as fia
 
 # グローバルでの宣言
 oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
@@ -44,11 +45,14 @@ def analysis_part(df_r):
     # ans = ff.main_hook_figure_inspection_and_order({"df_r": df_r})
     # print(ans)
 
-    ans = cm.analysis_cross({"df_r": df_r})
-    print(ans)
+    # ans = cm.analysis_cross({"df_r": df_r})
+    # print(ans)
 
     # ans = fi.main_flag({"df_r": df_r})
     # print(ans)
+
+    ans = fia.main_flag({"df_r": df_r})
+    print(ans)
 
     # ans = ri.main_line_strength_analysis_and_order({"df_r": df_r})
     # print(ans)
@@ -321,74 +325,6 @@ def main():
     # （０）環境の準備
     mode = "2time"
     f = 5
-    # if gl_inspection_only:
-    #     # 指定の時刻を起点に、調査のみを行うデータ
-    #     if gl_use_now:
-    #         # 直近の時間で検証
-    #         df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": gr, "count": count}, 1)
-    #     else:
-    #         # jp_timeは解析のみは指定時刻のまま、解析＋検証の場合は指定時間を解析時刻となるようにする（検証分を考慮）。
-    #         euro_time_datetime_iso = str((gl_target_time - datetime.timedelta(hours=9)).isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-    #         param = {"granularity": gl_gr, "count": gl_analysis_part_low, "to": euro_time_datetime_iso}  # 最低５０行
-    #         df = oa.InstrumentsCandles_multi_exe("USD_JPY", param, 1)
-    # elif mode == "1time":
-    #     # 調査＋検証を行う場合（target_timeから時系列的に前方向に、調査を進めていく)
-    #     # 指定の時刻を起点に、調査のみを行うデータ
-    #     if gl_use_now:
-    #         # 直近の時間で検証
-    #         df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": gr, "count": count}, 1)
-    #     else:
-    #         # jp_timeは解析のみは指定時刻のまま、解析＋検証の場合は指定時間を解析時刻となるようにする（検証分を考慮）。
-    #         # 調査区間85足、検証区間25足の場合、トータルでは(85+25-1)足必要となる。(検証時刻の1行が重複するため。他細かいとこは無視！）
-    #         # countではなく時刻で直接的に指定する（5000を超える場合はも時間差で検討）
-    #         inspection_from = gene.time_to_euro_iso(gl_target_time - datetime.timedelta(minutes=f * gl_analysis_part_low))
-    #         inspection_to = gene.time_to_euro_iso(gl_target_time)  # 基準
-    #         confirm_from = gene.time_to_euro_iso(gl_target_time)
-    #         confirm_to = gene.time_to_euro_iso(gl_target_time +  datetime.timedelta(minutes=f * gl_res_part_low))
-    #         print(" 計算上の必要足数", gene.seek_time_gap_seconds(inspection_from,confirm_to)/60/f)
-    #         print(" 時間", gl_target_time - datetime.timedelta(minutes=f * gl_analysis_part_low),
-    #               gl_target_time +  datetime.timedelta(minutes=f * gl_res_part_low))
-    #         param = {"granularity": gl_gr, "from": inspection_from, "to": confirm_to}
-    #         df_inspection = oa.InstrumentsCandles_multi_exe("USD_JPY", param, 1)['data']
-    #         print(" 実際の足数", len(df_inspection))
-    #         print(df_inspection)
-    # else:
-
-    # print(" test", gl_target_time)
-    # # 大量のデータでテストする(指定方法は、指定日時を最後の調査＋検証の対象とする。500回調査の場合、それより前500足分スライド）
-    # param = {"granularity": "M5", "count":20, "to": gene.time_to_euro_iso(gl_target_time)}
-    # all_m5_data = oa.InstrumentsCandles_multi_exe("USD_JPY", param, 1)['data']
-    # print("@")
-    #
-    # # 全データの開始時間
-    # count_max = 500
-    # all_m5_data_from_time = all_m5_data.iloc[0]['time_jp']
-    # all_m5_data_to_time = all_m5_data.iloc[-1]['time_jp']
-    # print(" データの最初の時刻は", all_m5_data_from_time, "最後の時刻", all_m5_data_to_time)
-    # gap_second = gene.seek_time_gap_seconds(all_m5_data_from_time, all_m5_data_to_time)
-    # additional_second = gl_res_part_low * 5 * 60
-    # print(" 検証に必要な秒数", additional_second, additional_second /60/ 5)
-    # need_foot = gap_second / 5 #  (gap_second + additional_second) / 5
-    # print(" 時間差", gap_second, gap_second / 60, "分", ",foot数", need_foot)
-    # need_api_count_float = need_foot / count_max
-    # need_api_count = math.ceil(need_api_count_float)
-    # print(" 正確ループ数", need_api_count_float, "切り上げたループ数", need_api_count)
-    # params_s5 = {"granularity": "S5", "count":count_max, "to": gene.time_to_euro_iso(gene.str_to_time(all_m5_data_from_time))}
-    # all_s5_data = oa.InstrumentsCandles_multi_exe("USD_JPY", params_s5, need_api_count)
-    #
-    #
-    #
-    # print(" 必要な足数", need_foot, "必要な繰り返し数(小数点)", need_api_count_float, "必要な繰り返し数(切り上げ)", need_api_count)
-    #
-    #
-    # print(" データ確認します")
-    # print(all_m5_data)
-    # print(" 5秒足")
-    # print(all_s5_data)
-    #
-    #
-
-
 
     # ■■調査用のDFの行数の指定
     res_part_low = gl_res_part_low  # 解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]。check_mainと同値であること。
@@ -495,7 +431,7 @@ def main():
 # datetime.datetime(2024, 4, 1, 12, 45, 6)←ダブルトップ！
 # datetime.datetime(2023, 8, 6, 16, 35, 6) 結構負ける時間　
 # datetime.datetime(2024, 8, 9, 23, 55, 6) # 予測テスト用
-gl_gr = "M5"  # 取得する足の単位
+gl_gr = "M30"  # 取得する足の単位
 gl_inspection_start_time = 0
 gl_inspection_end_time = 0
 
@@ -504,10 +440,11 @@ gl_res_part_low = 25  # 解析には50行必要(逆順DFでの直近R行が対�
 gl_analysis_part_low = 85  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
 # 取得する行数(1回のテストをしたい場合、指定でもres_part_low + analysis_part_lowが必要）
 gl_count = gl_res_part_low + gl_analysis_part_low + 1
+# gl_count = 4000
 gl_times = 1  # Count(最大5000件）を何セット取るか  大体2225×３で１か月位。　10時間は120足 1時間は12
 # ■■取得時間の指定
 gl_use_now = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2024, 11, 27, 22, 20, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2024, 11, 28, 16, 0, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # gl_target_time = datetime.datetime(2024, 11, 13, 14, 20, 6)
 # ■■方法の指定
 gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。
