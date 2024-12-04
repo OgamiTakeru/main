@@ -68,7 +68,7 @@ def order_base(now_price, decision_time):
     }
 
 
-def order_base_inspection(now_price, decision_time):
+def order_base_inspection_another(now_price, decision_time):
     """
     引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
     従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
@@ -76,7 +76,7 @@ def order_base_inspection(now_price, decision_time):
     LCCHange内は、執行まで時間が短い順（Time＿After）で記載する（lc_ensure_rangeは広がる方向で書く場合もあり）
     """
     basic_unit_for_inspection = 10000
-    bairitu = 2
+    bairitu = 1
     return {
             "target": 0.00,
             "type": "STOP",
@@ -124,6 +124,63 @@ def order_base_inspection(now_price, decision_time):
             ],
     }
 
+
+def order_base_inspection(now_price, decision_time):
+    """
+    引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
+    従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
+    基本はすべて仮の値だが、Unitのみはこれがベースとなる。
+    LCCHange内は、執行まで時間が短い順（Time＿After）で記載する（lc_ensure_rangeは広がる方向で書く場合もあり）
+    """
+    basic_unit_for_inspection = 10000
+    bairitu = 1
+    return {
+            "target": 0.00,
+            "type": "STOP",
+            "units": basic_unit_for_inspection,
+            "expected_direction": 1,
+            "tp": 0.9,
+            "lc": 0.10,
+            'priority': 0,
+            "decision_price": now_price,
+            "decision_time": decision_time,
+            "name": "",
+            "lc_change": [
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.00, "lc_ensure_range": -0.06},
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": 0.03},
+                {"lc_change_exe": True, "time_after": 0 * 5 * 60, "lc_trigger_range": 0.05 * bairitu, "lc_ensure_range": -0.05},
+                # 2022-2023は 0.05トリガーにすると、マイナスになる！！
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.065 * bairitu, "lc_ensure_range": 0.03 * bairitu},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.08 * bairitu, "lc_ensure_range": 0.06 * bairitu},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.09 * bairitu, "lc_ensure_range": 0.05 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10 * bairitu, "lc_ensure_range": 0.043 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.15 * bairitu, "lc_ensure_range": 0.10 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.20 * bairitu, "lc_ensure_range": 0.12 * bairitu},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.20 * bairitu, "lc_ensure_range": 0.15 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.30 * bairitu, "lc_ensure_range": 0.20 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.40 * bairitu, "lc_ensure_range": 0.30 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50 * bairitu, "lc_ensure_range": 0.40 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60 * bairitu, "lc_ensure_range": 0.50 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70 * bairitu, "lc_ensure_range": 0.60 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80 * bairitu, "lc_ensure_range": 0.70 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90 * bairitu, "lc_ensure_range": 0.80 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 1.00 * bairitu, "lc_ensure_range": 0.90 * bairitu}
+
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.032, "lc_ensure_range": -0.06},
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": -0.03},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.01, "lc_ensure_range": -0.08},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.038, "lc_ensure_range": -0.04},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.048, "lc_ensure_range": 0.04},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.07, "lc_ensure_range": 0.05},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10, "lc_ensure_range": 0.075},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
+                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
+            ],
+    }
 
 
 def order_base_cross(now_price, decision_time):

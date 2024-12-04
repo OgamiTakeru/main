@@ -225,10 +225,10 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
         lc_range = 0.1  # LCRnageを指定
         if lc_range < 0:
             # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-            lc_price = now_price - abs(lc_range)
+            lc_price = now_price + abs(lc_range)
         else:
             # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-            lc_price = now_price + abs(lc_range)
+            lc_price = now_price - abs(lc_range)
     else:
         # LCRangeが許容範囲内の場合、そのまま利用
         lc_price = temp_lc_price
@@ -307,8 +307,10 @@ def analysis_cross(dic_args):
             pass
     # 新テスト
     print("新テスト")
-    print(upper_result_list[0]['oldest_peak_info'])
-    print(lower_result_list[0]['oldest_peak_info'])
+    print(upper_result_list[0])
+    print(lower_result_list[0])
+    # print(upper_result_list[0]['oldest_peak_info'])
+    # print(lower_result_list[0]['oldest_peak_info'])
 
 
     # 過去分含めて、成立と言えるか

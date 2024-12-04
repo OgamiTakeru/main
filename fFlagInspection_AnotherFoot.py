@@ -239,6 +239,7 @@ def cal_strength_of_same_price_list(same_price_list, peaks, base_price, latest_d
 
     # ■同一価格が存在する場合(直近の同一価格、それ以前の同一価格（複数の可能性もあり）について調査を行う）
     # print(len_of_same_price_list)
+    print(" 同価格リスト？？？")
     if len_of_same_price_list == 1:
         # ■■同一価格が一つの場合：(シンプルダブルトップ　or カルデラ等）
         info = same_price_list[0]  # 同一価格が１つだけが成立（その情報を取得する）
@@ -275,16 +276,22 @@ def cal_strength_of_same_price_list(same_price_list, peaks, base_price, latest_d
         for i in range(len_of_same_price_list):  # この比較はlen_of_same_price_listのため、最後の調査終了用peakは入らない
             if same_price_list[i]['near_point_gap'] < 0:
                 minus_counter += 1  # マイナスはLINEを超えた回数
-
-        if minus_counter > len_of_same_price_list * 0.5:
+        # ↓↓以下は保存用
+        if minus_counter > len_of_same_price_list * 0.5:  # 半分以上越えている場合（例えば５個中３個越えている場合はこれに相当）
             # LINE越えが過半数の場合、LINEの信頼度つぃては高くない
             line_strength = 0.1
             remark = "複で越多め"
             print(s6, "複数時　弱強度", minus_counter)
-        # elif minus_counter >= 1:
-        #     line_strength = 0.3
-        #     remark = "複でやや越多め"
-        #     print(s6, "複数時　１つ以上LINE越えあり", minus_counter)
+        elif minus_counter >= 1:  # 旧（だが一番結果が良かった時のflagの条件
+            line_strength = 0.3
+            remark = "複でやや越多め"
+            print(s6, "複数時　１つ以上LINE越えあり", minus_counter, minus_counter/len_of_same_price_list)
+        #  ↑↑ここまで保存用
+        # if minus_counter/len_of_same_price_list > 0.25:  # 半分以上越えている場合（例えば５個中３個越えている場合はこれに相当）
+        #     # LINE越えが過半数の場合、LINEの信頼度つぃては高くない
+        #     line_strength = 0.1
+        #     remark = "複で越多め"
+        #     print(s6, "複数時　弱強度", minus_counter, minus_counter/len_of_same_price_list)
         else:
             # LINE越えがない為、LINEの信頼度が比較的高い
             if len_of_same_price_list == 2:
@@ -511,7 +518,7 @@ def tilt_cal(peaks, target_direction):
     temp_lc_price = oldest_item['lc_price']  # lcPriceは収束の中間点
     print("LC調査", temp_lc_price)
     lc_range = temp_lc_price - now_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
-    lc_range_max = 0.25
+    lc_range_max = 0.20
     if abs(lc_range) >= lc_range_max:
         # LCが大きすぎると判断される場合(10pips以上離れている）
         # lc_range = 0.1  # LCRnageを指定
@@ -876,14 +883,15 @@ def main_flag(dic_args):
         # 初回ではない場合
         bai = 2
         # ■■フラッグ用（突破方向）
-        main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])    # tpはLCChange任せのため、Baseのまま
+        main_order_base = cf.order_base_inspection_another(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])    # tpはLCChange任せのため、Baseのまま
+        main_order_base['units'] = 1000
         main_order_base['target'] = flag_info['line_base_info']['line_base_price'] + (0.035 * bai * flag_info['line_base_info']['line_base_direction'])  # 0.05
-        main_order_base['lc'] = flag_info['strength_info']['lc_price']  # 0.06 ←0.06は結構本命  # 0.09  # LCは広め　　  # 入れる側の文字は　LCのみ
+        main_order_base['lc'] = 0.09  # flag_info['strength_info']['lc_price']  # 0.06 ←0.06は結構本命  # 0.09  # LCは広め　　  # 入れる側の文字は　LCのみ
         main_order_base['type'] = position_type
         main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction']
-        main_order_base['priority'] = 5  # flag_info['strength_info']['priority']
+        main_order_base['priority'] = 4  # flag_info['strength_info']['priority']
         main_order_base['units'] = main_order_base['units'] * 1
-        main_order_base['name'] = flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
+        main_order_base['name'] = "30分足" + flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
         main_order_base['y_change'] = flag_info['strength_info']['y_change']
         exe_orders.append(cf.order_finalize(main_order_base))
 
@@ -893,7 +901,7 @@ def main_flag(dic_args):
         temp_lc_price = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # lcPriceは収束の中間点
         lc_range = temp_lc_price - now_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
         print(s6, "LC検討", now_price, temp_lc_price, lc_range)
-        lc_range_border = 0.12 * bai
+        lc_range_border = 0.12 * bai * 0.8
         if abs(lc_range) >= lc_range_border:
             # LCが大きすぎると判断される場合(10pips以上離れている）
             lc_range = lc_range_border  # LCRnageを指定
@@ -921,19 +929,20 @@ def main_flag(dic_args):
             lc_price = temp_lc_price
             print(s6, "そのままのLCを利用する", lc_price)
 
-        main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
+        main_order_base = cf.order_base_inspection_another(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
         main_order_base['target'] = peaks[1]['peak'] - (0.035 * bai * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
         # main_order_base['lc'] = gene.cal_at_most(0.09, flag_info['line_base_info']['line_base_price'] - 0.02 * (flag_info['strength_info']['expected_direction'] * -1))  # -0.02を追加してみた
         # main_order_base['lc'] = gene.cal_at_most(0.08, target_strength_info['line_base_info']['line_base_price']) # ←ダメだった！！！！
         # main_order_base['lc'] = flag_info['line_base_info']['line_base_price'] - 0.05 * (flag_info['strength_info']['expected_direction'] * -1)  # ←よかったけど、さらに上を！
         # gene.print_json(flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak'])
         # main_order_base['lc'] = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # ←悪くなさそうだが、広すぎる？
-        main_order_base['lc'] = lc_price  # ←悪くなさそうだが、広すぎる？
+        main_order_base['units'] = 1000
+        main_order_base['lc'] = 0.09  # lc_price  # ←悪くなさそうだが、広すぎる？
         main_order_base['type'] = position_type
         main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction'] * -1
-        main_order_base['priority'] = 5  # ['strength_info']['priority']
+        main_order_base['priority'] = 4  # ['strength_info']['priority']
         main_order_base['units'] = main_order_base['units'] * 1
-        main_order_base['name'] = "カウンター" + flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
+        main_order_base['name'] = "30分足カウンター" + flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
         main_order_base['y_change'] = flag_info['strength_info']['y_change']
         exe_orders.append(cf.order_finalize(main_order_base))
 

@@ -487,7 +487,7 @@ def get_data():
         # gl_m5_loop = 1  # 何ループするか
         # gl_jp_time = datetime.datetime(2024, 11, 1, 19, 50, 0)  # TOの時刻（Globalに変更)
         search_file_name = gene.time_to_str(gl_jp_time)
-        pair = "USD_JPY"
+        pair = "EUR_JPY"
         euro_time_datetime = gl_jp_time - datetime.timedelta(hours=9)
         euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
         params = {"granularity": gl_haba, "count": gl_m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
@@ -586,7 +586,7 @@ def main():
             else:
                 # ★★★ 解析を呼び出す★★★★★
                 print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/", len(gl_inspection_base_df), "中")
-                analysis_result = im.for_inspection_analysis_warp_up_and_make_order(analysis_df)  # 検証専用コード
+                analysis_result = im.for_inspection_analysis_warp_up_and_make_order_30(analysis_df)  # 検証専用コード
                 # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
                 if not analysis_result['take_position_flag']:
                     # オーダー判定なしの場合、次のループへ（5秒後）
@@ -674,22 +674,24 @@ print("--------------------------------検証開始-----------------------------
 # ■　検証の設定
 gl_exist_data = True
 gl_jp_time = datetime.datetime(2024, 11, 20, 15, 50, 0)  # TOの時刻
-gl_m5_count = 5000
-gl_m5_loop = 3
+gl_m5_count = 100
+gl_m5_loop = 1
 gl_haba = "M5"
-memo = "フラッグ　上記に加え、通常時のLCの最低値を設定 AND LCChangeを大胆に"
+memo = "フラッグ　ユーロkurosu"
 
 # gl_exist_date = Trueの場合の読み込みファイル
 # ■■■メイン（5分足や30分足）
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
-gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/m30_5000行分.csv'  # 30分足大量データ(22_24)5分
-# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_m5.csv'  # 大量データ5分(21-22)
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_m5.csv'  # 適宜データ5分(21-22)
+gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/ユーロm5_df.csv'  # ユーロデータ5分(21-22)
 # ■■■検証用5秒足
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
-gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/s5_m30の5000行分.csv'  # 30分足大量データ(22_24)5秒
-# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_s5.csv'  # 大量データ5秒（21_22)
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_s5.csv'  # 適宜データ5秒（21_22)
+gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/ユーロ_s5_df.csv'  # ユーロデータ5秒（21_22)
 
 # ■検証処理
 get_data()  # データの取得

@@ -482,11 +482,9 @@ def get_data():
         print("検証時間の総取得期間は", start_s5_time, "-", end_s5_time, len(gl_s5_df), "行")
 
     else:
+
+
         # 5分足データを新規で取得
-        # gl_m5_count = 300  # 5分足を何足分取得するか？ 解析に必要なのは60足（約5時間程度）が目安。固定値ではなく、15ピーク程度が取れる分）
-        # gl_m5_loop = 1  # 何ループするか
-        # gl_jp_time = datetime.datetime(2024, 11, 1, 19, 50, 0)  # TOの時刻（Globalに変更)
-        search_file_name = gene.time_to_str(gl_jp_time)
         euro_time_datetime = gl_jp_time - datetime.timedelta(hours=9)
         euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
         params = {"granularity": gl_haba, "count": gl_m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
@@ -672,23 +670,23 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
 gl_exist_data = True
-gl_jp_time = datetime.datetime(2024, 11, 28, 10, 00, 0)  # TOの時刻
+gl_jp_time = datetime.datetime(2022, 11, 28, 10, 00, 0)  # TOの時刻
 gl_haba = "M5"
-gl_m5_count = 2000
-gl_m5_loop = 1
-memo = "フラッグ　通常フラッグのLC価格がおかしかったので修正"
+gl_m5_count = 5000
+gl_m5_loop = 15
+memo = "フラッグ　上記に加え、通常時のLCの最低値を設定 AND LCChangeを大胆に"
 
 # gl_exist_date = Trueの場合の読み込みファイル
 # ■■■メイン（5分足や30分足）
 gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
-# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/m30_5000行分.csv'  # 超大量データ(22_24)5分
-# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030172000_test_m5_df.csv'  # 適宜データ5分
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/m30_5000行分.csv'  # 30分足大量データ(22_24)5分
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_m5.csv'  # 大量データ5分(21-22)
 # ■■■検証用5秒足
 gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
-# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/s5_m30の5000行分.csv'  # 超大量データ(22_24)5秒
-# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030113450_test_s5_df.csv'  # 適宜データ5秒
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/s5_m30の5000行分.csv'  # 30分足大量データ(22_24)5秒
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_s5.csv'  # 大量データ5秒（21_22)
 
 # ■検証処理
 get_data()  # データの取得
@@ -703,6 +701,7 @@ result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 
 result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # 文字列の時刻をdatatimeに変換したもの
 result_df['Hour'] = result_df['order_time_datetime'].dt.hour
 result_df['name_only'] = result_df['name'].str.split('_').str[0]
+absolute_mean = result_df['units'].abs().mean()
 # 保存
 try:
     result_df.to_csv(tk.folder_path + gl_start_time_str + memo + '_main_analysis_ans.csv', index=False, encoding="utf-8")
@@ -736,6 +735,7 @@ else:
     # LINEを送る
     tk.line_send("test fin 【結果】", round(gl_total, 3), ",\n"
                  , "【検証期間】", gl_actual_start_time, "-", gl_actual_end_time, ",\n"
+                 , "【Unit平均】", round(absolute_mean, 0), ",\n"
                  , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), ",\n"
                  , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":", round(minus_df['pl_per_units'].mean(), 3), ",\n"
                  , "【条件】", memo, ",\n参考:処理開始時刻", gl_now)

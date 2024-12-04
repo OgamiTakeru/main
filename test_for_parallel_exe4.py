@@ -487,11 +487,10 @@ def get_data():
         # gl_m5_loop = 1  # 何ループするか
         # gl_jp_time = datetime.datetime(2024, 11, 1, 19, 50, 0)  # TOの時刻（Globalに変更)
         search_file_name = gene.time_to_str(gl_jp_time)
-        pair = "USD_JPY"
         euro_time_datetime = gl_jp_time - datetime.timedelta(hours=9)
         euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
         params = {"granularity": gl_haba, "count": gl_m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
-        data_response = oa.InstrumentsCandles_multi_exe(pair, params, gl_m5_loop)
+        data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, gl_m5_loop)
         gl_d5_df = data_response['data']
         gl_d5_df_r = gl_d5_df.sort_index(ascending=False)  # 時系列を逆にしたものが解析用！
         gl_5m_start_time = gl_d5_df.iloc[0]['time_jp']
@@ -526,7 +525,7 @@ def get_data():
             loop_for_5s = 1  # ループ回数は1回
             trimming = gl_need_to_analysis * over5000judge  # 実際に検証で使う範囲は、解析に必要な分を最初から除いた分。
         params = {"granularity": "S5", "count": s5_count, "to": end_time_euro}  # 5秒足で必要な分を取得する
-        data_response = oa.InstrumentsCandles_multi_exe(pair, params, loop_for_5s)
+        data_response = oa.InstrumentsCandles_multi_exe("USD_JPY", params, loop_for_5s)
         gl_s5_df = data_response['data']  # 期間の全5秒足を取得する  (これは解析に利用しないため、時系列を逆にしなくて大丈夫）
         start_s5_time = gl_s5_df.iloc[0]['time_jp']
         end_s5_time = gl_s5_df.iloc[-1]['time_jp']
@@ -674,22 +673,22 @@ print("--------------------------------検証開始-----------------------------
 # ■　検証の設定
 gl_exist_data = True
 gl_jp_time = datetime.datetime(2024, 11, 20, 15, 50, 0)  # TOの時刻
-gl_m5_count = 5000
-gl_m5_loop = 3
+gl_m5_count = 100
+gl_m5_loop = 1
 gl_haba = "M5"
-memo = "フラッグ　上記に加え、通常時のLCの最低値を設定 AND LCChangeを大胆に"
+memo = "フラッグ　LCRangeの符号間違え？！　lc_price = now_price + abs(max_lc_range)が正（マイナスになってた） + 同価判断時 > 0.25"
 
 # gl_exist_date = Trueの場合の読み込みファイル
 # ■■■メイン（5分足や30分足）
-# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
-gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
+gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/m30_5000行分.csv'  # 30分足大量データ(22_24)5分
-# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_m5.csv'  # 大量データ5分(21-22)
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_m5.csv'  # 適宜データ5分(21-22)
 # ■■■検証用5秒足
-# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
-gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
+gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/s5_m30の5000行分.csv'  # 30分足大量データ(22_24)5秒
-# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_s5.csv'  # 大量データ5秒（21_22)
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_s5.csv'  # 適宜データ5秒（21_22)
 
 # ■検証処理
 get_data()  # データの取得
