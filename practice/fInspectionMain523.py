@@ -48,7 +48,7 @@ def Inspection_main(df_r):
     df_r_range = df_r[:35]
     print(df_r_range.head(1))
     print(df_r_range.tail(1))
-    peaks_info = p.peaks_collect_main(df_r[:35], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+    peaks_info = p.make_peaks_finalize(df_r[:35], 10)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
     peaks = peaks_info['all_peaks']
     latest = peaks[0]
     river = peaks[1]  # 最新のピーク（リバーと呼ぶ。このCount＝２の場合、折り返し直後）

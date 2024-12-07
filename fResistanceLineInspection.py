@@ -387,7 +387,7 @@ def judge_flag_figure_wrap_up_hard_skip(peaks, target_direction, line_strength, 
 
     # ■Peaksの準備
     # ■■直近
-    peaks = peak_inspection.hard_skip_after_peaks_cal(peaks)
+    peaks = peak_inspection.change_peaks_with_hard_skip(peaks)
     # ■■ひとつ前の足
     fixed_information_prev = cf.information_fix({"df_r": df_r[1:]})  # DFとPeaksが必ず返却される
     peaks_prev = fixed_information_prev['peaks']

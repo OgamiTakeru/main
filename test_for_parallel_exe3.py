@@ -586,7 +586,7 @@ def main():
             else:
                 # ★★★ 解析を呼び出す★★★★★
                 print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/", len(gl_inspection_base_df), "中")
-                analysis_result = im.for_inspection_analysis_warp_up_and_make_order_30(analysis_df)  # 検証専用コード
+                analysis_result = im.for_inspection_analysis_warp_up_and_make_order(analysis_df)  # 検証専用コード
                 # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
                 if not analysis_result['take_position_flag']:
                     # オーダー判定なしの場合、次のループへ（5秒後）
@@ -677,21 +677,21 @@ gl_jp_time = datetime.datetime(2024, 11, 20, 15, 50, 0)  # TOの時刻
 gl_m5_count = 100
 gl_m5_loop = 1
 gl_haba = "M5"
-memo = "フラッグ　ユーロkurosu"
+memo = ("フラッグ　適正化？")
 
 # gl_exist_date = Trueの場合の読み込みファイル
 # ■■■メイン（5分足や30分足）
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
-# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
+gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/m30_5000行分.csv'  # 30分足大量データ(22_24)5分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_m5.csv'  # 適宜データ5分(21-22)
-gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/ユーロm5_df.csv'  # ユーロデータ5分(21-22)
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/ユーロm5_df.csv'  # ユーロデータ5分(21-22)
 # ■■■検証用5秒足
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
-# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
+gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/s5_m30の5000行分.csv'  # 30分足大量データ(22_24)5秒
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_s5.csv'  # 適宜データ5秒（21_22)
-gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/ユーロ_s5_df.csv'  # ユーロデータ5秒（21_22)
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/ユーロ_s5_df.csv'  # ユーロデータ5秒（21_22)
 
 # ■検証処理
 get_data()  # データの取得
@@ -706,6 +706,7 @@ result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 
 result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # 文字列の時刻をdatatimeに変換したもの
 result_df['Hour'] = result_df['order_time_datetime'].dt.hour
 result_df['name_only'] = result_df['name'].str.split('_').str[0]
+result_df['group'] = (result_df['pl_per_units'] // 0.01) * 0.01
 absolute_mean = result_df['units'].abs().mean()
 # 保存
 try:
@@ -743,4 +744,5 @@ else:
                  , "【Unit平均】", round(absolute_mean, 0), ",\n"
                  , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), ",\n"
                  , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":", round(minus_df['pl_per_units'].mean(), 3), ",\n"
+                 , "【+域/-域のゾーン】", result_df['group'].value_counts().idxmax(), ":", result_df['group'].value_counts().idxmin(), ",\n"
                  , "【条件】", memo, ",\n参考:処理開始時刻", gl_now)

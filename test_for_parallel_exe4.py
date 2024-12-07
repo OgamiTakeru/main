@@ -703,6 +703,7 @@ result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 
 result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # 文字列の時刻をdatatimeに変換したもの
 result_df['Hour'] = result_df['order_time_datetime'].dt.hour
 result_df['name_only'] = result_df['name'].str.split('_').str[0]
+result_df['group'] = (result_df['pl_per_units'] // 0.01) * 0.01
 absolute_mean = result_df['units'].abs().mean()
 # 保存
 try:
@@ -740,4 +741,5 @@ else:
                  , "【Unit平均】", round(absolute_mean, 0), ",\n"
                  , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), ",\n"
                  , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":", round(minus_df['pl_per_units'].mean(), 3), ",\n"
+                 , "【+域/-域のゾーン】", result_df['group'].value_counts().idxmax(), ":", result_df['group'].value_counts().idxmin(), ",\n"
                  , "【条件】", memo, ",\n参考:処理開始時刻", gl_now)

@@ -419,7 +419,7 @@ def main_double_peak(dic_args):
 
     # ■オーダーの作成を実施する
     # 価格の設定（現在価格、LC、等）
-    now_price = cf.now_price()  # 現在価格の取得
+    now_price = cf.get_now_mid_price()  # 現在価格の取得
     now_price = peaks[0]['peak']
     order_base_info = cf.order_base(now_price, target_df.iloc[0]['time_jp'])  # オーダーの初期辞書を取得する(nowPriceはriver['latest_price']で代用)
     # オーダーの可能性がある場合、オーダーを正確に作成する
@@ -810,7 +810,7 @@ def for_inspection_main_double_peak(dic_args):
 
     # ■オーダーの作成を実施する
     # 価格の設定（現在価格、LC、等）
-    now_price = cf.now_price()  # 現在価格の取得
+    now_price = cf.get_now_mid_price()  # 現在価格の取得
     now_price = peaks[0]['peak']
     order_base_info = cf.order_base(now_price, target_df.iloc[0]['time_jp'])  # オーダーの初期辞書を取得する(nowPriceはriver['latest_price']で代用)
     # オーダーの可能性がある場合、オーダーを正確に作成する

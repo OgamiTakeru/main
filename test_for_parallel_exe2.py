@@ -606,7 +606,7 @@ def main():
             else:
                 # ★★★ 解析を呼び出す★★★★★
                 print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/", len(gl_inspection_base_df), "中")
-                analysis_result = im.for_inspection_analysis_warp_up_and_make_order_30(analysis_df)  # 検証専用コード
+                analysis_result = im.for_inspection_analysis_warp_up_and_make_order(analysis_df)  # 検証専用コード
                 # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
                 if not analysis_result['take_position_flag']:
                     # オーダー判定なしの場合、次のループへ（5秒後）
@@ -692,27 +692,27 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
-gl_exist_data = False
+gl_exist_data = True
 gl_jp_time = datetime.datetime(2024, 6, 30, 10, 0, 0)  # TOの時刻
 gl_m5_count = 5000
 gl_m5_loop = 2
-gl_haba = "M30"
-memo = ("フラッグ　30分足 LCChange適正化(2.5倍) + 通常LC0.20へ（旧0.25)+カンターLC　0.12 * bai * 0.8（旧は0.7なし）　同一価格リスト>0.25を1年で（3か月ではNGだったけど")
+gl_haba = "M5"
+memo = "フラッグ　30分足 LC適正化？？"
 # gl_exist_date = Trueの場合の読み込みファイル
 
 # ■メイン（5分足や30分足）
-# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
+gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/m30_5000行分.csv'  # 30分足5000個分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030172000_test_m5_df.csv'  # 適宜データ5分
-gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/30分足1年.csv'
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/30分足1年.csv'
 
 # ■検証用5秒足
-# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
+gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/s5_m30の5000行分.csv'  # 30分足5000個分
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/20241030113450_test_s5_df.csv'  # 適宜データ5秒
-gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/30分足用5秒足1年.csv'  # 30分足5000個分
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/30分足用5秒足1年.csv'  # 30分足5000個分
 
 
 # ■検証処理
@@ -728,6 +728,8 @@ result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 
 result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # 文字列の時刻をdatatimeに変換したもの
 result_df['Hour'] = result_df['order_time_datetime'].dt.hour
 result_df['name_only'] = result_df['name'].str.split('_').str[0]
+result_df['group'] = (result_df['pl_per_units'] // 0.01) * 0.01
+absolute_mean = result_df['units'].abs().mean()
 # 保存
 try:
     result_df.to_csv(tk.folder_path + gl_start_time_str + memo + '_main_analysis_ans.csv', index=False, encoding="utf-8")
@@ -761,6 +763,8 @@ else:
     # LINEを送る
     tk.line_send("test fin 【結果】", round(gl_total, 3), ",\n"
                  , "【検証期間】", gl_actual_start_time, "-", gl_actual_end_time, ",\n"
+                 , "【Unit平均】", round(absolute_mean, 0), ",\n"
                  , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), ",\n"
                  , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":", round(minus_df['pl_per_units'].mean(), 3), ",\n"
+                 , "【+域/-域のゾーン】", result_df['group'].value_counts().idxmax(), ":", result_df['group'].value_counts().idxmin(), ",\n"
                  , "【条件】", memo, ",\n参考:処理開始時刻", gl_now)

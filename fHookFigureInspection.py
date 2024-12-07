@@ -276,7 +276,7 @@ def main_hook_figure_inspection_and_order_practice(dic_args):
 
     # ■オーダーの作成(パラレル優先。）
     take_position_flag = False
-    now_price = cf.now_price()  # 現在価格の取得
+    now_price = cf.get_now_mid_price()  # 現在価格の取得
     now_price = peaks[0]['peak']
     order_base_info = cf.order_base(now_price, df_r.iloc[0]['time_jp'])  # オーダーの初期辞書を取得する(nowPriceはriver['latest_price']で代用)
 

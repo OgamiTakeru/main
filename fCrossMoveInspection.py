@@ -34,7 +34,7 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
     # peaks = fixed_information['peaks'][1:]
     # latest_direction = peaks[0]['direction']
     # 実運用でPeak渡される場合
-    peaks = peak_inspection.hard_skip_after_peaks_cal(peaks)  # HARDスキップの場合
+    peaks = peak_inspection.change_peaks_with_hard_skip(peaks)  # HARDスキップの場合
     latest_direction = peaks[0]['direction']
 
     # 返却値の基本
@@ -265,7 +265,7 @@ def analysis_cross(dic_args):
     fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
     target_df = fixed_information['df_r']
     peaks = fixed_information['peaks']  # 通常のピークス
-    peaks_hard_skip = peak_inspection.hard_skip_after_peaks_cal(peaks)  # スキップしたピークス
+    peaks_hard_skip = peak_inspection.change_peaks_with_hard_skip(peaks)  # スキップしたピークス
 
     # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     # ■形状判定の初期値

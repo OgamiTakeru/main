@@ -1,6 +1,7 @@
 import threading  # 定時実行用
 import time
 import datetime
+import json
 import sys
 import pandas as pd
 
@@ -13,6 +14,7 @@ import fGeneric as f
 import fPeakInspection as p
 import fDoublePeaks as dp
 import fInspection_order_Main as im
+import fGeneric as gene
 import making as ins
 import fResistanceLineInspection as ri
 
@@ -333,116 +335,6 @@ def mode1():
     # print("")
 
 
-def mode1_30():
-    """
-    低頻度モード（ローソクを解析し、注文を行う関数）
-    ・調査対象のデータフレームはexe_manageで取得し、グローバル変数として所有済（gl_data5r_df）。API発行回数削減の為。
-    ・調査を他関数に依頼し、取得フラグと取得価格等を受け取り、それに従って注文を実行する関数
-    発注に必要（引数で受け取るべき）な情報は以下の通り（oandaClass.order_plan_registrationに渡す最低限の情報)
-    {
-        "name": "MarginS-TPS",  # 〇　LINE送信に利用する
-        "order_permission": True,  # 〇
-        "target_price": order_base['decision_price'],  # ×
-        "tp_range": order_base['tp_range'] * 0.8,  # 〇
-        "lc_range": order_base['lc_range'],  # 〇
-        "units": 10,  # 〇
-        "direction": order_base['expected_direction'],  # 〇　（ask_bidとなる）
-        "type": "STOP" if order_base['stop_or_limit'] == 1 else "LIMIT",　 # 〇
-        "trade_timeout_min": 1800,  # 〇
-        "remark": "test",  # 任意
-        "tr_range": 0,  # 〇
-        "lc_change": {"lc_change_exe": True, "lc_trigger_range": 0.3, "lc_ensure_range": 0.1}　任意
-    },
-    :return: なし
-    """
-    print("  Mode1")
-    global gl_trade_num
-    global gl_latest_trigger_time, gl_peak_memo
-    global gl_upper_line, gl_lower_line  # RangeInspectionのみ
-
-    # ■検証を実行し、結果を取得する
-    # なお{"take_position_flag":Boo, "exe_orders":[], "exe_order":{}, "max_priority":(int) }が返却値の予定
-    inspection_result_dic = im.analysis_warp_up_and_make_order_30(gl_data5r_df)
-    print(inspection_result_dic)
-
-    mode1_order_control(inspection_result_dic)
-    # # ■ オーダーフラグがない場合は、ここでこの関数は強制終了
-    # if not inspection_result_dic['take_position_flag']:
-    #     # 発注がない場合は、終了 (ポケ除け的な部分）
-    #     return 0
-    # # return 0  # テストモード（動かすがオーダーは入れない）の場合、このリターンをコメントインすし終了させるとオーダーしない。。
-    #
-    # how_to_new_order_str = how_to_new_order_judge(inspection_result_dic)
-    # if how_to_new_order_str == "cancel":
-    #     # 新規を入れない場合（既存のオーダーが、新規オーダーよりも優先度が高い場合）
-    #     print("新規登録をキャンセル（既存オーダーと兼ね合いが取れないため）", how_to_new_order_str)
-    #     return 0
-    # elif how_to_new_order_str == "add":
-    #     # 新規を追加する場合（既存のオーダーが、新規オーダーと同等のため、既存を消さずに追加）
-    #     print("新規を既存オーダーに追加へ", how_to_new_order_str)
-    #     pass  # 既存オーダーに関する処理をせず、継続
-    # else:
-    #     # 既存オーダー＆ポジションをクリアし、新規を追加（既存のオーダーが、新規よりも優先度が低い場合）
-    #     classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
-    #     print("既存のオーダーをキャンセルし、新規登録へ", how_to_new_order_str)
-    #     tk.line_send("既存オーダーをキャンセル")
-    #
-    # # ■注文を実行する(ひとつづつ実行し、ひとつづつLINEを送信する）
-    # gl_trade_num += 1
-    # line_send = ""  # LINE送信用の注文結果の情報
-    # # tk.line_send("新規オーダー発生（新規を追加、または置換）")  # ★★いつかコメントアウト　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　き
-    #
-    # print("  新規オーダー数", len(inspection_result_dic['exe_orders']))
-    # # テスト表示用（クラス上書きがうまくいくかの確認用。現在のクラスの状態を表示しておく）
-    # for class_index, each_class in enumerate(classes):
-    #     print("     ", each_class.life, each_class.name, each_class.o_time, each_class.o_state, each_class.t_state)
-    # # 新オーダーをひとつづつ読み込む
-    # for order_n in range(len(inspection_result_dic['exe_orders'])):  # ここ（正規実行）では「配列」でOrder情報を受け取る（testでは辞書単品で受け取る）　
-    #     # クラスにオーダーを登録し、オーダー発行する（この際、life=Falseを探し、リセット＆上書きしていく）
-    #     for class_index, each_class in enumerate(classes):
-    #         # クラスが全て埋まっていないかを確認（この場合は、エラーとなる）
-    #         if class_index == len(classes) - 1:
-    #             print("クラスが全て埋まっています", len(classes))
-    #             tk.line_send("クラスが全て埋まっているエラーが発生⇒オーダーキャンセル", len(classes), class_index)
-    #             return 0
-    #         # 空いてるかを確認する
-    #         if each_class.life:
-    #             # lifeがTrueの場合、次のClassに探していく
-    #             print(" クラス埋まりあり", each_class.name, each_class.o_time, each_class.o_state, each_class.t_state, class_index)
-    #             continue
-    #         else:
-    #             # lifeがFalseの場合、既にクローズされたもの
-    #             # ローズしたオーダー（ポジション）のため、上書きして利用する。登録するとリセットも同時に行われる。
-    #             print(" 空きクラスあり★★", class_index, each_class.life, each_class.name, each_class.o_time, each_class.o_state, each_class.t_state)
-    #             res_dic = classes[class_index].order_plan_registration(inspection_result_dic['exe_orders'][order_n])
-    #             print("  要求されたオーダー(each)")
-    #             print(inspection_result_dic['exe_orders'][order_n])
-    #             print("  オーダー結果")
-    #             print(res_dic)
-    #             # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
-    #             # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
-    #             print(res_dic['order_name'])
-    #             line_send = line_send + "◆【" + str(res_dic['order_name']) + "】,\n" +\
-    #                         "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
-    #                         ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
-    #                         ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
-    #                         "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
-    #                         ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
-    #                         "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
-    #                         ", OrderID:" + str(res_dic['order_id']) + \
-    #                         ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") " + "[システム]classNo:" + str(class_index) + ",\n"
-    #                         # "\n"
-    #             break
-    #
-    # # 注文結果を送信する（複数のオーダーでも一つにまとめて送信する）
-    # tk.line_send("★オーダー発行", gl_trade_num, "回目: ", " 　　　", line_send,
-    #              ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread))
-    #
-    # print("MODE1 END")
-    # print("")
-
-
-
 def mode2():
     global gl_exe_mode
     # print("MODE2")
@@ -477,6 +369,10 @@ def exe_manage():
     if gl_now.weekday() == 6:
         # print("■土日の為API実行無し")
         return 0
+    elif gl_now.weekday() == 5:
+        if 4 <= time_hour:
+            print("■土曜の朝4時で終了（ポジションは開放しない・・？）")
+            return 0
 
     # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
     if 6 <= time_hour <= 7:
@@ -558,6 +454,7 @@ def exe_manage():
 
             gl_data5r_df = d5_df.sort_index(ascending=False)  # 対象となるデータフレーム（直近が上の方にある＝時間降順）をグローバルに
             d5_df.to_csv(tk.folder_path + 'main_data5.csv', index=False, encoding="utf-8")  # 直近保存用
+
             mode1()
 
 

@@ -89,7 +89,7 @@ def turn3Rule(df_r):
     """
     print("TURN3　ルール")
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    peaks_info = p.make_peaks_finalize(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
     f.print_arr(peaks)
@@ -175,7 +175,7 @@ def turn1Rule(df_r):
     """
     print("TURN1　ルール")
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    peaks_info = p.make_peaks_finalize(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
     f.print_arr(peaks)
@@ -365,7 +365,7 @@ def doublePeak(df_r):
     """
     print("ダブルピーク判定")
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る(時間的な部分）
-    peaks_info = p.peaks_collect_main(df_r_part, 4)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
+    peaks_info = p.make_peaks_finalize(df_r_part, 4)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝４）を指定する）
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
     f.print_arr(peaks)
@@ -505,7 +505,7 @@ def doublePeak_multi(df_r, params):
     """
     # print("ダブルピーク判定")
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    peaks_info = p.make_peaks_finalize(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
     # f.print_arr(peaks)
@@ -641,7 +641,7 @@ def stairsPeak(df_r):
     """
     print("ダブルピーク判定")
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    peaks_info = p.make_peaks_finalize(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
     f.print_arr(peaks)
@@ -755,7 +755,7 @@ def now_position(df_r):
     print("PositionInspection")
     # 今自分の価格がどんな状態にあるかを確認する
     df_r_part = df_r  # 検証に必要な分だけ抜き取る
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    peaks_info = p.make_peaks_finalize(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
     print(df_r_part)
@@ -793,7 +793,7 @@ def turn2Rule(df_r):
     """
     print("ダブルピーク判定")
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    peaks_info = p.make_peaks_finalize(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
     f.print_arr(peaks)

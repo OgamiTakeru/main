@@ -74,7 +74,7 @@ def turn2Rule(df_r):
     """
     print("TURN2　ルール")
     df_r_part = df_r[:90]  # 検証に必要な分だけ抜き取る
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    peaks_info = p.make_peaks_finalize(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
     peaks = add_stdev(peaks)  # 偏差値を付与する
     f.print_arr(peaks)
@@ -221,7 +221,7 @@ def find_latest_line_choise_river_version(df_r):
     """
     # 準備部分（表示や、ピークスの算出を行う）
     target_df = df_r[0:40]
-    peaks_info = p.peaks_collect_main(df_r, 15)
+    peaks_info = p.make_peaks_finalize(df_r, 15)
     peaks_all = peaks_info["all_peaks"]
     # 状況に応じた、ピークポイントの指定  # 添え字は0=latest, 1=river, 2=turn, 3=flop3
     if len(peaks_all) < 4:

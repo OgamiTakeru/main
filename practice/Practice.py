@@ -36,7 +36,7 @@ def inspection(df_r):
     :return:
     """
     df_r_part = df_r[:140]
-    peaks = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    peaks = p.make_peaks_finalize(df_r_part)  # Peaksの算出
     # 最高値の算出
     top_peaks = peaks['tops']
     top_peaks_sorted = sorted(top_peaks, key=lambda x: x['peak'], reverse=True)  # LCで降順
@@ -125,7 +125,7 @@ def inspection(df_r):
 def block_inspection_main(df_r):
     print("BlockInspection")
     df_r_part = df_r[:140]
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    peaks_info = p.make_peaks_finalize(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
     turn_inspection_sub(peaks[0], peaks[1])
     while len(peaks)>3:
@@ -229,7 +229,7 @@ def add_stdev(peaks):
 def turn_inspection_main(df_r):
     print("TurnInspection")
     df_r_part = df_r[:140]
-    peaks_info = p.peaks_collect_main(df_r_part)  # Peaksの算出
+    peaks_info = p.make_peaks_finalize(df_r_part)  # Peaksの算出
     peaks = peaks_info['all_peaks']
     # f.print_arr(peaks[0:10])
     # ##Peakの偏差値を求める

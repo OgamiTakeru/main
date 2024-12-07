@@ -459,6 +459,10 @@ class order_information:
             self.close_order()
 
     def trade_update_and_close(self):
+        dependence_win_max_plu_max = 0.05
+        dependence_t_pl_u_max = 0.03
+
+
         trade_latest = self.t_json  # とりあえず入れ替え（update関数で取得した最新の情報）
         # トレード情報の更新
         self.t_id = trade_latest['id']  # 既に１度入れているけど、念のため
@@ -492,7 +496,7 @@ class order_information:
         if trade_latest['state'] == "OPEN":
             # 規定時間を過ぎ、大きくプラスもなくふらふらしている場合
             if self.t_time_past_sec > self.trade_timeout_min * 60:  # 時間が経過している
-                if self.win_max_plu <= 0.05 and self.t_pl_u <= 0.03:
+                if self.win_max_plu <= dependence_win_max_plu_max and self.t_pl_u <= dependence_t_pl_u_max:
                     self.send_line("   Trade解消(微プラス膠着)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold",
                                  self.win_max_plu, self.t_pl_u)
                     self.close_trade(None)
@@ -592,9 +596,9 @@ class order_information:
                     return 0  # APIエラー時は終了
                 item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
                 # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-                # self.send_line("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
-                #              "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice", self.t_execution_price,
-                #              "予定価格", self.plan['price'])
+                self.send_line("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
+                             "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice", self.t_execution_price,
+                             "予定価格", self.plan['price'])
                 break
 
 
@@ -773,105 +777,13 @@ def position_check_no_args():
                 # オーダー時間リストを作成する（表示用）
                 pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
             else:
+                # どうやらt_stateが入っていない状態（オーダーエラーや謎の状態）
                 print(" 謎の状態(t_state)", item.t_state, "o_state", item.o_state, item.name)
+                tk.line_send("謎の状態発生(t_state)", item.t_state, "o_state", item.o_state, item.name)
+                item.life_set(False)  # 強制的にクローズ
+
         # else:
         #     # Lifeが終わっているもの
-
-    # print(" ★★★★★一時テスト（classPosition)")
-    # print(open_positions)
-    # print(not_open_positions)
-    # print("ここまで")
-    # 結果の集約
-    if len(open_positions) != 0:
-        position_exist = True  # ポジションが一つでもOpenになっている場合は、True
-    else:
-        position_exist = False
-
-    if len(not_open_positions) != 0:
-        order_exist = True
-    else:
-        order_exist = False
-
-    # 表示用の名前リストの作成
-    name_list = "\n[P待ち]" + pending_class_names + "\n[P中]" + open_class_names + "\n"
-
-    return {
-        "position_exist": position_exist,
-        "order_exist": order_exist,
-        "open_positions": open_positions,
-        "max_priority_position": max_priority_position,
-        "not_open_positions": not_open_positions,  # 取得待ちの状態
-        "max_priority_order": max_priority_order,
-        "max_position_time_sec": max_position_time_sec,
-        "max_order_time_sec": max_order_time_sec,
-        "total_pl": total_pl,
-        "name_list": name_list
-    }
-
-
-def position_check(classes):
-    """
-    W、ターン未遂以外のオーダーが存在するかを確認する.
-    :param classes:
-    :return:
-    """
-    open_positions = []
-    not_open_positions = []
-    max_priority_order = 0
-    max_priority_position = 0
-    max_position_time_sec = 0
-    max_order_time_sec = 0
-    open_class_names = closed_class_names = pending_class_names = ""
-    total_pl = 0
-    for item in classes:
-        if item.life:  #lifeがTrueの場合、ポジションかオーダーが存在
-            # 各情報
-            if item.t_state == "OPEN":
-                # ポジションがある場合、ポジションの情報を取得する
-                # プライオリティも最高値を取得
-                if item.priority > max_priority_position:
-                    max_priority_position = item.priority  # ポジションの有る最大のプライオリティを取得する
-                open_positions.append({
-                    "name": item.name,
-                    "life": item.life,
-                    "priority": item.priority,
-                    "o_state": item.o_state,
-                    "t_state": item.t_state,
-                    "pl": item.t_pl_u,
-                    "direction": item.plan['direction']
-                })
-                # ポジションの所有時間（ポジションがある中で最大）も取得しておく
-                if item.t_time_past_sec > max_position_time_sec:
-                    max_position_time_sec = item.t_time_past_sec  # 何分間持たれているポジションか
-                # トータルの含み損益を表示する
-                total_pl = total_pl + float(item.t_unrealize_pl)
-                # オーダー時間リストを作る（表示用）
-                open_class_names = open_class_names + "," + gene.delYearDay(item.o_time)
-                # print("  ポジション状態", item.t_id, ",PL:", total_pl)
-            elif item.o_state == "PENDING":
-                # オーダーのみ（取得俟ちの場合）取得まち用の配列に入れておく
-                # プライオリティも最高値を取得
-                if item.priority > max_priority_order:
-                    max_priority_order = item.priority  # ポジションの有る最大のプライオリティを取得する
-
-                not_open_positions.append({
-                    "name": item.name,
-                    "life": item.life,
-                    "priority": item.priority,
-                    "o_state": item.o_state,
-                    "t_state": item.t_state,
-                    "pl": item.t_pl_u,
-                    "direction": item.plan['direction']
-                })
-                # ポジションの所有時間（ポジションがある中で最大）も取得しておく
-                if item.o_time_past_sec > max_order_time_sec:
-                    max_order_time_sec = item.o_time_past_sec  # 何分間オーダー待ちか
-                # オーダー時間リストを作成する（表示用）
-                pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
-            else:
-                print(" 謎の状態(order_state)", item.o_state, item.name)
-        # else:
-        #     closed_class_names = closed_class_names + "," + gene.delYearDay(item.o_time)
 
     # print(" ★★★★★一時テスト（classPosition)")
     # print(open_positions)

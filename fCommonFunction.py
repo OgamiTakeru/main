@@ -1,16 +1,42 @@
-import datetime  # 日付関係
 import json
-from plotly.subplots import make_subplots  # draw_graph
-import plotly.graph_objects as go  # draw_graph
 import tokens as tk
 import fPeakInspection as p
 import fGeneric as gene
 import classOanda
-import copy
-from collections import OrderedDict
+import fPeakInspection as pi
+
 
 basic_unit = 50000
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
+
+
+def setting_json_read(current_param, param_name):
+    """
+    実行途中に値を変える。（毎回読み込む）
+    この関数一回の実行につき一つのパラメータを読み込むとする
+    エラーの場合、現在利用している変数内容をそのまま返却する。
+    その為、現在仕様利している変数を引数にとる。
+    （変更があった場合、変更を検知して変更した旨も表示できる）
+    """
+    # JSONファイルを読み込む
+    try:
+        # JSONファイルを読み込む
+        with open(tk.setting_folder_path + 'data.json', "r") as file:
+            test = json.load(file)
+        ans = test[param_name]
+        if ans == current_param:
+            pass  # 内容に変更なし
+        else:
+            print("■■■■", param_name, "にてループ途中の内容変更を検知しました")
+    except json.JSONDecodeError as e:
+        print(f"JSONDecodeError: {e}")
+        ans = current_param
+    except Exception as e:
+        # その他のすべてのエラーをキャッチ
+        print(f"予期しないエラーが発生: {e}")
+        ans = current_param
+
+    return ans
 
 
 def order_base(now_price, decision_time):
@@ -20,7 +46,7 @@ def order_base(now_price, decision_time):
     基本はすべて仮の値だが、Unitのみはこれがベースとなる。
     LCCHange内は、執行まで時間が短い順（Time＿After）で記載する（lc_ensure_rangeは広がる方向で書く場合もあり）
     """
-    return {
+    order_base_dic = {
             "target": 0.00,
             "type": "STOP",
             "units": basic_unit,
@@ -32,8 +58,6 @@ def order_base(now_price, decision_time):
             "decision_time": decision_time,
             "name": "",
             "lc_change": [
-                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.00, "lc_ensure_range": -0.06},
-                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": 0.03},
                 # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
                 # 2022-2023は 0.05トリガーにすると、マイナスになる！！
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
@@ -50,22 +74,11 @@ def order_base(now_price, decision_time):
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
-
-                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.032, "lc_ensure_range": -0.06},
-                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": -0.03},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.01, "lc_ensure_range": -0.08},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.038, "lc_ensure_range": -0.04},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.048, "lc_ensure_range": 0.04},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.07, "lc_ensure_range": 0.05},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10, "lc_ensure_range": 0.075},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
             ],
     }
+    new_lc_change = setting_json_read(order_base_dic['lc_change'], 'lc_change')
+    order_base_dic['lc_change'] = new_lc_change
+    return order_base_dic
 
 
 def order_base_inspection_another(now_price, decision_time):
@@ -77,7 +90,7 @@ def order_base_inspection_another(now_price, decision_time):
     """
     basic_unit_for_inspection = 10000
     bairitu = 1
-    return {
+    order_base_dic = {
             "target": 0.00,
             "type": "STOP",
             "units": basic_unit_for_inspection,
@@ -123,9 +136,10 @@ def order_base_inspection_another(now_price, decision_time):
                 # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
             ],
     }
+    return order_base_dic
 
 
-def order_base_inspection(now_price, decision_time):
+def order_base_for_inspection(now_price, decision_time):
     """
     引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
     従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
@@ -134,7 +148,7 @@ def order_base_inspection(now_price, decision_time):
     """
     basic_unit_for_inspection = 10000
     bairitu = 1
-    return {
+    order_base_dic = {
             "target": 0.00,
             "type": "STOP",
             "units": basic_unit_for_inspection,
@@ -148,12 +162,12 @@ def order_base_inspection(now_price, decision_time):
             "lc_change": [
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.00, "lc_ensure_range": -0.06},
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": 0.03},
-                {"lc_change_exe": True, "time_after": 0 * 5 * 60, "lc_trigger_range": 0.05 * bairitu, "lc_ensure_range": -0.05},
+                # {"lc_change_exe": True, "time_after": 0 * 5 * 60, "lc_trigger_range": 0.045 * bairitu, "lc_ensure_range": -0.02},
                 # 2022-2023は 0.05トリガーにすると、マイナスになる！！
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.065 * bairitu, "lc_ensure_range": 0.03 * bairitu},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.08 * bairitu, "lc_ensure_range": 0.06 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.060 * bairitu, "lc_ensure_range": 0.04 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.08 * bairitu, "lc_ensure_range": 0.06 * bairitu},
                 # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.09 * bairitu, "lc_ensure_range": 0.05 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10 * bairitu, "lc_ensure_range": 0.043 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10 * bairitu, "lc_ensure_range": 0.05 * bairitu},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.15 * bairitu, "lc_ensure_range": 0.10 * bairitu},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.20 * bairitu, "lc_ensure_range": 0.12 * bairitu},
                 # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.20 * bairitu, "lc_ensure_range": 0.15 * bairitu},
@@ -181,6 +195,7 @@ def order_base_inspection(now_price, decision_time):
                 # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
             ],
     }
+    return order_base_dic
 
 
 def order_base_cross(now_price, decision_time):
@@ -310,7 +325,7 @@ def make_trid_order(plan):
     return order_result_arr
 
 
-def now_price():
+def get_now_mid_price():
     """
     各関数の行数削減（特にエラー対応）のため、関数に出す
     ・とりあえずミドル価格を返す
@@ -324,17 +339,6 @@ def now_price():
     else:
         price_dic = price_dic['data']
     return price_dic['mid']
-
-
-def information_fix_help_delete_item(peak):
-    """
-    information fix内で、latest等を表示する際、NextとPreviousのせいで、表示が長くなる。
-    この二つを除去する
-    """
-    copy_data = copy.deepcopy(peak)
-    copy_data.pop('next', None)
-    copy_data.pop('previous', None)
-    return copy_data
 
 
 def information_fix(dic_args):
@@ -370,7 +374,7 @@ def information_fix(dic_args):
         print(s, "Peaks既存")
         peaks = dic_args["peaks"]
     else:
-        peaks_info = p.peaks_collect_main(dic_args['df_r'], 15)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
+        peaks_info = p.make_peaks_finalize(dic_args['df_r'], 15)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
         # peaks_info = p.peaks_collect_main_not_skip(dic_args['df_r'], 15)  # Peaksの算出（ループ時間短縮の為、必要最低限のピーク数（＝）を指定）
         peaks = peaks_info['all_peaks']
         if len(peaks) < 4:
@@ -381,10 +385,10 @@ def information_fix(dic_args):
             #     153.344), 'time_old': '2024/10/31 05:30:00', 'peak_old': np.float64(153.383), 'direction': np.float64(
             #     -1.0), 'body_ave': np.float64(0.025), 'count': 2, 'gap': np.float64(0.018),
             print(s, "<対象>")
-            print(s, "Latest", information_fix_help_delete_item(peaks[0]))
-            print(s, "river ", information_fix_help_delete_item(peaks[1]))
-            print(s, "turn", information_fix_help_delete_item(peaks[2]))
-            print(s, "flop3", information_fix_help_delete_item(peaks[3]))
+            print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
+            print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
+            print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
+            print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
             print(s, "すべて")
         # gene.print_arr(peaks, 5)
 
@@ -400,20 +404,6 @@ def information_fix(dic_args):
         inspection_params = None
 
     return {"df_r": dic_args['df_r'], "peaks": peaks, "params": params, "inspection_params": inspection_params}
-
-
-def order_shorter(before_finalized_order):
-    """
-    与えられたオーダーに対し、コピー生成。
-    コピーに対し、LCや名前の変更（ショート化）を行い返却
-    """
-    copied_before_finalized_order = before_finalized_order.copy()  # 辞書は参照書き換えのため、コピー必須。
-    copied_before_finalized_order['tp'] = 0.03
-    copied_before_finalized_order['lc'] = 0.04
-    copied_before_finalized_order['units'] = copied_before_finalized_order['units'] * 0.9
-    copied_before_finalized_order['name'] = copied_before_finalized_order['name'] + "_SHORT"
-
-    return order_finalize(copied_before_finalized_order)
 
 
 def order_finalize(order_base_info):
@@ -453,6 +443,10 @@ def order_finalize(order_base_info):
         "order_permission"  必須（ClassPosition）
     }
     """
+    # 価格や通貨に依存する物たち
+    dependence_price_or_range_criteria = 80  # ドル円の場合、80以上は価格とみなし、それ以下はrangeとみなす
+    dependence_tp_lc_margin = 0.02  # 最低限の幅を保つためのもの。ドル円の場合0.02円(2pips) (LC価格とTarget価格が同値となった時の調整)
+
     # ⓪必須項目がない場合、エラーとする
     if not ('expected_direction' in order_base_info) or not ('decision_price' in order_base_info):
         print("　　　　エラー（項目不足)", 'expected_direction' in order_base_info,
@@ -478,12 +472,12 @@ def order_finalize(order_base_info):
     if not ('target' in order_base_info):
         # どっちも入ってない場合、Error
         print("    ★★★target(Rangeか価格か）が入力されていません")
-    elif order_base_info['target'] >= 80:
+    elif order_base_info['target'] >= dependence_price_or_range_criteria:
         # targetが８０以上の数字の場合、ターゲット価格が指定されたとみなす
         order_base_info['position_margin'] = round(abs(order_base_info['decision_price'] - order_base_info['target']), 3)
         order_base_info['target_price'] = order_base_info['target']
         # print("    ★★target 価格指定", order_base['target'], abs(order_base['decision_price']), order_base['target_price'])
-    elif order_base_info['target'] < 80:
+    elif order_base_info['target'] < dependence_price_or_range_criteria:
         # targetが80未満の数字の場合、PositionまでのMarginが指定されたとみなす（負の数は受け入れない）
         if order_base_info['target'] < 0:
             print("   targetに負のRangeが指定されています。ABSで使用します（正の値を計算で調整）")
@@ -500,21 +494,21 @@ def order_finalize(order_base_info):
     if not ('tp' in order_base_info):
         print("    ★★★TP情報が入っていません（利確設定なし？？？）")
         order_base_info['tp_range'] = 0  # 念のため０を入れておく（価格の指定は絶対に不要）
-    elif order_base_info['tp'] >= 80:
+    elif order_base_info['tp'] >= dependence_price_or_range_criteria:
         # print("    TP 価格指定")
         # 80以上の数字は、Price値だと認識。Priceの設定と、Rangeの算出と設定を実施。
         #    ただし、偶然Target_Priceと同じになる(秒でTPが入ってしまう)可能性あるため、target_price-価格が0.02未満の場合は調整する。
-        if abs(order_base_info['target_price'] - order_base_info['tp']) < 0.02:
+        if abs(order_base_info['target_price'] - order_base_info['tp']) < dependence_tp_lc_margin:
             # 調整を行う（Rangeを最低の0.02に設定し、そこから改めてLC＿Priceを算出する）
             print("  ★★TP価格とTarget価格が同値となったため、調整あり(0.02)")
-            order_base_info['tp_range'] = 0.02
+            order_base_info['tp_range'] = dependence_tp_lc_margin
             order_base_info['tp_price'] = round(order_base_info['target_price'] + (
                     order_base_info['tp_range'] * order_base_info['expected_direction']), 3)
         else:
             # 調整なしでOK
             order_base_info['tp_price'] = round(order_base_info['tp'], 3)
             order_base_info['tp_range'] = abs(order_base_info['target_price'] - order_base_info['tp'])
-    elif order_base_info['tp'] < 80:
+    elif order_base_info['tp'] < dependence_price_or_range_criteria:
         # print("    TP　Range指定")
         # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
         order_base_info['tp_price'] = round(order_base_info['target_price'] + (order_base_info['tp'] * order_base_info['expected_direction']), 3)
@@ -524,21 +518,21 @@ def order_finalize(order_base_info):
     if not ('lc' in order_base_info):
         # どっちも入ってない場合、エラー
         print("    ★★★LC情報が入っていません（利確設定なし？？）")
-    elif order_base_info['lc'] >= 80:
+    elif order_base_info['lc'] >= dependence_price_or_range_criteria:
         # print("    LC 価格指定")
         # 80以上の数字は、Price値だと認識。Priceの設定と、Rangeの算出と設定を実施。
         #     ただし、偶然Target_Priceと同じになる(秒でLCが入ってしまう)可能性あるため、target_price-価格が0.02未満の場合は調整する。
-        if abs(order_base_info['target_price'] - order_base_info['lc']) < 0.02:
+        if abs(order_base_info['target_price'] - order_base_info['lc']) < dependence_tp_lc_margin:
             # 調整を行う（Rangeを最低の0.02に設定し、そこから改めてLC＿Priceを算出する）
             print("  ★★LC価格とTarget価格が同値となったため、調整あり(0.02)")
-            order_base_info['lc_range'] = 0.02
+            order_base_info['lc_range'] = dependence_tp_lc_margin
             order_base_info['lc_price'] = round(order_base_info['target_price'] - (
                     order_base_info['lc_range'] * order_base_info['expected_direction']), 3)
         else:
             # 調整なしでOK
             order_base_info['lc_price'] = round(order_base_info['lc'], 3)
             order_base_info['lc_range'] = abs(order_base_info['target_price'] - order_base_info['lc'])
-    elif order_base_info['lc'] < 80:
+    elif order_base_info['lc'] < dependence_price_or_range_criteria:
         # print("    LC RANGE指定")
         # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
         order_base_info['lc_price'] = round(order_base_info['target_price'] - (order_base_info['lc'] * order_base_info['expected_direction']), 3)
