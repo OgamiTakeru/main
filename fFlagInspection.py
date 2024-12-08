@@ -518,42 +518,42 @@ def tilt_cal(peaks, target_direction):
 
     # ■推奨のロスカット価格を集合から計算しておく
     # 最大でもLCRange換算で10pips以内したい
-    # now_price = peaks[0]['peak']
-    # temp_lc_price = oldest_item['lc_price']  # lcPriceは収束の中間点
-    # lc_range = temp_lc_price - now_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
-    # max_lc_range = dependence_max_lc_range
-    # if abs(lc_range) >= max_lc_range:
-    #     # LCが大きすぎると判断される場合(10pips以上離れている）
-    #     # lc_range = 0.1  # LCRnageを指定　←旧　これがコメントイン（←けどおかしい）
-    #     if lc_range < 0:
-    #         # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-    #         lc_price = now_price + abs(max_lc_range)  # 旧 abs(lc_range)←でもおかしい
-    #     else:
-    #         # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-    #         lc_price = now_price - abs(max_lc_range)  # 旧　abs(lc_range)←でもおかしい
-    # else:
-    #     # LCRangeが許容範囲内の場合、そのまま利用
-    #     lc_price = temp_lc_price
-    # print(s7, "LC(価格orRange）", lc_price)
-
-    # ↓↓保存用（何かおかしいけど結果がよかったやつ)
     now_price = peaks[0]['peak']
     temp_lc_price = oldest_item['lc_price']  # lcPriceは収束の中間点
     lc_range = temp_lc_price - now_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
     max_lc_range = dependence_max_lc_range
     if abs(lc_range) >= max_lc_range:
         # LCが大きすぎると判断される場合(10pips以上離れている）
-        lc_range = dependence_max_lc_range  # LCRnageを指定　←旧　これがコメントイン（←けどおかしい）
+        # lc_range = 0.1  # LCRnageを指定　←旧　これがコメントイン（←けどおかしい）
         if lc_range < 0:
             # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-            lc_price = now_price - abs(max_lc_range)  # 旧 abs(lc_range)←でもおかしい
+            lc_price = now_price + abs(max_lc_range)  # 旧 abs(lc_range)←でもおかしい
         else:
             # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-            lc_price = now_price + abs(max_lc_range)  # 旧　abs(lc_range)←でもおかしい
+            lc_price = now_price - abs(max_lc_range)  # 旧　abs(lc_range)←でもおかしい
     else:
         # LCRangeが許容範囲内の場合、そのまま利用
         lc_price = temp_lc_price
     print(s7, "LC(価格orRange）", lc_price)
+
+    # ↓↓保存用（何かおかしいけど結果がよかったやつ)
+    # now_price = peaks[0]['peak']
+    # temp_lc_price = oldest_item['lc_price']  # lcPriceは収束の中間点
+    # lc_range = temp_lc_price - now_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
+    # max_lc_range = dependence_max_lc_range
+    # if abs(lc_range) >= max_lc_range:
+    #     # LCが大きすぎると判断される場合(10pips以上離れている）
+    #     lc_range = dependence_max_lc_range  # LCRnageを指定　←旧　これがコメントイン（←けどおかしい）
+    #     if lc_range < 0:
+    #         # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+    #         lc_price = now_price - abs(max_lc_range)  # 旧 abs(lc_range)←でもおかしい
+    #     else:
+    #         # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+    #         lc_price = now_price + abs(max_lc_range)  # 旧　abs(lc_range)←でもおかしい
+    # else:
+    #     # LCRangeが許容範囲内の場合、そのまま利用
+    #     lc_price = temp_lc_price
+    # print(s7, "LC(価格orRange）", lc_price)
     # ↑↑保存用ここまで
 
     # ■5個の時の成立があるかを確認する
@@ -967,63 +967,64 @@ def main_flag(dic_args):
 
         # ■■カウンタオーダーも入れる（二回目以降のみ）
         # 最大でもLCRange換算で10pips以内したい
-        target_price = peaks[0]['peak'] - (dependence_counter_margin * flag_info['line_base_info']['line_base_direction'])  # Nowpriceというより、取得価格
+        # target_price = peaks[0]['peak'] - (dependence_counter_margin * flag_info['line_base_info']['line_base_direction'])  # Nowpriceというより、取得価格
         target_price = peaks[1]['peak'] - (dependence_counter_margin * flag_info['line_base_info']['line_base_direction'])
         # target_price = lc_price - (0.035 * flag_info['line_base_info']['line_base_direction'])  # 突破のLCから検討
         temp_lc_price = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # lcPriceは収束の中間点
+        temp_lc_price = target_price = flag_info['line_base_info']['line_base_price']
         lc_range = temp_lc_price - target_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
         print(s6, "LC検討", target_price, temp_lc_price, lc_range, peaks[0]['peak'])
-        # if abs(lc_range) >= dependence_lc_range_max_c:
-        #     # LCが大きすぎると判断される場合(10pips以上離れている）
-        #     if lc_range < 0:
-        #         # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-        #         lc_price_counter = target_price + abs(dependence_lc_range_max_c)  # 通常とは符号逆 もともとー
-        #         print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
-        #     else:
-        #         # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-        #         lc_price_counter = target_price - abs(dependence_lc_range_max_c)  # 通常とは符号逆　もともと＋
-        #         print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
-        # elif abs(lc_range) <= dependence_lc_range_at_least_c:
-        #     # LCが小さすぎる
-        #     if lc_range < 0:
-        #         # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-        #         lc_price_counter = target_price + abs(dependence_lc_range_max_c)
-        #         print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
-        #     else:
-        #         # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-        #         lc_price_counter = target_price - abs(dependence_lc_range_max_c)
-        #         print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
-        # else:
-        #     # LCRangeが許容範囲内の場合、そのまま利用
-        #     lc_price_counter = temp_lc_price
-        #     print(s6, "そのままのLCを利用する", lc_price_counter)
-        #　保存用(過去のいいやつ）↓
         if abs(lc_range) >= dependence_lc_range_max_c:
             # LCが大きすぎると判断される場合(10pips以上離れている）
-            lc_range = dependence_lc_range_max_c
             if lc_range < 0:
-                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-                lc_price_counter = target_price - abs(dependence_lc_range_max_c)  # 通常とは符号逆 もともとー
+                # LC_rangeがマイナス値　＝　売り注文。その為、ターゲット価格にプラスするとLCPriceとなる
+                lc_price_counter = target_price + abs(dependence_lc_range_max_c)  # 通常とは符号逆 もともとー
                 print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
             else:
-                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-                lc_price_counter = target_price + abs(dependence_lc_range_max_c)  # 通常とは符号逆　もともと＋
+                # LC_rangeがプラス値　＝　買い注文。その為、ターゲット価格からマイナスするとＬＣＰｒｉｃｅになる
+                lc_price_counter = target_price - abs(dependence_lc_range_max_c)  # 通常とは符号逆　もともと＋
                 print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
         elif abs(lc_range) <= dependence_lc_range_at_least_c:
-            lc_range = dependence_lc_range_max_c
             # LCが小さすぎる
             if lc_range < 0:
-                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-                lc_price_counter = target_price - abs(dependence_lc_range_max_c)
+                # LC_rangeがマイナス値　＝　売り注文。その為、ターゲット価格にプラスするとLCPriceとなる
+                lc_price_counter = target_price + abs(dependence_lc_range_max_c)
                 print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
             else:
-                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-                lc_price_counter = target_price + abs(dependence_lc_range_max_c)
+                # LC_rangeがプラス値　＝　買い注文。その為、ターゲット価格からマイナスするとＬＣＰｒｉｃｅになる
+                lc_price_counter = target_price - abs(dependence_lc_range_max_c)
                 print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
         else:
             # LCRangeが許容範囲内の場合、そのまま利用
             lc_price_counter = temp_lc_price
             print(s6, "そのままのLCを利用する", lc_price_counter)
+        #　保存用(過去のいいやつ）↓
+        # if abs(lc_range) >= dependence_lc_range_max_c:
+        #     # LCが大きすぎると判断される場合(10pips以上離れている）
+        #     lc_range = dependence_lc_range_max_c
+        #     if lc_range < 0:
+        #         # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+        #         lc_price_counter = target_price - abs(dependence_lc_range_max_c)  # 通常とは符号逆 もともとー
+        #         print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
+        #     else:
+        #         # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+        #         lc_price_counter = target_price + abs(dependence_lc_range_max_c)  # 通常とは符号逆　もともと＋
+        #         print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
+        # elif abs(lc_range) <= dependence_lc_range_at_least_c:
+        #     lc_range = dependence_lc_range_max_c
+        #     # LCが小さすぎる
+        #     if lc_range < 0:
+        #         # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+        #         lc_price_counter = target_price - abs(dependence_lc_range_max_c)
+        #         print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
+        #     else:
+        #         # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+        #         lc_price_counter = target_price + abs(dependence_lc_range_max_c)
+        #         print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
+        # else:
+        #     # LCRangeが許容範囲内の場合、そのまま利用
+        #     lc_price_counter = temp_lc_price
+        #     print(s6, "そのままのLCを利用する", lc_price_counter)
         #  保存用↑
 
         main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま

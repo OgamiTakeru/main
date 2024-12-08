@@ -697,7 +697,7 @@ gl_jp_time = datetime.datetime(2024, 6, 30, 10, 0, 0)  # TOの時刻
 gl_m5_count = 5000
 gl_m5_loop = 2
 gl_haba = "M5"
-memo = "フラッグ　30分足 LC適正化？？"
+memo = "フラッグ　リビルド＆推奨フラグ修正、カウンターLC修正"
 # gl_exist_date = Trueの場合の読み込みファイル
 
 # ■メイン（5分足や30分足）
