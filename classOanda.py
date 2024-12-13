@@ -1003,7 +1003,13 @@ class Oanda:
         df = df.sort_index(ascending=False)
         return df
 
-    # (23) トランザクションデータを取得する（N　×　Row分）
+    # (23)トランザクションデータの取得（単品）
+    def get_transaction_single(self, num):
+        ep = trans.TransactionIDRange(accountID=self.accountID, params={"to": num, "from": num})
+        resp = self.api.request(ep)
+        return resp
+
+    # (24) トランザクションデータを取得する（N　×　Row分）
     def get_base_data_multi(self, roop, num):
         """
         最新のデータから、N個さかのぼった分のデータをトランザクションデータを取得する。

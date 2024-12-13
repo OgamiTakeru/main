@@ -1,0 +1,107 @@
+オーダー注文のJson
+指値
+{'id': '72492', 'createTime': '2024-12-12T22:58:43.585389092Z', 'type': 'LIMIT',
+'instrument': 'USD_JPY', 'units': '-100', 'timeInForce': 'GTC',
+'takeProfitOnFill': {'price': '151.712', 'timeInForce': 'GTC'},
+'stopLossOnFill': {'price': '152.712', 'timeInForce': 'GTC', 'triggerMode': 'TOP_OF_BOOK'},
+'price': '152.612', 'triggerCondition': 'DEFAULT', 'partialFill': 'DEFAULT_FILL',
+'positionFill': 'DEFAULT', 'state': 'PENDING', 'time_past': 2}
+
+ {'id': '72507', 'createTime': '2024-12-12T23:06:43.899426065Z', 'type': 'STOP',
+ 'instrument': 'USD_JPY', 'units': '100', 'timeInForce': 'GTC',
+ 'takeProfitOnFill': {'price': '153.488', 'timeInForce': 'GTC'},
+ 'stopLossOnFill': {'price': '152.488', 'timeInForce': 'GTC', 'triggerMode': 'TOP_OF_BOOK'},
+ 'price': '152.588', 'triggerCondition': 'DEFAULT', 'triggerMode': 'TOP_OF_BOOK',
+  'partialFill': 'DEFAULT_FILL', 'positionFill': 'DEFAULT', 'state': 'FILLED',
+  'fillingTransactionID': '72508', 'filledTime': '2024-12-12T23:06:43.899426065Z',
+  'tradeOpenedID': '72508', 'time_past': 191}
+
+
+指値即時決済
+{'id': '72507', 'createTime': '2024-12-12T23:06:43.899426065Z', 'type': 'STOP',
+'instrument': 'USD_JPY', 'units': '100', 'timeInForce': 'GTC',
+'takeProfitOnFill': {'price': '153.488', 'timeInForce': 'GTC'},
+'stopLossOnFill': {'price': '152.488', 'timeInForce': 'GTC', 'triggerMode': 'TOP_OF_BOOK'},
+'price': '152.588', 'triggerCondition': 'DEFAULT',
+'triggerMode': 'TOP_OF_BOOK', 'partialFill': 'DEFAULT_FILL', 'positionFill': 'DEFAULT',
+'state': 'FILLED', 'fillingTransactionID': '72508',
+'filledTime': '2024-12-12T23:06:43.899426065Z', 'tradeOpenedID': '72508', 'time_past': 2}
+
+
+指値完全相殺時（↑が相殺された側のオーダー。↓のClosetradeIDは相殺した側に紐づく
+{'id': '72511', 'createTime': '2024-12-12T23:06:44.632478051Z', 'type': 'LIMIT',
+'instrument': 'USD_JPY', 'units': '-100', 'timeInForce': 'GTC',
+'takeProfitOnFill': {'price': '151.698', 'timeInForce': 'GTC'},
+'stopLossOnFill': {'price': '152.698', 'timeInForce': 'GTC', 'triggerMode': 'TOP_OF_BOOK'},
+'price': '152.598', 'triggerCondition': 'DEFAULT', 'partialFill': 'DEFAULT_FILL',
+'positionFill': 'DEFAULT', 'state': 'FILLED', 'fillingTransactionID': '72512', '
+filledTime': '2024-12-12T23:09:53.770403158Z', 'tradeClosedIDs': ['72508'], 'time_past': 191}
+
+半分相殺時（相殺した側）⇒減らしたポジションがreducetradeIDとして記録される（まだ少し残ってる）
+fillingIDは、これによって解消された部分の結果
+{'id': '72519', 'createTime': '2024-12-12T23:23:14.002805082Z', 'type': 'LIMIT',
+'instrument': 'USD_JPY', 'units': '-60', 'timeInForce': 'GTC',
+'takeProfitOnFill': {'price': '151.688', 'timeInForce': 'GTC'},
+'stopLossOnFill': {'price': '152.688', 'timeInForce': 'GTC', 'triggerMode': 'TOP_OF_BOOK'},
+'price': '152.588', 'triggerCondition': 'DEFAULT', 'partialFill': 'DEFAULT_FILL',
+'positionFill': 'DEFAULT', 'state': 'FILLED', 'fillingTransactionID': '72520',
+'filledTime': '2024-12-12T23:30:31.702982435Z', 'tradeReducedID': '72516', 'time_past': 447}
+
+
+
+ポジション
+部分的に相殺された側(72516)
+'trade': {'id': '72516', 'instrument': 'USD_JPY', 'price': '152.582', 'openTime': '2024/12/13 08:23:13',
+ 'initialUnits': '100', 'initialMarginRequired': '610.3120', 'state': 'OPEN',
+ 'currentUnits': '40', 'realizedPL': '0.6600', 'closingTransactionIDs': ['72520'],
+ 'financing': '0.0000', 'dividendAdjustment': '0.0000', 'averageClosePrice': '152.593',
+ 'unrealizedPL': '-1.7200', 'marginUsed': '244.0688',
+ 'takeProfitOrder': {'id': '72517', 'createTime': '2024-12-12T23:23:13.082286721Z', 'type': 'TAKE_PROFIT',
+ 'tradeID': '72516', 'price': '153.478', 'timeInForce': 'GTC',
+ 'triggerCondition': 'DEFAULT', 'state': 'PENDING'},
+ 'stopLossOrder': {'id': '72518', 'createTime': '2024-12-12T23:23:13.082286721Z', 'type': 'STOP_LOSS',
+ 'tradeID': '72516', 'price': '152.478', 'timeInForce': 'GTC', 'triggerCondition': 'DEFAULT',
+ 'triggerMode': 'TOP_OF_BOOK', 'state': 'PENDING'}, 'time_past': 1305, 'PLu': -0.017}, 'lastTransactionID': '72520'}
+
+↑のトランザクションは。
+{'transactions': [{'id': '72520', 'accountID': '001-009-6867379-001', 'userID': 6867379,
+'batchID': '72520', 'time': '2024-12-12T23:30:31.702982435Z', 'type': 'ORDER_FILL', 'orderID': '72519',
+'instrument': 'USD_JPY', 'units': '-60', 'requestedUnits': '-60', 'price': '152.593', 'pl': '0.6600',
+'quotePL': '0.660', 'financing': '0.0000', 'baseFinancing': '0.00000000000000', 'commission': '0.0000',
+'accountBalance': '740850.9583', 'gainQuoteHomeConversionFactor': '1', 'lossQuoteHomeConversionFactor': '1',
+'guaranteedExecutionFee': '0.0000', 'quoteGuaranteedExecutionFee': '0', 'halfSpreadCost': '0.2400',
+'fullVWAP': '152.593', 'reason': 'LIMIT_ORDER', '
+tradeReduced': {'tradeID': '72516', 'units': '-60', 'realizedPL': '0.6600', 'financing': '0.0000',
+'baseFinancing': '0.00000000000000', 'price': '152.593', 'guaranteedExecutionFee': '0.0000',
+'quoteGuaranteedExecutionFee': '0', 'halfSpreadCost': '0.2400', 'plHomeConversionCost': '0.000',
+'baseFinancingHomeConversionCost': '0.00000000000000', 'guaranteedExecutionFeeHomeConversionCost': '0',
+'homeConversionCost': '0.00000000000000'}, 'fullPrice': {'closeoutBid': '152.588', 'closeoutAsk': '152.606',
+'timestamp': '2024-12-12T23:30:31.702982435Z', 'bids': [{'price': '152.593', 'liquidity': '3000000'}],
+'asks': [{'price': '152.601', 'liquidity': '3000000'}]}, 'homeConversionFactors': {'gainQuoteHome': {'factor': '1'},
+'lossQuoteHome': {'factor': '1'}, 'gainBaseHome': {'factor': '152.291806'}, 'lossBaseHome': {'factor': '152.902194'}},
+ 'plHomeConversionCost': '0.000', 'baseFinancingHomeConversionCost': '0.00000000000000',
+ 'guaranteedExecutionFeeHomeConversionCost': '0', 'homeConversionCost': '0.00000000000000'}],
+  'lastTransactionID': '72522'}
+
+
+
+
+
+成り行き
+{'id': '72488', 'createTime': '2024-12-12T22:58:42.822954384Z', 'type': 'MARKET',
+'instrument': 'USD_JPY', 'units': '100', 'timeInForce': 'FOK',
+'takeProfitOnFill': {'price': '153.482', 'timeInForce': 'GTC'},
+'stopLossOnFill': {'price': '152.482', 'timeInForce': 'GTC', 'triggerMode': 'TOP_OF_BOOK'},
+'positionFill': 'DEFAULT', 'state': 'FILLED', 'fillingTransactionID': '72489',
+'filledTime': '2024-12-12T22:58:42.822954384Z', 'tradeOpenedID': '72489', 'time_past': 2}
+
+
+{'trade': {'id': '72836', 'instrument': 'USD_JPY', 'price': '152.997', 'openTime': '2024/12/13 13:09:57',
+'initialUnits': '100', 'initialMarginRequired': '611.9720', 'state': 'OPEN', 'currentUnits': '40', 'realizedPL': '0.4800',
+'closingTransactionIDs': ['72840'], 'financing': '0.0000', 'dividendAdjustment': '0.0000', 'averageClosePrice': '153.005',
+'unrealizedPL': '0.7600', 'marginUsed': '244.8320', 'takeProfitOrder': {'id': '72837', 'createTime': '2024-12-13T04:09:57.884486650Z',
+'type': 'TAKE_PROFIT', 'tradeID': '72836', 'price': '153.893', 'timeInForce': 'GTC', 'triggerCondition': 'DEFAULT', 'state': 'PENDING'},
+'stopLossOrder': {'id': '72838', 'createTime': '2024-12-13T04:09:57.884486650Z', 'type': 'STOP_LOSS', 'tradeID': '72836',
+'price': '152.893', 'timeInForce': 'GTC', 'triggerCondition': 'DEFAULT', 'triggerMode': 'TOP_OF_BOOK', 'state': 'PENDING'},
+'time_past': 34, 'PLu': 0.008}, 'lastTransactionID': '72840'}
+

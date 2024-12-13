@@ -675,7 +675,7 @@ gl_jp_time = datetime.datetime(2022, 11, 28, 10, 00, 0)  # TOの時刻
 gl_haba = "M5"
 gl_m5_count = 5000
 gl_m5_loop = 1
-memo = "フラッグリビルド後"
+memo = "フラッグリビルド後 通常LC12⇒8pips(ミス修正)、カウンタLC6pips⇒8pips(0分から）、カウンターターゲットの不整合解決、初回許容"
 
 # gl_exist_date = Trueの場合の読み込みファイル
 # ■■■メイン（5分足や30分足）

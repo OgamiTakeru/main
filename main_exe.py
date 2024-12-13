@@ -73,7 +73,7 @@ def how_to_new_order_judge(inspection_result_dic):
     """
     how_to_new_order_str = True  # Trueで上書き（残存のオーダーを削除し、今回のオーダーを投入する。既存ポジションは放置）
     how_to_new_order_str = "add"  # 既存オーダーが新規同等でオーダー追加⇒add、既存オーダーが新規未満でクリア＆新規⇒replace、既存が新規以上⇒cancel
-    classes_info = classPosition.position_check(classes)  # 現在（既存）の情報を取得
+    classes_info = classPosition.position_check_no_args()  # 現在（既存）の情報を取得
 
     # # （１）パターン１　一番最初の判定で、オーダーがある場合は同方向やポジションマイナス時等は、新規オーダーを受け付けない仕様）
     # # ■■■既存オーダーが存在する場合、プライオリティ、現在のプラスマイナス、入れようとしている向きが同方向かを比較する

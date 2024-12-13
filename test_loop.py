@@ -90,17 +90,31 @@ exe_orders = []
 # 仮１
 order1 = cm.order_base(now_price, now_time)  # orderbaseの初期値は、Unitsは正の値、TypeはSTOP、TP/LCは0.1
 order1['name'] = "test1"
-order1['target'] = 0.05  # マージンで設定
-order1['type'] = "MARKET"
+order1['target'] = 0.001  # マージンで設定
+order1['type'] = "STOP"
 order1['target'] = now_price
+order1['units'] = 100
+order1['expected_direction'] = -1
 order1_finalized = cm.order_finalize(order1)
 exe_orders.append(order1_finalized)
 # 仮２
 order2 = cm.order_base(now_price, now_time)  # orderbaseの初期値は、Unitsは正の値、TypeはSTOP、TP/LCは0.1
 order2['name'] = "test2"
-order2['target'] = 0.08  # マージンで設定
+order2['units'] = 100
+order2['type'] = "LIMIT"
+order2['expected_direction'] = 1
+order2['target'] = 0.01  # マージンで設定
 order2_finalized = cm.order_finalize(order2)
 exe_orders.append(order2_finalized)
+# 仮3
+order3 = cm.order_base(now_price, now_time)  # orderbaseの初期値は、Unitsは正の値、TypeはSTOP、TP/LCは0.1
+order3['name'] = "test3"
+order3['units'] = 100
+order3['type'] = "STOP"
+order3['expected_direction'] = 1
+order3['target'] = 0.01  # マージンで設定
+order3_finalized = cm.order_finalize(order3)
+exe_orders.append(order3_finalized)
 
 # オーダーの発行
 for order_n in range(len(exe_orders)):  # オーダーを順に参照

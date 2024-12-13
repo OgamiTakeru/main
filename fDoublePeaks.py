@@ -658,7 +658,7 @@ def for_inspection_double_peak_judgement_predict(dic_args):
         # 直近が下り方向の場合、折り返し基準のflop3は下がり。その前が下がりメインの場合、下がりきっていると思われる。
         # flop3以前の、最も高い値を算出（その時刻を算出）
         max_index = max(enumerate(temp_inspection_peaks), key=lambda x: x[1].get('peak', float('-inf')))[0]
-        print(max_index, temp_inspection_peaks[max_index])
+        print(t6, max_index, temp_inspection_peaks[max_index])
         temp_inspection_peaks = temp_inspection_peaks[:max_index]  # 最大値までの範囲で
         lower_peaks = [item for item in temp_inspection_peaks if item["direction"] == -1]  # Lower側
         lower_gap_total = sum(d['gap'] for d in lower_peaks)
@@ -669,7 +669,7 @@ def for_inspection_double_peak_judgement_predict(dic_args):
         # print(sum(d['gap'] for d in temp_inspection_peaks))
 
         # RiverピークとMaxの間に何個下向きのピークが存在するかをカウント
-        gene.print_arr(temp_inspection_peaks[:max_index])
+        # gene.print_arr(temp_inspection_peaks[:max_index])
         peak_count_peaks = [item for item in temp_inspection_peaks[:max_index] if item["direction"] == -1]  # Lower側
         peak_count = len(peak_count_peaks)
         lower_upper_gap = abs(lower_gap_total - upper_gap_total)
