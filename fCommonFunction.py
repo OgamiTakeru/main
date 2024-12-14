@@ -82,64 +82,6 @@ def order_base(now_price, decision_time):
     return order_base_dic
 
 
-def order_base_inspection_another(now_price, decision_time):
-    """
-    引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
-    従来常にBase＝｛price:00・・・｝等書いていたが、行数節約のため、、
-    基本はすべて仮の値だが、Unitのみはこれがベースとなる。
-    LCCHange内は、執行まで時間が短い順（Time＿After）で記載する（lc_ensure_rangeは広がる方向で書く場合もあり）
-    """
-    basic_unit_for_inspection = 10000
-    bairitu = 1
-    order_base_dic = {
-            "target": 0.00,
-            "type": "STOP",
-            "units": basic_unit_for_inspection,
-            "expected_direction": 1,
-            "tp": 0.9,
-            "lc": 0.10,
-            'priority': 0,
-            "decision_price": now_price,
-            "decision_time": decision_time,
-            "name": "",
-            "lc_change": [
-                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.00, "lc_ensure_range": -0.06},
-                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": 0.03},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
-                # 2022-2023は 0.05トリガーにすると、マイナスになる！！
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.06 * bairitu, "lc_ensure_range": 0.04 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.08 * bairitu, "lc_ensure_range": 0.06 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10 * bairitu, "lc_ensure_range": 0.084 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.12 * bairitu, "lc_ensure_range": 0.10 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.14 * bairitu, "lc_ensure_range": 0.12 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.20 * bairitu, "lc_ensure_range": 0.15 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.25 * bairitu, "lc_ensure_range": 0.20 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.35 * bairitu, "lc_ensure_range": 0.33 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.40 * bairitu, "lc_ensure_range": 0.38 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50 * bairitu, "lc_ensure_range": 0.43 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60 * bairitu, "lc_ensure_range": 0.57 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70 * bairitu, "lc_ensure_range": 0.67 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80 * bairitu, "lc_ensure_range": 0.77 * bairitu},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90 * bairitu, "lc_ensure_range": 0.87 * bairitu}
-
-                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.032, "lc_ensure_range": -0.06},
-                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": -0.03},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.01, "lc_ensure_range": -0.08},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.038, "lc_ensure_range": -0.04},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.048, "lc_ensure_range": 0.04},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.07, "lc_ensure_range": 0.05},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10, "lc_ensure_range": 0.075},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
-                # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
-            ],
-    }
-    return order_base_dic
-
-
 def order_base_for_inspection(now_price, decision_time):
     """
     引数現在の価格（dicisionPriceの決定のため）、呼ばれたらオーダーのもとになる辞書を返却するのみ
@@ -155,7 +97,7 @@ def order_base_for_inspection(now_price, decision_time):
             "units": basic_unit_for_inspection,
             "expected_direction": 1,
             "tp": 0.9,
-            "lc": 0.10,
+            "lc": 0.03,
             'priority': 0,
             "decision_price": now_price,
             "decision_time": decision_time,
@@ -164,7 +106,8 @@ def order_base_for_inspection(now_price, decision_time):
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.00, "lc_ensure_range": -0.06},
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": 0.03},
                 # {"lc_change_exe": True, "time_after": 0 * 5 * 60, "lc_trigger_range": 0.045 * bairitu, "lc_ensure_range": -0.02},
-                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.05 * bairitu, "lc_ensure_range": -0.02},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.02 * bairitu, "lc_ensure_range": 0.01},
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.05 * bairitu, "lc_ensure_range": -0.02},
                 # 2022-2023は 0.05トリガーにすると、マイナスになる！！
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.060 * bairitu, "lc_ensure_range": 0.04 * bairitu},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.08 * bairitu, "lc_ensure_range": 0.06 * bairitu},
@@ -555,6 +498,65 @@ def order_finalize(order_base_info):
     order_base_info['name'] = order_base_info['name'] + "_" + str(gene.delYearDay(order_base_info['decision_time']))
 
     # コマンドラインで見にくいので、表示の順番を変えたい、、、（書き方雑だけど）
+    # ★コマンドラインで見にくいので、表示の順番を変えたい、、、（書き方雑だけど）
+    # NAME
+    temp = order_base_info['name']  # いったん保存
+    del order_base_info["name"]
+    order_base_info['name'] = temp
+
+    temp = order_base_info['trade_timeout_min']  # いったん保存
+    del order_base_info["trade_timeout_min"]
+    order_base_info['trade_timeout_min'] = temp
+
+    temp = order_base_info['tp_range']  # いったん保存
+    del order_base_info["tp_range"]
+    order_base_info['tp_range'] = temp
+
+    temp = order_base_info['tp']  # いったん保存
+    del order_base_info["tp"]
+    order_base_info['tp'] = temp
+
+    temp = order_base_info['price']  # いったん保存
+    del order_base_info["price"]
+    order_base_info['price'] = temp
+
+    temp = order_base_info['target']  # いったん保存
+    del order_base_info["target"]
+    order_base_info['target'] = temp
+
+    # temp = order_base_info['stop_or_limit']  # いったん保存
+    # del order_base_info["stop_or_limit"]
+    # order_base_info['stop_or_limit'] = temp
+
+    temp = order_base_info['priority']  # いったん保存
+    del order_base_info["priority"]
+    order_base_info['priority'] = temp
+
+    temp = order_base_info['position_margin']  # いったん保存
+    del order_base_info["position_margin"]
+    order_base_info['position_margin'] = temp
+    #
+    temp = order_base_info['order_permission']  # いったん保存
+    del order_base_info["order_permission"]
+    order_base_info['order_permission'] = temp
+
+    # LC_RAGE
+    temp = order_base_info['lc_range']  # いったん保存
+    del order_base_info["lc_range"]
+    order_base_info['lc_range'] = temp
+    # LC
+    temp = order_base_info['lc']  # いったん保存
+    del order_base_info["lc"]
+    order_base_info['lc'] = temp
+    # 方向
+    temp = order_base_info['expected_direction']  # いったん保存
+    del order_base_info["expected_direction"]
+    order_base_info['expected_direction'] = temp
+    # decisionPrice
+    temp = order_base_info['decision_price']  # いったん保存
+    del order_base_info["decision_price"]
+    order_base_info['decision_price'] = temp
+    # LCChange(これが最後尾にしたい）
     temp = order_base_info['lc_change']  # いったん保存
     del order_base_info["lc_change"]
     order_base_info['lc_change'] = temp

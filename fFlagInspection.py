@@ -527,10 +527,12 @@ def tilt_cal(peaks, target_direction):
         # lc_range = 0.1  # LCRnageを指定　←旧　これがコメントイン（←けどおかしい）
         if lc_range < 0:
             # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-            lc_price = now_price + abs(max_lc_range)  # 旧 abs(lc_range)←でもおかしい
+            lc_price = now_price - abs(max_lc_range)  # 旧 abs(lc_range)←でもおかしい
+            print("上限越えLC(RangeマイナスのためDirectionは１)⇒", lc_price)
         else:
             # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-            lc_price = now_price - abs(max_lc_range)  # 旧　abs(lc_range)←でもおかしい
+            lc_price = now_price + abs(max_lc_range)  # 旧　abs(lc_range)←でもおかしい
+            print("上限越えLC(RangeプラスのためDirectionはー１)⇒", lc_price)
     else:
         # LCRangeが許容範囲内の場合、そのまま利用
         lc_price = temp_lc_price
@@ -593,15 +595,12 @@ def judge_flag_figure_wrap_up_hard_skip(peaks, target_direction, line_strength, 
     ・Latest＝２の時になく、latest=3以降である場合は、何かおかしいためやめる（ただしいい影響がある可能性もあり）
     """
     s6 = "      "
-    print(s6, "抵抗線向きは", target_direction, "傾きを確認したいのは", target_direction * -1)
+    # print(s6, "抵抗線向きは", target_direction, "傾きを確認したいのは", target_direction * -1)
     flag_ans = False
 
     # ■Peaksの準備
     # ■■直近
     peaks = peak_inspection.change_peaks_with_hard_skip(peaks)
-    # ■■ひとつ前の足
-    fixed_information_prev = cf.information_fix({"df_r": df_r[1:]})  # DFとPeaksが必ず返却される
-    peaks_prev = fixed_information_prev['peaks']
 
     # ■直近の傾斜の有無を確認する
     tilt_line_info = tilt_cal(peaks, target_direction * -1)
@@ -611,6 +610,9 @@ def judge_flag_figure_wrap_up_hard_skip(peaks, target_direction, line_strength, 
     if tilt_line_info['is_tilt_line']:
         # 現状で傾きが成立してれば、とりあえずFlagはTrueとなる
         tilt_flag = True
+        # ■■ひとつ前の足
+        fixed_information_prev = cf.information_fix({"df_r": df_r[1:]})  # DFとPeaksが必ず返却される
+        peaks_prev = fixed_information_prev['peaks']
         tilt_ans_prev = tilt_cal(peaks_prev, target_direction * -1)
         if tilt_ans_prev['is_tilt_line'] and (target_direction == peaks_prev[0]['direction']):
             # ひとつ前の状態でも成立し、かつ、向きも同じな場合
@@ -810,7 +812,7 @@ def analysis_flag(dic_args):
         if each_strength_info_result['line_on_num'] >= 2 and each_strength_info_result['line_strength'] >= 0.9:  # allRangeは不要か
             # flag = judge_flag_figure_wrap_up(peaks, peaks[0]['direction'], each_strength_info_result['line_strength'], target_df)
             flag_info = judge_flag_figure_wrap_up_hard_skip(peaks, peaks[0]['direction'], each_strength_info_result['line_strength'], target_df)  # ★スキップバージョン
-            print(s6, "[Flagテスト結果]", each_predict_line_info['line_base_info']["line_base_price"])
+            print(s6, "[チルトテスト結果]", each_predict_line_info['line_base_info']["line_base_price"])
             # フラッグの結果次第で、LineStrengthに横やりを入れる形で、値を買い替える
             if flag_info['tilt_flag']:
                 print(s6, "Flag成立")
@@ -898,7 +900,6 @@ def main_flag(dic_args):
     flag_info = flag_analysis_result['information']
     # "flag_info": {"LineBase": {}, "samePriceList": [{peaks}], "strengthInfo": {"lc_price,remark,y_change等"}
     position_type = "STOP"  # フラッグありの場合突破方向のため、STOP
-    print(s4, "フラッグが発生した時の情報", flag_info)
     # ■■突破方向のオーダー（初回と二回目以降で異なる）
     flag_final = True  # 初回の一部でオーダーが入らない仕様になったため、改めてフラグを持っておく（オーダーないときはOrderAndEvidence返却でもいいかも？）
     # if flag_info['strength_info']['is_first_for_flag']:
@@ -922,14 +923,13 @@ def main_flag(dic_args):
         dependence_lc_range_max_c = 0.09  # 0.12が強い
         dependence_lc_range_at_least_c = 0.06  # 0.12が強い
 
-
         # ■■フラッグ用（突破方向）
         # 最大でもLCRange換算で10pips以内したい
         target_price = flag_info['line_base_info']['line_base_price'] + (dependence_normal_margin * flag_info['line_base_info']['line_base_direction'])  # - (0.035 * flag_info['line_base_info']['line_base_direction'])  # Nowpriceというより、取得価格
         # temp_lc_price = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # lcPriceは収束の中間点
         temp_lc_price = flag_info['strength_info']['lc_price']
         lc_range = temp_lc_price - target_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
-        print(s6, "LC検討", target_price, temp_lc_price, lc_range)
+        print(s6, "LC検討", target_price, temp_lc_price, lc_range, temp_lc_price)
         if abs(lc_range) >= dependence_lc_range_max:
             # LCが大きすぎると判断される場合(10pips以上離れている）
             if lc_range < 0:
