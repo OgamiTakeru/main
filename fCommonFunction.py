@@ -106,8 +106,8 @@ def order_base_for_inspection(now_price, decision_time):
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.00, "lc_ensure_range": -0.06},
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": 0.03},
                 # {"lc_change_exe": True, "time_after": 0 * 5 * 60, "lc_trigger_range": 0.045 * bairitu, "lc_ensure_range": -0.02},
-                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.02 * bairitu, "lc_ensure_range": 0.01},
-                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.05 * bairitu, "lc_ensure_range": -0.02},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.02 * bairitu, "lc_ensure_range": -0.03},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.05 * bairitu, "lc_ensure_range": 0.001},
                 # 2022-2023は 0.05トリガーにすると、マイナスになる！！
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.060 * bairitu, "lc_ensure_range": 0.04 * bairitu},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.08 * bairitu, "lc_ensure_range": 0.06 * bairitu},

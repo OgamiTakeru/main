@@ -885,7 +885,7 @@ def main_flag(dic_args):
 
     # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     # ■■実行しない条件の場合、実行を終了する
-    if peaks[0]['count'] == 1:
+    if peaks[0]['count'] > 4:
         print(s6, "countで実行しない場合を宣言する")  # フラッグは基本的に、Latestの数がいつでも実行する
     # for i, item in enumerate(peaks[:7]):
     #     if item['include_very_large']:
@@ -1095,8 +1095,8 @@ def for_inspection_main_flag(dic_args):
 
     # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     # ■■実行しない条件の場合、実行を終了する
-    # if peaks[0]['count'] == 1:
-    #     print(s6, "countで実行しない場合を宣言する")  # フラッグは基本的に、Latestの数がいつでも実行する
+    if peaks[0]['count'] > 4:
+        print(s6, "countで実行しない場合を宣言する")  # フラッグは基本的に、Latestの数がいつでも実行する
     # for i, item in enumerate(peaks[:7]):
     #     if item['include_very_large']:
     #         print("veryLargeあり")

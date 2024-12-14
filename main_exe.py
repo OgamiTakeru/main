@@ -370,8 +370,9 @@ def exe_manage():
         # print("■土日の為API実行無し")
         return 0
     elif gl_now.weekday() == 5:
-        if 4 <= time_hour:
-            print("■土曜の朝4時で終了（ポジションは開放しない・・？）")
+        if time_hour >= 4:
+            if time_hour ==4 and time_min == 0 and time_sec <=8:
+                print("■土曜の朝4時で終了（ポジションは開放しない・・？）(4時０分８秒まで表示)")
             return 0
 
     # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
