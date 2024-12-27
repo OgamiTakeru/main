@@ -15,6 +15,7 @@ def cal_move_size(dic_args):
     """
     LCのサイズ等を決定するため、周辺の大きさを確認する
     """
+    big_move = False
     # 何が正解なのかわからないけど、最初に返却値を設定しておく
     predict_line_info_list = [
         {
@@ -69,6 +70,9 @@ def cal_move_size(dic_args):
     # ■ピーク5個の中できわめて大きな変動がある場合（雇用統計とか、、、）
     if max_peak['gap'] >= 0.3:
         print(" きわめて大きな変動があった")
+        big_move = True
+    else:
+        big_move = False
 
     # ■ピーク4個分が、全てカウント３の場合、ほぼ動いてない相場とみる（相対的なため、Pipsでは指定しない？）
     range_counter = 0
@@ -90,6 +94,7 @@ def cal_move_size(dic_args):
 
     return {
         "range_flag": range_flag,
+        "big_move": big_move
     }
 
     # ■サイズ間でLCの幅とかを決めたい
@@ -124,10 +129,6 @@ def cal_move_size(dic_args):
     #     else:
     #         flag = False
 
-    return {
-        "flag": flag,
-        "gap": gap
-    }
 
 
 

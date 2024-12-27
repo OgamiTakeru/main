@@ -219,7 +219,7 @@ def update_position_information(cur_class, cur_row, cur_row_index):
             cur_class.max_minus = upper_gap  # 更新
             cur_class.max_minus_time_past = cur_class.position_keeping_time_sec
 
-    # (3)LCチェンジを実行
+    # (3)LCチェンジを実行(通常）
     for i, lc_item in enumerate(cur_class.lc_change):
         # print("    LC_Change:", lc_item['lc_trigger_range'], cur_class.unrealized_pl_low, cur_class.unrealized_pl_high)
         if 'done' in lc_item or cur_class.position_keeping_time_sec <= lc_item['time_after']:
@@ -240,6 +240,11 @@ def update_position_information(cur_class, cur_row, cur_row_index):
             cur_class.comment = "LC_c"
             cur_class.lc_change_done(i)  # Doneの追加
             cur_class.lc_price = new_lc_price  # 値の更新
+    # (3)LCチェンジを実行（直前ローソク利用）
+    # if not cur_class.position_is_live or cur_class.pl_per_units < 0 or cur_class.position_keeping_time_sec < 100:  # 足数×〇分足×秒
+    #     return 0
+    # else:
+    #     pass
 
 
 def all_close(cur_row):
@@ -285,7 +290,6 @@ def all_close(cur_row):
             # 検証用データを結合
             result_dic = {**result_dic, **cur_class.for_inspection_dic}
             gl_results_list.append(result_dic)
-
 
 
 def execute_position_finish(cur_class, cur_row, cur_row_index):
@@ -675,7 +679,7 @@ gl_jp_time = datetime.datetime(2022, 11, 28, 10, 00, 0)  # TOの時刻
 gl_haba = "M5"
 gl_m5_count = 5000
 gl_m5_loop = 1
-memo = "フラッグリビルド後 通常LC12⇒8pips(ミス修正)、カウンタLC6pips⇒8pips(0分から）、カウンターターゲットの不整合解決、初回許容"
+memo = ("順方向マージン0.016（元0.035)、検索グリッド0.015(元0.027)#")
 
 # gl_exist_date = Trueの場合の読み込みファイル
 # ■■■メイン（5分足や30分足）

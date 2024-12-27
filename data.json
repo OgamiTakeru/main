@@ -4,80 +4,16 @@
     {
       "lc_change_exe": true,
       "time_after": 0,
-      "lc_trigger_range": 0.036,
-      "lc_ensure_range": -0.043
+      "time_till": 600,
+      "lc_trigger_range": 0.020,
+      "lc_ensure_range":  0.01
     },
     {
       "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.065,
-      "lc_ensure_range": 0.04
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.1,
-      "lc_ensure_range": 0.06
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.15,
-      "lc_ensure_range": 0.10
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.20,
-      "lc_ensure_range": 0.12
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.30,
-      "lc_ensure_range": 0.20
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.40,
-      "lc_ensure_range": 0.30
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.50,
-      "lc_ensure_range": 0.40
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.60,
-      "lc_ensure_range": 0.50
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.70,
-      "lc_ensure_range": 0.60
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.80,
-      "lc_ensure_range": 0.70
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 0.90,
-      "lc_ensure_range": 0.80
-    },
-    {
-      "lc_change_exe": true,
-      "time_after": 300,
-      "lc_trigger_range": 1.00,
-      "lc_ensure_range": 0.90
+      "time_after": 0,
+      "time_till": 600,
+      "lc_trigger_range": 0.043,
+      "lc_ensure_range":  0.021
     }
   ]
 }

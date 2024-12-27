@@ -1,4 +1,5 @@
 import datetime
+from datetime import timedelta
 import tokens as tk
 import fGeneric as gene
 import gc
@@ -13,6 +14,13 @@ class order_information:
     position_num = 0  # 何個のポジションを持ったか
     minus_yen_position_num = 0
     plus_yen_position_num = 0
+    exist_alive_class = False  # 生きているクラスがあるかどうか（ある場合に限り、ローソクデータの取得を行いたいため）
+    latest_df = None  # 直近の解析用のデータを持っておく（LcChangeFromCnadleで利用）
+    latest_df_get_time = datetime.datetime.now().replace(microsecond=0) - timedelta(minutes=1)
+    # 連続して取らないように、最後に取得したタイミングを抑える（ただし、オーダー即取得の場合にデータが取れないと困るので、１分前を入れておく）
+    # ↓直前の情報を取得しておく
+    before_latest_plu = 0
+    before_latest_name = ""
 
     def __init__(self, name, oa, is_live):
         self.name = name  #
@@ -56,9 +64,11 @@ class order_information:
         self.lose_hold_time_sec = 0
         self.win_max_plu = 0
         self.lose_max_plu = 0
+        self.position_after_this_sec=0
 
         # ロスカット変更情報
         self.lc_change_dic = {}
+        self.lc_change_from_candle_lc_price = 0
         # 特殊　カウンターオーダー
         self.counter_order_num = 0  # カウンターオーダーを入れる際、何回実施したかをカウント（1回やったらもうやらない）
 
@@ -101,10 +111,11 @@ class order_information:
         self.lose_hold_time_sec = 0
         self.win_max_plu = 0
         self.lose_max_plu = 0
+        self.position_after_this_sec = 0
 
         # ロスカット変更情報
         self.lc_change_dic = {}  # 空を持っておくだけ
-        self.lc_change_dic2 = {}  # 空を持っておくだけ
+        self.lc_change_from_candle_lc_price = 0
         self.counter_order_num = 0  # カウンターオーダーを入れる際、何回実施したかをカウント（1回やったらもうやらない）
 
     def print_info(self):
@@ -140,19 +151,34 @@ class order_information:
         元々定義していなかった。
         各メソッドからsendすると、「本番環境の場合はLINE送ってPracticeの場合に送らない」が面倒くさいので、いったんここを噛ませる
         """
-        if self.is_live:
+        if self.is_live:  # is_liveがTrueは本番（lifeと紛らわしいが、、）
             tk.line_send(*args)
         else:
             print(" 練習用送信関数")
             # 練習用であることの接頭語の追加
-            args = ("練習環境＠:",) + args
+            args = ("☆☆練習環境:",) + args
             if args[1] == "■■■解消:":
                 # 中身を編集するため、一度リストに変換
                 args_list = list(args)
                 args_list[1] = "□□□解消:"  # ぱっとわかりやすいように変更
                 tk.line_send(*tuple(args_list))
+            elif args[1] == "■■■オーダー解消":
+                # 中身を編集するため、一度リストに変換
+                args_list = list(args)
+                args_list[1] = "□□□解消:"  # ぱっとわかりやすいように変更
+                tk.line_send(*tuple(args_list))
             else:
-                print("★★★", args)
+                tk.line_send(*args)
+
+            # args = ("☆☆練習環境:",) + args
+            # tk.line_send(*args)
+            # if args[1] == "■■■解消:":
+            #     # 中身を編集するため、一度リストに変換
+            #     args_list = list(args)
+            #     args_list[1] = "□□□解消:"  # ぱっとわかりやすいように変更
+            #     tk.line_send(*tuple(args_list))
+            # else:
+            #     print("★★★", args)
 
     def order_plan_registration(self, plan):
         """
@@ -313,6 +339,10 @@ class order_information:
         else:
             order_information.plus_yen_position_num = order_information.plus_yen_position_num + 1
 
+        # 直前の結果を保存しておく
+        order_information.before_latest_plu = trade_latest['PLu']
+        order_information.before_latest_name = self.name
+
         # （２）LINE送信
         # ①UNIT数を調整する
         # if abs(float(trade_latest['currentUnits'])) != 0 and abs(float(trade_latest['initialUnits'])) != abs(float(trade_latest['currentUnits'])):
@@ -445,6 +475,34 @@ class order_information:
         if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
                 self.send_line("    (取得)", self.name, trade_latest['price'])
+                #  取得時には、ローソクデータも取得しておく
+                now = datetime.datetime.now().replace(microsecond=0)
+                time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
+                seconds_difference = abs(time_difference.total_seconds())
+                if seconds_difference >= 30:
+                    # 初回の場合はやる
+                    self.is_first_time_lc_change_candle = False  # 二回目以降はFalseにFalseを入れることになるが、、
+
+                    d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 5},
+                                                                 1)  # 時間昇順(直近が最後尾）
+                    if d5_df['error'] == -1:
+                        print("error Candle")
+                        return -1
+                    else:
+                        self.latest_df = d5_df['data']
+                        if self.is_first_time_lc_change_candle:
+                            # 初回の場合は、取得したことにしない（５分ごとの時間が一番欲しいから）
+                            self.is_first_time_lc_change_candle = False
+                        else:
+                            self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
+                        # print("LCChange用にDFを取得しました(取得時）", self.latest_df_get_time)
+                        # print(self.latest_df)
+                        # print("1行のみ抽出（取得時）")
+                        # print(self.latest_df.iloc)
+                        # print(" 置換対象のLC価格を持つ足データ（取得時）", self.latest_df.iloc[-2]['time_jp'])
+                # else:
+                #     print("前回取得時（取得時）", self.latest_df_get_time, "経過秒", seconds_difference)
+                #     pass
 
             if "position_state" in trade_latest:
                 if trade_latest['position_state'] == 'CLOSED':  # ポジションクローズ（ポジション取得とほぼ同時にクローズ[異常]）
@@ -526,6 +584,9 @@ class order_information:
         """
         if not self.life:
             return 0  # LifeがFalse（＝オーダーが発行されていない状態）では実行しない
+
+        # (0)オーダーの仲間がいるかを確認
+        self.exist_alive_class = life_check_no_args()  # 一つでも生きているクラスがあればTrueが入る
 
         # (1) OrderDetail,TradeDetailの取得（orderId,tradeIdの確保）
         order_ans = self.oa.OrderDetails_exe(self.o_id)  # ■■API
@@ -620,8 +681,8 @@ class order_information:
         self.updateWinLoseTime(trade_latest['PLu'])  # PLU(realizePL / Unit)の推移を記録する
         # LCの変更を検討する(プラス域にいった場合のTP底上げ≒トレールに近い）
         self.lc_change()
-        # LCの変更を検討する（マイナスストレートの場合、できるだけ早く処理する）
-        # self.lc_change2()
+        self.lc_change_from_candle()
+
 
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
@@ -640,15 +701,23 @@ class order_information:
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
             return 0
 
+        if  self.lc_change_from_candle_lc_price !=0:
+            print("既にキャンドルｌｃ変更有のため、通常ｌｃ無し",self.lc_change_from_candle_lc_price)
+
         for i, item in enumerate(self.lc_change_dic):
             # コードの１行を短くするため、置きかておく
             lc_exe = item['lc_change_exe']
             lc_ensure_range = item['lc_ensure_range']
             lc_trigger_range = item['lc_trigger_range']
             lc_change_waiting_time_sec = item['time_after']
+            if "time_till" in item:
+                # 指定の時間まで実行
+                lc_change_till_sec = item['time_till']
+            else:
+                lc_change_till_sec = 100000  #
 
             # このループで実行しない場合（フラグオフの場合、DoneがTrueの場合^
-            if not lc_exe or 'done' in item or self.t_time_past_sec < lc_change_waiting_time_sec:
+            if not lc_exe or 'done' in item or self.t_time_past_sec < lc_change_waiting_time_sec:  # or self.t_time_past_sec > lc_change_till_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
                 continue
 
@@ -671,6 +740,99 @@ class order_information:
                              "予定価格", self.plan['price'])
                 break
 
+    def lc_change_from_candle(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
+        """
+        ロスカット底上げを実施する。セルフとレールに近い
+        ひとつ前のローソクの最高値や最低値までをLC底上げする関数。
+        最新のローソクを取得する必要がある。この関数自体は２秒に１回呼び出されるが、
+        ローソクを取得するのは、５分に１回のみで問題ないため、メインと同じコードを書くことになるが、それで対応する。
+        """
+        # print("  ★LC＿ChangeFromCandle実行関数")
+        if self.t_state != "OPEN" or self.t_pl_u < 0 or self.t_time_past_sec < 100:  # 足数×〇分足×秒
+            # ポジションがない場合、プラス域ではない場合、所持時間が短い場合は実行しない
+            # print("       lc_change_candleの実行無", self.t_state, self.t_pl_u, self.t_time_past_sec)
+            return 0
+        else:
+            # print("       lc_change_candleの実行あり", self.t_state, self.t_pl_u, self.t_time_past_sec)
+            pass
+
+        # LCChangeの実行部分
+        # 定期的にデータフレームを取得する部分（引数で渡してもいいが、この関数で完結したかった）
+        gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
+        time_hour = gl_now.hour  # 現在時刻の「時」のみを取得
+        time_min = gl_now.minute  # 現在時刻の「分」のみを取得
+        time_sec = gl_now.second  # 現在時刻の「秒」のみを取得
+        if time_min % 5 == 0 and 6 <= time_sec < 30:
+            # ５分毎か初回で実行
+            now = datetime.datetime.now().replace(microsecond=0)
+            time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
+            seconds_difference = abs(time_difference.total_seconds())
+            if seconds_difference >= 30:
+                d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 5}, 1)  # 時間昇順(直近が最後尾）
+                if d5_df['error'] == -1:
+                    print("error Candle")
+                    return -1
+                else:
+                    self.latest_df = d5_df['data']
+                    self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
+        #             print("LCChange用にDFを取得しました", self.latest_df_get_time)
+        #             print(self.latest_df)
+        #             print("1行のみ抽出")
+        #             print(self.latest_df.iloc)
+        #             print(" 置換対象のLC価格を持つ足データ", self.latest_df.iloc[-2]['time_jp'])
+        #
+        #     else:
+        #         print("データ取得無し　前回から時間がたっていない", self.latest_df_get_time, "経過秒", seconds_difference)
+        #         pass
+        # else:
+        #     print("データ取得無し　 時刻条件合わず",time_min,"分", time_sec,"秒")
+
+        if self.plan['direction']>0:
+            # 買い方向の場合、ひとつ前のローソクのLowの値をLC価格に
+            lc_price_temp = float(self.latest_df.iloc[-2]['low'])
+        else:
+            # 売り方向の場合、ひとつ前のローソクのHighの値をLC価格に
+            lc_price_temp = float(self.latest_df.iloc[-2]['high'])
+
+        # print("対象となるLC基準", self.latest_df.iloc[-2]['time_jp'], lc_price_temp)
+
+        if self.lc_change_from_candle_lc_price == lc_price_temp:
+            # print(" 既にこの価格のLCとなっているため、変更処理は実施せず")
+            return 0
+
+        # ポジション取得から５分経過、かつ、temp_lc_priceがマイナス域でなく、利益が1pips以上確約できる場合、LCをlc_price_tempに移動する
+        take_position_price = float(self.t_json['price'])
+        lc_ensure_range = abs(take_position_price - lc_price_temp)
+        if lc_ensure_range <= 0.01:
+            # print(" 確保できる利益幅が0.01以下のため、変更なし")
+            return 0
+        if self.plan['direction'] > 0 and lc_price_temp < take_position_price:
+            # 買い方向で、ターゲットよりLCtempが小さい価格の場合（lctempがマイナス域の場合)
+            # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , "<",take_position_price )
+            # print("lc_priceにしたい価格", lc_price_temp ,"　が取得価格", take_position_price, "より小さいためプラス確保のLCにならずNG")
+            return 0
+        elif self.plan['direction'] < 0 and lc_price_temp > take_position_price:
+            # 売り方向で、ターゲットよりLCtempが大きい価格の場合（lctempがマイナス域の場合)
+            # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , ">",take_position_price )
+            # print("lc_priceにしたい価格", lc_price_temp, "　が取得価格", take_position_price, "より大きいためプラス確保のLCにならずNG")
+            return 0
+
+        # レンジ換算の時、大きすぎないかを確認
+        if lc_ensure_range >= 0.08:
+            print("range換算で大きすぎる・・・？", lc_ensure_range)
+
+        # LCチェンジ執行
+        new_lc_price = round(lc_price_temp, 3)
+        data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+        res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+        if res['error'] == -1:
+            self.send_line("    LC変更ミス＠lc_change")
+            return 0  # APIエラー時は終了
+        self.lc_change_from_candle_lc_price = lc_price_temp  # ロスカット価格の保存
+        lc_range = round(abs(lc_price_temp - self.t_execution_price), 5)
+        self.send_line("　(LCCandle底上げ)", self.name, "現在のPL" ,self.t_pl_u, "新LC価格⇒", new_lc_price,
+                       "保証", lc_range, "約定価格", self.t_execution_price,
+                       "予定価格", self.plan['price'])
 
 def error_end(info):
     print("  ★■★APIエラー発生")
@@ -678,11 +840,12 @@ def error_end(info):
     # sys.exit()  # 強制終了
 
 
-def all_update_information(classes):
+def all_update_information(*args):
     """
     全ての情報を更新する
     :return:
     """
+    classes = args[0]
     for item in classes:
         if item.life:
             # print("個別", item.life)
@@ -707,6 +870,29 @@ def life_check(classes):
     :return:
     """
 
+    life = []
+    unlife = []
+    for item in classes:
+        if item.life:
+            life.append(item)
+        else:
+            unlife.append(item)
+    # 結果を集約する
+    if len(life) == 0:
+        ans = False  # 一つもLifeがOnでない。
+    else:
+        ans = True  # 一つでもLifeがある場合はＴｒｕｅ
+        # print(" 残っているLIFE", life)
+
+    return ans
+
+
+def life_check_no_args():
+    """
+    オーダーが生きているかを確認する。一つでも生きていればＴｒｕｅを返す
+    :return:
+    """
+    classes = get_instances_of_class()
     life = []
     unlife = []
     for item in classes:

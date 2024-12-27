@@ -25,6 +25,7 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
     # ■関数事前準備
     remark = "フラッグ不成立"
     s7 = "      "
+    s4 = "    "
     print(s7, " 新フラッグ調査関数")
 
     # ■■情報の整理と取得（関数の頭には必須）
@@ -56,6 +57,7 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
 
     # ■検証開始
     # for target_num in [3]:
+    # for target_num in range(3 - adjuster, 6 - adjuster):
     for target_num in range(3 - adjuster, 6 - adjuster):
         # num = i + 1  # iは０からスタートするため
         # ■■　情報を作成する
@@ -68,7 +70,7 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
             # 下方向（が上ってきているかを確認）の場合、Min値
             min_index, min_or_max_info = min(enumerate(target_peaks), key=lambda x: x[1]["peak"])  # サイズ感把握のために取得
         oldest_info = target_peaks[-1]
-        print(s7, "@調査するピークス", d, target_num)
+        print(s4, "@調査するピークス", d, target_num)
         gene.print_arr(target_peaks, 7)
         print(s7, "  先頭の情報", target_peaks[0]['peak'], target_peaks[0]['time'])
         print(s7, "  最後尾の情報", oldest_info['peak'], oldest_info['time'])
@@ -92,7 +94,19 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
             tilt_result_list.append(ans)
             continue
         else:
-            print(s7, "OK　傾きはクリア（水平ではない）", abs(y_change))
+            if target_direction == -1:
+                # 下側は、上向きを求められる（いずれは下側が下向きでもいい気がする）
+                if y_change < 0:
+                    print(s7, "傾きはOKだが、求められる傾きとは逆(求めるのはプラス)", target_direction, y_change)
+                else:
+                    print(s7, "傾きはOKで、向きも適正", target_direction, y_change)
+            else:
+                # 下側は、上向きを求められる（いずれは下側が下向きでもいい気がする）
+                if y_change < 0:
+                    print(s7, "傾きはOKだが、求められる傾きとは逆(求めるのはマイナス）", target_direction, y_change)
+                else:
+                    print(s7, "傾きはOKで、向き適正", target_direction, y_change)
+
 
         # ■■計算を算出する
         # OLDESTの価格を原点として、直近Peaksへの直線の傾きを算出する　yの増加量(価格の差分)　/ xの増加量(時間の差分)
@@ -133,7 +147,7 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
                 print(s7, "(ri)　線近くにあります", item['time'])
                 near_line_num += 1
             else:
-                # print(s7, "(ri)　線近くにはありません", item['time'])
+                print(s7, "(ri)　線近くにはありません", item['time'])
                 pass
         # 集計結果
         # print(s7, "(ri)全部で", total_peaks_num, 'ピーク。線上：', on_line_num, "線近", near_line_num)
@@ -145,7 +159,7 @@ def judge_flag_figure(peaks, target_direction, need_to_adjust):
         print(s7, "調査側は", d, "(d=1は上g側) 傾き方向は", tilt_pm, on_line_ratio, near_line_ratio)
 
         # 傾斜は合格、ピークスを包括できるかを確認
-        if on_line_ratio >= 0.5 and near_line_ratio >= 0.6:
+        if on_line_ratio >= 0.35 and near_line_ratio >= 0.7:
         # if on_line_ratio >= 0.55 and near_line_ratio >= 0.7:  # 0.35, 60
         # if on_line_ratio >= 0.35 and near_line_ratio >= 0.6:  # 緩いほう（従来の結果がよかった条件）
             is_tilt_line_each = True
@@ -265,7 +279,7 @@ def analysis_cross(dic_args):
     fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
     target_df = fixed_information['df_r']
     peaks = fixed_information['peaks']  # 通常のピークス
-    peaks_hard_skip = peak_inspection.change_peaks_with_hard_skip(peaks)  # スキップしたピークス
+    peaks = peak_inspection.change_peaks_with_hard_skip(peaks)  # スキップしたピークス
 
     # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     # ■形状判定の初期値
@@ -276,16 +290,18 @@ def analysis_cross(dic_args):
     lower_result_list = []
     figure_results_list = []
     temp_latest_cross = False
-    for i in range(1):
+    for i in range(2):
         base = i + 1  # 基本的に１（Riverを示す）　⇒ひとつ前でも成り立つかを確認するときはbaseを２にする
         print("クロス調査ループ回数", i, "riverPeak", peaks[base]['time'], "turnPeak", peaks[base]['time'])
         if peaks[base]['direction'] == 1:
+            print("Direction = 1")
             # riverがUpperの場合、最低、upperは3個、Lowerは2個の調査 ⇒lower側に調整Trueを入れる
             upper_tilt_line_info = judge_flag_figure(peaks[base:], peaks[base]['direction'], False)  # latestは無視
             print("↑●リバーピーク", peaks[base]['direction'], "結果", upper_tilt_line_info['is_tilt_line'])
             lower_tilt_line_info = judge_flag_figure(peaks[base:], peaks[base+1]['direction'], True)  # latestは無視
             print("↑●ターンピーク", peaks[base+1]["direction"], "結果", lower_tilt_line_info['is_tilt_line'])
         else:
+            print("Direction=-1")
             # riverがlowerの場合、最低、lowerは3個、upperは2個の調査 ⇒upper側に調整Trueを入れる
             upper_tilt_line_info = judge_flag_figure(peaks[base:], peaks[base]['direction'], True)  # latestは無視
             print("↑●リバーピークから", peaks[base]['direction'], "結果", upper_tilt_line_info['is_tilt_line'])
@@ -294,10 +310,10 @@ def analysis_cross(dic_args):
         upper_result_list.append(upper_tilt_line_info)
         lower_result_list.append(lower_tilt_line_info)
         if upper_tilt_line_info['is_tilt_line'] and lower_tilt_line_info['is_tilt_line']:
-            print(s6, "▲形状的には成立っぽい")
+            print(s6, "▲形状的には成立っぽい", base)
             # figure_flag = True
             figure_results_list.append(True)
-            if i == 1:
+            if base == 1:
                 # 初回(latestの時）のみ
                 temp_latest_cross = True
         else:
@@ -316,11 +332,12 @@ def analysis_cross(dic_args):
     # 過去分含めて、成立と言えるか
     if not(temp_latest_cross):
         # 初回すら見つからない場合は、この時点で返却
+        print(s6, "NGのため調査終了")
         return orders_and_evidence
     # 最低でも初回が見つかっている状態
     if figure_results_list[0] and figure_results_list[1]:
         # figure_results_list[0]は直近のもの。[1]は直近よりひとつ前のPeaksでやったもの。二つともOKの場合は重複になりすぎる
-        figure_flag = False
+        figure_flag = True
         figure_remark = "不成立・繰り返し成立(1peak前)"
         print("  ", figure_remark)
     elif figure_results_list[0] and not(figure_results_list[1]):
@@ -353,7 +370,8 @@ def analysis_cross(dic_args):
     # すぼみ判定２（最後の上下差が、10pips以内になっていること）
     river_gap = peaks[1]['gap']
     turn_gap = peaks[2]['gap']
-    if river_gap <= 0.1 or turn_gap <= 0.1:
+    print(s6,"river",peaks[1]["time"], "turn", peaks[2]["time"])
+    if river_gap <= 0.11 or turn_gap <= 0.11:
         squeeze_flag = True
         print(s6, "スクイーズ幅成立", river_gap, turn_gap, "基準は左の2つのいずれかが0.1以下")
     else:

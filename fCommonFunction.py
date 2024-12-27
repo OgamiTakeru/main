@@ -53,7 +53,7 @@ def order_base(now_price, decision_time):
             "units": basic_unit,
             "expected_direction": 1,
             "tp": 0.9,
-            "lc": 0.10,
+            "lc": 0.03,
             'priority': 0,
             "decision_price": now_price,
             "decision_time": decision_time,
@@ -106,10 +106,10 @@ def order_base_for_inspection(now_price, decision_time):
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.00, "lc_ensure_range": -0.06},
                 # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.050, "lc_ensure_range": 0.03},
                 # {"lc_change_exe": True, "time_after": 0 * 5 * 60, "lc_trigger_range": 0.045 * bairitu, "lc_ensure_range": -0.02},
-                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.02 * bairitu, "lc_ensure_range": -0.03},
-                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.05 * bairitu, "lc_ensure_range": 0.001},
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.02 * bairitu, "lc_ensure_range": -0.03},
+                # {"lc_change_exe": True, "time_after": 300, "lc_trigger_range": 0.00 * bairitu, "lc_ensure_range": -0.05},
                 # 2022-2023は 0.05トリガーにすると、マイナスになる！！
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.060 * bairitu, "lc_ensure_range": 0.04 * bairitu},
+                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.060 * bairitu, "lc_ensure_range": 0.036 * bairitu},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.08 * bairitu, "lc_ensure_range": 0.06 * bairitu},
                 # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.09 * bairitu, "lc_ensure_range": 0.05 * bairitu},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10 * bairitu, "lc_ensure_range": 0.05 * bairitu},
@@ -486,6 +486,9 @@ def order_finalize(order_base_info):
     # 最終的にオーダーで必要な情報を付与する(項目名を整えるためにコピーするだけ）。LimitかStopかを算出
     order_base_info['direction'] = order_base_info['expected_direction']
     order_base_info['price'] = order_base_info['target_price']
+    order_base_info['order_timeout_min'] = order_base_info[
+        'order_timeout_min'] if 'order_timeout_min' in order_base_info else 60
+
     order_base_info['trade_timeout_min'] = order_base_info['trade_timeout_min'] if 'trade_timeout_min' in order_base_info else 60
     order_base_info['order_permission'] = order_base_info['order_permission'] if 'order_permission' in order_base_info else True
     # 表示形式の問題で、、念のため（機能としては不要）
@@ -507,6 +510,10 @@ def order_finalize(order_base_info):
     temp = order_base_info['trade_timeout_min']  # いったん保存
     del order_base_info["trade_timeout_min"]
     order_base_info['trade_timeout_min'] = temp
+
+    temp = order_base_info['order_timeout_min']  # いったん保存
+    del order_base_info["order_timeout_min"]
+    order_base_info['order_timeout_min'] = temp
 
     temp = order_base_info['tp_range']  # いったん保存
     del order_base_info["tp_range"]
@@ -560,5 +567,10 @@ def order_finalize(order_base_info):
     temp = order_base_info['lc_change']  # いったん保存
     del order_base_info["lc_change"]
     order_base_info['lc_change'] = temp
+
+    if "stop_or_limit" in order_base_info:
+        temp = order_base_info['stop_or_limit']  # いったん保存
+        del order_base_info["stop_or_limit"]
+        order_base_info['stop_or_limit'] = temp
 
     return order_base_info

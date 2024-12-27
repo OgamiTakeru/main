@@ -205,25 +205,31 @@ def mode1_order_control(inspection_result_dic):
                 print("  要求されたオーダー(each)")
                 print(inspection_result_dic['exe_orders'][order_n])
                 print("  オーダー結果")
-                print(res_dic)
-                # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
-                # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
-                print(res_dic['order_name'])
-                line_send = line_send + "◆【" + str(res_dic['order_name']) + "】,\n" +\
-                            "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
-                            ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
-                            ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
-                            "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
-                            ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
-                            "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
-                            ", OrderID:" + str(res_dic['order_id']) + \
-                            ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") " + "[システム]classNo:" + str(class_index) + ",\n"
-                            # "\n"
-                break
+                if res_dic['order_id'] == 0:
+                    print("オーダー失敗している（大量オーダー等）")
+                    return 0
+                else:
+                    # オーダーの生成完了をLINE通知する
+                    print(res_dic)
+                    # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
+                    # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
+                    print(res_dic['order_name'])
+                    line_send = line_send + "◆【" + str(res_dic['order_name']) + "】,\n" +\
+                                "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
+                                ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
+                                ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
+                                "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
+                                ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
+                                "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
+                                ", OrderID:" + str(res_dic['order_id']) + \
+                                ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") " + "[システム]classNo:" + str(class_index) + ",\n"
+                                # "\n"
+                    break
 
     # 注文結果を送信する（複数のオーダーでも一つにまとめて送信する）
     tk.line_send("★オーダー発行", gl_trade_num, "回目: ", " 　　　", line_send,
-                 ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread))
+                 ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread),
+                 "直前の結果", classPosition.order_information.before_latest_name, classPosition.order_information.before_latest_plu)
 
 
 def mode1():
@@ -409,7 +415,7 @@ def exe_manage():
         if time_min % 5 == 0 and 6 <= time_sec < 30 and past_time > 60:  # キャンドルの確認　秒指定だと飛ぶので、前回から●秒経過&秒数に余裕を追加
             print("■■■Candle調査", gl_live, gl_now, past_time)  # 表示用（実行時）
             classPosition.all_update_information(classes)  # 情報アップデート
-            d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)  # 時間昇順(直近が最後尾）
+            d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": gl_need_df_num}, 1)  # 時間昇順(直近が最後尾）
             if d5_df['error'] == -1:
                 print("error Candle")
                 return -1
@@ -435,7 +441,7 @@ def exe_manage():
             gl_first_time = gl_now
             print("■■■初回", gl_now, gl_exe_mode, gl_live)  # 表示用（実行時）
             # classPosition.all_update_information(classes)  # 情報アップデート
-            d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 50}, 1)  # 時間昇順
+            d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": gl_need_df_num}, 1)  # 時間昇順
             if d5_df['error'] == -1:
                 print("error Candle First")
             else:
@@ -444,7 +450,7 @@ def exe_manage():
             jp_time = datetime.datetime(2024, 11, 11, 21, 55, 0)
             euro_time_datetime = jp_time - datetime.timedelta(hours=9)
             euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-            param = {"granularity": "M5", "count": 85, "to": euro_time_datetime_iso}
+            param = {"granularity": "M5", "count": gl_need_df_num, "to": euro_time_datetime_iso}
             d5_df = oa.InstrumentsCandles_exe("USD_JPY", param)
             # ↑時間指定
             # ↓現在時刻
@@ -457,6 +463,7 @@ def exe_manage():
             d5_df.to_csv(tk.folder_path + 'main_data5.csv', index=False, encoding="utf-8")  # 直近保存用
 
             mode1()
+
 
 
 def exe_loop(interval, fun, wait=True):
@@ -486,6 +493,7 @@ def exe_loop(interval, fun, wait=True):
 # 変更なし群
 gl_arrow_spread = 0.011  # 実行を許容するスプレッド　＠ここ以外で変更なし
 gl_first_exe = 0  # 初回のみ実行する内容があるため、初回フラグを準備しておく
+gl_need_df_num = 100  # 解析に必要な行数（元々５０行だったが、１００にしたほうが、取引回数が多くなりそう）
 # 変更あり群
 gl_now = 0  # 現在時刻（ミリ秒無し） @exe_loopのみで変更あり
 gl_now_str = ""
