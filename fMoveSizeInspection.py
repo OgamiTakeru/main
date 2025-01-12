@@ -43,19 +43,19 @@ def cal_move_size(dic_args):
     # 状況に応じた、ピークポイントの指定  # 添え字は0=latest, 1=river, 2=turn, 3=flop3
 
     # ■データフレームの状態で、サイズ感を色々求める
-    filtered_df = df_r[:48]
+    filtered_df = df_r[:48]  # 直近3時間の場合、12×３ 36
     sorted_df = filtered_df.sort_values(by='body_abs', ascending=False)
-    max_high = sorted_df["high"].max()
-    min_low = sorted_df['low'].min()
+    max_high = sorted_df["inner_high"].max()
+    min_low = sorted_df['inner_low'].min()
     max_min_gap = round(max_high - min_low, 3)
-    # print(t6, "検出範囲", filtered_df.iloc[0]["time_jp"], "-", filtered_df.iloc[-1]['time_jp'])
-    # print(t6, "最大値、最小値", max_high, min_low, "差分", max_min_gap)
-    # print(t6, "最大足(最高-最低),", sorted_df.iloc[0]['time_jp'], sorted_df.iloc[0]['highlow'])
-    # print(t6, "最小足(最高-最低),", sorted_df.iloc[-1]['time_jp'], sorted_df.iloc[-1]['highlow'])
-    # print(t6, "平均(最高-最低)", sorted_df['highlow'].mean())
-    # print(t6, "最大足(Body),", sorted_df.iloc[0]['time_jp'], sorted_df.iloc[0]['body_abs'])
-    # print(t6, "最小足(Body),", sorted_df.iloc[-1]['time_jp'], sorted_df.iloc[-1]['body_abs'])
-    # print(t6, "平均(Body)", sorted_df['body_abs'].mean())
+    print(t6, "検出範囲", filtered_df.iloc[0]["time_jp"], "-", filtered_df.iloc[-1]['time_jp'])
+    print(t6, "最大値、最小値", max_high, min_low, "差分", max_min_gap)
+    print(t6, "最大足(最高-最低),", sorted_df.iloc[0]['time_jp'], sorted_df.iloc[0]['highlow'])
+    print(t6, "最小足(最高-最低),", sorted_df.iloc[-1]['time_jp'], sorted_df.iloc[-1]['highlow'])
+    print(t6, "平均(最高-最低)", sorted_df['highlow'].mean())
+    print(t6, "最大足(Body),", sorted_df.iloc[0]['time_jp'], sorted_df.iloc[0]['body_abs'])
+    print(t6, "最小足(Body),", sorted_df.iloc[-1]['time_jp'], sorted_df.iloc[-1]['body_abs'])
+    print(t6, "平均(Body)", sorted_df['body_abs'].mean())
 
     # ■ピーク5個分の平均値を求める
     filtered_peaks = peaks[:5]
@@ -94,7 +94,8 @@ def cal_move_size(dic_args):
 
     return {
         "range_flag": range_flag,
-        "big_move": big_move
+        "big_move": big_move,
+        "inner_min_max_gap": max_min_gap
     }
 
     # ■サイズ間でLCの幅とかを決めたい

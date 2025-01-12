@@ -351,10 +351,11 @@ class order_information:
         #     units_for_view = abs(float(trade_latest['currentUnits']))
         units_for_view = abs(float(trade_latest['initialUnits'])) - abs(float(trade_latest['currentUnits']))
         print(float(trade_latest['initialUnits']), trade_latest['currentUnits'], self.o_json)
+        direction = float(trade_latest['initialUnits']) / abs(float(trade_latest['initialUnits']))
         # ②本文作成
         if trade_latest['state'] == "CLOSED":
             # res1 = "【Unit】" + str(trade_latest['currentUnits'])
-            res1 = "【Unit】" + str(units_for_view)
+            res1 = "【Unit】" + str(units_for_view * direction)
             id_info = "【orderID】" + str(self.o_id) + "【tradeID】" + str(self.t_id)
             res2 = "【決:" + str(trade_latest['averageClosePrice']) + ", " + "取:" + str(trade_latest['price']) + "】"
             res3 = "【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "/ー域:" + str(self.lose_max_plu)
@@ -369,7 +370,7 @@ class order_information:
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
             # res1 = "強制Close【Unit】" + str(trade_latest['currentUnits'])
-            res1 = "【Unit】" + str(units_for_view)
+            res1 = "【Unit】" + str(units_for_view * direction)
             id_info = "【orderID】" + str(self.o_id) + "【tradeID】" + str(self.t_id)
             res2 = "【決:" + "現価" + ", " + "取:" + str(trade_latest['price']) + "】"
             res3 = "【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "/ー域:" + str(self.lose_max_plu)
@@ -701,8 +702,9 @@ class order_information:
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
             return 0
 
-        if  self.lc_change_from_candle_lc_price !=0:
-            print("既にキャンドルｌｃ変更有のため、通常ｌｃ無し",self.lc_change_from_candle_lc_price)
+        if self.lc_change_from_candle_lc_price != 0:
+            pass
+            # print("既にキャンドルｌｃ変更有のため、通常ｌｃ無し",self.lc_change_from_candle_lc_price)
 
         for i, item in enumerate(self.lc_change_dic):
             # コードの１行を短くするため、置きかておく
@@ -829,7 +831,7 @@ class order_information:
             self.send_line("    LC変更ミス＠lc_change")
             return 0  # APIエラー時は終了
         self.lc_change_from_candle_lc_price = lc_price_temp  # ロスカット価格の保存
-        lc_range = round(abs(lc_price_temp - self.t_execution_price), 5)
+        lc_range = round(abs(float(lc_price_temp) - float(self.t_execution_price)), 5)
         self.send_line("　(LCCandle底上げ)", self.name, "現在のPL" ,self.t_pl_u, "新LC価格⇒", new_lc_price,
                        "保証", lc_range, "約定価格", self.t_execution_price,
                        "予定価格", self.plan['price'])

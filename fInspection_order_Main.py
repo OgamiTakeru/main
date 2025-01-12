@@ -462,8 +462,8 @@ def analysis_warp_up_and_make_order(df_r):
     break_double_top_strength_orders_and_evidence = dp.for_inspection_main_double_peak({"df_r": df_r, "peaks": peaks})
     # print(s, "■クロス形状の判定")
     # cross_order = cm.main_cross({"df_r": df_r, "peaks": peaks})
-    print(s, "■シンプルターンの調査")
-    simple_turn_orders = sti.main_simple_turn({"df_r": df_r, "peaks": peaks})
+    # print(s, "■シンプルターンの調査")
+    # simple_turn_orders = sti.main_simple_turn({"df_r": df_r, "peaks": peaks})
 
 
 
@@ -480,9 +480,8 @@ def analysis_warp_up_and_make_order(df_r):
         flag_and_orders["exe_orders"] = flag_orders_and_evidence['exe_orders']
         flag_and_orders['for_inspection_dic'] = flag_orders_and_evidence['information']
         flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
-    elif simple_turn_orders['take_position_flag']:
-        flag_and_orders["take_position_flag"] = True  # False
-        flag_and_orders["exe_orders"] = simple_turn_orders['exe_orders']
+    # elif simple_tur
+    # ers"] = simple_turn_orders['exe_orders']
     # elif cross_order['take_position_flag']:
     #     print(s, "【最終的判断:クロス形状の確認")
     #     # DoubleTopの判定が最優先 (単品）

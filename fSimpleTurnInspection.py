@@ -64,6 +64,9 @@ def main_simple_turn(dic_args):
     if lc_range >= 0.035:
         print("LCRangeが大きいため、LCを縮小")
         lc_range = 0.035
+    if lc_range <= 0.01:
+        print("LCRangeが小さいため、LCを縮小")
+        lc_range = 0.02
 
     # targetPriceの調整（折り返したら、折り返した方面に行く前提）
     margin = 0.00

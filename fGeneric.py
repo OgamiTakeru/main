@@ -223,6 +223,7 @@ def print_arr(*arr):
         indent = " "
 
     # 実表示 arr[0] が本体
+    print(indent, "print arr")
     for i in range(len(arr[0])):
         # print("ー",  i,"ーーーーーーーーーーーーーーーーー")
         print(indent, i, arr[0][i])
