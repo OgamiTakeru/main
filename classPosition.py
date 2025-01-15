@@ -676,7 +676,7 @@ class order_information:
         self.order_update_and_close()
         self.trade_update_and_close()
         if self.o_state == "FILLED" and self.t_state == "CLOSED" and self.life:
-            self.life = False
+            self.life_set(True)
             self.send_line("Filled Closed Trueの謎状態あり⇒強制的にLifeにFalseを入れて終了　classPosition 537行目")
         # 変化による情報（勝ち負けの各最大値、継続時間等の取得）
         self.updateWinLoseTime(trade_latest['PLu'])  # PLU(realizePL / Unit)の推移を記録する
@@ -696,7 +696,7 @@ class order_information:
         上記の辞書が、配列で渡される場合、配列全てで確認していく。
         :return:         print(" ロスカ変更関数", self.lc_change_dic, self.t_pl_u,self.t_state)
         """
-        # print("  ★LC＿Change実行関数")
+        print("   LC＿Change実行関数", self.name, self.t_pl_u, self.t_time_past_sec, len(self.lc_change_dic), self.t_state, self.lc_change_from_candle_lc_price)
 
         if len(self.lc_change_dic) == 0 or self.t_state != "OPEN":  # 足数×〇分足×秒
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない

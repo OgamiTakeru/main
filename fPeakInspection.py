@@ -171,38 +171,73 @@ def change_peaks_with_hard_skip(peaks_origin):
 
     peaks = peaks_origin.copy()
     # gene.print_arr(peaks)
-    adjaster = 0
+    adjuster = 0
     for index in range(len(peaks)):  # 中で配列を買い替えるため、for i in peaksは使えない！！
-        target_index = index + adjaster
+        target_index = index + adjuster
         if len(peaks) - target_index < 3:  # one,two, thrを確保するため、三つは必要
             # print(" 終了")
             break
 
         one = peaks[target_index]
-        two = peaks[target_index + 1]
+        two = peaks[target_index + 1]  # これが消える可能性があるピーク
         thr = peaks[target_index + 2]
-        # print(target_index, one, two, thr)
+        # print(target_index)
+        # print("  ", one)
+        # print("  ", two)
+        # print("  ", thr)
 
+        be_merge = False
         if two['count'] <= 3 or (two['count'] <= 5 and two['gap'] <= dependence_two_gap_at_most):  # カウントがアウトでも、ギャップが少なければ飛ばせるとみなす
             # print(" ２が３カウント以下⇒結合判定へ", two['count'])
             if (two['gap'] / one['gap'] <= 0.3 and two['gap'] / thr['gap'] <= 0.56) or (two['gap'] / one['gap'] <= 0.56 and two['gap'] / thr['gap'] <= 0.3):
                 # print(" 結合可能", one['time'], "twoを削除し、oneとThreeをつなげる", target_index)
-                # 1に情報を集約
-                peaks[target_index]['peak_old'] = thr['peak_old']
-                peaks[target_index]['time_old'] = thr['time_old']
-                peaks[target_index]['count'] = one['count'] + two['count'] + thr['count']
-                peaks[target_index]['previous'] = thr['previous']
-                peaks[target_index]['gap'] = abs(one['peak'] - one['peak_old'])
-                # ２と３を削除する
-                del peaks[target_index+1:target_index + 3]
-                # アジャスターを調整
-                adjaster = adjaster
+                be_merge = True
+                # # 1に情報を集約
+                # peaks[target_index]['peak_old'] = thr['peak_old']
+                # peaks[target_index]['time_old'] = thr['time_old']
+                # peaks[target_index]['count'] = one['count'] + two['count'] + thr['count']
+                # peaks[target_index]['previous'] = thr['previous']
+                # peaks[target_index]['gap'] = abs(one['peak'] - one['peak_old'])
+                # # ２と３を削除する
+                # del peaks[target_index+1:target_index + 3]
+                # # アジャスターを調整
+                # adjuster = adjuster
             else:
                 pass
                 # print(" 結合不可", round(two['gap'] / one['gap'], 3), round(two['gap'] / thr['gap'], 3))
+
+            # 上下関係がつながっている場合も、スキップする
+            # 中央が下り側
+            if two['direction'] == -1:
+                # print("  　中央下り", thr['peak_old'], two['peak'], "and", two['peak_old'], one['peak'])
+                if thr['peak_old'] < two['peak'] and two['peak_old'] < one['peak']:
+                    # print("       ⇒結合対象")
+                    be_merge = True
+            else:
+                # print("  　中央登り", thr['peak_old'], two['peak'], "and", two['peak_old'], one['peak'])
+                if thr['peak_old'] > two['peak'] and two['peak_old'] > one['peak']:
+                    # print("       ⇒結合対象")
+                    be_merge = True
         else:
             pass
             # print(" ２が３カウント以上⇒結合不可", two['count'], two['gap'])
+
+        # スキップ処理
+        if be_merge:
+            # print(" 結合処理")
+            # 1に情報を集約
+            peaks[target_index + 2]['peak'] = one['peak']
+            peaks[target_index + 2]['time'] = one['time']
+            peaks[target_index + 2]['count'] = one['count'] + two['count'] + thr['count']
+            peaks[target_index + 2]['next'] = one['next']
+            peaks[target_index + 2]['gap'] = round(abs(thr['peak'] - thr['peak_old']), 3)
+            # ２と３を削除する
+            del peaks[target_index:target_index + 2]
+            # アジャスターを調整(消去した場合、一つ前にしないとおかしくなる）
+            adjuster = -1
+        else:
+            # 消去しない場合、特に問題なし
+            adjuster = 0
 
     return peaks
 

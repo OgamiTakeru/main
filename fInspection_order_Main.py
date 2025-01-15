@@ -459,7 +459,8 @@ def analysis_warp_up_and_make_order(df_r):
     flag_orders_and_evidence = fi.main_flag({"df_r": df_r, "peaks": peaks})  # 調査(旧バージョン）
     # flag_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})
     print(s, "■DoubleTOpBreakの調査")
-    break_double_top_strength_orders_and_evidence = dp.for_inspection_main_double_peak({"df_r": df_r, "peaks": peaks})
+    break_double_top_strength_orders_and_evidence = {"take_position_flag": False}
+    # break_double_top_strength_orders_and_evidence = dp.for_inspection_main_double_peak({"df_r": df_r, "peaks": peaks})
     # print(s, "■クロス形状の判定")
     # cross_order = cm.main_cross({"df_r": df_r, "peaks": peaks})
     # print(s, "■シンプルターンの調査")
@@ -469,7 +470,7 @@ def analysis_warp_up_and_make_order(df_r):
 
     # ■各結果からオーダーを生成する（＋検証用のデータfor_inspection_dicも）
     if break_double_top_strength_orders_and_evidence['take_position_flag']:
-        print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)")
+        print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)", break_double_top_strength_orders_and_evidence['take_position_flag'])
         # DoubleTopの判定が最優先 (単品）
         flag_and_orders["take_position_flag"] = False
         flag_and_orders["exe_orders"] = \
