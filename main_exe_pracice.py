@@ -13,7 +13,7 @@ import fBlockInspection as t  # とりあえずの関数集
 import fGeneric as f
 import fPeakInspection as p
 import fDoublePeaks as dp
-import fInspection_order_Main as im
+import fAnalysis_order_Main as im
 import fGeneric as gene
 import making as ins
 import fResistanceLineInspection as ri

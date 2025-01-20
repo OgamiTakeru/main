@@ -416,7 +416,7 @@ oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの�
 #     return flag_and_orders
 
 
-def analysis_warp_up_and_make_order(df_r):
+def normal_state_analysis(df_r):
     """
     主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
     引数
@@ -453,41 +453,21 @@ def analysis_warp_up_and_make_order(df_r):
     fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
     peaks = fixed_information['peaks']
 
-    # ■■■■
+    # ■■■■ チャートの形状の解析をもとにしたオーダー
     # ■各検証を実施し、その結果を保持する■
     print(s, "■フラッグ形状の調査")
     flag_orders_and_evidence = fi.main_flag({"df_r": df_r, "peaks": peaks})  # 調査(旧バージョン）
-    # flag_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})
-    print(s, "■DoubleTOpBreakの調査")
-    break_double_top_strength_orders_and_evidence = {"take_position_flag": False}
-    # break_double_top_strength_orders_and_evidence = dp.for_inspection_main_double_peak({"df_r": df_r, "peaks": peaks})
-    # print(s, "■クロス形状の判定")
-    # cross_order = cm.main_cross({"df_r": df_r, "peaks": peaks})
-    # print(s, "■シンプルターンの調査")
-    # simple_turn_orders = sti.main_simple_turn({"df_r": df_r, "peaks": peaks})
-
-
 
     # ■各結果からオーダーを生成する（＋検証用のデータfor_inspection_dicも）
-    if break_double_top_strength_orders_and_evidence['take_position_flag']:
-        print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)", break_double_top_strength_orders_and_evidence['take_position_flag'])
-        # DoubleTopの判定が最優先 (単品）
-        flag_and_orders["take_position_flag"] = False
-        flag_and_orders["exe_orders"] = \
-            [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
-        flag_and_orders['for_inspection_dic'] = break_double_top_strength_orders_and_evidence['for_inspection_dic']
-    elif flag_orders_and_evidence['take_position_flag']:
+    if flag_orders_and_evidence['take_position_flag']:
         flag_and_orders["take_position_flag"] = True
         flag_and_orders["exe_orders"] = flag_orders_and_evidence['exe_orders']
         flag_and_orders['for_inspection_dic'] = flag_orders_and_evidence['information']
         flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
-    # elif simple_tur
-    # ers"] = simple_turn_orders['exe_orders']
-    # elif cross_order['take_position_flag']:
-    #     print(s, "【最終的判断:クロス形状の確認")
-    #     # DoubleTopの判定が最優先 (単品）
-    #     flag_and_orders["take_position_flag"] = True
-    #     flag_and_orders["exe_orders"] = cross_order['exe_orders']
+        # 代表プライオリティの追加
+        max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+        flag_and_orders['max_priority'] = max_priority
+
     print(flag_and_orders['take_position_flag'])
     gene.print_arr(flag_and_orders['exe_orders'])
 
@@ -518,7 +498,7 @@ def analysis_warp_up_and_make_order(df_r):
     return flag_and_orders
 
 
-def for_inspection_analysis_warp_up_and_make_order(df_r):
+def calm_state_analysis(df_r):
     """
     主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
     引数
@@ -555,41 +535,21 @@ def for_inspection_analysis_warp_up_and_make_order(df_r):
     fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
     peaks = fixed_information['peaks']
 
-    # ■■■■
+    # ■■■■ チャートの形状の解析をもとにしたオーダー
     # ■各検証を実施し、その結果を保持する■
-    # print(s, "■フラッグ形状の調査")
-    # flag_orders_and_evidence = fi.main_flag({"df_r": df_r, "peaks": peaks})  # 調査(旧バージョン）
-    # # flag_orders_and_evidence = ri.main_line_strength_analysis_and_order({"df_r": df_r, "peaks": peaks})
-    # print(s, "■DoubleTOpBreakの調査")
-    # break_double_top_strength_orders_and_evidence = dp.for_inspection_main_double_peak({"df_r": df_r, "peaks": peaks})
-    # # print(s, "■クロス形状の判定")
-    # # cross_order = cm.main_cross({"df_r": df_r, "peaks": peaks})
-    print(s, "■シンプルターンの調査")
-    simple_turn_orders = sti.main_simple_turn({"df_r": df_r, "peaks": peaks})
-
-
+    print(s, "■フラッグ形状の調査")
+    flag_orders_and_evidence = fi.main_flag_calm_state({"df_r": df_r, "peaks": peaks})  # 調査(旧バージョン）
 
     # ■各結果からオーダーを生成する（＋検証用のデータfor_inspection_dicも）
-    # if break_double_top_strength_orders_and_evidence['take_position_flag']:
-    #     print(s, "【最終的判断:ダブルトップ突破系】⇒★★今回はLatest2では待機(take_positionをFalseに)")
-    #     # DoubleTopの判定が最優先 (単品）
-    #     flag_and_orders["take_position_flag"] = False
-    #     flag_and_orders["exe_orders"] = \
-    #         [cf.order_finalize(break_double_top_strength_orders_and_evidence['order_before_finalized'])]
-    #     flag_and_orders['for_inspection_dic'] = break_double_top_strength_orders_and_evidence['for_inspection_dic']
-    # elif flag_orders_and_evidence['take_position_flag']:
-    #     flag_and_orders["take_position_flag"] = True
-    #     flag_and_orders["exe_orders"] = flag_orders_and_evidence['exe_orders']
-    #     flag_and_orders['for_inspection_dic'] = flag_orders_and_evidence['information']
-    #     flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
-    if simple_turn_orders['take_position_flag']:
-        flag_and_orders["take_position_flag"] = True  # False
-        flag_and_orders["exe_orders"] = simple_turn_orders['exe_orders']
-    # elif cross_order['take_position_flag']:
-    #     print(s, "【最終的判断:クロス形状の確認")
-    #     # DoubleTopの判定が最優先 (単品）
-    #     flag_and_orders["take_position_flag"] = True
-    #     flag_and_orders["exe_orders"] = cross_order['exe_orders']
+    if flag_orders_and_evidence['take_position_flag']:
+        flag_and_orders["take_position_flag"] = True
+        flag_and_orders["exe_orders"] = flag_orders_and_evidence['exe_orders']
+        flag_and_orders['for_inspection_dic'] = flag_orders_and_evidence['information']
+        flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
+        # 代表プライオリティの追加
+        max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+        flag_and_orders['max_priority'] = max_priority
+
     print(flag_and_orders['take_position_flag'])
     gene.print_arr(flag_and_orders['exe_orders'])
 

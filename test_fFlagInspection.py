@@ -646,7 +646,7 @@ def tilt_cal(peaks, target_direction):
     return ans_info
         
 
-def judge_flag_figure(peaks, target_direction, line_strength, df_r):
+def judge_flag_figure_wrap_up_hard_skip(peaks, target_direction, line_strength, df_r):
     """
     フラッグ形状かどうかを判定する。
     df_r:調査用のデータフレーム
@@ -712,7 +712,7 @@ def get_max_time(entry):
     return max(item["time"] for item in entry["same_price_list"])
 
 
-def analysis(dic_args):
+def analysis_flag(dic_args):
     """
     引数はDFやピークスなど
     """
@@ -900,7 +900,7 @@ def analysis(dic_args):
         # if each_strength_info['line_on_num'] >= 3 and each_strength_info['line_strength'] == 1:  # 旧条件２　少し厳しい
         if each_strength_info_result['line_on_num'] >= 2 and each_strength_info_result['line_strength'] >= 0.9 and arrowed_time_gap:  # allRangeは不要か
             # flag = judge_flag_figure_wrap_up(peaks, peaks[0]['direction'], each_strength_info_result['line_strength'], target_df)
-            flag_info = judge_flag_figure(peaks, peaks[0]['direction'], each_strength_info_result['line_strength'], target_df)  # ★スキップバージョン
+            flag_info = judge_flag_figure_wrap_up_hard_skip(peaks, peaks[0]['direction'], each_strength_info_result['line_strength'], target_df)  # ★スキップバージョン
             print(s6, "[チルトテスト結果]", each_predict_line_info['line_base_info']["line_base_price"], flag_info['tilt_flag'], each_strength_info_result['remark'])
             # print(each_strength_info_result['line_strength'])
             # フラッグの結果次第で、LineStrengthに横やりを入れる形で、値を買い替える
@@ -960,6 +960,534 @@ def analysis(dic_args):
         return orders_and_evidence
 
 
+def main_flag_old(dic_args):
+    """
+    引数はDFやピークスなど
+    オーダーを生成する
+    """
+
+    # 表示時のインデント
+    s4 = "    "
+    s6 = "      "
+
+    print(" 新フラッグ調査関数")
+    # ■関数事前準備■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    # ■■返却値 とその周辺の値
+    exe_orders = []
+    orders_and_evidence = {
+        "take_position_flag": False,
+        "exe_orders": exe_orders,
+        "information": []
+    }
+    # ■■情報の整理と取得（関数の頭には必須）
+    fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
+    df_r = fixed_information['df_r']
+    peaks = fixed_information['peaks']
+
+    # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    # ■■実行しない条件の場合、実行を終了する
+    if peaks[0]['count'] > 4:
+        print(s6, "countで実行しない場合を宣言する")  # フラッグは基本的に、Latestの数がいつでも実行する
+    # for i, item in enumerate(peaks[:7]):
+    #     if item['include_very_large']:
+    #         print("veryLargeあり")
+    #         return orders_and_evidence
+    # ■■解析の実行
+    flag_analysis_result = analysis_flag({"df_r": df_r, "peaks": peaks})
+    print("メイン側", flag_analysis_result['take_position_flag'])
+    if not flag_analysis_result['take_position_flag']:
+        return orders_and_evidence
+
+    # ■フラッグ専用のLCChange
+    lc_change = [
+        # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
+        # 2022-2023は 0.05トリガーにすると、マイナスになる！！
+        {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
+    ]
+
+    # ■フラッグ形状が発見された場合はオーダーを発行する
+    flag_info = flag_analysis_result['information']
+    # "flag_info": {"LineBase": {}, "samePriceList": [{peaks}], "strengthInfo": {"lc_price,remark,y_change等"}
+    position_type = "STOP"  # フラッグありの場合突破方向のため、STOP
+    # ■■突破方向のオーダー（初回と二回目以降で異なる）
+    flag_final = True  # 初回の一部でオーダーが入らない仕様になったため、改めてフラグを持っておく（オーダーないときはOrderAndEvidence返却でもいいかも？）
+    # if flag_info['strength_info']['is_first_for_flag']:
+    if flag_info['strength_info']['is_first_for_flag'] and flag_info['strength_info']['line_is_close_for_flag']:
+        print("初回　かつ　BaseLineと近すぎる", flag_info['strength_info']['is_first_for_flag'], flag_info['strength_info']['line_is_close_for_flag'])
+        return orders_and_evidence
+        # # 初回成立の場合は、Lineまで遠い場合は、突破はオーダーなし(これはテスト用。終わったらIf文含めて消したほうがいいかも）
+        # if flag_info['strength_info']['line_is_close_for_flag']:
+        #     # 初回でも近い場合は、抵抗線Break側のオーダーを出す
+        #     # フラッグ用
+        #     return orders_and_evidence
+        # else:
+        #     # 初回でなおかつ、距離が遠い場合はオーダーしない
+        #     return orders_and_evidence
+        #     pass
+    else:
+        # 初回ではない場合
+        dependence_normal_margin = 0.016  # 0.035がシミュレーション上はベスト
+        dependence_lc_range_max = 0.09
+        dependence_lc_range_at_least = 0.04
+        dependence_counter_margin = 0.016  # 0.035がシミュレーション上はベスト
+        dependence_lc_range_max_c = 0.09  # 0.12が強い
+        dependence_lc_range_at_least_c = 0.04  # 0.12が強い
+
+        # ■■フラッグ用（突破方向）
+        # 最大でもLCRange換算で10pips以内したい
+        target_price = flag_info['line_base_info']['line_base_price'] + (dependence_normal_margin * flag_info['line_base_info']['line_base_direction'])  # - (0.035 * flag_info['line_base_info']['line_base_direction'])  # Nowpriceというより、取得価格
+        # temp_lc_price = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # lcPriceは収束の中間点
+        temp_lc_price = flag_info['strength_info']['lc_price']
+        lc_range = temp_lc_price - target_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
+        print(s6, "LC検討", target_price, temp_lc_price, lc_range, temp_lc_price)
+        if abs(lc_range) >= dependence_lc_range_max:
+            # LCが大きすぎると判断される場合(10pips以上離れている）
+            if lc_range < 0:
+                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+                lc_price = target_price - abs(dependence_lc_range_max)
+                print(s6, "ggLC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max))
+            else:
+                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+                lc_price = target_price + abs(dependence_lc_range_max)
+                print(s6, "gLC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max))
+        elif abs(lc_range) <= dependence_lc_range_at_least:
+            # LCが小さすぎる
+            if lc_range < 0:
+                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+                lc_price = target_price - abs(dependence_lc_range_at_least)
+                print(s6, "gggLC価格(Dir1)", target_price, "-", abs(dependence_lc_range_at_least))
+            else:
+                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+                lc_price = target_price + abs(dependence_lc_range_at_least)
+                print(s6, "gggggLC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_at_least))
+        else:
+            # LCRangeが許容範囲内の場合、そのまま利用
+            lc_price = temp_lc_price
+            print(s6, "そのままのLCを利用する", lc_price)
+        main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])    # tpはLCChange任せのため、Baseのまま
+        # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
+        # main_order_base['lc'] = flag_info['strength_info']['lc_price']  # 0.06 ←0.06は結構本命  # 0.09  # LCは広め　　  # 入れる側の文字は　LCのみ
+        main_order_base['target'] = target_price
+        main_order_base['lc'] = lc_price
+        main_order_base['type'] = position_type
+        main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction']
+        main_order_base['priority'] = 5  # flag_info['strength_info']['priority']
+        main_order_base['lc_change'] = lc_change
+        main_order_base['units'] = main_order_base['units'] * 1
+        main_order_base['name'] = flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
+        main_order_base['y_change'] = flag_info['strength_info']['y_change']
+        exe_orders.append(cf.order_finalize(main_order_base))
+
+        # ■■カウンタオーダーも入れる（二回目以降のみ）
+        # 最大でもLCRange換算で10pips以内したい
+        target_price = peaks[1]['peak'] - (dependence_counter_margin * flag_info['line_base_info']['line_base_direction'])
+        temp_lc_price = flag_info['line_base_info']['line_base_price']
+        lc_range = temp_lc_price - target_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
+        print(s6, "LC検討", target_price, temp_lc_price, lc_range, peaks[0]['peak'])
+        if abs(lc_range) >= dependence_lc_range_max_c:
+            # LCが大きすぎると判断される場合(10pips以上離れている）
+            if lc_range < 0:
+                # LC_rangeがマイナス値　＝　売り注文。その為、ターゲット価格にプラスするとLCPriceとなる
+                lc_price_counter = target_price + abs(dependence_lc_range_max_c)  # 通常とは符号逆 もともとー
+                print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
+            else:
+                # LC_rangeがプラス値　＝　買い注文。その為、ターゲット価格からマイナスするとＬＣＰｒｉｃｅになる
+                lc_price_counter = target_price - abs(dependence_lc_range_max_c)  # 通常とは符号逆　もともと＋
+                print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
+        elif abs(lc_range) <= dependence_lc_range_at_least_c:
+            # LCが小さすぎる
+            if lc_range < 0:
+                # LC_rangeがマイナス値　＝　売り注文。その為、ターゲット価格にプラスするとLCPriceとなる
+                lc_price_counter = target_price + abs(dependence_lc_range_at_least_c)
+                print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_at_least_c))
+            else:
+                # LC_rangeがプラス値　＝　買い注文。その為、ターゲット価格からマイナスするとＬＣＰｒｉｃｅになる
+                lc_price_counter = target_price - abs(dependence_lc_range_at_least_c)
+                print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_at_least_c))
+        else:
+            # LCRangeが許容範囲内の場合、そのまま利用
+            lc_price_counter = temp_lc_price
+            print(s6, "そのままのLCを利用する", lc_price_counter)
+        # 現在価格との整合性が取れない（即時オーダーとなる場合）があるため、考慮する
+        if flag_info['strength_info']['expected_direction'] * -1 == -1:
+            # カウンターが売り方向の場合、現在価格よりも下にあるべき。
+            if target_price >= peaks[0]['peak']:
+                print("★★★整合性のとれないオーダーになりそうだった（売り側）", lc_price_counter, ">", peaks[0]['peak'])
+                target_price = peaks[0]['peak'] - 0.035
+        else:
+            # カウンターが買い方向の場合、現在価格よりも上にあるべき
+            if target_price <= peaks[0]['peak']:
+                print("★★★整合性のとれないオーダーになりそうだった（買い側）", lc_price_counter, "<", peaks[0]['peak'])
+                target_price = peaks[0]['peak'] + 0.035
+
+        main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
+        # main_order_base['target'] = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
+        main_order_base['target'] = target_price  # river価格＋マージン0.027
+        main_order_base['lc'] = lc_price_counter  # ←悪くなさそうだが、広すぎる？
+        main_order_base['type'] = position_type
+        main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction'] * -1
+        main_order_base['priority'] = 5  # ['strength_info']['priority']
+        main_order_base['units'] = main_order_base['units'] * 1
+        main_order_base['lc_change'] = lc_change
+        main_order_base['name'] = "カウンター" + flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
+        main_order_base['y_change'] = flag_info['strength_info']['y_change']
+        exe_orders.append(cf.order_finalize(main_order_base))
+
+
+    # 返却する
+    print(s4, "オーダー対象", flag_info)
+    orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
+    orders_and_evidence["exe_orders"] = exe_orders
+    orders_and_evidence["information"] = flag_info['strength_info']
+
+    print("オーダー表示")
+    gene.print_arr(orders_and_evidence["exe_orders"])
+    return orders_and_evidence
+
+
+def for_inspection_main_flag(dic_args):
+    """
+    引数はDFやピークスなど
+    オーダーを生成する
+    """
+
+    # 表示時のインデント
+    s4 = "    "
+    s6 = "      "
+
+    print(" 新フラッグ調査関数")
+    # ■関数事前準備■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    # ■■返却値 とその周辺の値
+    exe_orders = []
+    orders_and_evidence = {
+        "take_position_flag": False,
+        "exe_orders": exe_orders,
+        "information": []
+    }
+    # ■■情報の整理と取得（関数の頭には必須）
+    fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
+    df_r = fixed_information['df_r']
+    peaks = fixed_information['peaks']
+
+    # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    # ■■実行しない条件の場合、実行を終了する
+    if peaks[0]['count'] > 4:
+        print(s6, "countで実行しない場合を宣言する")  # フラッグは基本的に、Latestの数がいつでも実行する
+    # for i, item in enumerate(peaks[:7]):
+    #     if item['include_very_large']:
+    #         print("veryLargeあり")
+    #         # tk.line_send("極大を確認")
+    #         return orders_and_evidence
+    # ■■解析の実行
+    flag_analysis_result = analysis_flag({"df_r": df_r, "peaks": peaks})
+    if not flag_analysis_result['take_position_flag']:
+        return orders_and_evidence
+
+    # ■フラッグ形状が発見された場合はオーダーを発行する
+    flag_info = flag_analysis_result['information']
+    # "flag_info": {"LineBase": {}, "samePriceList": [{peaks}], "strengthInfo": {"lc_price,remark,y_change等"}
+    position_type = "STOP"  # フラッグありの場合突破方向のため、STOP
+    print(s4, "フラッグが発生した時の情報", flag_info)
+    # ■■突破方向のオーダー（初回と二回目以降で異なる）
+    flag_final = True  # 初回の一部でオーダーが入らない仕様になったため、改めてフラグを持っておく（オーダーないときはOrderAndEvidence返却でもいいかも？）
+    # if flag_info['strength_info']['is_first_for_flag']:
+    if flag_info['strength_info']['is_first_for_flag'] and flag_info['strength_info']['line_is_close_for_flag']:
+        return orders_and_evidence
+        # # 初回成立の場合は、Lineまで遠い場合は、突破はオーダーなし(これはテスト用。終わったらIf文含めて消したほうがいいかも）
+        # if flag_info['strength_info']['line_is_close_for_flag']:
+        #     # 初回でも近い場合は、抵抗線Break側のオーダーを出す
+        #     # フラッグ用
+        #     return orders_and_evidence
+        # else:
+        #     # 初回でなおかつ、距離が遠い場合はオーダーしない
+        #     return orders_and_evidence
+        #     pass
+    else:
+        # 初回ではない場合
+        dependence_normal_margin = 0.035
+        dependence_lc_range_max = 0.12
+        dependence_lc_range_at_least = 0.05
+        dependence_counter_margin = 0.035
+        dependence_lc_range_max_c = 0.12  # 0.12が強い
+        dependence_lc_range_at_least_c = 0.06  # 0.12が強い
+
+        # ■■フラッグ用（突破方向）
+        # 突破を見込むため、発見された抵抗ラインよりも少し突破方向の位置(0.035程度)がターゲットとなる。
+        # LCは継続的な傾きを観測した方の、最大値と最小値の中央値となる。
+        target_price = flag_info['line_base_info']['line_base_price'] + (dependence_normal_margin * flag_info['line_base_info']['line_base_direction'])  # - (0.035 * flag_info['line_base_info']['line_base_direction'])  # Nowpriceというより、取得価格
+        # temp_lc_price = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # lcPriceは収束の中間点
+        temp_lc_price = flag_info['strength_info']['lc_price']
+        lc_range = temp_lc_price - target_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
+        print(s6, "LC検討", target_price, temp_lc_price, lc_range)
+        if abs(lc_range) >= dependence_lc_range_max:
+            # LCが大きすぎると判断される場合(10pips以上離れている）
+            if lc_range < 0:
+                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+                lc_price = target_price - abs(dependence_lc_range_max)
+                print(s6, "ggLC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max))
+            else:
+                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+                lc_price = target_price + abs(dependence_lc_range_max)
+                print(s6, "gLC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max))
+        elif abs(lc_range) <= dependence_lc_range_at_least:
+            # LCが小さすぎる
+            if lc_range < 0:
+                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+                lc_price = target_price - abs(dependence_lc_range_max)
+                print(s6, "gggLC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max))
+            else:
+                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+                lc_price = target_price + abs(dependence_lc_range_max)
+                print(s6, "gggggLC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max))
+        else:
+            # LCRangeが許容範囲内の場合、そのまま利用
+            lc_price = temp_lc_price
+            print(s6, "そのままのLCを利用する", lc_price)
+        main_order_base = cf.order_base_for_inspection(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
+        # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
+        main_order_base['target'] = target_price
+        main_order_base['lc'] = 0.03 # lc_price
+        main_order_base['type'] = position_type
+        main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction']
+        main_order_base['priority'] = 5  # flag_info['strength_info']['priority']
+        main_order_base['units'] = main_order_base['units'] * 1
+        main_order_base['name'] = flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
+        main_order_base['y_change'] = flag_info['strength_info']['y_change']
+        exe_orders.append(cf.order_finalize(main_order_base))
+
+        # ■■カウンタオーダーも入れる（二回目以降のみ）
+        # latestは抵抗ラインに向いている状態のため、カウンターはそれとは逆、ようするにターンピークから余裕を持った場所がターゲット。
+        # lcは抵抗ライン程度？
+        target_price = peaks[1]['peak'] - (dependence_counter_margin * flag_info['line_base_info']['line_base_direction'])
+        # target_price = lc_price - (0.035 * flag_info['line_base_info']['line_base_direction'])  # 突破のLCから検討
+        temp_lc_price = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # lcPriceは収束の中間点
+        # temp_lc_price = flag_info['line_base_info']['line_base_price']
+        lc_range = temp_lc_price - target_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
+        print(s6, "LC検討", target_price, temp_lc_price, lc_range, peaks[0]['peak'])
+        if abs(lc_range) >= dependence_lc_range_max_c:
+            # LCが大きすぎると判断される場合(10pips以上離れている）
+            lc_range = dependence_lc_range_max_c
+            if lc_range < 0:
+                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+                lc_price_counter = target_price - abs(dependence_lc_range_max_c)  # 通常とは符号逆(temp_lc_priceが長いやつだと-がよかったやつ・・？違和感あり）
+                print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
+            else:
+                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+                lc_price_counter = target_price + abs(dependence_lc_range_max_c)  # 通常とは符号逆　もともと＋
+                print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
+        elif abs(lc_range) <= dependence_lc_range_at_least_c:
+            # LCが小さすぎる
+            lc_range = dependence_lc_range_at_least_c
+            if lc_range < 0:
+                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+                lc_price_counter = target_price - abs(dependence_lc_range_max_c)
+                print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
+            else:
+                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+                lc_price_counter = target_price + abs(dependence_lc_range_max_c)
+                print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
+        else:
+            # LCRangeが許容範囲内の場合、そのまま利用
+            lc_price_counter = temp_lc_price
+            print(s6, "そのままのLCを利用する", lc_price_counter)
+        # 保存用（過去のいいやつ）↓
+        # if abs(lc_range) >= dependence_lc_range_max_c:
+        #     # LCが大きすぎると判断される場合(10pips以上離れている）
+        #     lc_range = dependence_lc_range_max_c
+        #     if lc_range < 0:
+        #         # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+        #         lc_price_counter = target_price - abs(dependence_lc_range_max_c)  # 通常とは符号逆(temp_lc_priceが長いやつだと-がよかったやつ・・？違和感あり）
+        #         print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
+        #     else:
+        #         # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+        #         lc_price_counter = target_price + abs(dependence_lc_range_max_c)  # 通常とは符号逆　もともと＋
+        #         print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
+        # elif abs(lc_range) <= dependence_lc_range_at_least_c:
+        #     # LCが小さすぎる
+        #     lc_range = dependence_lc_range_at_least_c
+        #     if lc_range < 0:
+        #         # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+        #         lc_price_counter = target_price - abs(dependence_lc_range_max_c)
+        #         print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
+        #     else:
+        #         # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+        #         lc_price_counter = target_price + abs(dependence_lc_range_max_c)
+        #         print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
+        # else:
+        #     # LCRangeが許容範囲内の場合、そのまま利用
+        #     lc_price_counter = temp_lc_price
+        #     print(s6, "そのままのLCを利用する", lc_price_counter)
+        # 保存用↑
+        # 現在価格との整合性が取れない（即時オーダーとなる場合）があるため、考慮する
+        if flag_info['strength_info']['expected_direction'] * -1 == -1:
+            # カウンターが売り方向の場合、現在価格よりも下にあるべき。
+            if target_price >= peaks[0]['peak']:
+                print("    ★★★整合性のとれないオーダーになりそうだった（売り側）", lc_price_counter, ">", peaks[0]['peak'])
+                target_price = peaks[0]['peak'] - 0.035
+            else:
+                # 整合性のとれたオーダー
+                pass
+        else:
+            # カウンターが買い方向の場合、現在価格よりも上にあるべき
+            if target_price <= peaks[0]['peak']:
+                print("    ★★★整合性のとれないオーダーになりそうだった（買い側）", lc_price_counter, "<", peaks[0]['peak'])
+                target_price = peaks[0]['peak'] + 0.035
+
+        main_order_base = cf.order_base_for_inspection(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
+        # main_order_base['target'] = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
+        main_order_base['target'] = target_price  # river価格＋マージン0.027
+        # main_order_base['lc'] = gene.cal_at_most(0.09, flag_info['line_base_info']['line_base_price'] - 0.02 * (flag_info['strength_info']['expected_direction'] * -1))  # -0.02を追加してみた
+        # main_order_base['lc'] = gene.cal_at_most(0.08, target_strength_info['line_base_info']['line_base_price']) # ←ダメだった！！！！
+        # main_order_base['lc'] = flag_info['line_base_info']['line_base_price'] - 0.05 * (flag_info['strength_info']['expected_direction'] * -1)  # ←よかったけど、さらに上を！
+        # gene.print_json(flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak'])
+        # main_order_base['lc'] = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # ←悪くなさそうだが、広すぎる？
+        main_order_base['lc'] = 0.03 # lc_price_counter  # ←悪くなさそうだが、広すぎる？
+        main_order_base['type'] = position_type
+        main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction'] * -1
+        main_order_base['priority'] = 5  # ['strength_info']['priority']
+        main_order_base['units'] = main_order_base['units'] * 1
+        main_order_base['name'] = "カウンター" + flag_info['strength_info']['remark'] + '(count:' + str(
+            peaks[0]['count']) + ')'
+        main_order_base['y_change'] = flag_info['strength_info']['y_change']
+        exe_orders.append(cf.order_finalize(main_order_base))
+
+    # 返却する
+    print(s4, "オーダー対象", flag_info)
+    orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
+    orders_and_evidence["exe_orders"] = exe_orders
+    orders_and_evidence["information"] = flag_info['strength_info']
+
+    print("オーダー表示")
+    gene.print_arr(orders_and_evidence["exe_orders"])
+    return orders_and_evidence
+
+
+def for_practice_main_line_strength_analysis_and_order(dic_args):
+    """
+    引数はDFやピークスなど
+    オーダーを生成する
+    """
+
+    # 表示時のインデント
+    s4 = "    "
+    s6 = "      "
+
+    print(" 新フラッグ調査関数")
+    # ■関数事前準備■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    # ■■返却値 とその周辺の値
+    exe_orders = []
+    orders_and_evidence = {
+        "take_position_flag": False,
+        "exe_orders": exe_orders,
+        "information": []
+    }
+    # ■■情報の整理と取得（関数の頭には必須）
+    fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
+    df_r = fixed_information['df_r']
+    peaks = fixed_information['peaks']
+
+    # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    # ■■実行しない条件の場合、実行を終了する
+    if peaks[0]['count'] == 1:
+        print(s6, "countで実行しない場合を宣言する")  # フラッグは基本的に、Latestの数がいつでも実行する
+    # ■■解析の実行
+    flag_analysis_result = analysis_flag({"df_r": df_r, "peaks": peaks})
+    if not flag_analysis_result['take_position_flag']:
+        return orders_and_evidence
+
+    # ■フラッグ形状が発見された場合はオーダーを発行する
+    flag_info = flag_analysis_result['information']
+    # "flag_info": {"LineBase": {}, "samePriceList": [{peaks}], "strengthInfo": {"lc_price,remark,y_change等"}
+    position_type = "STOP"  # フラッグありの場合突破方向のため、STOP
+    print(s4, "フラッグが発生した時の情報", flag_info)
+    # ■■突破方向のオーダー（初回と二回目以降で異なる）
+    flag_final = True  # 初回の一部でオーダーが入らない仕様になったため、改めてフラグを持っておく（オーダーないときはOrderAndEvidence返却でもいいかも？）
+    if flag_info['strength_info']['is_first_for_flag']:
+        # 初回成立の場合は、Lineまで遠い場合は、突破はオーダーなし(これはテスト用。終わったらIf文含めて消したほうがいいかも）
+        if flag_info['strength_info']['line_is_close_for_flag']:
+            # 初回でも近い場合は、抵抗線Break側のオーダーを出す
+            # フラッグ用
+            return orders_and_evidence
+        else:
+            # 初回でなおかつ、距離が遠い場合はオーダーしない
+            return orders_and_evidence
+            pass
+    else:
+        # 初回ではない場合
+        # ■■フラッグ用（突破方向）
+        main_order_base = cf.order_base_inspection(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])    # tpはLCChange任せのため、Baseのまま
+        main_order_base['target'] = flag_info['line_base_info']['line_base_price'] + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
+        main_order_base['lc'] = flag_info['strength_info']['lc_price']  # 0.06 ←0.06は結構本命  # 0.09  # LCは広め　　  # 入れる側の文字は　LCのみ
+        main_order_base['type'] = position_type
+        main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction']
+        main_order_base['priority'] = 5  # flag_info['strength_info']['priority']
+        main_order_base['units'] = main_order_base['units'] * 1
+        main_order_base['name'] = flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
+        main_order_base['y_change'] = flag_info['strength_info']['y_change']
+        exe_orders.append(cf.order_finalize(main_order_base))
+
+        # ■■カウンタオーダーも入れる（二回目以降のみ）
+        # 最大でもLCRange換算で10pips以内したい
+        now_price = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # Nowpriceというより、取得価格
+        temp_lc_price = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # lcPriceは収束の中間点
+        lc_range = temp_lc_price - now_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
+        print(s6, "LC検討", now_price, temp_lc_price, lc_range)
+        lc_range_border = 0.12
+        if abs(lc_range) >= lc_range_border:
+            # LCが大きすぎると判断される場合(10pips以上離れている）
+            lc_range = lc_range_border  # LCRnageを指定
+            if lc_range < 0:
+                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+                lc_price = now_price - abs(lc_range_border)
+                print(s6, "LC価格(Dir1)", now_price, "-", abs(lc_range_border))
+            else:
+                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+                lc_price = now_price + abs(lc_range_border)
+                print(s6, "LC価格(Dir-1)", now_price, "+", abs(lc_range_border))
+        elif abs(lc_range) <= 0.06:
+            # LCが小さすぎる
+            lc_range = 0.07  # LCRnageを指定
+            if lc_range < 0:
+                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
+                lc_price = now_price - abs(lc_range_border)
+                print(s6, "LC価格(Dir1)", now_price, "-", abs(lc_range_border))
+            else:
+                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
+                lc_price = now_price + abs(lc_range_border)
+                print(s6, "LC価格(Dir-1)", now_price, "+", abs(lc_range_border))
+        else:
+            # LCRangeが許容範囲内の場合、そのまま利用
+            lc_price = temp_lc_price
+            print(s6, "そのままのLCを利用する", lc_price)
+
+        main_order_base = cf.order_base_inspection(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
+        main_order_base['target'] = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
+        # main_order_base['lc'] = gene.cal_at_most(0.09, flag_info['line_base_info']['line_base_price'] - 0.02 * (flag_info['strength_info']['expected_direction'] * -1))  # -0.02を追加してみた
+        # main_order_base['lc'] = gene.cal_at_most(0.08, target_strength_info['line_base_info']['line_base_price']) # ←ダメだった！！！！
+        # main_order_base['lc'] = flag_info['line_base_info']['line_base_price'] - 0.05 * (flag_info['strength_info']['expected_direction'] * -1)  # ←よかったけど、さらに上を！
+        # gene.print_json(flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak'])
+        # main_order_base['lc'] = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # ←悪くなさそうだが、広すぎる？
+        main_order_base['lc'] = lc_price  # ←悪くなさそうだが、広すぎる？
+        main_order_base['type'] = position_type
+        main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction'] * -1
+        main_order_base['priority'] = 5  # ['strength_info']['priority']
+        main_order_base['units'] = main_order_base['units'] * 1
+        main_order_base['name'] = "カウンター" + flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
+        main_order_base['y_change'] = flag_info['strength_info']['y_change']
+        exe_orders.append(cf.order_finalize(main_order_base))
+
+
+    # 返却する
+    print(s4, "オーダー対象", flag_info)
+    orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
+    orders_and_evidence["exe_orders"] = exe_orders
+    orders_and_evidence["information"] = flag_info['strength_info']
+
+    print("オーダー表示")
+    gene.print_arr(orders_and_evidence["exe_orders"])
+    return orders_and_evidence
+
+
 def main_flag(dic_args):
     """
     引数はDFやピークスなど
@@ -1001,7 +1529,7 @@ def main_flag(dic_args):
     #         print("veryLargeあり")
     #         return orders_and_evidence
     # ■■解析の実行
-    flag_analysis_result = analysis({"df_r": df_r, "peaks": peaks})
+    flag_analysis_result = analysis_flag({"df_r": df_r, "peaks": peaks})
     print("メイン側", flag_analysis_result['take_position_flag'])
     if not flag_analysis_result['take_position_flag']:
         return orders_and_evidence
@@ -1300,194 +1828,3 @@ def main_flag(dic_args):
     gene.print_arr(orders_and_evidence["exe_orders"])
     return orders_and_evidence
 
-
-def main_flag_calm_state(dic_args):
-    """
-    相場が落ち着いている場合は、「戻る方向」（従来の突破方向とは逆）にする。
-    ただし、TargetへのMarginは少し大き目
-    """
-
-    # 表示時のインデント
-    s4 = "    "
-    s6 = "      "
-
-    print(" 新フラッグ調査関数")
-    # ■関数事前準備■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    # ■■返却値 とその周辺の値
-    exe_orders = []
-    orders_and_evidence = {
-        "take_position_flag": False,
-        "exe_orders": exe_orders,
-        "information": []
-    }
-    # ■■情報の整理と取得（関数の頭には必須）
-    fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
-    df_r = fixed_information['df_r']
-    peaks = fixed_information['peaks']
-    peaks = peak_inspection.change_peaks_with_hard_skip(peaks)
-    s = "   "
-    print(s, "<SKIP後　対象>")
-    print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
-    print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
-    print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
-    print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
-    print(s, "flop2", pi.delete_peaks_information_for_print(peaks[4]))
-
-    # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    # ■■実行しない条件の場合、実行を終了する
-    if peaks[0]['count'] > 4:
-        print(s6, "countで実行しない場合を宣言する")  # フラッグは基本的に、Latestの数がいつでも実行する
-    # for i, item in enumerate(peaks[:7]):
-    #     if item['include_very_large']:
-    #         print("veryLargeあり")
-    #         return orders_and_evidence
-    # ■■解析の実行
-    flag_analysis_result = analysis({"df_r": df_r, "peaks": peaks})
-    print("メイン側", flag_analysis_result['take_position_flag'])
-    if not flag_analysis_result['take_position_flag']:
-        return orders_and_evidence
-
-    # ■フラッグ専用のLCChange
-    lc_change = [
-        # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
-        # 2022-2023は 0.05トリガーにすると、マイナスになる！！
-        {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
-    ]
-
-    # ■フラッグ形状が発見された場合はオーダーを発行する
-    flag_info = flag_analysis_result['information']
-    # "flag_info": {"LineBase": {}, "samePriceList": [{peaks}], "strengthInfo": {"lc_price,remark,y_change等"}
-
-    # ■■突破方向のオーダー（初回と二回目以降で異なる）
-    flag_final = True  # 初回の一部でオーダーが入らない仕様になったため、改めてフラグを持っておく（オーダーないときはOrderAndEvidence返却でもいいかも？）
-    # if flag_info['strength_info']['is_first_for_flag']:
-    if flag_info['strength_info']['is_first_for_flag'] and flag_info['strength_info']['line_is_close_for_flag']:
-        print("初回　かつ　BaseLineと近すぎる", flag_info['strength_info']['is_first_for_flag'], flag_info['strength_info']['line_is_close_for_flag'])
-        return orders_and_evidence
-        # # 初回成立の場合は、Lineまで遠い場合は、突破はオーダーなし(これはテスト用。終わったらIf文含めて消したほうがいいかも）
-        # if flag_info['strength_info']['line_is_close_for_flag']:
-        #     # 初回でも近い場合は、抵抗線Break側のオーダーを出す
-        #     # フラッグ用
-        #     return orders_and_evidence
-        # else:
-        #     # 初回でなおかつ、距離が遠い場合はオーダーしない
-        #     return orders_and_evidence
-        #     pass
-    else:
-        # 初回ではない場合
-        dependence_normal_margin = 0.026  # 0.035がシミュレーション上はベスト
-        dependence_lc_range_max = 0.09
-        dependence_lc_range_at_least = 0.04  # 最初は0.04
-        dependence_counter_margin = 0.026  # 0.035がシミュレーション上はベスト
-        dependence_lc_range_max_c = 0.022  # 0.12が強い
-        dependence_lc_range_at_least_c = 0.022  # 0.12が強い　カウンターはそもそもが適当なため、狭いめ
-
-        # ■■フラッグ用（突破方向）
-        # 最大でもLCRange換算で10pips以内したい
-        target_price = flag_info['line_base_info']['line_base_price'] + (dependence_normal_margin * flag_info['line_base_info']['line_base_direction'])  # - (0.035 * flag_info['line_base_info']['line_base_direction'])  # Nowpriceというより、取得価格
-        # temp_lc_price = flag_info['strength_info']['flag_info']['oldest_peak_info']['oldest_info']['peak']  # lcPriceは収束の中間点
-        temp_lc_price = flag_info['strength_info']['lc_price']
-        lc_range = temp_lc_price - target_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
-        print(s6, "LC検討", target_price, temp_lc_price, lc_range, temp_lc_price)
-        if abs(lc_range) >= dependence_lc_range_max:
-            # LCが大きすぎると判断される場合(10pips以上離れている）
-            if lc_range < 0:
-                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-                lc_price = target_price - abs(dependence_lc_range_max)
-                print(s6, "ggLC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max))
-            else:
-                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-                lc_price = target_price + abs(dependence_lc_range_max)
-                print(s6, "gLC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max))
-        elif abs(lc_range) <= dependence_lc_range_at_least:
-            # LCが小さすぎる
-            if lc_range < 0:
-                # LC_rangeがマイナス値　＝　Directionは１。その為、現在価格からマイナスするとLCPriceとなる
-                lc_price = target_price - abs(dependence_lc_range_at_least)
-                print(s6, "gggLC価格(Dir1)", target_price, "-", abs(dependence_lc_range_at_least))
-            else:
-                # LC_rangeがプラス値　＝　Directionは-1。その為、現在書くにプラスするとＬＣＰｒｉｃｅになる
-                lc_price = target_price + abs(dependence_lc_range_at_least)
-                print(s6, "gggggLC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_at_least))
-        else:
-            # LCRangeが許容範囲内の場合、そのまま利用
-            lc_price = temp_lc_price
-            print(s6, "そのままのLCを利用する", lc_price)
-        main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])    # tpはLCChange任せのため、Baseのまま
-        # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
-        # main_order_base['lc'] = flag_info['strength_info']['lc_price']  # 0.06 ←0.06は結構本命  # 0.09  # LCは広め　　  # 入れる側の文字は　LCのみ
-        main_order_base['target'] = target_price
-        main_order_base['lc'] = 0.035
-        main_order_base['type'] = "LIMIT"  # 逆張り
-        main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction'] * -1  # 逆張り
-        main_order_base['priority'] = 5  # flag_info['strength_info']['priority']
-        main_order_base['lc_change'] = lc_change
-        main_order_base['units'] = main_order_base['units'] * 1
-        main_order_base['name'] = "レンジ" + flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
-        main_order_base['y_change'] = flag_info['strength_info']['y_change']
-        exe_orders.append(cf.order_finalize(main_order_base))
-
-        # ■■カウンタオーダーも入れる（二回目以降のみ）
-        # 最大でもLCRange換算で10pips以内したい
-        target_price = peaks[1]['peak'] - (dependence_counter_margin * flag_info['line_base_info']['line_base_direction'])
-        print(s6, "カウンターのTarget検討", peaks[1]['peak'], peaks[1]['time'], dependence_counter_margin)
-        temp_lc_price = flag_info['line_base_info']['line_base_price']
-        lc_range = temp_lc_price - target_price  # これがマイナス値の場合Directionは１、プラス値となる場合Directionは-1
-        print(s6, "LC検討", target_price, temp_lc_price, lc_range, peaks[0]['peak'])
-        if abs(lc_range) >= dependence_lc_range_max_c:
-            # LCが大きすぎると判断される場合(10pips以上離れている）
-            if lc_range < 0:
-                # LC_rangeがマイナス値　＝　売り注文。その為、ターゲット価格にプラスするとLCPriceとなる
-                lc_price_counter = target_price + abs(dependence_lc_range_max_c)  # 通常とは符号逆 もともとー
-                print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_max_c))
-            else:
-                # LC_rangeがプラス値　＝　買い注文。その為、ターゲット価格からマイナスするとＬＣＰｒｉｃｅになる
-                lc_price_counter = target_price - abs(dependence_lc_range_max_c)  # 通常とは符号逆　もともと＋
-                print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_max_c))
-        elif abs(lc_range) <= dependence_lc_range_at_least_c:
-            # LCが小さすぎる
-            if lc_range < 0:
-                # LC_rangeがマイナス値　＝　売り注文。その為、ターゲット価格にプラスするとLCPriceとなる
-                lc_price_counter = target_price + abs(dependence_lc_range_at_least_c)
-                print(s6, "LC価格(Dir1)", target_price, "-", abs(dependence_lc_range_at_least_c))
-            else:
-                # LC_rangeがプラス値　＝　買い注文。その為、ターゲット価格からマイナスするとＬＣＰｒｉｃｅになる
-                lc_price_counter = target_price - abs(dependence_lc_range_at_least_c)
-                print(s6, "LC価格(Dir-1)", target_price, "+", abs(dependence_lc_range_at_least_c))
-        else:
-            # LCRangeが許容範囲内の場合、そのまま利用
-            lc_price_counter = temp_lc_price
-            print(s6, "そのままのLCを利用する", lc_price_counter)
-        # 現在価格との整合性が取れない（即時オーダーとなる場合）があるため、考慮する
-        if flag_info['strength_info']['expected_direction'] * -1 == -1:
-            # カウンターが売り方向の場合、現在価格よりも下にあるべき。
-            if target_price >= peaks[0]['peak']:
-                print("★★★整合性のとれないオーダーになりそうだった（売り側）", lc_price_counter, ">", peaks[0]['peak'])
-                target_price = peaks[0]['peak'] - 0.035
-        else:
-            # カウンターが買い方向の場合、現在価格よりも上にあるべき
-            if target_price <= peaks[0]['peak']:
-                print("★★★整合性のとれないオーダーになりそうだった（買い側）", lc_price_counter, "<", peaks[0]['peak'])
-                target_price = peaks[0]['peak'] + 0.035
-
-        main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
-        # main_order_base['target'] = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
-        main_order_base['target'] = target_price  # river価格＋マージン0.027
-        main_order_base['lc'] = 0.026
-        main_order_base['type'] = "LIMIT"
-        main_order_base['expected_direction'] = flag_info['strength_info']['expected_direction']  # * -1
-        main_order_base['priority'] = 5  # ['strength_info']['priority']
-        main_order_base['units'] = main_order_base['units'] * 1
-        main_order_base['lc_change'] = lc_change
-        main_order_base['name'] =  "レンジ" + "カウンター" + flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
-        main_order_base['y_change'] = flag_info['strength_info']['y_change']
-        exe_orders.append(cf.order_finalize(main_order_base))
-
-    print(s4, "オーダー対象", flag_info)
-    orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
-    orders_and_evidence["exe_orders"] = exe_orders
-    orders_and_evidence["information"] = flag_info['strength_info']
-
-    print("オーダー表示")
-    gene.print_arr(orders_and_evidence["exe_orders"])
-    return orders_and_evidence

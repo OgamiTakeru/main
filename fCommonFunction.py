@@ -6,7 +6,7 @@ import classOanda
 import fPeakInspection as pi
 
 
-basic_unit = 50000
+basic_unit = 10000
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
 

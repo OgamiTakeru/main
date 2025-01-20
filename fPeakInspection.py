@@ -206,18 +206,28 @@ def change_peaks_with_hard_skip(peaks_origin):
                 pass
                 # print(" 結合不可", round(two['gap'] / one['gap'], 3), round(two['gap'] / thr['gap'], 3))
 
-            # 上下関係がつながっている場合も、スキップする
+            # 上下関係がつながっている場合も、スキップする(ただし、間隔狭めのダブルトップをこぼす可能性があるので、そこは要対策）
             # 中央が下り側
             if two['direction'] == -1:
                 # print("  　中央下り", thr['peak_old'], two['peak'], "and", two['peak_old'], one['peak'])
                 if thr['peak_old'] < two['peak'] and two['peak_old'] < one['peak']:
                     # print("       ⇒結合対象")
-                    be_merge = True
+                    # if two['gap'] * 0.9 <= thr['gap'] <= two['gap'] * 1.1 or two['gap'] * 0.9 <= one['gap'] <= two['gap'] * 1.1:
+                    if abs(two['gap'] - thr['gap']) <= 0.005 or abs(two['gap'] - one['gap']) <= 0.005:
+                        # ダブルトップのような形状になる場合は、スキップしない
+                        pass
+                    else:
+                        be_merge = True
             else:
                 # print("  　中央登り", thr['peak_old'], two['peak'], "and", two['peak_old'], one['peak'])
                 if thr['peak_old'] > two['peak'] and two['peak_old'] > one['peak']:
                     # print("       ⇒結合対象")
-                    be_merge = True
+                    # if two['gap'] * 0.9 <= thr['gap'] <= two['gap'] * 1.1 or two['gap'] * 0.9 <= one['gap'] <= two['gap'] * 1.1:
+                    if abs(two['gap'] - thr['gap']) <= 0.005 or abs(two['gap'] - one['gap']) <= 0.005:
+                        # ダブルトップのような形状になる場合は、スキップしない
+                        pass
+                    else:
+                        be_merge = True
         else:
             pass
             # print(" ２が３カウント以上⇒結合不可", two['count'], two['gap'])
