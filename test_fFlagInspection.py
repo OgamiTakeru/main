@@ -915,7 +915,7 @@ def analysis_flag(dic_args):
                 each_strength_info_result['remark'] = str(flag_info['remark'])
                 each_strength_info_result['priority'] = 3  # 備考を入れておく
                 each_strength_info_result['is_first_for_flag'] = flag_info['is_first']  # 備考を入れておく
-                each_strength_info_result['strength'] = flag_info['strength']  # 備考を入れておく
+                each_strength_info_result['flag_strength'] = flag_info['flag_strength']  # 大事
                 each_strength_info_result['y_change'] = flag_info['y_change']
                 each_strength_info_result['flag_info'] = flag_info
                 each_strength_info_result['line_is_close_for_flag']\

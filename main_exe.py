@@ -148,7 +148,7 @@ def how_to_new_order_judge(inspection_result_dic):
 
 
 def mode1_order_control(inspection_result_dic):
-    print("  Mode1")
+    print("  Mode1　mode1_order_control")
     global gl_trade_num
     global gl_latest_trigger_time, gl_peak_memo
     global gl_upper_line, gl_lower_line  # RangeInspectionのみ
@@ -263,27 +263,25 @@ def mode1():
     time_hour = gl_now.hour  # 現在時刻の「時」のみを取得
     time_min = gl_now.minute  # 現在時刻の「分」のみを取得
     inspection_result_dic = am.normal_state_analysis(gl_data5r_df)  # 警告回避用
-    if 2 <= time_hour <= 7:
-        # 深夜帯(6～7時はループで落とされるが念のため）⇒レンジになりがちのため、突破系は信頼度落とす
-        inspection_result_dic = am.calm_state_analysis(gl_data5r_df)
-        pass
-    elif 11 <= time_hour <= 13:
-        # 昼時間の落ち着いた時間
-        inspection_result_dic = am.calm_state_analysis(gl_data5r_df)
-        pass
-    elif time_hour == 16:
-        # ヨーロッパ参戦
-        inspection_result_dic = am.normal_state_analysis(gl_data5r_df)
-        pass
-    elif time_hour == 21:
-        # US参戦時刻（一番変動が大きくなりがち）.サマータイム期間は22時
-        if time_min == 25:
-            # 第一週の場合、雇用統計注意
-            pass
-            order_analysis_exist = False
-        else:
-            pass
-            # inspection_result_dic = am.normal_state_analysis(gl_data5r_df)
+    # if 2 <= time_hour <= 7:
+    #     # 深夜帯(6～7時はループで落とされるが念のため）⇒レンジになりがちのため、突破系は信頼度落とす
+    #     inspection_result_dic = am.normal_state_analysis(gl_data5r_df)
+    #     pass
+    # elif 11 <= time_hour <= 13:
+    #     # 昼時間の落ち着いた時間
+    #     inspection_result_dic = am.normal_state_analysis(gl_data5r_df)
+    #     pass
+    # elif time_hour == 16:
+    #     # ヨーロッパ参戦
+    #     inspection_result_dic = am.normal_state_analysis(gl_data5r_df)
+    #     pass
+    # elif time_hour == 21:
+    #     # US参戦時刻（一番変動が大きくなりがち）.サマータイム期間は22時
+    #     if time_min == 25:
+    #         # 第一週の場合、雇用統計注意
+    #         pass
+    #     else:
+    #         pass
 
     # ■■■■オーダーのコントロール(既存のオーダーとの重複やオーダーの数が多くなった時の処理）
     mode1_order_control(inspection_result_dic)

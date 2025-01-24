@@ -439,7 +439,7 @@ def normal_state_analysis(df_r):
     flag_and_orders = {
         "take_position_flag": False,
         "exe_orders": [],  # 本番用（本番運用では必須）
-        "exe_order": {}, # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
+        "exe_order": {},  # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
         'for_inspection_dic': {}
     }
     # 表示のインデント
@@ -457,9 +457,13 @@ def normal_state_analysis(df_r):
     # ■各検証を実施し、その結果を保持する■
     print(s, "■フラッグ形状の調査")
     flag_orders_and_evidence = fi.main_flag({"df_r": df_r, "peaks": peaks})  # 調査(旧バージョン）
+    print(s, "■突発の大変動のカウンター")
+    simple_turn_orders_and_evidence = sti.main_simple_turn({"df_r": df_r, "peaks": peaks})
+
 
     # ■各結果からオーダーを生成する（＋検証用のデータfor_inspection_dicも）
     if flag_orders_and_evidence['take_position_flag']:
+        print("オーダー登録（フラッグ）")
         flag_and_orders["take_position_flag"] = True
         flag_and_orders["exe_orders"] = flag_orders_and_evidence['exe_orders']
         flag_and_orders['for_inspection_dic'] = flag_orders_and_evidence['information']
@@ -467,34 +471,25 @@ def normal_state_analysis(df_r):
         # 代表プライオリティの追加
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority
+    elif simple_turn_orders_and_evidence['take_position_flag']:
+        print("オーダー登録（シンプル）")
+        flag_and_orders["take_position_flag"] = True
+        flag_and_orders["exe_orders"] = simple_turn_orders_and_evidence['exe_orders']
+        # 代表プライオリティの追加
+        max_priority = 2
+        flag_and_orders['max_priority'] = max_priority
 
-    print(flag_and_orders['take_position_flag'])
-    gene.print_arr(flag_and_orders['exe_orders'])
+    # ■　念のための表示
+    print("検証後の確定オーダー")
+    print(flag_and_orders)
 
-    # プライオリティの追加
+    # ■プライオリティの追加（オーダー上書き管理用）
     if len(flag_and_orders["exe_orders"]) >= 1:
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority
         print(s, "max_priority", max_priority)
         # print(flag_and_orders)
 
-    # テスト
-    if flag_and_orders['take_position_flag']:
-        size_flag = ms.cal_move_size({"df_r": df_r, "peaks": peaks})
-        if size_flag['big_move']:
-            print(" 大きいサイズがあるためスキップ")
-            flag_and_orders['take_position_flag'] = False
-            return flag_and_orders
-        if size_flag['range_flag']:
-            # Trueの場合は通常通り
-            # tk.line_send("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
-            print(s, "直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
-            flag_and_orders['take_position_flag'] = False
-            flag_and_orders['for_inspection_dic']['narrow'] = True  # 検証用データに情報追加
-        else:
-            print(s, " 通常の動き(小さくない、という意味で）")
-            flag_and_orders['for_inspection_dic']['narrow'] = False  # 検証用データに情報追加
-            pass
     return flag_and_orders
 
 
