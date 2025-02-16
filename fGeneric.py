@@ -179,6 +179,15 @@ def now():
     return day_time  # 文字列型の日付（秒まであり）を返す
 
 
+def now_df_format():
+    """
+    現在時刻を短縮系で返す
+    :return:
+    """
+    now_str = f'{datetime.datetime.now():%Y/%m/%d %H:%M:%S}'
+    return now_str
+
+
 def delYear(original_time):
     """
     現在時刻を短縮系で返す（年を消す）
@@ -223,7 +232,6 @@ def print_arr(*arr):
         indent = " "
 
     # 実表示 arr[0] が本体
-    print(indent, "print arr")
     for i in range(len(arr[0])):
         # print("ー",  i,"ーーーーーーーーーーーーーーーーー")
         print(indent, i, arr[0][i])

@@ -326,15 +326,13 @@ def information_fix(dic_args):
             print("　ピークの個数が足りない(エラーではない)")
             return {"df_r": dic_args['df_r'], "peaks": [], "params": {}, "inspection_params": {}}
         else:
-            # 'time': '2024/10/31 05:35:00', 'peak': np.float64(153.365), 'peak_peak': np.float64(
-            #     153.344), 'time_old': '2024/10/31 05:30:00', 'peak_old': np.float64(153.383), 'direction': np.float64(
-            #     -1.0), 'body_ave': np.float64(0.025), 'count': 2, 'gap': np.float64(0.018),
-            print(s, "<対象>")
-            print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
-            print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
-            print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
-            print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
-            print(s, "すべて")
+            pass
+            # print(s, "<対象>")
+            # print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
+            # print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
+            # print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
+            # print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
+            # print(s, "すべて")
         # gene.print_arr(peaks, 5)
 
     # 以下はパラメータ用（あまり使っていない）
@@ -574,3 +572,5 @@ def order_finalize(order_base_info):
         order_base_info['stop_or_limit'] = temp
 
     return order_base_info
+
+

@@ -15,7 +15,7 @@ def make_peaks_finalize(*args):
     dependence_min_peak_gap = 0.05
     # peaksを求める
     if len(args) == 2:
-        print("      (pi)peaks数指定あり", args[1])
+        print("          peaks数指定あり", args[1], "@ make_peaks_finalize関数")
         all_peaks = make_peaks(args[0], args[1])
     else:
         # print(" peaks数指定なし")

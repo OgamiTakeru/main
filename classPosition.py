@@ -1,8 +1,12 @@
 import datetime
 from datetime import timedelta
+
+import classOanda
 import tokens as tk
 import fGeneric as gene
 import gc
+import fCommonFunction as cf
+import sys
 
 class order_information:
     total_yen = 0  # トータルの円
@@ -21,6 +25,9 @@ class order_information:
     # ↓直前の情報を取得しておく
     before_latest_plu = 0
     before_latest_name = ""
+    # ↓直前の情報の延長で、当面の情報を維持しておく
+    history_plus = []
+    history_names = []
 
     def __init__(self, name, oa, is_live):
         self.name = name  #
@@ -64,14 +71,14 @@ class order_information:
         self.lose_hold_time_sec = 0
         self.win_max_plu = 0
         self.lose_max_plu = 0
-        self.position_after_this_sec=0
 
         # ロスカット変更情報
         self.lc_change_dic = {}
         self.lc_change_from_candle_lc_price = 0
+        self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行で加算される。０は未実行。１以上は執行済み。
         # 特殊　カウンターオーダー
-        self.counter_order_num = 0  # カウンターオーダーを入れる際、何回実施したかをカウント（1回やったらもうやらない）
-
+        self.counter_order_peace = {}  # 全ての情報は受け取れないので、CounterOrderで追記する
+        self.counter_order_done = False
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
@@ -111,12 +118,13 @@ class order_information:
         self.lose_hold_time_sec = 0
         self.win_max_plu = 0
         self.lose_max_plu = 0
-        self.position_after_this_sec = 0
 
         # ロスカット変更情報
         self.lc_change_dic = {}  # 空を持っておくだけ
         self.lc_change_from_candle_lc_price = 0
-        self.counter_order_num = 0  # カウンターオーダーを入れる際、何回実施したかをカウント（1回やったらもうやらない）
+        self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行でTrueに変更される
+        self.counter_order_peace = {}
+        self.counter_order_done = False
 
     def print_info(self):
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
@@ -204,7 +212,17 @@ class order_information:
         self.plan = plan  # 受け取ったプラン情報(そのままOrderできる状態が基本）
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
-        self.plan['price'] = plan['target_price']  # ターゲットプライス（注文価格）は、oandaClassではprice
+        print("消したいやつ(classPosition225行目"
+              , "ClassPosition算出LC", round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
+              , "元LC", plan['lc_price']
+              , "classPosition算出TP", round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
+              , "元TP", plan['tp_price']
+              , "新DateNow", datetime.datetime.now()
+              # , "元DateNow", self.plan['time']
+              , "新price", plan['target_price']
+              , "元price", plan['price']
+              )
+        # self.plan['price'] = plan['target_price']  # ターゲットプライス（注文価格）は、oandaClassではprice
         if 'priority' in plan:
             self.priority = plan['priority']  # プラオリティを登録する
         if 'trade_timeout_min' in plan:  # していない場合は初期値50分
@@ -215,9 +233,17 @@ class order_information:
         # (2)各フラグを指定しておく
         self.order_permission = plan['order_permission']  # 即時のオーダー判断に利用する
         # (3-1) 付加情報１　各便利情報を格納しておく(直接Orderで使わない）
-        self.plan['lc_price'] = round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
-        self.plan['tp_price'] = round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
-        self.plan['time'] = datetime.datetime.now()
+        # print("消したいやつ(classPosition225行目"
+        #       , "ClassPosition算出LC", round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
+        #       , "元LC", plan['lc_price']
+        #       , "classPosition算出TP", round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
+        #       , "元TP", plan['tp_price']
+        #       , "新DateNow", datetime.datetime.now()
+        #       , "元DateNow", self.plan['time']
+        #       )
+        # self.plan['lc_price'] = round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
+        # self.plan['tp_price'] = round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
+        # self.plan['time'] = datetime.datetime.now()
 
         # (4)LC_Change情報を格納する
         if "lc_change" in plan:
@@ -230,6 +256,17 @@ class order_information:
         # (7)ポジションがある基準を超えている時間を継続する(デフォルトではコンストラクタで０が入る）
         if "win_lose_border_range" in plan:
             self.win_lose_border_range = plan['win_lose_border_range']
+
+        # (8)カウンタオーダーを設定する
+        if "counter_order" in plan:
+            self.counter_order_peace = plan['counter_order']
+
+        # (9)オーダーのLCを調整する（テスト中。過去の結果によって調子を変える）
+        lc_tuning_message = self.lc_tuning_by_history()
+        if lc_tuning_message:
+            tk.line_send(lc_tuning_message)
+        else:
+            print("からです", lc_tuning_message)
 
         # (Final)オーダーを発行する
         if self.order_permission:
@@ -306,6 +343,7 @@ class order_information:
     def after_close_trade_function(self):
         """
         ポジションのクローズを検知した場合、（１）トータル価格等を更新　（２）Lineの送信　を実施する。
+        ★また、カウンターオーダーの確認を行い、実施する。
         呼ばれるパターンは２種類
         ①自然のロスカット⇒クローズ状態が格納されている。
         ②強制クローズ⇒クローズ後に呼ばれるが、t_jsonの情報が書き換わっていない為、一つ古いOpen時の情報を使うことになる(いつかClose情報を使う？）
@@ -342,6 +380,8 @@ class order_information:
         # 直前の結果を保存しておく
         order_information.before_latest_plu = trade_latest['PLu']
         order_information.before_latest_name = self.name
+        order_information.history_plus.append(trade_latest['PLu'])
+        order_information.history_names.append(self.name)
 
         # （２）LINE送信
         # ①UNIT数を調整する
@@ -386,13 +426,59 @@ class order_information:
             self.send_line("■■■解消:", self.name, '\n', gene.now(), '\n',
                            res4, res5, res1, id_info, res2, res3, res6, res7, res8, position_check_no_args()['name_list'])
 
+            # 結果のCSV保存
+            tk.write_result({
+                "time": gene.now(),
+                "orderId": str(self.o_id),
+                "tradeId": str(self.t_id),
+                "plus_max": str(self.win_max_plu),
+                "minus_max": str(self.lose_max_plu),
+                "hold_time": str(trade_latest['time_past']),
+                "result": str(trade_latest['PLu']),
+                "result_yen": str(order_information.total_yen),
+                "name": self.name
+            })
+        # カウンターオーダーの実行(いったんポジションを全てクローズした後）
+        self.counter_order_exe()
+
     def counter_order_exe(self):
-        # カウンターオーダーを1回だけ入れる
-        if self.counter_order_num == 0:
-            # カウンターを増やす
-            self.counter_order_num = self.counter_order_num + 1
-            # 処理
-            self.plan
+        # カウンターのオーダーを入れる。AfterCloseFunctionから呼ばれる
+        # このクラスを再利用するため、LifeをTrueに戻すことを忘れずに
+        if len(self.counter_order_peace) != 0 and not self.counter_order_done and 0 <= self.lc_change_num <= 2:
+            # カウンタオーダーがあり、カウンターオーダーが未執行で、なおかつ、LCChangeが執行されている場合（プラス確定の場合）
+            # lcChangeが執行されていない場合は、だいぶ負けているため、自動的なカウンターは入れてはいけない、
+            self.life_set(True)
+            self.counter_order_done = True
+            print("カウンター用オーダー")
+            # 現在価格を取得する（ただし、今後のBidAskによって微妙に変えたい）
+
+            if self.counter_order_peace['expected_direction'] == 1:
+                # 買いの場合
+                now_price = self.oa.NowPrice_exe("USD_JPY")['ask']
+            else:
+                # 売りの場合
+                now_price = self.oa.NowPrice_exe("USD_JPY")['bid']
+
+            # 書き換え確認用
+            print(" 書き換え前")
+            gene.print_json(self.counter_order_peace)
+            print(" 書き換え後")
+            self.counter_order_peace['target'] = now_price + (0.01 * self.counter_order_peace['target'])
+            self.counter_order_peace = cf.order_finalize(self.counter_order_peace)
+            gene.print_json(self.counter_order_peace)
+
+            # オーダー発行
+            self.order_plan_registration(self.counter_order_peace)
+            # order_base(target_price, df_r.iloc[0]['time_jp'])
+            print("カウンターオーダー実施。決済価格", self.t_json['averageClosePrice']
+                           , "現時刻(dfFOrmat)", gene.now_df_format(), self.life, self.counter_order_done)
+
+            self.send_line("オーダー書き換わり確認　この後カウンターLine（classPosition.py　４０９行目 ")
+
+            self.send_line("カウンターオーダー実施。決済価格", self.t_json['averageClosePrice']
+                           ,"現時刻(dfFOrmat)", gene.now_df_format(), " 現在価格", self.oa.NowPrice_exe("USD_JPY")
+                           ,self.life, self.counter_order_done)
+            sys.exit(0)
 
     def close_trade(self, units):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -435,6 +521,7 @@ class order_information:
             realizedPL = res_json['orderFillTransaction']['tradeReduced']['realizedPL']
             price = res_json['orderFillTransaction']['tradeReduced']['price']
             self.send_line("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL, "price", price)
+
 
     def updateWinLoseTime(self, new_pl):
         """
@@ -684,7 +771,6 @@ class order_information:
         self.lc_change()
         self.lc_change_from_candle()
 
-
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
         ロスカット底上げを実施する。セルフとレールに近い
@@ -696,7 +782,7 @@ class order_information:
         上記の辞書が、配列で渡される場合、配列全てで確認していく。
         :return:         print(" ロスカ変更関数", self.lc_change_dic, self.t_pl_u,self.t_state)
         """
-        print("   LC＿Change実行関数", self.name, self.t_pl_u, self.t_time_past_sec, len(self.lc_change_dic), self.t_state, self.lc_change_from_candle_lc_price)
+        # print("   LC＿Change実行関数", self.name, self.t_pl_u, self.t_time_past_sec, len(self.lc_change_dic), self.t_state, self.lc_change_from_candle_lc_price)
 
         if len(self.lc_change_dic) == 0 or self.t_state != "OPEN":  # 足数×〇分足×秒
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
@@ -727,6 +813,7 @@ class order_information:
             if self.t_pl_u >= lc_trigger_range:
                 # print("　★変更確定")
                 print(" 変更対象", i, lc_ensure_range, lc_trigger_range, self.t_pl_u)
+                self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
                 # これで配列の中の辞書って変更できるっけ？？
                 item['done'] = True
                 new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan['ask_bid']), 3)
@@ -824,6 +911,7 @@ class order_information:
             print("range換算で大きすぎる・・・？", lc_ensure_range)
 
         # LCチェンジ執行
+        self.lc_change_done = True  # このクラス自体にLCChangeを実行した後をつけておく（各LCChange条件ではなく）
         new_lc_price = round(lc_price_temp, 3)
         data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
         res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
@@ -835,6 +923,22 @@ class order_information:
         self.send_line("　(LCCandle底上げ)", self.name, "現在のPL" ,self.t_pl_u, "新LC価格⇒", new_lc_price,
                        "保証", lc_range, "約定価格", self.t_execution_price,
                        "予定価格", self.plan['price'])
+
+    def lc_tuning_by_history(self):
+        # 直近いくつかの結果をもとに、LCを調整する。
+        # 調子のいいときはLCを広くしたり、調子が悪いときはLCを小さくしたり。
+
+        mes = "　"
+        # 最終３個が全てマイナスの場合（直近の調子が悪い場合、、、）
+        if all(x < 0 for x in self.history_plus[-3:]):  # 最後の3つを取得し、すべて負か確認
+            mes = "最後の３つ全てが負の値"
+
+        # 直近二つが、最低限のプラスの場合（次回は３ピップス利確等にする・・？）
+        if all(0 < x < 0.023 for x in self.history_plus[-2:]):  # 最後の3つを取得し、すべて負か確認
+            mes = "直近２回が最低限プラス"
+
+        return mes
+
 
 def error_end(info):
     print("  ★■★APIエラー発生")
