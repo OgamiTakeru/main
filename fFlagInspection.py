@@ -1045,9 +1045,10 @@ def main_flag(dic_args):
     print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
     print(s, "flop2", pi.delete_peaks_information_for_print(peaks[4]))
 
+    latest_candle_size = df_r.iloc[1]['highlow']
     # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     # ■■実行しない条件の場合、実行を終了する
-    if not(2 <= peaks[0]['count'] < 4):
+    if peaks[0]['count'] != 2:  #  not(2 <= peaks[0]['count'] < 4):
         print(s6, "countで実行しない", peaks[0]['count'])  # フラッグは基本的に、Latestの数がいつでも実行する
         return orders_and_evidence
     else:
@@ -1204,8 +1205,9 @@ def main_flag(dic_args):
             main_order_base['y_change'] = flag_info['strength_info']['y_change']
             exe_orders.append(cf.order_finalize(main_order_base))
         else:
-            # 初回ではない場合 ＆　ブレイクではないほう（レンジに戻る方）
-            dependence_normal_margin = 0.032  # 0.035がシミュレーション上はベスト
+            # 初回ではない場合 ＆　ブレイクではないほう（レンジに戻る方）。基本はブレイク方向だったが、念のためこっちも追加
+            # その為、こちらは割と控えめなスタート
+            dependence_normal_margin = latest_candle_size  # 0.032  # 0.035がシミュレーション上はベスト 0.032は割とひっかけられてしまう。
             dependence_lc_range_max = 0.06
             dependence_lc_range_at_least = 0.04  # 最初は0.04
             dependence_counter_margin = 0.032  # 0.035がシミュレーション上はベスト

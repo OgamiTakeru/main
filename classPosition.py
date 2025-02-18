@@ -454,16 +454,16 @@ class order_information:
 
             if self.counter_order_peace['expected_direction'] == 1:
                 # 買いの場合
-                now_price = self.oa.NowPrice_exe("USD_JPY")['ask']
+                now_price = self.oa.NowPrice_exe("USD_JPY")['data']['ask']
             else:
                 # 売りの場合
-                now_price = self.oa.NowPrice_exe("USD_JPY")['bid']
+                now_price = self.oa.NowPrice_exe("USD_JPY")['data']['bid']
 
             # 書き換え確認用
             print(" 書き換え前")
             gene.print_json(self.counter_order_peace)
             print(" 書き換え後")
-            self.counter_order_peace['target'] = now_price + (0.01 * self.counter_order_peace['target'])
+            self.counter_order_peace['target'] = now_price + (0.01 * self.counter_order_peace['expected_direction'])
             self.counter_order_peace = cf.order_finalize(self.counter_order_peace)
             gene.print_json(self.counter_order_peace)
 
