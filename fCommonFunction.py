@@ -61,14 +61,17 @@ def order_base(now_price, decision_time):
             "lc_change": [
                 # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
                 # 2022-2023は 0.05トリガーにすると、マイナスになる！！
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
-                {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.019, "lc_ensure_range": -0.015},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.023, "lc_ensure_range": 0.014},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
+                {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
@@ -77,8 +80,8 @@ def order_base(now_price, decision_time):
                 {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
             ],
     }
-    new_lc_change = setting_json_read(order_base_dic['lc_change'], 'lc_change')
-    order_base_dic['lc_change'] = new_lc_change
+    # new_lc_change = setting_json_read(order_base_dic['lc_change'], 'lc_change')
+    # order_base_dic['lc_change'] = new_lc_change
     return order_base_dic
 
 

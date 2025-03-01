@@ -76,6 +76,7 @@ class order_information:
         self.lc_change_dic = {}
         self.lc_change_from_candle_lc_price = 0
         self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行で加算される。０は未実行。１以上は執行済み。
+        self.lc_change_less_minus_done = False
         # 特殊　カウンターオーダー
         self.counter_order_peace = {}  # 全ての情報は受け取れないので、CounterOrderで追記する
         self.counter_order_done = False
@@ -125,6 +126,7 @@ class order_information:
         self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行でTrueに変更される
         self.counter_order_peace = {}
         self.counter_order_done = False
+        self.lc_change_less_minus_done = False
 
     def print_info(self):
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
@@ -444,7 +446,8 @@ class order_information:
     def counter_order_exe(self):
         # カウンターのオーダーを入れる。AfterCloseFunctionから呼ばれる
         # このクラスを再利用するため、LifeをTrueに戻すことを忘れずに
-        if len(self.counter_order_peace) != 0 and not self.counter_order_done and 0 <= self.lc_change_num <= 2:
+        if len(self.counter_order_peace) != 0 and not self.counter_order_done and 1 <= self.lc_change_num <= 2:
+        # if len(self.counter_order_peace) != 0 and not self.counter_order_done and 0 <= self.lc_change_num:
             # カウンタオーダーがあり、カウンターオーダーが未執行で、なおかつ、LCChangeが執行されている場合（プラス確定の場合）
             # lcChangeが執行されていない場合は、だいぶ負けているため、自動的なカウンターは入れてはいけない、
             self.life_set(True)
@@ -460,24 +463,21 @@ class order_information:
                 now_price = self.oa.NowPrice_exe("USD_JPY")['data']['bid']
 
             # 書き換え確認用
-            print(" 書き換え前")
-            gene.print_json(self.counter_order_peace)
-            print(" 書き換え後")
+            # print(" 書き換え前")
+            # gene.print_json(self.counter_order_peace)
+            # print(" 書き換え後")
             self.counter_order_peace['target'] = now_price + (0.01 * self.counter_order_peace['expected_direction'])
             self.counter_order_peace = cf.order_finalize(self.counter_order_peace)
-            gene.print_json(self.counter_order_peace)
+            # gene.print_json(self.counter_order_peace)
 
             # オーダー発行
             self.order_plan_registration(self.counter_order_peace)
             # order_base(target_price, df_r.iloc[0]['time_jp'])
             print("カウンターオーダー実施。決済価格", self.t_json['averageClosePrice']
                            , "現時刻(dfFOrmat)", gene.now_df_format(), self.life, self.counter_order_done)
-
-            self.send_line("オーダー書き換わり確認　この後カウンターLine（classPosition.py　４０９行目 ")
-
             self.send_line("カウンターオーダー実施。決済価格", self.t_json['averageClosePrice']
                            ,"現時刻(dfFOrmat)", gene.now_df_format(), " 現在価格", self.oa.NowPrice_exe("USD_JPY")
-                           ,self.life, self.counter_order_done)
+                           ,self.life, self.counter_order_done, "lcDoneNum:", self.lc_change_num)
             sys.exit(0)
 
     def close_trade(self, units):
@@ -767,9 +767,64 @@ class order_information:
             self.send_line("Filled Closed Trueの謎状態あり⇒強制的にLifeにFalseを入れて終了　classPosition 537行目")
         # 変化による情報（勝ち負けの各最大値、継続時間等の取得）
         self.updateWinLoseTime(trade_latest['PLu'])  # PLU(realizePL / Unit)の推移を記録する
+        # ひっかけるようjなマイナス値を検出し、早期のロスカットを行う
+        self.lc_change_less_minus()
         # LCの変更を検討する(プラス域にいった場合のTP底上げ≒トレールに近い）
         self.lc_change()
         self.lc_change_from_candle()
+
+    def lc_change_less_minus(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
+        """
+        ロスカットを狭い物から広いものに変更する（取得直後の直マイナスを減らしたい）
+        特に、ブレイクと予想した物が、ひっかけですぐに戻るのを防止する
+        """
+        # print("   LC＿Change実行関数", self.name, self.t_pl_u, self.t_time_past_sec, len(self.lc_change_dic), self.t_state, self.lc_change_from_candle_lc_price)
+        # print("    新ロスカットテスト", self.plan['type'], self.t_time_past_sec, self.t_pl_u, self.win_max_plu)
+        # print("    新ロスカットテスト", self.lc_change_less_minus_done, self.t_state)
+        if self.lc_change_less_minus_done or self.t_state != "OPEN":  # 足数×〇分足×秒
+            # 実行しない条件は、既に実行済み　または、NotOpen
+            return 0
+
+        # 取得後短期間で、マイナス域にいて、なおかつプラスがほとんどない（ひっかけレベル）
+        # print("    新ロスカットテスト", self.plan['type'], self.t_time_past_sec, self.t_pl_u, self.win_max_plu)
+        if self.plan['type'] == "STOP":  # ひっかけに警戒するのは、順張り。すなわちSTOP。
+            # if self.t_time_past_sec <= 220 and self.t_pl_u <= 0.02 and self.win_max_plu <= 0.007:
+            if 60 < self.t_time_past_sec <= 220 and self.t_pl_u <= 0.02 and self.win_max_plu <= 0.016:
+                # ロスカットを縮小する動きをとる
+                lc_ensure_range = 0.036
+                new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan['ask_bid']), 3)
+                data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+                res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+                if res['error'] == -1:
+                    self.send_line("    LC変更ミス＠lc_change")
+                    return 0  # APIエラー時は終了
+                # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
+                self.send_line("　(LC底上げ★即反対に行ったやつ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
+                             "lc底上げ", lc_ensure_range, "Posiprice", self.t_execution_price,
+                             "予定価格", self.plan['price'], "[追加分]元々のRangeは", self.plan['lc_range'],
+                               "現在マイナスは", self.t_pl_u, "最大Plusは", self.win_max_plu, "所持時間", self.t_time_past_sec)
+                self.lc_change_less_minus_done = True  # フラグの成立（変更済）
+
+            # # ボーダーラインを超えた場合
+            # if self.t_pl_u >= lc_trigger_range:
+            #     # print("　★変更確定")
+            #     print(" 変更対象", i, lc_ensure_range, lc_trigger_range, self.t_pl_u)
+            #     self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
+            #     # これで配列の中の辞書って変更できるっけ？？
+            #     item['done'] = True
+            #     new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan['ask_bid']), 3)
+            #     data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+            #     res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+            #     if res['error'] == -1:
+            #         self.send_line("    LC変更ミス＠lc_change")
+            #         return 0  # APIエラー時は終了
+            #     item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
+            #     # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
+            #     self.send_line("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
+            #                  "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice", self.t_execution_price,
+            #                  "予定価格", self.plan['price'])
+            #     break
+
 
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
@@ -920,6 +975,7 @@ class order_information:
             return 0  # APIエラー時は終了
         self.lc_change_from_candle_lc_price = lc_price_temp  # ロスカット価格の保存
         lc_range = round(abs(float(lc_price_temp) - float(self.t_execution_price)), 5)
+        self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
         self.send_line("　(LCCandle底上げ)", self.name, "現在のPL" ,self.t_pl_u, "新LC価格⇒", new_lc_price,
                        "保証", lc_range, "約定価格", self.t_execution_price,
                        "予定価格", self.plan['price'])

@@ -46,8 +46,9 @@ def analysis_part(df_r):
     # ans = ff.main_hook_figure_inspection_and_order({"df_r": df_r})
     # print(ans)
 
-    # ans = sti.main_simple_turn({"df_r": df_r})
-    # print(ans)
+    ans = bi.make_peaks(df_r)
+    print("答え")
+    print(ans)
 
     # ans = cm.analysis_cross({"df_r": df_r})
     # print(ans)
@@ -58,8 +59,8 @@ def analysis_part(df_r):
     # ans = ri.main_line_strength_analysis_and_order({"df_r": df_r})
     # print(ans)
 
-    ans = sti.main_simple_turn({"df_r": df_r})
-    print(ans)
+    # ans = sti.main_simple_turn({"df_r": df_r})
+    # print(ans)
 
     # ans = im.normal_state_analysis(df_r)
     # print("最終（main_analysis)")
@@ -448,7 +449,7 @@ gl_times = 1  # Count(最大5000件）を何セット取るか  大体2225×３�
 # か月位。　10時間は120足 1時間は12
 # ■■取得時間の指定
 gl_use_now = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2025, 2, 5, 22, 20, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+gl_target_time = datetime.datetime(2025, 2, 28, 21, 35, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # gl_target_time = datetime.datetime(2024, 11, 13, 14, 20, 6)
 # ■■方法の指定
 gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。

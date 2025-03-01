@@ -1141,11 +1141,11 @@ def main_flag(dic_args):
             main_order_base['priority'] = 5  # flag_info['strength_info']['priority']
             main_order_base['lc_change'] = lc_change
             main_order_base['units'] = main_order_base['units'] * 1
-            main_order_base['name'] = flag_info['strength_info']['remark'] + '(count:' + str(peaks[0]['count']) + ')'
+            main_order_base['name'] = "フラッグ強" + flag_info['strength_info']['remark']
             main_order_base['y_change'] = flag_info['strength_info']['y_change']
             exe_orders.append(cf.order_finalize(main_order_base))
 
-            # ■■カウンタオーダーも入れる（二回目以降のみ）
+            # ■■リバースオーダーも入れる（二回目以降のみ）
             # 最大でもLCRange換算で10pips以内したい
             target_price = peaks[1]['peak'] - (
                     dependence_counter_margin * flag_info['line_base_info']['line_base_direction'])
@@ -1200,8 +1200,7 @@ def main_flag(dic_args):
             main_order_base['priority'] = 5  # ['strength_info']['priority']
             main_order_base['units'] = main_order_base['units'] * 1
             main_order_base['lc_change'] = lc_change
-            main_order_base['name'] = "カウンター" + flag_info['strength_info']['remark'] + '(count:' + str(
-                peaks[0]['count']) + ')'
+            main_order_base['name'] = "フラッグ強リバース" + flag_info['strength_info']['remark']
             main_order_base['y_change'] = flag_info['strength_info']['y_change']
             exe_orders.append(cf.order_finalize(main_order_base))
         else:
@@ -1257,8 +1256,7 @@ def main_flag(dic_args):
             main_order_base['priority'] = 5  # flag_info['strength_info']['priority']
             main_order_base['lc_change'] = lc_change
             main_order_base['units'] = main_order_base['units'] * 1
-            main_order_base['name'] = "レンジ" + flag_info['strength_info']['remark'] + '(count:' + str(
-                peaks[0]['count']) + ')'
+            main_order_base['name'] = "フラッグ弱(リバース)" + flag_info['strength_info']['remark']
             main_order_base['y_change'] = flag_info['strength_info']['y_change']
             exe_orders.append(cf.order_finalize(main_order_base))
 
@@ -1317,7 +1315,7 @@ def main_flag(dic_args):
             main_order_base['priority'] = 5  # ['strength_info']['priority']
             main_order_base['units'] = main_order_base['units'] * 1
             main_order_base['lc_change'] = lc_change
-            main_order_base['name'] = "レンジ" + "カウンター" + flag_info['strength_info']['remark'] + '(count:' + str(
+            main_order_base['name'] = "フラッグ弱(ブレイク)" + flag_info['strength_info']['remark'] + '(count:' + str(
                 peaks[0]['count']) + ')'
             main_order_base['y_change'] = flag_info['strength_info']['y_change']
             exe_orders.append(cf.order_finalize(main_order_base))

@@ -94,61 +94,117 @@ def main_simple_turn(dic_args):
         print("Big_Moveの後ではない")
 
     if move_size_ans['is_latest_peak_resistance_line'] != 0:
-        if move_size_ans['is_latest_peak_resistance_line'] == 2:
-            print("★直前ピークが抵抗線(考え方はダブルピークと近い) N3以上で数回当たられている抵抗線")
-            orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
-            main_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
-            # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
-            main_order_base['target'] = peaks[1]['peak'] + (0.02 * peaks[0]['direction'] * -1)
-            main_order_base['lc'] = 0.06  # lc_price
-            main_order_base['order_timeout_min'] = 20  # lc_price
-            main_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
-            main_order_base['expected_direction'] = peaks[0]['direction'] * -1
-            main_order_base['priority'] = 3  # flag_info['strength_info']['priority']
-            main_order_base['units'] = gl_units
-            main_order_base['name'] = "直前ピークが抵抗線（突破方向）"
-            # カウンター用のオーダー
-            counter_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
-            counter_order_base['target'] = peaks[1]['peak'] + (0.02 * peaks[0]['direction'] * -1)
-            counter_order_base['lc'] = 0.04  # lc_price
-            counter_order_base['order_timeout_min'] = 20  # lc_price
-            counter_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
-            counter_order_base['expected_direction'] = main_order_base['expected_direction'] * -1  # peaks[0]['direction'] * -1
-            counter_order_base['priority'] = 3  # flag_info['strength_info']['priority']
-            counter_order_base['units'] = gl_units / 2
-            counter_order_base['name'] = "カウンタオーオーダー　直前ピークが抵抗線（突破方向）"
-            main_order_base['counter_order'] = cf.order_finalize(counter_order_base)
+        print("  直前ピークが抵抗線（突破と戻りを同時に出す")
+        # ■突破方向
+        orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
+        main_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
+        # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
+        main_order_base['target'] = peaks[1]['peak'] + (0.02 * peaks[0]['direction'] * -1)
+        main_order_base['lc'] = 0.06  # lc_price
+        main_order_base['order_timeout_min'] = 20  # lc_price
+        main_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
+        main_order_base['expected_direction'] = peaks[0]['direction'] * -1
+        main_order_base['priority'] = 3  # flag_info['strength_info']['priority']
+        main_order_base['units'] = gl_units
+        main_order_base['name'] = "直前ピークが抵抗線（突破方向）"
+        # カウンター用のオーダー
+        counter_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
+        counter_order_base['target'] = peaks[1]['peak'] + (0.02 * peaks[0]['direction'] * -1)
+        counter_order_base['lc'] = 0.025  # lc_price
+        counter_order_base['order_timeout_min'] = 20  # lc_price
+        counter_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
+        counter_order_base['expected_direction'] = main_order_base['expected_direction'] * -1  # peaks[0]['direction'] * -1
+        counter_order_base['priority'] = 3  # flag_info['strength_info']['priority']
+        counter_order_base['units'] = gl_units / 2
+        counter_order_base['name'] = "カウンタオーオーダー　直前ピークが抵抗線（突破方向）"
+        main_order_base['counter_order'] = cf.order_finalize(counter_order_base)
+        # オーダーの登録
+        exe_orders.append(cf.order_finalize(main_order_base))
 
-            exe_orders.append(cf.order_finalize(main_order_base))
-        else:  # move_size_ans['is_latest_peak_resistance_line'] == 1（抵抗線N＝２で、よくあるやつで大体戻る）
-            print("★直前ピークが弱い抵抗線 N2以上でよくある、戻る抵抗線")
-            latest_candle_size = df_r.iloc[1]['highlow']
-            orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
-            main_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
-            # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
-            # main_order_base['target'] = peaks[0]['peak'] + (0.02 * peaks[0]['direction'] * 1)
-            main_order_base['target'] = latest_candle_size  # 直近動いた分はマージンとして取る（戻る方だけ。感覚的に、、、）
-            main_order_base['lc'] = 0.06  # lc_price
-            main_order_base['order_timeout_min'] = 20  # lc_price
-            main_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
-            main_order_base['expected_direction'] = peaks[0]['direction'] * 1
-            main_order_base['priority'] = 3  # flag_info['strength_info']['priority']
-            main_order_base['units'] = gl_units
-            main_order_base['name'] = "直前ピークが抵抗線（戻し方向）"
-            # exe_orders.append(cf.order_finalize(main_order_base))
-            # カウンター用のオーダー
-            counter_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
-            counter_order_base['target'] = peaks[1]['peak'] + (0.02 * peaks[0]['direction'] * -1)
-            counter_order_base['lc'] = 0.04  # lc_price
-            counter_order_base['order_timeout_min'] = 20  # lc_price
-            counter_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
-            counter_order_base['expected_direction'] = main_order_base['expected_direction'] * -1  # peaks[0]['direction'] * -1
-            counter_order_base['priority'] = 3  # flag_info['strength_info']['priority']
-            counter_order_base['units'] = gl_units / 2
-            counter_order_base['name'] = "カウンタオーオーダー　直前ピークが抵抗線（戻し方向）"
-            main_order_base['counter_order'] = cf.order_finalize(counter_order_base)
+        # ■戻り方向
+        latest_candle_size = df_r.iloc[1]['highlow']
+        orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
+        main_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
+        # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
+        # main_order_base['target'] = peaks[0]['peak'] + (0.02 * peaks[0]['direction'] * 1)
+        main_order_base['target'] = latest_candle_size  # 直近動いた分はマージンとして取る（戻る方だけ。感覚的に、、、）
+        main_order_base['lc'] = 0.06  # lc_price
+        main_order_base['order_timeout_min'] = 20  # lc_price
+        main_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
+        main_order_base['expected_direction'] = peaks[0]['direction'] * 1
+        main_order_base['priority'] = 3  # flag_info['strength_info']['priority']
+        main_order_base['units'] = gl_units
+        main_order_base['name'] = "直前ピークが抵抗線（戻し方向）"
+        # exe_orders.append(cf.order_finalize(main_order_base))
+        # カウンター用のオーダー
+        counter_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
+        counter_order_base['target'] = peaks[1]['peak'] + (0.02 * peaks[0]['direction'] * -1)
+        counter_order_base['lc'] = 0.025  # lc_price
+        counter_order_base['order_timeout_min'] = 20  # lc_price
+        counter_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
+        counter_order_base['expected_direction'] = main_order_base['expected_direction'] * -1  # peaks[0]['direction'] * -1
+        counter_order_base['priority'] = 3  # flag_info['strength_info']['priority']
+        counter_order_base['units'] = gl_units / 2
+        counter_order_base['name'] = "カウンタオーオーダー　直前ピークが抵抗線（戻し方向）"
+        main_order_base['counter_order'] = cf.order_finalize(counter_order_base)
+        # オーダーの登録
+        exe_orders.append(cf.order_finalize(main_order_base))
 
-            exe_orders.append(cf.order_finalize(main_order_base))
+        # if move_size_ans['is_latest_peak_resistance_line'] == 2:
+        #     print("★直前ピークが抵抗線(考え方はダブルピークと近い) N3以上で数回当たられている抵抗線")
+        #     orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
+        #     main_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
+        #     # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
+        #     main_order_base['target'] = peaks[1]['peak'] + (0.02 * peaks[0]['direction'] * -1)
+        #     main_order_base['lc'] = 0.06  # lc_price
+        #     main_order_base['order_timeout_min'] = 20  # lc_price
+        #     main_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
+        #     main_order_base['expected_direction'] = peaks[0]['direction'] * -1
+        #     main_order_base['priority'] = 3  # flag_info['strength_info']['priority']
+        #     main_order_base['units'] = gl_units
+        #     main_order_base['name'] = "直前ピークが抵抗線（突破方向）"
+        #     # カウンター用のオーダー
+        #     counter_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
+        #     counter_order_base['target'] = peaks[1]['peak'] + (0.02 * peaks[0]['direction'] * -1)
+        #     counter_order_base['lc'] = 0.04  # lc_price
+        #     counter_order_base['order_timeout_min'] = 20  # lc_price
+        #     counter_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
+        #     counter_order_base['expected_direction'] = main_order_base['expected_direction'] * -1  # peaks[0]['direction'] * -1
+        #     counter_order_base['priority'] = 3  # flag_info['strength_info']['priority']
+        #     counter_order_base['units'] = gl_units / 2
+        #     counter_order_base['name'] = "カウンタオーオーダー　直前ピークが抵抗線（突破方向）"
+        #     main_order_base['counter_order'] = cf.order_finalize(counter_order_base)
+        #
+        #     exe_orders.append(cf.order_finalize(main_order_base))
+        # else:  # move_size_ans['is_latest_peak_resistance_line'] == 1（抵抗線N＝２で、よくあるやつで大体戻る）
+        #     print("★直前ピークが弱い抵抗線 N2以上でよくある、戻る抵抗線")
+        #     latest_candle_size = df_r.iloc[1]['highlow']
+        #     orders_and_evidence["take_position_flag"] = True  # ここまで来ている＝注文あり
+        #     main_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
+        #     # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
+        #     # main_order_base['target'] = peaks[0]['peak'] + (0.02 * peaks[0]['direction'] * 1)
+        #     main_order_base['target'] = latest_candle_size  # 直近動いた分はマージンとして取る（戻る方だけ。感覚的に、、、）
+        #     main_order_base['lc'] = 0.06  # lc_price
+        #     main_order_base['order_timeout_min'] = 20  # lc_price
+        #     main_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
+        #     main_order_base['expected_direction'] = peaks[0]['direction'] * 1
+        #     main_order_base['priority'] = 3  # flag_info['strength_info']['priority']
+        #     main_order_base['units'] = gl_units
+        #     main_order_base['name'] = "直前ピークが抵抗線（戻し方向）"
+        #     # exe_orders.append(cf.order_finalize(main_order_base))
+        #     # カウンター用のオーダー
+        #     counter_order_base = cf.order_base(target_price, df_r.iloc[0]['time_jp'])
+        #     counter_order_base['target'] = peaks[1]['peak'] + (0.02 * peaks[0]['direction'] * -1)
+        #     counter_order_base['lc'] = 0.04  # lc_price
+        #     counter_order_base['order_timeout_min'] = 20  # lc_price
+        #     counter_order_base['type'] = "STOP"  # "STOP"  # "MARKET"
+        #     counter_order_base['expected_direction'] = main_order_base['expected_direction'] * -1  # peaks[0]['direction'] * -1
+        #     counter_order_base['priority'] = 3  # flag_info['strength_info']['priority']
+        #     counter_order_base['units'] = gl_units / 2
+        #     counter_order_base['name'] = "カウンタオーオーダー　直前ピークが抵抗線（戻し方向）"
+        #     main_order_base['counter_order'] = cf.order_finalize(counter_order_base)
+        #
+        #     exe_orders.append(cf.order_finalize(main_order_base))
     else:
         print(" 直近抵抗線ではない")
 

@@ -69,17 +69,17 @@ def make_peak(data_df_origin):
     data_df = data_df_origin.copy()
     # 返却値を設定
     ans_dic = {
+        "oldest_time_jp": 0,
+        "latest_time_jp": 0,
         "direction": 1,
         "count": 0,  # 最新時刻からスタートして同じ方向が何回続いているか
         "data_size": len(data_df),  # (注)元のデータサイズ
-        "latest_image_price": 0,
-        "oldest_image_price": 0,
-        "oldest_time_jp": 0,
-        "latest_time_jp": 0,
+        "latest_body_price": 0,
+        "oldest_body_price": 0,
+        "latest_wick_price": 0,
+        "oldest_wick_price": 0,
         "latest_price": 0,
         "oldest_price": 0,
-        "latest_peak_price": 0,
-        "oldest_peak_price": 0,
         "gap": 0.0001,
         "gap_high_low": 0.00001,
         "gap_close": 0.00001,
@@ -121,76 +121,173 @@ def make_peak(data_df_origin):
 
     if base_direction == 1:
         # 上り方向の場合、直近の最大価格をlatest_image価格として取得(latest価格とは異なる可能性あり）
-        latest_image_price = ans_df.iloc[0]["inner_high"]
-        oldest_image_price = ans_df.iloc[-1]["inner_low"]
-        latest_peak_price = ans_df.iloc[0]["high"]
-        oldest_peak_price = ans_df.iloc[-1]["low"]
+        latest_body_price = ans_df.iloc[0]["inner_high"]
+        oldest_body_price = ans_df.iloc[-1]["inner_low"]
+        latest_wick_price = ans_df.iloc[0]["high"]
+        oldest_wick_price = ans_df.iloc[-1]["low"]
     else:
         # 下り方向の場合
-        latest_image_price = ans_df.iloc[0]["inner_low"]
-        oldest_image_price = ans_df.iloc[-1]["inner_high"]
-        latest_peak_price = ans_df.iloc[0]["low"]
-        oldest_peak_price = ans_df.iloc[-1]["high"]
+        latest_body_price = ans_df.iloc[0]["inner_low"]
+        oldest_body_price = ans_df.iloc[-1]["inner_high"]
+        latest_wick_price = ans_df.iloc[0]["low"]
+        oldest_wick_price = ans_df.iloc[-1]["high"]
     #
     # ■平均移動距離等を考える
     body_ave = round(data_df["body_abs"].mean(),3)
     move_ave = round(data_df["moves"].mean(),3)
 
     # ■GAPを計算する（０の時は割る時とかに困るので、最低0.001にしておく）
-    # gap = round(abs(latest_image_price - oldest_image_price), 3)  # MAXのサイズ感
-    gap_close = round(abs(latest_image_price - ans_df.iloc[-1]["close"]), 3)  # 直近の価格（クローズの価格&向き不問）
+    # gap = round(abs(latest_body_price - oldest_body_price), 3)  # MAXのサイズ感
+    gap_close = round(abs(latest_body_price - ans_df.iloc[-1]["close"]), 3)  # 直近の価格（クローズの価格&向き不問）
     if gap_close == 0:
         gap_close = 0.001
     else:
         gap_close = gap_close
 
-    gap = round(abs(latest_image_price - oldest_image_price), 3)  # 直近の価格（クローズの価格&向き不問）
+    gap = round(abs(latest_body_price - oldest_body_price), 3)  # 直近の価格（クローズの価格&向き不問）
     if gap == 0:
         gap = 0.001
     else:
         gap = gap
 
-    gap_high_low = round(abs(latest_peak_price - oldest_peak_price), 3)  # 直近の価格（クローズの価格&向き不問）
+    gap_high_low = round(abs(latest_wick_price - oldest_wick_price), 3)  # 直近の価格（クローズの価格&向き不問）
     if gap_high_low == 0:
         gap_high_low = 0.001
     else:
         gap_high_low = gap_high_low
 
-    # ■　一旦格納する
-    # 表示等で利用する用（機能としては使わない
-    memo_time = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
-        ans_df.iloc[0]["time_jp"])
-    # 返却用(Simple データを持たない表示用)
-    ans_dic = {
-        "direction": base_direction,
-        "count": counter+1,  # 最新時刻からスタートして同じ方向が何回続いているか
-        "data_size": len(data_df),  # (注)元のデータサイズ
-        "latest_image_price": latest_image_price,
-        "oldest_image_price": oldest_image_price,
-        "oldest_time_jp": ans_df.iloc[-1]["time_jp"],
-        "latest_time_jp": ans_df.iloc[0]["time_jp"],
-        "latest_price": ans_df.iloc[0]["close"],
-        "oldest_price": ans_df.iloc[-1]["open"],
-        "latest_peak_price": latest_peak_price,
-        "oldest_peak_price": oldest_peak_price,
-        "gap": gap,
-        "gap_high_low": gap_high_low,
-        "gap_close": gap_close,
-        "body_ave": body_ave,
-        "move_abs": move_ave,
-        "memo_time": memo_time,
-        "data": ans_df,  # 対象となるデータフレーム（元のデータフレームではない）
-        "data_remain": ans_other_df,  # 対象以外の残りのデータフレーム
-    }
-
+    # ■　返却用にans_dicを上書き
+    ans_dic['direction'] = base_direction
+    ans_dic["count"] = counter + 1  # 最新時刻からスタートして同じ方向が何回続いているか
+    ans_dic["data_size"] = len(data_df)  # (注)元のデータサイズ
+    ans_dic["latest_body_price"] = latest_body_price
+    ans_dic["oldest_body_price"] = oldest_body_price
+    ans_dic["oldest_time_jp"] = ans_df.iloc[-1]["time_jp"]
+    ans_dic["latest_time_jp"] = ans_df.iloc[0]["time_jp"]
+    ans_dic["latest_price"] = ans_df.iloc[0]["close"]
+    ans_dic["oldest_price"] = ans_df.iloc[-1]["open"]
+    ans_dic["latest_wick_price"] = latest_wick_price
+    ans_dic["oldest_wick_price"] = oldest_wick_price
+    ans_dic["gap"] = gap
+    ans_dic["gap_high_low"] = gap_high_low
+    ans_dic["gap_close"] = gap_close
+    ans_dic["body_ave"] = body_ave
+    ans_dic["move_abs"] = move_ave
+    ans_dic["data"] = ans_df  # 対象となるデータフレーム（元のデータフレームではない）
+    ans_dic["data_remain"] = ans_other_df  # 対象以外の残りのデータフレーム
+    ans_dic["memo_time"] = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
+        ans_df.iloc[0]["time_jp"])  # 表示に利用する時刻表示用
+    # 追加項目
     ans_dic['include_large'] = check_large_body_in_peak(ans_dic)['include_large']
     ans_dic['include_very_large'] = check_large_body_in_peak(ans_dic)['include_very_large']
     ans_dic['highest'] = check_large_body_in_peak(ans_dic)['highest']
     ans_dic['lowest'] = check_large_body_in_peak(ans_dic)['lowest']
 
+    # テスト表示用
+    print("BlockInspection")
+    for_print = {
+        "oldest_time_jp": ans_df.iloc[-1]["time_jp"],
+        "latest_time_jp": ans_df.iloc[0]["time_jp"],
+        "direction": base_direction,
+        "count": counter+1,  # 最新時刻からスタートして同じ方向が何回続いているか
+        "data_size": len(data_df),  # (注)元のデータサイズ
+        "latest_body_price": latest_body_price,
+        "oldest_body_price": oldest_body_price,
+        "latest_price": ans_df.iloc[0]["close"],
+        "oldest_price": ans_df.iloc[-1]["open"],
+        "latest_wick_price": latest_wick_price,
+        "oldest_wick_price": oldest_wick_price,
+        "gap": gap,
+        "gap_high_low": gap_high_low,
+        "gap_close": gap_close,
+        "body_ave": body_ave,
+        "move_abs": move_ave
+    }
+    print(for_print)
+
     # 返却する
     return ans_dic
 
+
+def make_peaks(*args):
+    """
+    リバースされたデータフレーム（直近が上）から、極値をN回分求める
+    基本的にトップとボトムが交互のエータを返却する。
+    直近(または指定の時間~）３時間前分を取得することにする
+    :return:
+    """
+    # ■引数の整理
+    # 基本検索と同様、最初の一つは除外する
+    df_r = args[0]  # 引数からデータフレームを受け取る
+    df_r = df_r[1:]  # 先頭は省く（数秒分の足のため）
+    # ループの場合時間がかかるので、何個のPeakを取得するかを決定する(引数で指定されている場合は引数から受け取る）
+    if len(args) == 2:
+        max_peak_num = args[1]
+    else:
+        max_peak_num = 15  # N個のピークを取得する
+
+    # ■処理の開始
+    peaks = []  # 結果格納用
+    peaks2 = []
+    for i in range(222):
+        if len(df_r) == 0:
+            break
+        # 実処理
+        peak = make_peak(df_r)
+
+        temp = peak.copy()
+        temp.pop('data', None)  # DataFrameを削除する# 存在しない場合はエラーを防ぐためにデフォルト値を指定
+        temp.pop('data_remain', None)  # DataFrameを削除する
+        peaks2.append(temp)
+
+        if peak['direction'] == 1:
+            # 上向きの場合
+            peak_latest = peak['data'].iloc[0]["inner_high"]
+            peak_peak = peak['data'].iloc[0]["high"]
+            peak_oldest = peak['data'].iloc[-1]["inner_low"]
+        else:
+            # 下向きの場合
+            peak_latest = peak['data'].iloc[0]["inner_low"]
+            peak_peak = peak['data'].iloc[0]["low"]
+            peak_oldest = peak['data'].iloc[-1]["inner_high"]
+
+        # 情報累積のためのデータを生成（上で算出した物を付与し、DataFrameを取り除く）
+        add_info = {
+            "time": peak['data'].iloc[0]['time_jp'],
+            "peak": peak_latest,
+            "time_old": peak['data'].iloc[-1]['time_jp'],
+            "peak_old": peak_oldest,
+            "gap": round(abs(peak_latest-peak_oldest), 3),
+            "peak_peak": peak_peak
+        }
+        peak = {**add_info, **peak}
+        # peak['time'] = peak['data'].iloc[0]['time_jp']
+        # peak['peak'] = peak_latest
+        # peak['time_old'] = peak['data'].iloc[-1]['time_jp']
+        # peak['peak_old'] = peak_oldest
+        # peak['gap'] = round(abs(peak_latest-peak_oldest), 3)
+        # peak['peak_peak'] = peak_peak
+        peak.pop('data', None)  # DataFrameを削除する# 存在しない場合はエラーを防ぐためにデフォルト値を指定
+        peak.pop('data_remain', None)  # DataFrameを削除する
+        # 表示時にぱっとわかるように、
+
+        if len(peaks) != 0:
+            if peaks[-1]['time'] == peak['time']:
+                # 最後が何故か重複しまくる！時間がかぶったらおしまいにしておく
+                break
+            else:
+                peaks.append(peak)  # 情報の蓄積
+        else:
+            peaks.append(peak)  # 情報の蓄積
+
+        # ■ループ処理
+        df_r = df_r[peak['count']-1:]  # 処理データフレームを次に進める
+        # 強制ループ終了の場合⇒　ピーク数検索数が上限に達したらループを終了する（ループ時に多いと時間がかかるため）
+        if len(peaks) > max_peak_num:
+            print(peaks2)
+            return peaks
+    print(peaks2)
+    return peaks
 
 def make_peak_with_skip(data_df_origin) -> dict[str, any]:
     """
