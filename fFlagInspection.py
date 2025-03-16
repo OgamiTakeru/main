@@ -13,6 +13,7 @@ import fMoveSizeInspection as ms
 import fCommonFunction as cf
 import fMoveSizeInspection as ms
 import fPeakInspection as pi
+import classPeaks as cpk
 
 
 def make_same_price_list_from_target_price(target_price, target_dir, peaks_all, same_price_range, is_recall):
@@ -883,9 +884,12 @@ def analysis(dic_args):
     }
 
     # ■■情報の整理と取得（関数の頭には必須）
-    fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
-    target_df = fixed_information['df_r']
-    peaks = fixed_information['peaks']
+    peaksclass = cpk.PeaksClass(dic_args['df_r'])
+    target_df = dic_args['df_r']
+    peaks = peaksclass.skipped_peaks
+    # fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
+    # target_df = fixed_information['df_r']
+    # peaks = fixed_information['peaks']
     target_dir = peaks[0]['direction']  # Lineの方向 予測ではLatest。値が1の場合UpperLine（＝上値抵抗）
     grid = dependence_search_grid  # 調査の細かさ
     now_time = target_df.iloc[0]['time_jp']
@@ -1033,17 +1037,21 @@ def main_flag(dic_args):
         "information": []
     }
     # ■■情報の整理と取得（関数の頭には必須）
-    fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
-    df_r = fixed_information['df_r']
-    peaks = fixed_information['peaks']
-    peaks = peak_inspection.change_peaks_with_hard_skip(peaks)
+    # fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
+    # df_r = fixed_information['df_r']
+    # peaks = fixed_information['peaks']
+    # peaks = peak_inspection.change_peaks_with_hard_skip(peaks)
+    print("Flagてｓｔ")
+    peaksclass = cpk.PeaksClass(dic_args['df_r'])
+    df_r = dic_args['df_r']
+    peaks = peaksclass.skipped_peaks
     s = "   "
-    print(s, "<SKIP後　対象>")
-    print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
-    print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
-    print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
-    print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
-    print(s, "flop2", pi.delete_peaks_information_for_print(peaks[4]))
+    # print(s, "<SKIP後　対象>")
+    # print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
+    # print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
+    # print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
+    # print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
+    # print(s, "flop2", pi.delete_peaks_information_for_print(peaks[4]))
 
     latest_candle_size = df_r.iloc[1]['highlow']
     # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -1493,17 +1501,20 @@ def main_flag_calm_state(dic_args):
         "information": []
     }
     # ■■情報の整理と取得（関数の頭には必須）
-    fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
-    df_r = fixed_information['df_r']
-    peaks = fixed_information['peaks']
-    peaks = peak_inspection.change_peaks_with_hard_skip(peaks)
+    # fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
+    # df_r = fixed_information['df_r']
+    # peaks = fixed_information['peaks']
+    # peaks = peak_inspection.change_peaks_with_hard_skip(peaks)
+    peaksclass = cpk.PeaksClass(dic_args['df_r'])
+    df_r = dic_args['df_r']
+    peaks = peaksclass.skipped_peaks
     s = "   "
-    print(s, "<SKIP後　対象>")
-    print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
-    print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
-    print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
-    print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
-    print(s, "flop2", pi.delete_peaks_information_for_print(peaks[4]))
+    # print(s, "<SKIP後　対象>")
+    # print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
+    # print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
+    # print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
+    # print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
+    # print(s, "flop2", pi.delete_peaks_information_for_print(peaks[4]))
 
     # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     # ■■実行しない条件の場合、実行を終了する

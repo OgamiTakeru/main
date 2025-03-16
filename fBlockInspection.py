@@ -69,15 +69,18 @@ def make_peak(data_df_origin):
     data_df = data_df_origin.copy()
     # 返却値を設定
     ans_dic = {
+        "peak_time": 0,  # ピーク時刻（重複するが、わかりやすい名前で持っておく）
+        "peak": 0,  # ピーク価格（重複するが、わかりやすい名前で持っておく）
+        "latest_time_jp": 0,  # これがpeakの時刻
         "oldest_time_jp": 0,
-        "latest_time_jp": 0,
         "direction": 1,
+        "strength": 0,  # この関数では付与されない（単品では判断できない）。make_peaks関数で前後のPeakを加味して付与される
         "count": 0,  # 最新時刻からスタートして同じ方向が何回続いているか
         "data_size": len(data_df),  # (注)元のデータサイズ
-        "latest_body_price": 0,
-        "oldest_body_price": 0,
-        "latest_wick_price": 0,
-        "oldest_wick_price": 0,
+        "latest_body_peak_price": 0,  # これがpeakの価格
+        "oldest_body_peak_price": 0,
+        "latest_wick_peak_price": 0,
+        "oldest_wick_peak_price": 0,
         "latest_price": 0,
         "oldest_price": 0,
         "gap": 0.0001,
@@ -90,7 +93,7 @@ def make_peak(data_df_origin):
         "data_remain": data_df,  # 対象以外の残りのデータフレーム
         "support_info": {},
         "include_large": False,
-        "include_very_large": False
+        "include_very_large": False,
     }
     if len(data_df) <= 1:  # データが１つ以上存在していれば実施
         return ans_dic
@@ -160,14 +163,16 @@ def make_peak(data_df_origin):
     ans_dic['direction'] = base_direction
     ans_dic["count"] = counter + 1  # 最新時刻からスタートして同じ方向が何回続いているか
     ans_dic["data_size"] = len(data_df)  # (注)元のデータサイズ
-    ans_dic["latest_body_price"] = latest_body_price
-    ans_dic["oldest_body_price"] = oldest_body_price
+    ans_dic["latest_body_peak_price"] = latest_body_price
+    ans_dic["oldest_body_peak_price"] = oldest_body_price
     ans_dic["oldest_time_jp"] = ans_df.iloc[-1]["time_jp"]
-    ans_dic["latest_time_jp"] = ans_df.iloc[0]["time_jp"]
-    ans_dic["latest_price"] = ans_df.iloc[0]["close"]
+    ans_dic["latest_time_jp"] = ans_df.iloc[0]["time_jp"]  # これがピークの時刻
+    ans_dic["latest_price"] = ans_df.iloc[0]["close"]  # これがピークの価格
     ans_dic["oldest_price"] = ans_df.iloc[-1]["open"]
-    ans_dic["latest_wick_price"] = latest_wick_price
-    ans_dic["oldest_wick_price"] = oldest_wick_price
+    ans_dic["latest_wick_peak_price"] = latest_wick_price
+    ans_dic["oldest_wick_peak_price"] = oldest_wick_price
+    ans_dic["peak_time"] = ans_dic["latest_time_jp"]  # 重複するが、わかりやすい名前で持っておく
+    ans_dic["peak"] = ans_dic["latest_price"]  # 重複するが、わかりやすい名前で持っておく
     ans_dic["gap"] = gap
     ans_dic["gap_high_low"] = gap_high_low
     ans_dic["gap_close"] = gap_close
@@ -177,6 +182,7 @@ def make_peak(data_df_origin):
     ans_dic["data_remain"] = ans_other_df  # 対象以外の残りのデータフレーム
     ans_dic["memo_time"] = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
         ans_df.iloc[0]["time_jp"])  # 表示に利用する時刻表示用
+    ans_dic["strength"] = 0  # 念のために入れておく
     # 追加項目
     ans_dic['include_large'] = check_large_body_in_peak(ans_dic)['include_large']
     ans_dic['include_very_large'] = check_large_body_in_peak(ans_dic)['include_very_large']
@@ -184,26 +190,26 @@ def make_peak(data_df_origin):
     ans_dic['lowest'] = check_large_body_in_peak(ans_dic)['lowest']
 
     # テスト表示用
-    print("BlockInspection")
-    for_print = {
-        "oldest_time_jp": ans_df.iloc[-1]["time_jp"],
-        "latest_time_jp": ans_df.iloc[0]["time_jp"],
-        "direction": base_direction,
-        "count": counter+1,  # 最新時刻からスタートして同じ方向が何回続いているか
-        "data_size": len(data_df),  # (注)元のデータサイズ
-        "latest_body_price": latest_body_price,
-        "oldest_body_price": oldest_body_price,
-        "latest_price": ans_df.iloc[0]["close"],
-        "oldest_price": ans_df.iloc[-1]["open"],
-        "latest_wick_price": latest_wick_price,
-        "oldest_wick_price": oldest_wick_price,
-        "gap": gap,
-        "gap_high_low": gap_high_low,
-        "gap_close": gap_close,
-        "body_ave": body_ave,
-        "move_abs": move_ave
-    }
-    print(for_print)
+    # print("BlockInspection")
+    # for_print = {
+    #     "oldest_time_jp": ans_df.iloc[-1]["time_jp"],
+    #     "latest_time_jp": ans_df.iloc[0]["time_jp"],
+    #     "direction": base_direction,
+    #     "count": counter+1,  # 最新時刻からスタートして同じ方向が何回続いているか
+    #     "data_size": len(data_df),  # (注)元のデータサイズ
+    #     "latest_body_price": latest_body_price,
+    #     "oldest_body_price": oldest_body_price,
+    #     "latest_price": ans_df.iloc[0]["close"],
+    #     "oldest_price": ans_df.iloc[-1]["open"],
+    #     "latest_wick_price": latest_wick_price,
+    #     "oldest_wick_price": oldest_wick_price,
+    #     "gap": gap,
+    #     "gap_high_low": gap_high_low,
+    #     "gap_close": gap_close,
+    #     "body_ave": body_ave,
+    #     "move_abs": move_ave
+    # }
+    # print(for_print)
 
     # 返却する
     return ans_dic
@@ -211,9 +217,7 @@ def make_peak(data_df_origin):
 
 def make_peaks(*args):
     """
-    リバースされたデータフレーム（直近が上）から、極値をN回分求める
-    基本的にトップとボトムが交互のエータを返却する。
-    直近(または指定の時間~）３時間前分を取得することにする
+    リバースされたデータフレーム（直近が上）から、ピークを一覧にして返却する
     :return:
     """
     # ■引数の整理
@@ -228,66 +232,139 @@ def make_peaks(*args):
 
     # ■処理の開始
     peaks = []  # 結果格納用
-    peaks2 = []
+    next_time_peak = {}  # 処理的に次（時間的には後）のピークとして保管
     for i in range(222):
         if len(df_r) == 0:
             break
-        # 実処理
-        peak = make_peak(df_r)
+        # ■ピークの取得
+        this_peak = make_peak(df_r)
 
-        temp = peak.copy()
-        temp.pop('data', None)  # DataFrameを削除する# 存在しない場合はエラーを防ぐためにデフォルト値を指定
-        temp.pop('data_remain', None)  # DataFrameを削除する
-        peaks2.append(temp)
+        # ■ループ終了処理　ループ終了、または、 重複対策（←原因不明なので、とりあえず入れておく）
+        if len(peaks) != 0 and peaks[-1]['latest_time_jp'] == this_peak['latest_time_jp']:
+            # 最後が何故か重複しまくる！時間がかぶったら何もせず終了
+            break
+        elif len(peaks) > max_peak_num:
+            # 終了（ピーク数検索数が上限に到達した場合）
+            break
 
-        if peak['direction'] == 1:
-            # 上向きの場合
-            peak_latest = peak['data'].iloc[0]["inner_high"]
-            peak_peak = peak['data'].iloc[0]["high"]
-            peak_oldest = peak['data'].iloc[-1]["inner_low"]
-        else:
-            # 下向きの場合
-            peak_latest = peak['data'].iloc[0]["inner_low"]
-            peak_peak = peak['data'].iloc[0]["low"]
-            peak_oldest = peak['data'].iloc[-1]["inner_high"]
-
-        # 情報累積のためのデータを生成（上で算出した物を付与し、DataFrameを取り除く）
-        add_info = {
-            "time": peak['data'].iloc[0]['time_jp'],
-            "peak": peak_latest,
-            "time_old": peak['data'].iloc[-1]['time_jp'],
-            "peak_old": peak_oldest,
-            "gap": round(abs(peak_latest-peak_oldest), 3),
-            "peak_peak": peak_peak
-        }
-        peak = {**add_info, **peak}
-        # peak['time'] = peak['data'].iloc[0]['time_jp']
-        # peak['peak'] = peak_latest
-        # peak['time_old'] = peak['data'].iloc[-1]['time_jp']
-        # peak['peak_old'] = peak_oldest
-        # peak['gap'] = round(abs(peak_latest-peak_oldest), 3)
-        # peak['peak_peak'] = peak_peak
-        peak.pop('data', None)  # DataFrameを削除する# 存在しない場合はエラーを防ぐためにデフォルト値を指定
-        peak.pop('data_remain', None)  # DataFrameを削除する
-        # 表示時にぱっとわかるように、
-
-        if len(peaks) != 0:
-            if peaks[-1]['time'] == peak['time']:
-                # 最後が何故か重複しまくる！時間がかぶったらおしまいにしておく
-                break
-            else:
-                peaks.append(peak)  # 情報の蓄積
-        else:
-            peaks.append(peak)  # 情報の蓄積
+        # ■実処理の追加(前後関係の追加）
+        # peakの簡素化
+        this_peak.pop('data', None)  # DataFrameを削除する# 存在しない場合はエラーを防ぐためにデフォルト値を指定
+        this_peak.pop('data_remain', None)  # DataFrameを削除する
+        # peakのコピーを生成（PreviousやNextがない状態）
+        this_peak_simple_copy = this_peak.copy()  # 処理的に次（時間的には後）のピークとして保管
+        # 後ピークの追加（時間的に後）
+        this_peak['next_time_peak'] = next_time_peak
+        next_time_peak = this_peak_simple_copy  # 処理的に次（時間的には後）のピークとして保管
+        # 前関係の追加 (現在処理⇒Peak,ひとつ前の処理（時間的には次）はpeaks[-1])
+        if i != 0:
+            # 先頭以外の時(next_timeはある状態。previousは次の処理で取得される）。先頭の時は実施しない。
+            peaks[-1]['previous_time_peak'] = this_peak_simple_copy  # next_timeのpreviousに今回のpeakを追加
+        # 結果を追加
+        peaks.append(this_peak)  # 情報の蓄積
 
         # ■ループ処理
-        df_r = df_r[peak['count']-1:]  # 処理データフレームを次に進める
-        # 強制ループ終了の場合⇒　ピーク数検索数が上限に達したらループを終了する（ループ時に多いと時間がかかるため）
-        if len(peaks) > max_peak_num:
-            print(peaks2)
-            return peaks
-    print(peaks2)
+        df_r = df_r[this_peak['count']-1:]  # 処理データフレームを次に進める
+
+    # ■ピークの強さを付与する(1,2,3の3段階。３が最も強い）
+    for i, item in enumerate(peaks):
+        # ほとんどスキップと同じ感じだが、Gapが0.05以下の場合は問答無用で低ランク
+        # Gapがクリアしても、両側に比べて小さい場合、低ランク
+        if i == 0 or i == len(peaks)-1:
+            print("最初か最後のため、Vanish候補ではない", i)
+            continue
+
+        # わかりやすく命名 （vanish_itemは中央のアイテムを示す）
+        latest_item = peaks[i-1]
+        oldest_merged_item = peaks[i+1]
+
+        #
+        gap_border = 0.05
+        gap_border_second = 0.08
+        count_border = 2
+        if item['gap'] <= gap_border or (item['gap'] <= gap_border_second and item['count'] <= count_border):
+            # このアイテムのGapが小さい場合、直前も低くなる事に注意
+            item['strength'] = 1  # これで元データ入れ替えられるんだ？！
+            peaks[i+1]['strength'] = 1  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
+
     return peaks
+
+
+def skip_peaks(peaks):
+    """
+    peaksを受け取り、必要に応じてスキップする
+    """
+    s4 = "    "
+    print(s4, "SKIP Peaks")
+    # for vanish_num, vanish_item in enumerate(peaks):
+    adjuster = 0
+    for i in range(len(peaks)):  # 中で配列を買い替えるため、for i in peaksは使えない！！
+        vanish_num = i + adjuster  # 削除後に、それを起点にもう一度削除処理ができる
+        if vanish_num == 0 or vanish_num > len(peaks)-1:
+            print("最初か最後のため、Vanish候補ではない", vanish_num)
+            continue
+
+        print(vanish_num, adjuster, len(peaks))
+
+        # わかりやすく命名 （vanish_itemは中央のアイテムを示す）
+        latest_num = vanish_num - 1
+        latest_item = peaks[latest_num]
+        oldest_merged_num = vanish_num + 1
+        oldest_merged_item = peaks[oldest_merged_num]
+        vanish_item = peaks[vanish_num]
+
+        # ■スキップ判定 (vanishは真ん中のPeakを意味する）
+        # (0)スキップフラグの設定
+        is_skip = False
+        # (1)基本判定 サイズが小さいときが対象
+        count_border = 3
+        gap_border = 0.045
+        if vanish_item['count'] <= count_border and vanish_item['gap'] <= gap_border:
+            pass
+        else:
+            # そこそこサイズがあるので、スキップ
+            continue
+
+        # (2)ラップ判定
+        # 変数の設定
+        vanish_latest_ratio = vanish_item['gap'] / latest_item['gap']
+        vanish_oldest_ratio = vanish_item['gap'] / oldest_merged_item['gap']
+        # 判定１
+        overlap_ratio = 0.7  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
+        if vanish_latest_ratio >= overlap_ratio and vanish_oldest_ratio >= overlap_ratio:
+            # 両サイドが同じ程度のサイズ感の場合、レンジ感があるため、スキップはしない（ほとんどラップしている状態）
+            print(s4, s4, "スキップ無し", latest_item['gap'], latest_item['gap'], oldest_merged_item['gap'])
+            continue
+        # 判定２
+        peak_gap_border = 0.05
+        if vanish_item['gap'] <= peak_gap_border:
+            if vanish_latest_ratio <= overlap_ratio and vanish_oldest_ratio <= overlap_ratio:
+                print(s4, s4, "Gap小かつ微妙な折り返し", vanish_item['gap'], vanish_latest_ratio, vanish_oldest_ratio)
+                is_skip = True
+
+        # ■スキップ処理
+        if is_skip:
+            print(" 結合処理", vanish_item)
+            # oldestに情報を集約（midはCount以外はなかったと同様、latestはOldestの'latest系'に転記される）
+            peaks[oldest_merged_num]['latest_body_peak_price'] = latest_item['latest_body_peak_price']
+            peaks[oldest_merged_num]['latest_time_jp'] = latest_item['latest_time_jp']
+            peaks[oldest_merged_num]['latest_price'] = latest_item['latest_price']
+            peaks[oldest_merged_num]['peak_time'] = latest_item['peak_time']
+            peaks[oldest_merged_num]['peak'] = latest_item['peak']
+            peaks[oldest_merged_num]['count'] = (latest_item['count'] + vanish_item['count'] +
+                                                 oldest_merged_item['count'])-2
+            peaks[oldest_merged_num]['next_time_peak'] = latest_item['next_time_peak']
+            peaks[oldest_merged_num]['gap'] = round(abs(oldest_merged_item['latest_body_peak_price'] -
+                                                    oldest_merged_item['oldest_body_peak_price']), 3)
+            peaks[oldest_merged_num]['strength'] = 0  # 従来はlatest_item['strength']だが、結合＝０にした方がよい場合が、、
+            # 情報を吸い取った後、latestおよびmidは削除する
+            del peaks[latest_num:oldest_merged_num]
+            adjuster = -1
+        else:
+            adjuster = 0
+
+    return peaks
+
 
 def make_peak_with_skip(data_df_origin) -> dict[str, any]:
     """

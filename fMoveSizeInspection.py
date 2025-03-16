@@ -5,6 +5,7 @@ import fPeakInspection as p  # とりあえずの関数集
 import fGeneric as gene
 import fCommonFunction as cf
 import fPeakInspection as pi
+import classPeaks as cpk
 
 oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
@@ -352,19 +353,18 @@ def cal_move_size(dic_args):
     ts = "    "
     t6 = "      "
     # print(ts, "■変動幅検証関数")
-    fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
-    # 情報の取得
-    df_r = fixed_information['df_r']
-    peaks = fixed_information['peaks']
+    peaksclass = cpk.PeaksClass(dic_args['df_r'])
+    df_r = dic_args['df_r']
+    peaks = peaksclass.skipped_peaks
     # 状況に応じた、ピークポイントの指定  # 添え字は0=latest, 1=river, 2=turn, 3=flop3
 
     s = "   "
-    print(s, "<通常ピークス　MoveInspectionの抵抗線探索用>")
-    print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
-    print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
-    print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
-    print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
-    print(s, "flop2", pi.delete_peaks_information_for_print(peaks[4]))
+    # print(s, "<通常ピークス　MoveInspectionの抵抗線探索用>")
+    # print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
+    # print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
+    # print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
+    # print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
+    # print(s, "flop2", pi.delete_peaks_information_for_print(peaks[4]))
     # ■データフレームの状態で、サイズ感を色々求める
     filtered_df = df_r[:48]  # 直近3時間の場合、12×３ 36
     sorted_df = filtered_df.sort_values(by='body_abs', ascending=False)
@@ -467,20 +467,13 @@ def cal_move_size(dic_args):
             # print(t6, "@@最高ではないprice(", base_price, ")")
 
     # ■直近のピークが、抵抗線として機能しているか
-    skipped_peaks = p.change_peaks_with_hard_skip(peaks)
+    # skipped_peaks = p.change_peaks_with_hard_skip(peaks)
+    skipped_peaks = peaksclass.skipped_peaks
     same_price_range = max_min_gap * 0.033  # 直近の動きの3割程度
     same_price_range = gene.cal_at_least(0.020, same_price_range)
     same_price_info = make_same_price_list_from_target_price(base_price, latest_direction, skipped_peaks, same_price_range, True)
     same_price_list = same_price_info['same_price_list']
     strength_info = same_price_info['strength_info']
-    # print("SimpleTurnの解析", same_price_range)
-    # print(same_price_list)
-    print(s, "<SKIP後　対象 MoveInspectionの抵抗線探索用>")
-    print(s, "Latest", pi.delete_peaks_information_for_print(peaks[0]))
-    print(s, "river ", pi.delete_peaks_information_for_print(peaks[1]))
-    print(s, "turn", pi.delete_peaks_information_for_print(peaks[2]))
-    print(s, "flop3", pi.delete_peaks_information_for_print(peaks[3]))
-    print(s, "flop2", pi.delete_peaks_information_for_print(peaks[4]))
     print("      抵抗線とみる閾値", same_price_range, "範囲", base_price, "～", )
     print("      シンプルターンの抵抗線の値", len(same_price_list), strength_info['line_strength'])
     gene.print_arr(same_price_list, 7)

@@ -20,6 +20,7 @@ import fCrossMoveInspection as cm
 import fFlagInspection as fi
 import fFlagInspection_AnotherFoot as fia
 import fSimpleTurnInspection as sti
+import classPeaks as cpk
 
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
@@ -415,6 +416,31 @@ oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの�
 #
 #     return flag_and_orders
 
+def new_analysis(df_r):
+    """
+    クラスをたくさん用いがケース
+    """
+    print("■■■■調査開始■■■■")
+
+    #
+    flag_and_orders = {
+        "take_position_flag": False,
+        "exe_orders": [],  # 本番用（本番運用では必須）
+    }
+
+    # peaksの算出
+    peaksclass = cpk.PeaksClass(df_r)
+    print("解析")
+    mountain_result = peaksclass.cal_big_mountain()
+
+    if mountain_result['take_position_flag']:
+        flag_and_orders["take_position_flag"] = True
+        flag_and_orders["exe_orders"] = mountain_result['exe_orders']
+        # 代表プライオリティの追加
+        max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+        flag_and_orders['max_priority'] = max_priority
+
+    return flag_and_orders
 
 def normal_state_analysis(df_r):
     """

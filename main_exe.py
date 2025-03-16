@@ -262,7 +262,7 @@ def mode1():
     # ■■■■オーダー
     time_hour = gl_now.hour  # 現在時刻の「時」のみを取得
     time_min = gl_now.minute  # 現在時刻の「分」のみを取得
-    inspection_result_dic = am.normal_state_analysis(gl_data5r_df)  # 警告回避用
+    inspection_result_dic = am.new_analysis(gl_data5r_df)  # 警告回避用
     # if 2 <= time_hour <= 7:
     #     # 深夜帯(6～7時はループで落とされるが念のため）⇒レンジになりがちのため、突破系は信頼度落とす
     #     inspection_result_dic = am.normal_state_analysis(gl_data5r_df)
