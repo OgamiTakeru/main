@@ -266,7 +266,7 @@ class order_information:
         # (9)オーダーのLCを調整する（テスト中。過去の結果によって調子を変える）
         lc_tuning_message = self.lc_tuning_by_history()
         if lc_tuning_message:
-            tk.line_send(lc_tuning_message)
+            tk.line_send("過去のオーダーの勝敗履歴@classPosition, ", lc_tuning_message)
         else:
             print("からです", lc_tuning_message)
 

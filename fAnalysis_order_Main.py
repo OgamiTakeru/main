@@ -429,9 +429,10 @@ def new_analysis(df_r):
     }
 
     # peaksの算出
-    peaksclass = cpk.PeaksClass(df_r)
+    peaks_class = cpk.PeaksClass(df_r)
     print("解析")
-    mountain_result = peaksclass.cal_big_mountain()
+    # mountain_result = peaks_class.cal_big_mountain()
+    mountain_result = sti.cal_big_mountain(peaks_class)
 
     if mountain_result['take_position_flag']:
         flag_and_orders["take_position_flag"] = True
@@ -439,6 +440,7 @@ def new_analysis(df_r):
         # 代表プライオリティの追加
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority
+        flag_and_orders['for_inspection_dic'] = {}
 
     return flag_and_orders
 

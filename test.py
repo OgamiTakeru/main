@@ -588,7 +588,7 @@ def main():
             else:
                 # ★★★ 解析を呼び出す★★★★★
                 print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/", len(gl_inspection_base_df), "中")
-                analysis_result = im.for_inspection_analysis_warp_up_and_make_order(analysis_df)  # 検証専用コード
+                analysis_result = im.new_analysis(analysis_df)  # 検証専用コード
                 # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
                 if not analysis_result['take_position_flag']:
                     # オーダー判定なしの場合、次のループへ（5秒後）
@@ -617,6 +617,7 @@ def main():
                     for i_order in range(len(analysis_result['exe_orders'])):
                         # print(analysis_result['exe_orders'][i_order])
                         analysis_result['exe_orders'][i_order]['order_time'] = order_time  # order_time追加（本番marketだとない）
+                        gene.print_json(analysis_result)
                         gl_classes.append(Order(analysis_result['exe_orders'][i_order],
                                                 analysis_result['for_inspection_dic']))  # 【配列追加】インスタンス生成し、オーダーと検証用データを渡す。
                         # 結果表示用の情報を作成
@@ -674,10 +675,10 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
-gl_exist_data = True
-gl_jp_time = datetime.datetime(2022, 11, 28, 10, 00, 0)  # TOの時刻
+gl_exist_data = False
+gl_jp_time = datetime.datetime(2025, 3, 14, 19, 40, 0)  # TOの時刻
 gl_haba = "M5"
-gl_m5_count = 5000
+gl_m5_count = 3000
 gl_m5_loop = 1
 memo = ("順方向マージン0.016（元0.035)、検索グリッド0.015(元0.027)#")
 
@@ -700,6 +701,9 @@ main()  # 解析＋検証を実行し、gl_results_listに結果を蓄積する
 # ■結果処理
 # 検証内容をデータフレームに変換
 print(gl_results_list)
+if len(gl_results_list) == 0:
+    print("結果無し（０件）")
+    exit()
 result_df = pd.DataFrame(gl_results_list)  # 結果の辞書配列をデータフレームに変換
 # 解析に使いそうな情報をつけてしまう（オプショナルでなくてもいいかも）
 result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 else 1)  # プラスかマイナスかのカウント用

@@ -19,53 +19,6 @@ import making as ins
 import fResistanceLineInspection as ri
 
 
-def order_line_send(class_order_arr, add_info):
-    """
-    検証し、条件達成でオーダー発行。クラスへのオーダー作成に関するアクセスはこの関数からのみ行う。
-    :param class_order_arr: 対象のクラスと、そこへの注文情報
-    :param add_info: その他の情報（今は負け傾向の強さ）
-    :return:
-    """
-    global gl_trade_num
-
-    gl_trade_num = gl_trade_num + 1
-    o_memo = ""
-
-    for i in range(len(class_order_arr)):
-        # 変数に入れ替えする
-
-        class_order_pair = class_order_arr[i]
-        info = class_order_pair
-        target_class = class_order_pair['target_class']
-        # ■通常オーダー(通常部）発行
-        price = round(info['base_price'] + info['margin'], 3)  # marginの方向は調整済
-
-        # オーダーを発行する（即時判断含める）
-        if target_class.order_permission:
-            # 送信用
-            o = target_class.plan
-            memo_each = "【" + target_class.name + "】:\n" + str(price) \
-                        + "(" + str(round(info['base_price'], 3)) + "+" + str(info['margin']) + "),\n tp:" \
-                        + str(o['tp_price']) + "-lc:" + str(o['lc_price']) \
-                        + "\n(" + str(o['tp_range']) + "-" + str(o['lc_range']) + ")," \
-                        + str(o['units']) + str(round(o['cascade_unit'] * 0.1, 3))
-            o_memo = o_memo + memo_each + '\n'
-        else:
-            o_memo = "OrderPermissionFalse"
-
-    # 送信は一回だけにしておく。
-    tk.line_send("■折返Position！", gl_live, gl_trade_num, "回目(", datetime.datetime.now().replace(microsecond=0), ")",
-                 "トリガー:", info['trigger'], "指定価格", price, "情報:", info['memo'], ",オーダー:", '\n', o_memo,
-                 '\n', "初回時間", gl_first_time, "その他情報⇒", "WL:", add_info['wl_info'])
-    # テスト用
-    # peak_information = p.peaks_collect(gl_data5r_df)
-    # tops = p.horizon_line_detect(peak_information['tops'])
-    # bottoms = p.horizon_line_detect(peak_information['bottoms'])
-    # tk.line_send("【TOPS】", tops['ave'], "\n", "【BOTTOMS】", bottoms['ave'], "\n", "【TOPS_info】", tops['info'], "【bottomS_info】", bottoms['info'])
-    peak_inspection = p.inspection_test(gl_data5r_df)
-    tk.line_send(peak_inspection)
-
-
 def how_to_new_order_judge(inspection_result_dic):
     """
     新規のオーダーを、現在残存しているオーダーやポジションに上書きするかを判定する
