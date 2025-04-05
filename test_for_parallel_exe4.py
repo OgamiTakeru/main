@@ -702,7 +702,7 @@ result_df = pd.DataFrame(gl_results_list)  # 結果の辞書配列をデータ�
 result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 else 1)  # プラスかマイナスかのカウント用
 result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # 文字列の時刻をdatatimeに変換したもの
 result_df['Hour'] = result_df['order_time_datetime'].dt.hour
-result_df['name_only'] = result_df['name'].str.split('_').str[0]
+result_df['name_only'] = result_df['name'].apply(lambda x: x[:-5] if isinstance(x, str) and len(x) > 5 else x)
 result_df['group'] = (result_df['pl_per_units'] // 0.01) * 0.01
 absolute_mean = result_df['units'].abs().mean()
 # 保存

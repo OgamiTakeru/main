@@ -21,6 +21,8 @@ class order_information:
     exist_alive_class = False  # 生きているクラスがあるかどうか（ある場合に限り、ローソクデータの取得を行いたいため）
     latest_df = None  # 直近の解析用のデータを持っておく（LcChangeFromCnadleで利用）
     latest_df_get_time = datetime.datetime.now().replace(microsecond=0) - timedelta(minutes=1)
+    add_margin = 0.02  # CandleLcChangeで、余裕を見る分。初期は０だったが、マイナスを多くしても維持したい・・・！
+
     # 連続して取らないように、最後に取得したタイミングを抑える（ただし、オーダー即取得の場合にデータが取れないと困るので、１分前を入れておく）
     # ↓直前の情報を取得しておく
     before_latest_plu = 0
@@ -264,11 +266,11 @@ class order_information:
             self.counter_order_peace = plan['counter_order']
 
         # (9)オーダーのLCを調整する（テスト中。過去の結果によって調子を変える）
-        lc_tuning_message = self.lc_tuning_by_history()
-        if lc_tuning_message:
-            tk.line_send("過去のオーダーの勝敗履歴@classPosition, ", lc_tuning_message)
-        else:
-            print("からです", lc_tuning_message)
+        # lc_tuning_message = self.lc_tuning_by_history()
+        # if lc_tuning_message:
+        #     tk.line_send("過去のオーダーの勝敗履歴@classPosition, ", lc_tuning_message)
+        # else:
+        #     print("からです", lc_tuning_message)
 
         # (Final)オーダーを発行する
         if self.order_permission:
@@ -522,7 +524,6 @@ class order_information:
             price = res_json['orderFillTransaction']['tradeReduced']['price']
             self.send_line("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL, "price", price)
 
-
     def updateWinLoseTime(self, new_pl):
         """
         最新の勝ち負け情報（PLu)を渡される。
@@ -768,10 +769,12 @@ class order_information:
         # 変化による情報（勝ち負けの各最大値、継続時間等の取得）
         self.updateWinLoseTime(trade_latest['PLu'])  # PLU(realizePL / Unit)の推移を記録する
         # ひっかけるようjなマイナス値を検出し、早期のロスカットを行う
-        self.lc_change_less_minus()
+        # self.lc_change_less_minus()
         # LCの変更を検討する(プラス域にいった場合のTP底上げ≒トレールに近い）
         self.lc_change()
-        self.lc_change_from_candle()
+        if self.lc_change_num != 0:
+            # LC_Changeが執行されている場合は、Candleも有効にする
+            self.lc_change_from_candle()
 
     def lc_change_less_minus(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
@@ -825,7 +828,6 @@ class order_information:
             #                  "予定価格", self.plan['price'])
             #     break
 
-
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
         ロスカット底上げを実施する。セルフとレールに近い
@@ -838,14 +840,13 @@ class order_information:
         :return:         print(" ロスカ変更関数", self.lc_change_dic, self.t_pl_u,self.t_state)
         """
         # print("   LC＿Change実行関数", self.name, self.t_pl_u, self.t_time_past_sec, len(self.lc_change_dic), self.t_state, self.lc_change_from_candle_lc_price)
-
         if len(self.lc_change_dic) == 0 or self.t_state != "OPEN":  # 足数×〇分足×秒
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
             return 0
 
         if self.lc_change_from_candle_lc_price != 0:
+            # print("既にキャンドルｌｃ変更有のため、通常ｌｃ無し", self.lc_change_from_candle_lc_price)
             pass
-            # print("既にキャンドルｌｃ変更有のため、通常ｌｃ無し",self.lc_change_from_candle_lc_price)
 
         for i, item in enumerate(self.lc_change_dic):
             # コードの１行を短くするため、置きかておく
@@ -900,6 +901,8 @@ class order_information:
             # print("       lc_change_candleの実行あり", self.t_state, self.t_pl_u, self.t_time_past_sec)
             pass
 
+        # ★★★
+
         # LCChangeの実行部分
         # 定期的にデータフレームを取得する部分（引数で渡してもいいが、この関数で完結したかった）
         gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
@@ -933,10 +936,10 @@ class order_information:
 
         if self.plan['direction']>0:
             # 買い方向の場合、ひとつ前のローソクのLowの値をLC価格に
-            lc_price_temp = float(self.latest_df.iloc[-2]['low'])
+            lc_price_temp = float(self.latest_df.iloc[-2]['low']) - order_information.add_margin
         else:
             # 売り方向の場合、ひとつ前のローソクのHighの値をLC価格に
-            lc_price_temp = float(self.latest_df.iloc[-2]['high'])
+            lc_price_temp = float(self.latest_df.iloc[-2]['high']) + order_information.add_margin
 
         # print("対象となるLC基準", self.latest_df.iloc[-2]['time_jp'], lc_price_temp)
 
@@ -966,7 +969,7 @@ class order_information:
             print("range換算で大きすぎる・・・？", lc_ensure_range)
 
         # LCチェンジ執行
-        self.lc_change_done = True  # このクラス自体にLCChangeを実行した後をつけておく（各LCChange条件ではなく）
+        self.lc_change_candle_done = True  # このクラス自体にLCChangeを実行した後をつけておく（各LCChange条件ではなく）
         new_lc_price = round(lc_price_temp, 3)
         data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
         res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行

@@ -86,7 +86,7 @@ def how_to_new_order_judge(inspection_result_dic):
             how_to_new_order_str = "cancel"
         elif classes_info['max_priority_order'] == inspection_result_dic['max_priority']:
             print(" 既存オーダーが、新規同等の重要度のため、取り消さず今回のオーダーを追加する")
-            how_to_new_order_str = "add"
+            how_to_new_order_str = "cancel"
         else:
             print("既存オーダーが、新規より重要度が低いため、既存オーダーを削除し、新規オーダーを入れる")
             how_to_new_order_str = "replace"
@@ -130,7 +130,7 @@ def mode1_order_control(inspection_result_dic):
     # ■注文を実行する(ひとつづつ実行し、ひとつづつLINEを送信する）
     gl_trade_num += 1
     line_send = ""  # LINE送信用の注文結果の情報
-    # tk.line_send("新規オーダー発生（新規を追加、または置換）")  # ★★いつかコメントアウト　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　き
+    # tk.line_send("新規オーダー発生（新規を追加、または置換）")  # ★★いつかコメントアウト　　　　　　　　　　　　　　　　　　　　　　　
 
     print("  新規オーダー数", len(inspection_result_dic['exe_orders']))
     # テスト表示用（クラス上書きがうまくいくかの確認用。現在のクラスの状態を表示しておく）

@@ -20,6 +20,7 @@ class PeaksClass:
     peaks_original = []
     skipped_peaks = []
     latest_resistance_line = {}  # Nullか、情報が入っているかのどちらか（Null＝抵抗線ではない）
+    peak_strength = 0
     # 動きの数値化された情報
     is_big_move = False
 
@@ -402,7 +403,7 @@ class PeaksClass:
 
     def cal_move_size(self):
         # ■データフレームの状態で、サイズ感を色々求める
-        filtered_df = PeaksClass.df_r_original[:60]  # 直近4時間の場合、12×4 48
+        filtered_df = PeaksClass.df_r_original[:65]  # 直近4時間の場合、12×4 48
         sorted_df = filtered_df.sort_values(by='body_abs', ascending=False)
         max_high = sorted_df["inner_high"].max()
         min_low = sorted_df['inner_low'].min()
@@ -622,6 +623,30 @@ class PeaksClass:
     #         "exe_orders": exe_orders
     #     }
 
+def judge_peak_is_belong_peak_group(peaks, target_peak):
+    """
+    与えられたピークが、与えられたpeaksの中で最大（または最小）といえるかをＢｏｏｌｅａｎで返却する
+    """
+    depend_judge_range = 0.025
+    ans = False
+
+    max_index, max_peak = max(enumerate(peaks), key=lambda x: x[1]["peak"])
+    min_index, min_peak = min(enumerate(peaks), key=lambda x: x[1]["peak"])
+
+    if target_peak['direction'] == 1:
+        if max_peak['peak'] - depend_judge_range <= target_peak['peak'] <= max_peak['peak'] + depend_judge_range:
+            print("最大群")
+            ans = True
+        else:
+            print("最大群ではない")
+    else:
+        if min_peak['peak'] - depend_judge_range <= target_peak['peak'] <= min_peak['peak'] + depend_judge_range:
+            print("最小群")
+            ans = True
+        else:
+            print("最小群ではない")
+
+    return ans
 
 def check_large_body_in_peak(block_ans):
     """
@@ -679,6 +704,14 @@ def check_large_body_in_peak(block_ans):
         "highest": sorted_df_by_body_size['high'].max(),
         "lowest": sorted_df_by_body_size['low'].min()
     }
+
+def peaks_information(peaks):
+    """
+    Peakが渡されると、色々な情報を計算してくれる
+    渡されたＰｅａｋｓでの最大値、最小値
+
+    """
+
 
 def print_peaks():
     """

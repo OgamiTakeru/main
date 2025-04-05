@@ -84,9 +84,9 @@ class OrderCreateClass:
             }
         }
         """
-
         self.order_base = order_json  # 受け取る際の簡易的な情報（オーダーキック用）
         self.finalized_order = {}  # 最終的にAPIに渡される部分
+        self.finalized_order_without_lc_change = {}
 
         if OrderCreateClass.oa is None:
             print("OrderCreateClassで新規Oaクラスの生成を実施（初回のみのはず）")
@@ -122,11 +122,23 @@ class OrderCreateClass:
         # オーダーをファイナライズする(finalizedのオーダーは別の変数に入れる）
         self.finalized_order = self.order_finalize()
 
-        # 解析用のデータを取得する（とりあえず）
+        # 解析用のデータを取得する（とりあえずないと途中でエラーになるので）
         self.finalized_order['for_inspection_dic'] = {}
 
-        # LC_Changeを付与する(finalizedに直接追加）
-        self.add_lc_change_normal()
+        # LC_Changeを付与する 検証環境の都合で、必須。(finalizedに直接追加）
+        if "lc_change_type" not in order_json:
+            # typeしていない場合はノーマルを追加
+            self.add_lc_change_normal()
+        else:
+            if order_json['lc_change_type'] == 1:
+                self.add_lc_change_normal()
+            else:
+                # 少し狭めのもの
+                self.add_lc_change_safety()
+
+        # 表示用
+        self.finalized_order_without_lc_change = copy.deepcopy(self.finalized_order)
+        self.finalized_order_without_lc_change.pop("lc_change", None)  # キーがなければ None を返す
 
     def get_now_mid_price(self):
         """
@@ -170,9 +182,10 @@ class OrderCreateClass:
             # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
             # 2022-2023は 0.05トリガーにすると、マイナスになる！！
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.023, "lc_ensure_range": 0.014},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.03, "lc_ensure_range": 0.006},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
-            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.02},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
@@ -180,11 +193,11 @@ class OrderCreateClass:
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
         ]
 
     def add_counter_order(self, finalized_counter_order):
@@ -393,8 +406,8 @@ def cal_lc_price_from_line_and_margin(line_price, margin, expected_direction):
     付与が、148, 0.06 , -1　の場合、
     148 + 0.06 = 148.06がLC値になる
     """
-    print(line_price)
-    print(margin)
+    # print(line_price)
+    # print(margin)
     if expected_direction == 1:
         ans = line_price - margin
     else:

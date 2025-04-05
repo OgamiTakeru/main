@@ -675,21 +675,23 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
-gl_exist_data = False
+gl_exist_data = True
 gl_jp_time = datetime.datetime(2025, 3, 14, 19, 40, 0)  # TOの時刻
 gl_haba = "M5"
-gl_m5_count = 3000
+gl_m5_count = 500
 gl_m5_loop = 1
-memo = ("順方向マージン0.016（元0.035)、検索グリッド0.015(元0.027)#")
+memo = "大量"
 
 # gl_exist_date = Trueの場合の読み込みファイル
 # ■■■メイン（5分足や30分足）
-gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
+gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/202503_m5_df.csv'  # 大量データ(25)5分
+# gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv'  # 大量データ(23_24)5分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv'  # 大量データ(22_23)5分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/m30_5000行分.csv'  # 30分足大量データ(22_24)5分
 # gl_main_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_m5.csv'  # 大量データ5分(21-22)
 # ■■■検証用5秒足
-gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
+gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/202503_s5_df.csv'  # 大量データ(25)5秒
+# gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv'  # 大量データ(23_24)5秒
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv'  # 大量データ(22_23)5秒
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/s5_m30の5000行分.csv'  # 30分足大量データ(22_24)5秒
 # gl_s5_csv_path = 'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量21_22_s5.csv'  # 大量データ5秒（21_22)
@@ -709,7 +711,7 @@ result_df = pd.DataFrame(gl_results_list)  # 結果の辞書配列をデータ�
 result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 else 1)  # プラスかマイナスかのカウント用
 result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # 文字列の時刻をdatatimeに変換したもの
 result_df['Hour'] = result_df['order_time_datetime'].dt.hour
-result_df['name_only'] = result_df['name'].str.split('_').str[0]
+result_df['name_only'] = result_df['name'].apply(lambda x: x[:-5] if isinstance(x, str) and len(x) > 5 else x)  # 時間削除
 result_df['group'] = (result_df['pl_per_units'] // 0.01) * 0.01
 absolute_mean = result_df['units'].abs().mean()
 # 保存
