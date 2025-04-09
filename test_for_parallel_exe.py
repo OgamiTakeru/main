@@ -680,7 +680,8 @@ gl_jp_time = datetime.datetime(2025, 3, 14, 19, 40, 0)  # TOの時刻
 gl_haba = "M5"
 gl_m5_count = 3000
 gl_m5_loop = 1
-memo = "大量２３－２４"
+memo = "追加オーダー0.04 lc0.025 Margin小さめ LCChange修正"
+memo = "大量23_24" + memo
 
 # gl_exist_date = Trueの場合の読み込みファイル
 # ■■■メイン（5分足や30分足）

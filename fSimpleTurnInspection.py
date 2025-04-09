@@ -279,10 +279,10 @@ def cal_big_mountain(peaks_class):
         # print(peaks_class.df_r_original.iloc[1])
         print("gapはこれです", gap, "target_price:", target_price, "deci_price:", peaks_class.df_r_original.iloc[1]['close'])
         base_order_dic = {
-            "target": 0.02,
+            "target": 0.025,
             "type": "STOP",
             "expected_direction": peaks[0]['direction'],
-            "tp": 0.20,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
+            "tp": 0.50,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
             "lc": OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03, peaks[0]['direction']),  # 0.06,
             # "lc": 0.15,
             # "lc": 0.04,
@@ -306,33 +306,19 @@ def cal_big_mountain(peaks_class):
             base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成
             gene.print_json(base_order_class.finalized_order_without_lc_change)  # 表示
             exe_orders.append(base_order_class.finalized_order)
+
             # 追加オーダー　：　少し下から用（Break方向）
             print("追加オーダー")
             peaks = peaks_class.peaks_original
             # Breakしない方向用
-            # base_order_dic = {
-            #     "target": OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.01,
-            #                                                         peaks[0]['direction']),
-            #     "type": "LIMIT",
-            #     "expected_direction": peaks[0]['direction'],
-            #     "tp": 0.20,
-            #     # "lc": OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03, peaks[0]['direction']),  # 0.06,
-            #     "lc": 0.05,
-            #     'priority': 3,
-            #     "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
-            #     "decision_price": peaks_class.df_r_original.iloc[1]['close'],
-            #     "order_timeout_min": 35,
-            #     "name": "追加オーダー"
-            # }
-            # break方向の場合
             base_order_dic = {
-                "target": OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.01,
+                "target": OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03,
                                                                     peaks[0]['direction']),
-                "type": "STOP",
-                "expected_direction": peaks[0]['direction'] * -1,
-                "tp": 0.20,
+                "type": "LIMIT",
+                "expected_direction": peaks[0]['direction'],
+                "tp": 0.50,
                 # "lc": OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03, peaks[0]['direction']),  # 0.06,
-                "lc": 0.03,
+                "lc": 0.025,
                 'priority': 3,
                 "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
                 "decision_price": peaks_class.df_r_original.iloc[1]['close'],
@@ -340,6 +326,23 @@ def cal_big_mountain(peaks_class):
                 "lc_change_type": 2,
                 "name": "追加オーダー"
             }
+            # break方向の場合
+            # base_order_dic = {
+            #     "target": OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.04,
+            #                                                         peaks[0]['direction']),
+            #     "type": "STOP",
+            #     # "expected_direction": peaks[0]['direction'] * -1,  # Break
+            #     "expected_direction": peaks[0]['direction'],  #
+            #     "tp": 0.20,
+            #     # "lc": OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03, peaks[0]['direction']),  # 0.06,
+            #     "lc": 0.03,
+            #     'priority': 3,
+            #     "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
+            #     "decision_price": peaks_class.df_r_original.iloc[1]['close'],
+            #     "order_timeout_min": 35,
+            #     "lc_change_type": 2,
+            #     "name": "追加オーダー"
+            # }
             base_order_class = OCreate.OrderCreateClass(base_order_dic)
             gene.print_json(base_order_class.finalized_order_without_lc_change)  # 表示
             exe_orders.append(base_order_class.finalized_order)

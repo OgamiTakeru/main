@@ -190,7 +190,7 @@ class OrderCreateClass:
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.23, "lc_ensure_range": 0.20},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
