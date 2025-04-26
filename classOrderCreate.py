@@ -89,7 +89,7 @@ class OrderCreateClass:
         self.finalized_order_without_lc_change = {}
 
         if OrderCreateClass.oa is None:
-            print("OrderCreateClassで新規Oaクラスの生成を実施（初回のみのはず）")
+            # print("OrderCreateClassで新規Oaクラスの生成を実施（初回のみのはず）")
             OrderCreateClass.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラス変数の必要あり？
         else:
             pass
@@ -132,6 +132,8 @@ class OrderCreateClass:
         else:
             if order_json['lc_change_type'] == 1:
                 self.add_lc_change_normal()
+            elif order_json['lc_change_type'] == 0:
+                self.add_lc_change_no_change()
             else:
                 # 少し狭めのもの
                 self.add_lc_change_safety()
@@ -153,6 +155,11 @@ class OrderCreateClass:
         else:
             price_dic = price_dic['data']
         return price_dic['mid']
+
+    def add_lc_change_no_change(self):
+        self.finalized_order['lc_change'] = [
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.5, "lc_ensure_range": 0.049},
+        ]
 
     def add_lc_change_safety(self):
         self.finalized_order['lc_change'] = [
@@ -182,9 +189,10 @@ class OrderCreateClass:
             # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
             # 2022-2023は 0.05トリガーにすると、マイナスになる！！
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.023, "lc_ensure_range": 0.014},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.03, "lc_ensure_range": 0.006},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.02},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.03, "lc_ensure_range": -0.040},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.03, "lc_ensure_range": 0.006},  # これ通常
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.043, "lc_ensure_range": 0.031},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},

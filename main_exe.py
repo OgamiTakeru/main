@@ -85,8 +85,11 @@ def how_to_new_order_judge(inspection_result_dic):
             tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority_order'], inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
             how_to_new_order_str = "cancel"
         elif classes_info['max_priority_order'] == inspection_result_dic['max_priority']:
-            print(" 既存オーダーが、新規同等の重要度のため、取り消さず今回のオーダーを追加する")
-            how_to_new_order_str = "cancel"
+            # print(" 既存オーダーが、新規同等の重要度のため、取り消さず今回のオーダーを追加する")
+            print(" 既存オーダーが、新規同等の重要度のため、既存をキャンセルし、改めてオーダーしなおす")
+            # print(" 既存オーダーが、新規同等の重要度のため、既存を生かし今回はキャンセル")
+            # how_to_new_order_str = "cancel"
+            how_to_new_order_str = "replace"
         else:
             print("既存オーダーが、新規より重要度が低いため、既存オーダーを削除し、新規オーダーを入れる")
             how_to_new_order_str = "replace"
@@ -171,9 +174,9 @@ def mode1_order_control(inspection_result_dic):
                                 "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
                                 ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
                                 ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
-                                "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
+                                "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
                                 ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
-                                "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 2)) + ")" + \
+                                "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
                                 ", OrderID:" + str(res_dic['order_id']) + \
                                 ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") " + "[システム]classNo:" + str(class_index) + ",\n"
                                 # "\n"

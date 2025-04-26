@@ -28,8 +28,8 @@ class order_information:
     before_latest_plu = 0
     before_latest_name = ""
     # ↓直前の情報の延長で、当面の情報を維持しておく
-    history_plus = []
-    history_names = []
+    history_plus_minus = [0]  # 空だと、過去のプラスマイナスを参照するときおかしなことになるので０を入れておく
+    history_names = ["0"]  # 上の理由と同様に数字を入れておく
 
     def __init__(self, name, oa, is_live):
         self.name = name  #
@@ -384,7 +384,7 @@ class order_information:
         # 直前の結果を保存しておく
         order_information.before_latest_plu = trade_latest['PLu']
         order_information.before_latest_name = self.name
-        order_information.history_plus.append(trade_latest['PLu'])
+        order_information.history_plus_minus.append(trade_latest['PLu'])
         order_information.history_names.append(self.name)
 
         # （２）LINE送信
@@ -983,17 +983,27 @@ class order_information:
                        "保証", lc_range, "約定価格", self.t_execution_price,
                        "予定価格", self.plan['price'])
 
-    def lc_tuning_by_history(self):
-        # 直近いくつかの結果をもとに、LCを調整する。
-        # 調子のいいときはLCを広くしたり、調子が悪いときはLCを小さくしたり。
+    def lc_tuning_by_history(self, new_tp):
+        """
+        検討中
+        呼びもとで過去１回分の結果を参照し、それが大きなLCだった場合は、この関数を呼ぶ。
+        この関数は、リスクをとってそのLCと同額をTPとする。（
+        """
 
         mes = "　"
+        # 過去一回の結果を参照する
+        latest_pl = self.history_plus_minus[-1]
+
+        # if abs(latest_pl) >= 0.06:
+        #     # 前回マイナスが設定値以上の場合、設定値のTPを確保する
+
+
         # 最終３個が全てマイナスの場合（直近の調子が悪い場合、、、）
-        if all(x < 0 for x in self.history_plus[-3:]):  # 最後の3つを取得し、すべて負か確認
+        if all(x < 0 for x in self.history_plus_minus[-3:]):  # 最後の3つを取得し、すべて負か確認
             mes = "最後の３つ全てが負の値"
 
         # 直近二つが、最低限のプラスの場合（次回は３ピップス利確等にする・・？）
-        if all(0 < x < 0.023 for x in self.history_plus[-2:]):  # 最後の3つを取得し、すべて負か確認
+        if all(0 < x < 0.023 for x in self.history_plus_minus[-2:]):  # 最後の3つを取得し、すべて負か確認
             mes = "直近２回が最低限プラス"
 
         return mes

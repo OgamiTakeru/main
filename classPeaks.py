@@ -21,6 +21,8 @@ class PeaksClass:
     skipped_peaks = []
     latest_resistance_line = {}  # Nullか、情報が入っているかのどちらか（Null＝抵抗線ではない）
     peak_strength = 0
+    latest_price = 0  # 現在価格（場合よっては最新価格）
+    latest_peak_price = 0  # 直近のピーク
     # 動きの数値化された情報
     is_big_move = False
 
@@ -49,8 +51,8 @@ class PeaksClass:
         self.peak_strength_border_second = 0.08  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
 
         # SkipPeaksの際の基準(SkipPeaks関数）
-        self.skip_gap_border = 0.045  # この値以下のGapをもつPeakは、問答無用でスキップ処理される
-        self.skip_gap_border_second = 0.05  # この値以下のGapを持つPeakは、重なり（ラップ）状況でスキップされる
+        self.skip_gap_border = 0.3 # 0.045  # この値以下のGapをもつPeakは、問答無用でスキップ処理される
+        self.skip_gap_border_second = 0.3 #  0.05  # この値以下のGapを持つPeakは、重なり（ラップ）状況でスキップされる
 
         # 急変動(fluctuation)を検知する基準の設定　cal_move_size関数
         self.recent_fluctuation_range = 0  # 指定ではなく、計算で算出される。直近N足分以内での最大変動幅（最高値ー最低値）round済み
@@ -62,26 +64,35 @@ class PeaksClass:
 
         # ■実処理
         if original_df.equals(PeaksClass.df_r_original):
-            print(" 既にPeaksに変換済みのデータフレームです")
+            # print("         [既にPeaksに変換済みのデータフレーム]")
             print(PeaksClass.peaks_original)
         else:
             # (1)ピークスの算出
             PeaksClass.df_r_original = original_df
+            # print("直近価格", PeaksClass.latest_price, original_df.iloc[0]['time_jp'])
             self.df_r = original_df[1:]  # df_rは先頭は省く（数秒分の足のため）
             self.df_r = self.df_r[:55]  # 直近4.5時間分(55足分)のデータフレームにする
             PeaksClass.peaks_original = self.make_peaks(self.df_r)  # 一番感度のいいPeaks。引数は書くとするなら。self.df_r。
-            PeaksClass.skipped_peaks = self.skip_peaks()
-            self.recalculation_peak_strength_for_peaks()
+            PeaksClass.skipped_peaks = self.skip_peaks()  # スキップピークの算出
+            self.recalculation_peak_strength_for_peaks()  # ピークストレングスの算出
+
+            # (2) ある程度よく使う値は変数に入れておく
+            PeaksClass.latest_price = original_df.iloc[0]['open']
+            PeaksClass.latest_peak_price = PeaksClass.peaks_original[0]['peak']
+            print("直近価格", PeaksClass.latest_price)
+            print("直近ピーク", PeaksClass.latest_peak_price)
+            # (3) 表示
             s = "   "
             print(s, "<SKIP前>", )
-            gene.print_arr(PeaksClass.peaks_original)
+            gene.print_arr(PeaksClass.peaks_original[:6])
             print("")
             print(s, "<SKIP後　対象>")
-            print(s, "Latest", PeaksClass.skipped_peaks[0])
-            print(s, "river ", PeaksClass.skipped_peaks[1])
-            print(s, "turn", PeaksClass.skipped_peaks[2])
-            print(s, "flop3", PeaksClass.skipped_peaks[3])
-            print(s, "flop2", PeaksClass.skipped_peaks[4])
+            gene.print_arr(PeaksClass.skipped_peaks[:6])
+            # print(s, "Latest", PeaksClass.skipped_peaks[0])
+            # print(s, "river ", PeaksClass.skipped_peaks[1])
+            # print(s, "turn", PeaksClass.skipped_peaks[2])
+            # print(s, "flop3", PeaksClass.skipped_peaks[3])
+            # print(s, "flop2", PeaksClass.skipped_peaks[4])
 
             # (2)move_sizeの算出
             self.cal_move_size()
@@ -249,9 +260,8 @@ class PeaksClass:
                 # 終了（ピーク数検索数が上限に到達した場合）
                 break
 
-            # ■（エラー対応）timeが０のものが最後に追加されるケース有。
+            # ■（エラー対応 基本必須）timeが０のものが最後に追加されるケース有。
             if this_peak['time'] == 0:
-                print("  time0のものあり")
                 break
 
             # ■■■■■■■■実処理の追加(前後関係の追加）
@@ -300,10 +310,10 @@ class PeaksClass:
             overlap_ratio = 0.6  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
             if item_latest_ratio <= overlap_ratio and item_oldest_ratio <= overlap_ratio:
                 # このアイテムのGapが小さい場合、直前も低くなる事に注意
-                print("", item['time'], latest_item['time'], oldest_merged_item['time'])
-                print("", item['gap'], latest_item['gap'], oldest_merged_item['gap'])
-                print("Peak現象判定(直近との比率）", item_latest_ratio,)
-                print("Peak現象判定(直古との比率）", item_oldest_ratio,)
+                # print("", item['time'], latest_item['time'], oldest_merged_item['time'])
+                # print("", item['gap'], latest_item['gap'], oldest_merged_item['gap'])
+                # print("Peak現象判定(直近との比率）", item_latest_ratio,)
+                # print("Peak現象判定(直古との比率）", item_oldest_ratio,)
                 item['peak_strength'] = self.ps_min  # これで元データ入れ替えられるんだ？！
                 peaks[i + 1]['peak_strength'] = self.ps_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
 
@@ -317,14 +327,14 @@ class PeaksClass:
         peaks = PeaksClass.peaks_original
         # peak が最大の要素を取得
         max_peak_element = max(peaks, key=lambda x: x["peak"])
-        print(max_peak_element)
+        # print("最大の要素", max_peak_element)
         # strength を 10 に変更
         max_peak_element["peak_strength"] = self.ps_most_max
 
-        # peak が最大の要素を取得
+        # peak が最小の要素を取得
         min_peak_element = min(peaks, key=lambda x: x["peak"])
         # strength を 10 に変更
-        print(min_peak_element)
+        # print("最小の要素", min_peak_element)
         min_peak_element["peak_strength"] = self.ps_most_max
 
     def skip_peaks(self):
@@ -365,7 +375,8 @@ class PeaksClass:
             vanish_latest_ratio = vanish_item['gap'] / latest_item['gap']
             vanish_oldest_ratio = vanish_item['gap'] / oldest_merged_item['gap']
             # 判定１
-            overlap_ratio = 0.7  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
+            overlap_ratio = 0.65  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
+            # print(s4, s4, latest_item['gap'], latest_item['gap'], oldest_merged_item['gap'], latest_item['time'],  vanish_item['time'],  vanish_item['gap'], vanish_latest_ratio, vanish_oldest_ratio)
             if vanish_latest_ratio >= overlap_ratio and vanish_oldest_ratio >= overlap_ratio:
                 # 両サイドが同じ程度のサイズ感の場合、レンジ感があるため、スキップはしない（ほとんどラップしている状態）
                 # print(s4, s4, "スキップ無し", latest_item['gap'], latest_item['gap'], oldest_merged_item['gap'])
@@ -373,8 +384,7 @@ class PeaksClass:
             # 判定２
             if vanish_item['gap'] <= self.skip_gap_border_second:
                 if vanish_latest_ratio <= overlap_ratio and vanish_oldest_ratio <= overlap_ratio:
-                    # print(s4, s4, "Gap小かつ微妙な折り返し", vanish_item['gap'], vanish_latest_ratio,
-                    #       vanish_oldest_ratio)
+                    # print(s4, s4, "Gap小かつ微妙な折り返し", vanish_item['gap'], vanish_latest_ratio,vanish_oldest_ratio, latest_item['time'])
                     is_skip = True
 
             # ■スキップ処理
@@ -408,9 +418,10 @@ class PeaksClass:
         max_high = sorted_df["inner_high"].max()
         min_low = sorted_df['inner_low'].min()
         self.recent_fluctuation_range = round(max_high - min_low, 3)
-        print("        検出範囲", filtered_df.iloc[0]["time_jp"], "-", filtered_df.iloc[-1]['time_jp'])
-        print("        最大値、最小値", max_high, min_low, "差分")
-        print("        最大値、最小値", max_high, min_low, "差分")
+        print("   ＜稼働範囲サマリ＞")
+        print("    検出範囲", filtered_df.iloc[0]["time_jp"], "-", filtered_df.iloc[-1]['time_jp'])
+        print("    最大値、最小値", max_high, min_low, "差分")
+        print("    最大値、最小値", max_high, min_low, "差分")
         # print(t6, "最大足(最高-最低),", sorted_df.iloc[0]['time_jp'], sorted_df.iloc[0]['highlow'])
         # print(t6, "最小足(最高-最低),", sorted_df.iloc[-1]['time_jp'], sorted_df.iloc[-1]['highlow'])
         # print(t6, "平均(最高-最低)", sorted_df['highlow'].mean())
