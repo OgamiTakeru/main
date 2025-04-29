@@ -260,11 +260,13 @@ class Oanda:
             if plan['ask_bid'] == 1 and plan['tp_price'] < plan['price']:
                 # 買い方向なのに、利確がターゲット価格より低い場合。（めんどいからテキトーに設定しちゃう）
                 print("★★★★★不適正　利確　自動で5pipsの利確幅が適応されます★★★★")
+                tk.line_send("★★★★★不適正ロスカ＠classOanda292行目付近")
                 data['order']['takeProfitOnFill']['price'] = str(
                     round(plan['price'] + (0.05 * plan['ask_bid']), 3))  # 利確
             elif plan['ask_bid'] == -1 and plan['tp_price'] > plan['price']:
                 # 売り方向なのに、利確がターゲット価格より高い場合。（めんどいからテキトーに設定しちゃう）
                 print("★★★★★不適正　利確　自動で5pipsの利確幅が適応されます★★★★")
+                tk.line_send("★★★★★不適正ロスカ＠classOanda292行目付近")
                 data['order']['takeProfitOnFill']['price'] = str(
                     round(plan['price'] + (0.05 * plan['ask_bid']), 3))  # 利確
             else:
@@ -289,11 +291,14 @@ class Oanda:
             if plan['ask_bid'] == 1 and plan['lc_price'] > plan['price']:
                 # 買い方向なのに、利確がターゲット価格より高い場合。（めんどいからテキトーに設定しちゃう）
                 print("★★★★★不適正　ロスカ　自動で5pipsのロスカ幅が適応されます★★★★")
+                tk.line_send("★★★★★不適正ロスカ＠classOanda292行目付近")
                 data['order']['stopLossOnFill']['price'] = str(
                     round(plan['price'] - (0.05 * plan['ask_bid']), 3))  # 利確
             elif plan['ask_bid'] == -1 and plan['lc_price'] < plan['price']:
                 # 売り方向なのに、利確がターゲット価格より低い場合。（めんどいからテキトーに設定しちゃう）
                 print("★★★★★不適正　ロスカ　自動で5pipsのロスカ幅が適応されます★★★★")
+                tk.line_send("★★★★★不適正ロスカ＠classOanda292行目付近")
+                tk.line_send("★★★★★不適正　ロスカ　自動で5pipsのロスカ幅が適応されます★★★★")
                 data['order']['stopLossOnFill']['price'] = str(
                     round(plan['price'] - (0.05 * plan['ask_bid']), 3))  # 利確
             else:

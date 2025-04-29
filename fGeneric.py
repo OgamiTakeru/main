@@ -144,7 +144,8 @@ def cal_str_time_gap(time_str_1, time_str_2):
 
     return {
         "gap_abs": gap_abs.seconds,
-        "gap": gap_abs.seconds * r
+        "gap": gap_abs.seconds * r,
+        "gap_abs_min": round(gap_abs.seconds / 60, 1)
     }
 
 

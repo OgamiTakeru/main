@@ -128,7 +128,7 @@ def mode1_order_control(inspection_result_dic):
         # 既存オーダー＆ポジションをクリアし、新規を追加（既存のオーダーが、新規よりも優先度が低い場合）
         classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
         print("既存のオーダーをキャンセルし、新規登録へ", how_to_new_order_str)
-        tk.line_send("既存オーダーをキャンセル")
+        tk.line_send("既存オーダーをキャンセルし、新規オーダーを入れます")
 
     # ■注文を実行する(ひとつづつ実行し、ひとつづつLINEを送信する）
     gl_trade_num += 1
