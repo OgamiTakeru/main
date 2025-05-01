@@ -587,14 +587,6 @@ def judge_flag_figure(peaks, latest_direction, num):
     if peaks[1]['count'] == 2 and peaks[2]['count'] >= 6:
         print(s7, "サイズ感の比率がおかしい")
         return return_result
-    # ②Latestの戻り具合を確認（latest=2だと、厳しい場合多い？）
-    # ⇒Lineとpeak[0]['peak'] の距離が近いかどうかの判定だが、ここではなく呼び出し元で、Gap値で判定する
-    # reverse_ratio = round(peaks[0]['gap']/peaks[1]['gap'], 3)
-    # if reverse_ratio <= 0.6:
-    #     print(s7, "latestの戻りが弱い。（もう少し戻ったら成立間際）", reverse_ratio, peaks[0]['gap'], peaks[1]['gap'])
-    #     return return_result
-    # else:
-    #     print(s7, "latestの戻りは", reverse_ratio)
 
     # 形状の詳細
     if latest_direction == 1:

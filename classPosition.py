@@ -983,30 +983,46 @@ class order_information:
                        "保証", lc_range, "約定価格", self.t_execution_price,
                        "予定価格", self.plan['price'])
 
-    def lc_tuning_by_history(self, new_tp):
+    def tuning_by_history(self):
         """
         検討中
         呼びもとで過去１回分の結果を参照し、それが大きなLCだった場合は、この関数を呼ぶ。
-        この関数は、リスクをとってそのLCと同額をTPとする。（
+        この関数は、リスクをとってそのLCと同額をTPとする。
         """
 
-        mes = "　"
-        # 過去一回の結果を参照する
-        latest_pl = self.history_plus_minus[-1]
+        tp_up_border_minus = -0.045  # これ以上のマイナスの場合、取り返しに行く。
+        # 過去の履歴を確認する
+        if len(order_information.history_plus_minus) == 1:
+            # 過去の履歴が一つだけの場合
+            latest_plu = order_information.history_plus_minus[-1]
+            print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", order_information.history_plus_minus[-1])
+        else:
+            # 過去の履歴が二つ以上の場合、直近の二つの合計で判断する
+            latest_plu = order_information.history_plus_minus[-1] + order_information.history_plus_minus[-2]  # 変数化(短縮用)
+            print("  直近の勝敗pips", latest_plu, "詳細(直近)", order_information.history_plus_minus[-1],
+                  order_information.history_plus_minus[-2])
+        # 最大でも現実的な10pips程度のTPに収める
+        if abs(latest_plu) >= 0.01:
+            latest_plu = 0.01
+        # 値を調整する
+        if latest_plu == 0:
+            print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
+            # 通常環境の場合
+            tp_range = 0.5
+            lc_change_type = 1
+        else:
+            if latest_plu <= tp_up_border_minus:
+                print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）", latest_plu * 0.8)
+                # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
+                tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
+                lc_change_type = 0  # LCchangeの設定なし
+            else:
+                # 直近がプラスの場合プラスの場合、普通。
+                print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）")
+                tp_range = 0.5
+                lc_change_type = 1  # LCchangeの設定なし
 
-        # if abs(latest_pl) >= 0.06:
-        #     # 前回マイナスが設定値以上の場合、設定値のTPを確保する
-
-
-        # 最終３個が全てマイナスの場合（直近の調子が悪い場合、、、）
-        if all(x < 0 for x in self.history_plus_minus[-3:]):  # 最後の3つを取得し、すべて負か確認
-            mes = "最後の３つ全てが負の値"
-
-        # 直近二つが、最低限のプラスの場合（次回は３ピップス利確等にする・・？）
-        if all(0 < x < 0.023 for x in self.history_plus_minus[-2:]):  # 最後の3つを取得し、すべて負か確認
-            mes = "直近２回が最低限プラス"
-
-        return mes
+        return {"tuned_tp_range": tp_range, "tuned_lc_change_type": lc_change_type}
 
 
 def error_end(info):

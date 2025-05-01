@@ -13,7 +13,7 @@ import fBlockInspection as fTurn
 
 
 class OrderCreateClass:
-    basic_unit = 1000
+    basic_unit = 10000
     oa = None
 
     def __init__(self, order_json):
@@ -191,10 +191,10 @@ class OrderCreateClass:
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.023, "lc_ensure_range": 0.014},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.03, "lc_ensure_range": -0.040},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.03, "lc_ensure_range": 0.006},  # これ通常
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.043, "lc_ensure_range": 0.031},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.043, "lc_ensure_range": 0.011},  # 元々 0.03
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
-            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},

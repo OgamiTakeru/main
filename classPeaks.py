@@ -15,7 +15,7 @@ import classOrderCreate as OCreate
 
 class PeaksClass:
     # 基本となるデータフレーム
-    df_r_original = None
+    df_r_original = None  # 直近の時刻が[0]となるデータフレーム。API取得のデータとは逆順
     # ピーク情報
     peaks_original = []
     skipped_peaks = []
@@ -72,6 +72,8 @@ class PeaksClass:
             # print("直近価格", PeaksClass.latest_price, original_df.iloc[0]['time_jp'])
             self.df_r = original_df[1:]  # df_rは先頭は省く（数秒分の足のため）
             self.df_r = self.df_r[:55]  # 直近4.5時間分(55足分)のデータフレームにする
+            print("API取得したデータ範囲　From", original_df.iloc[-1]['time_jp'], "to", original_df.iloc[0]['time_jp'])
+            print("調査範囲　From", self.df_r.iloc[-1]['time_jp'], "to", self.df_r.iloc[0]['time_jp'])
             PeaksClass.peaks_original = self.make_peaks(self.df_r)  # 一番感度のいいPeaks。引数は書くとするなら。self.df_r。
             PeaksClass.skipped_peaks = self.skip_peaks()  # スキップピークの算出
             self.recalculation_peak_strength_for_peaks()  # ピークストレングスの算出
@@ -85,6 +87,8 @@ class PeaksClass:
             s = "   "
             print(s, "<SKIP前>", )
             gene.print_arr(PeaksClass.peaks_original[:6])
+            print("   |")
+            gene.print_arr(PeaksClass.peaks_original[-2:])
             print("")
             print(s, "<SKIP後　対象>")
             gene.print_arr(PeaksClass.skipped_peaks[:6])
