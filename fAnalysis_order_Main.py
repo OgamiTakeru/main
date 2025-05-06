@@ -20,6 +20,7 @@ import fCrossMoveInspection as cm
 import fFlagInspection as fi
 import fFlagInspection_AnotherFoot as fia
 import fSimpleTurnInspection as sti
+import fSimpleTurnInspection_test as sti_t
 import classPeaks as cpk
 
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
@@ -438,6 +439,8 @@ def new_analysis(df_r):
         flag_and_orders["take_position_flag"] = True
         flag_and_orders["exe_orders"] = mountain_result['exe_orders']
         # 代表プライオリティの追加
+        print(flag_and_orders["exe_orders"])
+        gene.print_json(flag_and_orders["exe_orders"])
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority
         flag_and_orders['for_inspection_dic'] = {}
@@ -453,163 +456,42 @@ def new_analysis(df_r):
 
     return flag_and_orders
 
-# def normal_state_analysis(*args):
-#     """
-#     主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
-#     args[0]は必ずdf_rであることで、必須。
-#     args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
-#     引数
-#     "data": df_r ローソク情報(逆順[直近が上の方にある＝時間降順])のみ。
-#
-#     :return:
-#     　このリターンの値は、そのまま発注に使われる。
-#     　本番（main_exe)から呼ばれる場合と、検証(main_analysis)から呼ばれる場合では、返すべき値が異なることに注意。
-#     　本番環境は複数のオーダーが可能だが、検証は一つのオーダーのみしか受け付けられないため。
-#     　本番環境を行いながらでもテストができるように、辞書配列と辞書を同時に返却する
-#     　（辞書は基本的に辞書配列の[0]となる見込み）
-#     　返却値は以下の通り
-#       return{
-#             "take_position_flag": True or False　Trueの場合、オーダーが入る
-#             "exe_orders": オーダーの【配列】。複数オーダーが可能な本番環境用
-#             "exe_order": オーダーの辞書単品。単品オーダーのみ受付可能な検証環境用（基本、exe_orders[0]でOK？）
-#       }
-#     """
-#     # 返却値を設定しておく　（上書きされない限り、takePositionFlag=Falseのまま進み、返却される）
-#     flag_and_orders = {
-#         "take_position_flag": False,
-#         "exe_orders": [],  # 本番用（本番運用では必須）
-#         "exe_order": {},  # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
-#         'for_inspection_dic': {}
-#     }
-#     # 表示のインデント
-#     ts = " "
-#     s = "  "  # 2個分
-#     print(ts, "■■■■調査開始■■■■")
-#     # 関数が来た時の表示
-#     df_r = args[0]
-#     print(df_r.head(1))
-#     print(df_r.tail(1))
-#     # 各数字やデータを取得する
-#     fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
-#     peaks = fixed_information['peaks']
-#
-#     # ■■■■ チャートの形状の解析をもとにしたオーダー
-#     # ■各検証を実施し、その結果を保持する■
-#     print(s, "■フラッグ形状の調査")
-#     flag_orders_and_evidence = fi.main_flag({"df_r": df_r, "peaks": peaks})  # 調査(旧バージョン）
-#     print(s, "■突発の大変動のカウンター")
-#     simple_turn_orders_and_evidence = sti.main_simple_turn({"df_r": df_r, "peaks": peaks})
-#
-#
-#     # ■各結果からオーダーを生成する（＋検証用のデータfor_inspection_dicも）
-#     if flag_orders_and_evidence['take_position_flag']:
-#         print("オーダー登録（フラッグ）")
-#         flag_and_orders["take_position_flag"] = True
-#         flag_and_orders["exe_orders"] = flag_orders_and_evidence['exe_orders']
-#         flag_and_orders['for_inspection_dic'] = flag_orders_and_evidence['information']
-#         flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
-#         # 代表プライオリティの追加
-#         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
-#         flag_and_orders['max_priority'] = max_priority
-#     elif simple_turn_orders_and_evidence['take_position_flag']:
-#         print("オーダー登録（シンプル）")
-#         flag_and_orders["take_position_flag"] = True
-#         flag_and_orders["exe_orders"] = simple_turn_orders_and_evidence['exe_orders']
-#         # 代表プライオリティの追加
-#         max_priority = 2
-#         flag_and_orders['max_priority'] = max_priority
-#
-#     # ■　念のための表示
-#     print("検証後の確定オーダー")
-#     print(flag_and_orders)
-#
-#     # ■プライオリティの追加（オーダー上書き管理用）
-#     if len(flag_and_orders["exe_orders"]) >= 1:
-#         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
-#         flag_and_orders['max_priority'] = max_priority
-#         print(s, "max_priority", max_priority)
-#         # print(flag_and_orders)
-#
-#     return flag_and_orders
-#
-#
-# def calm_state_analysis(df_r):
-#     """
-#     主にExeから呼ばれ、ダブル関係の結果(このファイル内のbeforeとbreak)をまとめ、注文形式にして返却する関数
-#     引数
-#     "data": df_r ローソク情報(逆順[直近が上の方にある＝時間降順])のみ。
-#
-#     :return:
-#     　このリターンの値は、そのまま発注に使われる。
-#     　本番（main_exe)から呼ばれる場合と、検証(main_analysis)から呼ばれる場合では、返すべき値が異なることに注意。
-#     　本番環境は複数のオーダーが可能だが、検証は一つのオーダーのみしか受け付けられないため。
-#     　本番環境を行いながらでもテストができるように、辞書配列と辞書を同時に返却する
-#     　（辞書は基本的に辞書配列の[0]となる見込み）
-#     　返却値は以下の通り
-#       return{
-#             "take_position_flag": True or False　Trueの場合、オーダーが入る
-#             "exe_orders": オーダーの【配列】。複数オーダーが可能な本番環境用
-#             "exe_order": オーダーの辞書単品。単品オーダーのみ受付可能な検証環境用（基本、exe_orders[0]でOK？）
-#       }
-#     """
-#     # 返却値を設定しておく　（上書きされない限り、takePositionFlag=Falseのまま進み、返却される）
-#     flag_and_orders = {
-#         "take_position_flag": False,
-#         "exe_orders": [],  # 本番用（本番運用では必須）
-#         "exe_order": {}, # 検証用（CSV出力時。なお本番運用では不要だが、検証運用で任意。リストではなく辞書1つのみ）
-#         'for_inspection_dic': {}
-#     }
-#     # 表示のインデント
-#     ts = " "
-#     s = "  "  # 2個分
-#     print(ts, "■■■■調査開始■■■■")
-#     # 関数が来た時の表示
-#     print(df_r.head(1))
-#     print(df_r.tail(1))
-#     # 各数字やデータを取得する
-#     fixed_information = cf.information_fix({"df_r": df_r})  # 引数情報から、調査対象のデータフレームとPeaksを確保する
-#     peaks = fixed_information['peaks']
-#
-#     # ■■■■ チャートの形状の解析をもとにしたオーダー
-#     # ■各検証を実施し、その結果を保持する■
-#     print(s, "■フラッグ形状の調査")
-#     flag_orders_and_evidence = fi.main_flag_calm_state({"df_r": df_r, "peaks": peaks})  # 調査(旧バージョン）
-#
-#     # ■各結果からオーダーを生成する（＋検証用のデータfor_inspection_dicも）
-#     if flag_orders_and_evidence['take_position_flag']:
-#         flag_and_orders["take_position_flag"] = True
-#         flag_and_orders["exe_orders"] = flag_orders_and_evidence['exe_orders']
-#         flag_and_orders['for_inspection_dic'] = flag_orders_and_evidence['information']
-#         flag_and_orders['for_inspection_dic']['latest_count'] = peaks[0]['count']
-#         # 代表プライオリティの追加
-#         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
-#         flag_and_orders['max_priority'] = max_priority
-#
-#     print(flag_and_orders['take_position_flag'])
-#     gene.print_arr(flag_and_orders['exe_orders'])
-#
-#     # プライオリティの追加
-#     if len(flag_and_orders["exe_orders"]) >= 1:
-#         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
-#         flag_and_orders['max_priority'] = max_priority
-#         print(s, "max_priority", max_priority)
-#         # print(flag_and_orders)
-#
-#     # テスト
-#     if flag_and_orders['take_position_flag']:
-#         size_flag = ms.cal_move_size({"df_r": df_r, "peaks": peaks})
-#         if size_flag['big_move']:
-#             print(" 大きいサイズがあるためスキップ")
-#             flag_and_orders['take_position_flag'] = False
-#             return flag_and_orders
-#         if size_flag['range_flag']:
-#             # Trueの場合は通常通り
-#             # tk.line_send("直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
-#             print(s, "直近幅が小さいため、オーダーキャンセル", flag_and_orders["exe_orders"][0]['name'])
-#             flag_and_orders['take_position_flag'] = False
-#             flag_and_orders['for_inspection_dic']['narrow'] = True  # 検証用データに情報追加
-#         else:
-#             print(s, " 通常の動き(小さくない、という意味で）")
-#             flag_and_orders['for_inspection_dic']['narrow'] = False  # 検証用データに情報追加
-#             pass
-#     return flag_and_orders
+
+def new_analysis_test(df_r):
+    """
+    クラスをたくさん用いがケース
+    args[0]は必ずdf_rであることで、必須。
+    args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
+    """
+    print("■■■■調査開始■■■■")
+
+    #
+    flag_and_orders = {
+        "take_position_flag": False,
+        "exe_orders": [],  # 本番用（本番運用では必須）
+    }
+
+    # peaksの算出
+    peaks_class = cpk.PeaksClass(df_r)
+    mountain_result = sti_t.cal_big_mountain(peaks_class)  #
+
+    if mountain_result['take_position_flag']:
+        flag_and_orders["take_position_flag"] = True
+        flag_and_orders["exe_orders"] = mountain_result['exe_orders']
+        # 代表プライオリティの追加
+        print(flag_and_orders["exe_orders"])
+        gene.print_json(flag_and_orders["exe_orders"])
+        max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+        flag_and_orders['max_priority'] = max_priority
+        flag_and_orders['for_inspection_dic'] = {}
+
+    # break_short_inspection = sti.cal_short_time_break(peaks_class)
+    # if break_short_inspection['take_position_flag']:
+    #     flag_and_orders["take_position_flag"] = True
+    #     flag_and_orders["exe_orders"] = break_short_inspection['exe_orders']
+    #     # 代表プライオリティの追加
+    #     max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+    #     flag_and_orders['max_priority'] = max_priority
+    #     flag_and_orders['for_inspection_dic'] = {}
+
+    return flag_and_orders

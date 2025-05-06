@@ -1004,6 +1004,7 @@ class order_information:
         # 最大でも現実的な10pips程度のTPに収める
         if abs(latest_plu) >= 0.01:
             latest_plu = 0.01
+
         # 値を調整する
         if latest_plu == 0:
             print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
@@ -1016,9 +1017,10 @@ class order_information:
                 # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
                 tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
                 lc_change_type = 0  # LCchangeの設定なし
+                tk.line_send("取り返し調整発生")
             else:
                 # 直近がプラスの場合プラスの場合、普通。
-                print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）")
+                print("  ★前回プラスのため、通常TP設定")
                 tp_range = 0.5
                 lc_change_type = 1  # LCchangeの設定なし
 
