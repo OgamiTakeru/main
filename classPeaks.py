@@ -406,10 +406,10 @@ class PeaksClass:
                 continue
             else:
                 if vanish_item['count'] <= 2:
-                    if vanish_latest_ratio <= overlap_min_ratio:
+                    if vanish_latest_ratio <= overlap_min_ratio and vanish_oldest_ratio <= overlap_ratio:
                         # print("　latestに対して、Vanishが小さく、ラップが小さいほうがあるため、SKIP")
                         is_skip = True
-                    elif vanish_oldest_ratio <= overlap_min_ratio:
+                    elif vanish_oldest_ratio <= overlap_min_ratio and vanish_latest_ratio <= overlap_ratio:
                         # print("  oldestに対して、Vanishが小さく、ラップが小さい方があるため、SKIP")
                         is_skip = True
 
@@ -534,6 +534,7 @@ class PeaksClass:
         ・同一価格のリスト（時間内）
         """
         # skip = True
+        # ■■情報の設定
         if skip:
             # Skip Peakを利用する
             peaks = PeaksClass.skipped_peaks
@@ -545,12 +546,24 @@ class PeaksClass:
         target_price = target_peak['latest_body_peak_price']
         print("実行時引数 SKIP：", skip, " TargetNum:", target_num)
         print("ターゲットになるピーク@cp:", target_peak)
+
+        # ■■閾値の情報
         # Margin情報
         arrowed_range = self.recent_fluctuation_range * 0.04  # 最大変動幅の4パーセント程度
         # 山の情報
         mountain_foot_min = 60  # 山のすそ野の広さ（この値以上の山の裾野の広さを狙う）
         base_time = datetime.strptime(peaks[0]['time'], '%Y/%m/%d %H:%M:%S')
 
+        # ■■SamePriceListのリセット(繰り返し呼ばれた場合、.appendで追加だけされてしまう）
+        PeaksClass.same_price_list = []
+        PeaksClass.same_price_list_till_break = []
+        PeaksClass.same_price_list_inner = []
+        PeaksClass.same_price_list_outer = []
+        PeaksClass.result_not_same_price_list = []
+        PeaksClass.opposite_peaks = []
+        PeaksClass.break_peaks = []
+        PeaksClass.break_peaks_inner = []
+        PeaksClass.break_peaks_outer = []
         # ■■同一価格の探索
         break_num = 0  #
         same_price_num = 0
