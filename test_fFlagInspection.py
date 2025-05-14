@@ -476,7 +476,7 @@ def break_order(peaks, peaks_class, comment, same_price_list):
 
     # ★★履歴によるオーダー調整を実施する（TPを拡大する）★★★
     for_history_class = classPosition.order_information("test", "test", False)  # 履歴参照用
-    tuned_data = for_history_class.tuning_by_history()  # TuneされたTPやLCChangeを取得する
+    tuned_data = for_history_class.tuning_by_history_break()  # TuneされたTPやLCChangeを取得する
     tp_range = tuned_data['tuned_tp_range']
     lc_change_type = tuned_data['tuned_lc_change_type']
     print("TP設定", tp_range, "lcChange設定", lc_change_type)
@@ -511,7 +511,7 @@ def resistnce_order(peaks, peaks_class, comment, same_price_list):
 
     # ★★履歴によるオーダー調整を実施する（TPを拡大する）★★★
     for_history_class = classPosition.order_information("test", "test", False)  # 履歴参照用
-    tuned_data = for_history_class.tuning_by_history()  # TuneされたTPやLC.finalized_orderChangeを取得する
+    tuned_data = for_history_class.tuning_by_history_break()  # TuneされたTPやLC.finalized_orderChangeを取得する
     tp_range = tuned_data['tuned_tp_range']
     lc_change_type = tuned_data['tuned_lc_change_type']  #0 i no
     print("TP設定", tp_range, "lcChange設定", lc_change_type)

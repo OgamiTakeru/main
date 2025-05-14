@@ -338,6 +338,7 @@ def execute_position_finish(cur_class, cur_row, cur_row_index):
               cur_class.position_timeout_sec)
         # 本番では、膠着状態における解消も実施しているが、ここではいったん除外
         pl = (cur_row['close'] - cur_class.target_price) * cur_class.direction
+        pl = (cur_row['open'] - cur_class.target_price) * cur_class.direction
         cur_class.settlement_price = cur_row['close']  # ポジション解消価格（ここは暫定的にOpen価格
         cur_class.position_is_live = False
         cur_class.is_live = False
@@ -486,8 +487,6 @@ def get_data():
         print("検証時間の総取得期間は", start_s5_time, "-", end_s5_time, len(gl_s5_df), "行")
 
     else:
-
-
         # 5分足データを新規で取得
         euro_time_datetime = gl_jp_time - datetime.timedelta(hours=9)
         euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
@@ -680,8 +679,8 @@ gl_jp_time = datetime.datetime(2025, 3, 14, 19, 40, 0)  # TOの時刻
 gl_haba = "M5"
 gl_m5_count = 100
 gl_m5_loop = 1
-memo = " "
-memo = "少量24_25 すこしcchange変更" + memo
+memo = " LCchangeのパターン変更"
+memo = "少量24_25 " + memo
 
 # gl_exist_date = Trueの場合の読み込みファイル
 # ■■■メイン（5分足や30分足）
@@ -713,8 +712,19 @@ result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 
 result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # 文字列の時刻をdatatimeに変換したもの
 result_df['Hour'] = result_df['order_time_datetime'].dt.hour
 result_df['name_only'] = result_df['name'].apply(lambda x: x[:-5] if isinstance(x, str) and len(x) > 5 else x)  # 時間削除
+# 平均値等
 result_df['group'] = (result_df['pl_per_units'] // 0.01) * 0.01
 absolute_mean = result_df['units'].abs().mean()
+# name列を@で分割
+name_parts = result_df['name_only'].str.split('@', expand=True)
+# 分割後の列数に応じて動的にカラム名をつける
+name_parts.columns = [f"param_{i}" for i in range(name_parts.shape[1])]
+# nameから@以降を削除（パラメータのため）
+result_df['name'] = name_parts['param_0']
+# 元のDataFrameに残りの name_parts を結合（name_0 は除く）
+name_parts_rest = name_parts.drop(columns=['param_0'])
+result_df = pd.concat([result_df, name_parts_rest], axis=1)
+
 # 保存
 try:
     result_df.to_csv(tk.folder_path + gl_start_time_str + memo + '_main_analysis_ans.csv', index=False, encoding="utf-8")

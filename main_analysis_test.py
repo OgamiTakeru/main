@@ -74,8 +74,9 @@ def analysis_part(df_r):
     # print("最終（main_analysis)")
     # print(ans)
 
-    ans = im.new_analysis(df_r)
-    print(ans)
+    # ans = im.predict_analysis_test(df_r)
+    ans = im.analysis_predict_mountain(df_r)
+    # print(ans)
 
 
 
@@ -435,7 +436,7 @@ def main():
     print("maxPlus", fd_forview['max_plus'].sum(), "maxMinus", fd_forview['max_minus'].sum())
     print("realTP_Plus", fd_forview['tp_res'].sum(), "realLC_Minus", fd_forview['lc_res'].sum())
     # 回数
-    print("startTime", gl_start_time , "finTime", fin_time)
+    # print("startTime", gl_start_time , "finTime", fin_time)
     print("TakePositionFlag", len(fd_forview), "TakePosition", len(fd_forview[fd_forview["position"] == True]))
     print("tpTimes", len(fd_forview[fd_forview["tp"] == True]),"lcTimes", len(fd_forview[fd_forview["lc"] == True]))
     print("realAllPL",  round(fd_forview['pl'].sum(), 3),
@@ -464,7 +465,7 @@ gl_times = 1  # Count(最大5000件）を何セット取るか  大体2225×３�
 gl_use_now = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
 # gl_target_time = datetime.datetime(2025, 4, 30, 5, 0, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 gl_target_time = datetime.datetime(2025, 4, 30, 12, 55, 6)
-gl_target_time = datetime.datetime(2025, 5, 2, 17, 0, 6)
+gl_target_time = datetime.datetime(2025, 5, 14, 15, 30, 6)
 # gl_target_time = datetime.datetime(2024, 11, 13, 14, 20, 6)
 # ■■方法の指定
 gl_inspection_only = True  # Trueの場合、Inspectionのみの実行（検証等は実行せず）。検証は上記指定を先頭にし、古い時間方向へ調査していく。

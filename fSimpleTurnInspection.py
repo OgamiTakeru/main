@@ -15,7 +15,7 @@ import fCommonFunction as cf
 import fMoveSizeInspection as ms
 import fPeakInspection as pi
 import classPeaks as cpk
-from datetime import datetime
+from datetime import datetime, timedelta
 import classOrderCreate as OCreate
 import classPosition
 import bisect
@@ -69,7 +69,7 @@ def judge_flag_figure_new(peaks, same_price_list, direction):
     temp_peaks = [d['peak'] for d in opposite_peaks]
     max_peak = max(temp_peaks)
     min_peak = min(temp_peaks)
-    allowed_gap = (max_peak - min_peak) * 0.2  # 変動幅の20パーセント（惺窩君は18.4くらい）
+    allowed_gap = (max_peak - min_peak) * 0.4  # ★★元々0.2の時に勝率大# 変動幅の20パーセント（惺窩君は18.4くらい）
     print("変動幅の検討　最大", max_peak, min_peak, allowed_gap)
     # [検出１]近似線を下回るもの（上回るもの）データを算出
     below_trend_data = [
@@ -127,7 +127,7 @@ def judge_flag_figure_new(peaks, same_price_list, direction):
             print("  ▲フラッグ認定 近い割合:", ratio_near, "反対個数", len(opposite_peaks))
             is_flag = True
         else:
-            print("  ▲フラッグnot認定", ratio_near, "反対個数", len(opposite_peaks))
+            print("  ▲フラッグnot認定 (近似割合が0.7より下⇒", ratio_near, "反対個数が4個以上⇒", len(opposite_peaks))
     else:
         print(" 　　▲近似線の傾きが異なる 探索ピーク方向：", search_direction, slope)
 
@@ -156,6 +156,343 @@ def judge_flag_figure_new(peaks, same_price_list, direction):
     # plt.show()
 
     return {"is_flag": is_flag}
+
+
+# def cal_big_mountain(peaks_class):
+#     """
+#     args[0]は必ずpeaks_classであること。
+#     args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
+#
+#     直近のピーク（latest_peakはこれから伸びるPeakなので、直前のpeakは[1]の物を示す
+#     """
+#     # ■基本情報の取得
+#     take_position = False
+#     s = "    "
+#
+#     peaks = peaks_class.peaks_original
+#     # peaks = peaks_class.skipped_peaks
+#
+#     default_return_item = {
+#         "take_position_flag": take_position,
+#         "for_inspection_dic": {}
+#     }
+#
+#     # ■実行除外
+#     if peaks[0]['count'] != 2:
+#         print("  Latestカウントにより除外", peaks[0]['count'])
+#         return default_return_item
+#
+#     # ■■■実行
+#     # ■同一価格の調査を行う（BodyPeakと髭ピークの組み合わせ。ただしどちらかはBodyPeakとする）
+#     target_num = 1  # 以下のループで「自分以外」を定義するため、変数に入れておく(同一方向の配列に対して）
+#     target_peak = peaks[target_num]
+#     base_time = datetime.strptime(target_peak['time'], '%Y/%m/%d %H:%M:%S')
+#     print("ターゲットになるピーク:", target_peak)
+#     comment = ""  # 名前につくコメント
+#
+#     # 変動が少ないところはスキップ
+#     if target_peak['gap'] <= 0.06:
+#         print("targetのGapが少なすぎる", target_peak['gap'])
+#         return default_return_item
+#
+#     arrowed_range = peaks_class.recent_fluctuation_range * 0.05  # 最大変動幅の4パーセント程度
+#     same_price_range = 0.04
+#     same_price_list = []
+#     same_price_list_inner = []
+#     same_price_list_outer = []
+#     result_not_same_price_list = []
+#     opposite_peaks = []
+#     break_peaks = []
+#     break_peaks_inner = []
+#     break_peaks_outer=[]
+#     range_min=70
+#     print("同一価格とみなす幅:", arrowed_range)
+#     for i, item in enumerate(peaks):
+#         if abs(datetime.strptime(item['latest_time_jp'], '%Y/%m/%d %H:%M:%S') - base_time) <= timedelta(minutes=range_min):
+#             is_inner = True
+#         else:
+#             is_inner = False
+#
+#         # print("     検証対象：", item['time'], item['peak_strength'])
+#         # ■判定０　今回のピークをカウントしない場合
+#         # 反対方向のピークの場合
+#         if item['direction'] != target_peak['direction']:
+#             # ターゲットのピークと逆方向のピークの場合
+#             opposite_peaks.append({"i": i, "item": item})
+#             continue
+#         # 弱いピークはカウントしない
+#         if item['peak_strength'] <= 4:
+#             continue  # ピークとみなさないため、何もせずスルー
+#
+#         # ■判定１　同一価格か、Breakかの判定
+#         # 同方向でも、ターゲットをBreakしているもの
+#         if target_peak['direction'] == 1:
+#             if item['peak'] > target_peak['peak'] + arrowed_range:
+#                 # ターゲットピークを越えている場合(UpperLineで、上側に突き抜け）、NG
+#                 break_peaks.append({"i": i, "item": item})
+#                 if is_inner:
+#                     break_peaks_inner.append({"i": i, "item": item})
+#                 else:
+#                     break_peaks_outer.append({"i": i, "item": item})
+#         else:
+#             if item['peak'] < target_peak['peak'] - arrowed_range:
+#                 # ターゲットピークを越えている場合（lowerLineで下に突き抜け）、NG
+#                 break_peaks.append({"i": i, "item": item})
+#                 if is_inner:
+#                     break_peaks_inner.append({"i": i, "item": item})
+#                 else:
+#                     break_peaks_outer.append({"i": i, "item": item})
+#
+#         # ■判定１　全ての近い価格を取得
+#         body_gap_abs = abs(target_peak['peak'] - item['peak'])
+#         if abs(item['latest_wick_peak_price'] - item['peak']) >= arrowed_range:
+#             # 髭が長すぎる場合は無効（無効は、上限をオーバーする値に設定してしまう
+#             body_wick_gap_abs = arrowed_range + 1  # 確実にarrowed_rangeより大きな値
+#         else:
+#             body_wick_gap_abs = abs(target_peak['peak'] - item['latest_wick_peak_price'])
+#         wick_body_gap_abs = abs(target_peak['latest_wick_peak_price'] - item['peak'])
+#         # if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range or wlen(result_same_price_list)ick_body_gap_abs <= arrowed_range:
+#         if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range:
+#             # 同一価格とみなせる場合
+#             same_price_list.append({"i": i, "item": item})
+#             if is_inner:
+#                 same_price_list_inner.append({"i": i, "item": item})
+#             else:
+#                 same_price_list_outer.append({"i": i, "item": item})
+#         else:
+#             result_not_same_price_list.append({"i": i, "item": item})
+#
+#     print("同一価格一覧")
+#     gene.print_arr(same_price_list)
+#     print("70分以内の同一価格一覧")
+#     gene.print_arr(same_price_list_inner)
+#     if len(same_price_list) <= 1:  # 同一価格がない（自分自身のみを含む）場合は、ここで調査終了
+#         print('同一価格無しのため、処理終了', len(same_price_list))
+#         return default_return_item
+#     print("Break一覧")
+#     gene.print_arr(break_peaks)
+#     print("70分以内のBreak一覧")
+#     gene.print_arr(break_peaks_inner)
+#     print("70分より前のBreak一覧")
+#     gene.print_arr(break_peaks_outer)
+#
+#     # ■■　抵抗線の強度分析
+#     # ■各種設定値
+#     mountain_foot_min = 60  # 山のすそ野の広さ（この値以上の山の裾野の広さを狙う）
+#     # 同一価格の範囲内の、サイズを求める。 規定分以上の場合は、山検証の対象
+#     sandwiched_peaks = peaks[same_price_list[0]['i']: same_price_list[-1]['i'] + 1]  # 間のピークス（両方の方向）
+#     sandwiched_peaks_oppo_peak = [d for d in sandwiched_peaks if d["direction"] == target_peak['direction'] * -1]
+#     # 期間内の最大値のピーク情報を求める。（逆サイドの方向が1の場合。-1の場合は最小値）は？
+#     if target_peak['direction'] * -1 == 1:
+#         far_item = max(sandwiched_peaks_oppo_peak, key=lambda x: x["peak"])
+#     else:
+#         far_item = min(sandwiched_peaks_oppo_peak, key=lambda x: x["peak"])
+#     t_gap = abs(far_item['peak'] - target_peak['peak'])
+#     print(s, "＜山(谷)探し＞")
+#     print(s, "  山の高さと山の位置:", t_gap, far_item['time'], target_peak['time'])
+#     print(s, "  直近の最大変動幅", peaks_class.recent_fluctuation_range, peaks_class.recent_fluctuation_range * 0.38)
+#
+#     # ■Breakの有無（全体的にない場合「強」、部分的にある場合「直近同一ピークまではない」または「直近同一ピークまでもある」
+#     break_judge = False
+#     if len(break_peaks) != 0:
+#         # Breakが発生している場合（ほとんどのケースだと思われる）
+#         latest_break_gap_min = gene.cal_str_time_gap(target_peak['time'], break_peaks[0]['item']['time'])['gap_abs_min']
+#         if latest_break_gap_min >= mountain_foot_min:
+#             # 直近のブレイクポイントが山の裾野より以前にある場合（従来の想定のパターンで、山間にBreak無しで、山のすそ野は大体70分程度）
+#             print("Break有だが、山の裾野の範囲にBreakはなし")
+#             comment = "裾野Break無し、前Break" + str(len(break_peaks)) + "個"
+#             break_judge = True
+#         else:
+#             # 直近のブレイクポイントが比較的近く、山間にBreakが存在する場合
+#             if len(break_peaks) == 1:
+#                 # Breakポイントが一つだけの場合　　⇒　どの程度超えているかによって、変わるかも・・？
+#                 print("裾野内のBreakが一つだけなので、とりあえず実行する", len(break_peaks))
+#                 break_judge = True
+#                 comment = "裾野Break1個、前Break" + str(len(break_peaks)) + "個"
+#             else:
+#                 # breakポイントが2個以上の場合
+#                 second_break_gap_min = gene.cal_str_time_gap(target_peak['time'], break_peaks[1]['item']['time'])[
+#                     'gap_abs_min']
+#                 if second_break_gap_min <= mountain_foot_min:
+#                     # 直近から二個目に近いBreakも、山の裾野の内部にある場合
+#                     print("裾野内にBreakが多いため、除外", len(break_peaks))
+#                     return default_return_item
+#                 else:
+#                     comment = "裾野Break2個以上、それ含めたBreak数" + str(len(break_peaks)) + "個"
+#                     print("ようわからん")
+#     else:
+#         # Breakが発生していない場合（かなりレアケースだが、相当強い抵抗線の可能性がある）
+#         print("Breakポイントがない強めの抵抗線")
+#         comment = "Break完全無し"
+#         break_judge = True
+#     # Breakまとめ
+#     if break_judge:
+#         pass
+#     else:
+#         print("Breakの条件が合わないため検証終了")
+#         return default_return_item
+#
+#     # ■同一価格が作る抵抗線の強度の検証
+#     latest_peak = same_price_list[1]  # [0]はTarget自身。[1]が自身を除く、Latestとなる
+#     oldest_peak = same_price_list[-1]
+#     is_flag = False
+#     gap_latest_same_price_min = gene.cal_str_time_gap(target_peak['time'], latest_peak['item']['time'])['gap_abs_min']
+#     gap_oldest_same_price_min = gene.cal_str_time_gap(target_peak['time'], oldest_peak['item']['time'])['gap_abs_min']
+#     print("target確認", target_peak['time'], "直近", latest_peak['item']['time'], "差", gap_latest_same_price_min)
+#     print("直近の折り返しピーク", peaks_class.peaks_original[1]['direction'])
+#     if gap_latest_same_price_min >= mountain_foot_min:
+#         # 【基本パターン】直近の同一価格が、山の裾野(約70分)を満たす場合
+#         print("基本的なパターン　直近の同一価格が、山の裾野を満たす")
+#         if t_gap >= peaks_class.recent_fluctuation_range * 0.3:  # 下げれば下げるほど、山が低くてもOKになる(基準0.38)
+#             # 最大の7割以上ある山が形成されている場合
+#             print("強い抵抗線と推定", t_gap / peaks_class.recent_fluctuation_range)
+#             take_position = True
+#             # flag_judge = judge_flag_figure(filtered_peaks, peaks_class.peaks_original[1]['direction'], 8)
+#             flag_judge = judge_flag_figure_new(peaks_class.peaks_original,
+#                                                same_price_list,
+#                                                peaks_class.peaks_original[1]['direction'] * -1)
+#             is_flag = flag_judge['is_flag']
+#         else:
+#             print("山が低すぎるため、強い抵抗線と判定せず")
+#         comment = comment + "_基本パターン" + "_高さ率@" + str(
+#             round(t_gap / peaks_class.recent_fluctuation_range, 1))
+#
+#     else:
+#         # 山の裾野以内にも同一価格が存在(細かく抵抗線に当たっている)場合 ⇒　個数やフラッグ形状を判断する
+#         # 反対側の傾きでBreakか突破（旗形状）か判断する
+#         print("直近短期間に同一価格にアタックされている場合　⇒　旗形状の場合はBreak？ ⇒分前", gap_latest_same_price_min)
+#         comment = comment + "_基本に似たパターン"
+#         if len(same_price_list) >= 3:
+#             # 頻度多い（3回以上当たっている）場合、旗形状を警戒する
+#             # flag_judge = judge_flag_figure(filtered_peaks, peaks_class.peaks_original[1]['direction'], 8)
+#             flag_judge = judge_flag_figure_new(peaks_class.peaks_original,
+#                                                same_price_list,
+#                                                peaks_class.peaks_original[1]['direction'] * -1)
+#             is_flag = flag_judge['is_flag']
+#             print("直近近いが、頻度高いため、抵抗線とみなす")
+#             take_position = True
+#             comment = comment + "_フラッグ以外の短期複数アタック"
+#         else:
+#             print("直近近く、単発的なものなので、抵抗線とみなさない", len(same_price_list))
+#
+#     # 検証の結果、以下の条件では実行しない方がよさそう ←結果的によかったが、取引回数を増やすための検証のため、いったん除外
+#     if len(same_price_list) <= 3:
+#         print("★★★とりあえずオリジナル,Breakともに抵抗線の構成ピークが3個以下の場合、勝率が低いためNG")
+#         return default_return_item
+#
+#     # ■■オーダーの設定
+#     # 初期値の設定
+#     exe_orders = []  # 返却用
+#     # ★★履歴によるオーダー調整を実施する（TPを拡大する）★★★
+#     # for_history_class = classPosition.order_information("test", "test", False)  # 履歴参照用
+#     # tuned_data = for_history_class.tuning_by_history()  # TuneされたTPやLCChangeを取得する
+#     # tp_range = tuned_data['tuned_tp_range']
+#     # lc_change_type = tuned_data['tuned_lc_change_type']
+#     # print("TP設定", tp_range, "lcChange設定", lc_change_type)
+#     # tp_up_border_minus = -0.045  # これ以上のマイナスの場合、取り返しに行く。
+#     # # 過去の履歴を確認する
+#     # if len(for_history_class.history_plus_minus) == 1:
+#     #     # 過去の履歴が一つだけの場合
+#     #     latest_plu = for_history_class.history_plus_minus[-1]
+#     #     print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", for_history_class.history_plus_minus[-1])
+#     # else:
+#     #     # 過去の履歴が二つ以上の場合、直近の二つの合計で判断する
+#     #     latest_plu = for_history_class.history_plus_minus[-1] + for_history_class.history_plus_minus[-2]  # 変数化(短縮用)
+#     #     print("  直近の勝敗pips", latest_plu, "詳細(直近)", for_history_class.history_plus_minus[-1], for_history_class.history_plus_minus[-2])
+#     # # 最大でも現実的な10pips程度のTPに収める
+#     # if abs(latest_plu) >= 0.01:
+#     #     latest_plu = 0.01
+#     # # 値を調整する
+#     # if latest_plu == 0:
+#     #     print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
+#     #     # 通常環境の場合
+#     #     tp_range = 0.5
+#     #     lc_change_type = 1
+#     # else:
+#     #     if latest_plu <= tp_up_border_minus:
+#     #         print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）", latest_plu * 0.8)
+#     #         # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
+#     #         tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
+#     #         lc_change_type = 0  # LCchangeの設定なし
+#     #     else:
+#     #         # 直近がプラスの場合プラスの場合、普通。
+#     #         print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）")
+#     #         tp_range = 0.5
+#     #         lc_change_type = 1  # LCchangeの設定なし
+#
+#     # オーダーの作成
+#     if take_position:
+#         # オーダーありの場合
+#         if is_flag:
+#             # flag形状の場合（＝Breakの場合）
+#             exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
+#             # base_order_dic = {
+#             #     "target": peaks[1]['latest_wick_peak_price'] + (0.006 * peaks[1]['direction']),
+#             #     "type": "STOP",
+#             #     "expected_direction": peaks[1]['direction'],
+#             #     "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
+#             #     "lc": 0.09,  # 0.06,
+#             #     'priority': 3,
+#             #     "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
+#             #     "decision_price": peaks_class.df_r_original.iloc[1]['close'],
+#             #     "order_timeout_min": 20,
+#             #     "lc_change_type": lc_change_type,
+#             #     "name": "Breakオーダー_" + comment + "_(" + str(len(same_price_list)) + ")"
+#             # }
+#             # base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
+#             # exe_orders.append(base_order_class.finalized_order)  # オーダー登録
+#         else:
+#             # (当初の基本）抵抗線をBreakしないと判断される場合
+#
+#             peaks = peaks_class.peaks_original
+#             exe_orders.append(resistnce_order(peaks, peaks_class, comment, same_price_list))
+#             # # 最大LCの調整
+#             # target_price = peaks_class.latest_peak_price + (peaks[0]['direction'] * 0.024)
+#             # lc_price = OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03,
+#             #                                                      peaks[0]['direction'])
+#             # gap = abs(lc_price - target_price)
+#             # re_lc_range = gene.cal_at_most(0.09, gap)
+#             # print("Orderのgap確認", gap, "target_price:", target_price, "deci_price:",
+#             #       peaks_class.df_r_original.iloc[1]['close'])
+#             # base_order_dic = {
+#             #     "target": target_price,
+#             #     "type": "STOP",
+#             #     "expected_direction": peaks[0]['direction'],
+#             #     "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
+#             #     "lc": lc_price,  # 0.06,
+#             #     'priority': 3,
+#             #     "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
+#             #     "decision_price": peaks_class.df_r_original.iloc[1]['close'],
+#             #     "order_timeout_min": 20,
+#             #     "lc_change_type": lc_change_type,
+#             #     "name": "山_" + comment + "_(" + str(len(same_price_list)) + ")"
+#             # }
+#             # base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成
+#             # # gene.print_json(base_order_class.finalized_order_without_lc_change)  # 表示
+#             #
+#             # # オーダーの修正と、場合によって追加オーダー設定
+#             # lc_max = 0.15
+#             # lc_change_after = 0.075
+#             # if base_order_class.finalized_order['lc_range'] >= lc_max:
+#             #     # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
+#             #     print("LCが大きいため再オーダー設定")
+#             #     base_order_dic['lc'] = lc_change_after
+#             #     base_order_dic['name'] = base_order_dic['name'] + "LC大で修正_"
+#             #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
+#             #     # gene.print_json(base_order_class.finalized_order_without_lc_change)  # 表示
+#             #     exe_orders.append(base_order_class.finalized_order)
+#             #
+#             # else:
+#             #     print("LCRange基準内のため、そのまま設定（延長先のオーダーもなし")
+#             #     exe_orders.append(base_order_class.finalized_order)  # オーダー登録
+#
+#     print("結果(LIVE)", take_position)
+#
+#     return {
+#         "take_position_flag": take_position,
+#         "exe_orders": exe_orders,
+#         "for_inspection_dic": {}
+#     }
 
 
 def cal_big_mountain(peaks_class):
@@ -187,22 +524,47 @@ def cal_big_mountain(peaks_class):
     target_num = 1  # 以下のループで「自分以外」を定義するため、変数に入れておく(同一方向の配列に対して）
     target_peak = peaks[target_num]
     print("ターゲットになるピーク:", target_peak)
-    comment = ""  # 名前につくコメント
 
     # 変動が少ないところはスキップ
     if target_peak['gap'] <= 0.06:
         print("targetのGapが少なすぎる", target_peak['gap'])
         return default_return_item
 
+    # ■■変数の設定
+    # ■定数の設定
+    mountain_foot_min = 60  # 山のすそ野の広さ（この値以上の山の裾野の広さを狙う）
+    base_time = datetime.strptime(target_peak['time'], '%Y/%m/%d %H:%M:%S')
     arrowed_range = peaks_class.recent_fluctuation_range * 0.05  # 最大変動幅の4パーセント程度
-    same_price_range = 0.04
+    # ■各リストの初期化
     same_price_list = []
+    same_price_list_inner = []
+    same_price_list_outer = []
     result_not_same_price_list = []
     opposite_peaks = []
     break_peaks = []
-    print("同一価格とみなす幅:", arrowed_range)
+    break_peaks_inner = []
+    break_peaks_outer = []
+    # ■■同一価格の探索
     for i, item in enumerate(peaks):
-        # print("     検証対象：", item['time'], item['peak_strength'])
+        print("     検証対象：", item['time'], item['peak_strength'])
+
+        # 既定の裾野の内側にある場合inner=True
+        if abs(datetime.strptime(item['latest_time_jp'], '%Y/%m/%d %H:%M:%S') - base_time) <= timedelta(
+                minutes=mountain_foot_min):
+            is_inner = True
+        else:
+            is_inner = False
+
+        # 最初の一つ（ターゲット自身）は強制的に追加する　（強度が低い場合、自身が除外されてしまうケースがあるため）
+        if i == target_num:
+            print("          FIRST：", item['time'], item['peak_strength'])
+            same_price_list.append({"i": i, "item": item})
+            if is_inner:
+                same_price_list_inner.append({"i": i, "item": item})
+            else:
+                same_price_list_outer.append({"i": i, "item": item})
+            continue
+
         # ■判定０　今回のピークをカウントしない場合
         # 反対方向のピークの場合
         if item['direction'] != target_peak['direction']:
@@ -217,12 +579,22 @@ def cal_big_mountain(peaks_class):
         # 同方向でも、ターゲットをBreakしているもの
         if target_peak['direction'] == 1:
             if item['peak'] > target_peak['peak'] + arrowed_range:
+                print("          Break：", item['time'], item['peak_strength'])
                 # ターゲットピークを越えている場合(UpperLineで、上側に突き抜け）、NG
                 break_peaks.append({"i": i, "item": item})
+                if is_inner:
+                    break_peaks_inner.append({"i": i, "item": item})
+                else:
+                    break_peaks_outer.append({"i": i, "item": item})
         else:
             if item['peak'] < target_peak['peak'] - arrowed_range:
+                print("          Break：", item['time'], item['peak_strength'])
                 # ターゲットピークを越えている場合（lowerLineで下に突き抜け）、NG
                 break_peaks.append({"i": i, "item": item})
+                if is_inner:
+                    break_peaks_inner.append({"i": i, "item": item})
+                else:
+                    break_peaks_outer.append({"i": i, "item": item})
 
         # ■判定１　全ての近い価格を取得
         body_gap_abs = abs(target_peak['peak'] - item['peak'])
@@ -235,23 +607,32 @@ def cal_big_mountain(peaks_class):
         # if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range or wlen(result_same_price_list)ick_body_gap_abs <= arrowed_range:
         if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range:
             # 同一価格とみなせる場合
+            print("          Same：", item['time'], item['peak_strength'])
             same_price_list.append({"i": i, "item": item})
+            if is_inner:
+                same_price_list_inner.append({"i": i, "item": item})
+            else:
+                same_price_list_outer.append({"i": i, "item": item})
         else:
+            print("          Not：", body_gap_abs, arrowed_range, body_wick_gap_abs, arrowed_range)
             result_not_same_price_list.append({"i": i, "item": item})
 
     print("同一価格一覧")
     gene.print_arr(same_price_list)
+    print("70分以内の同一価格一覧")
+    gene.print_arr(same_price_list_inner)
     if len(same_price_list) <= 1:  # 同一価格がない（自分自身のみを含む）場合は、ここで調査終了
         print('同一価格無しのため、処理終了', len(same_price_list))
         return default_return_item
-
-    print("Breakしているもの一覧")
+    print("Break一覧")
     gene.print_arr(break_peaks)
+    print("70分以内のBreak一覧")
+    gene.print_arr(break_peaks_inner)
+    print("70分より前のBreak一覧")
+    gene.print_arr(break_peaks_outer)
 
-    # ■■　抵抗線の強度分析
-    # ■各種設定値
-    mountain_foot_min = 60  # 山のすそ野の広さ（この値以上の山の裾野の広さを狙う）
-    # 同一価格の範囲内の、サイズを求める。 規定分以上の場合は、山検証の対象
+    # ■■　抵抗線の各種分析値を算出
+    # ■同一価格がある期間の、山のサイズを求める。 規定分以上の場合は、山検証の対象
     sandwiched_peaks = peaks[same_price_list[0]['i']: same_price_list[-1]['i'] + 1]  # 間のピークス（両方の方向）
     sandwiched_peaks_oppo_peak = [d for d in sandwiched_peaks if d["direction"] == target_peak['direction'] * -1]
     # 期間内の最大値のピーク情報を求める。（逆サイドの方向が1の場合。-1の場合は最小値）は？
@@ -260,210 +641,101 @@ def cal_big_mountain(peaks_class):
     else:
         far_item = min(sandwiched_peaks_oppo_peak, key=lambda x: x["peak"])
     t_gap = abs(far_item['peak'] - target_peak['peak'])
+    mountain_ratio = round(t_gap / peaks_class.recent_fluctuation_range, 1)
+    # if mountain_ratio >= 0.4:
+    #     mountain_ratio = 0.4
+    # else:
+    #     mountain_ratio = 0.3
     print(s, "＜山(谷)探し＞")
     print(s, "  山の高さと山の位置:", t_gap, far_item['time'], target_peak['time'])
     print(s, "  直近の最大変動幅", peaks_class.recent_fluctuation_range, peaks_class.recent_fluctuation_range * 0.38)
+    print(s, "  率", mountain_ratio)
+    print("直近の折り返しピーク", peaks_class.peaks_original[1]['direction'])
+
+    # ■フラッグ形状が成立するかの検討（同一価格内で）
+    flag_judge = judge_flag_figure_new(peaks_class.peaks_original,
+                                       same_price_list,
+                                       peaks_class.peaks_original[1]['direction'] * -1)
+    is_flag = flag_judge['is_flag']
 
     # ■Breakの有無（全体的にない場合「強」、部分的にある場合「直近同一ピークまではない」または「直近同一ピークまでもある」
-    break_judge = False
     if len(break_peaks) != 0:
         # Breakが発生している場合（ほとんどのケースだと思われる）
         latest_break_gap_min = gene.cal_str_time_gap(target_peak['time'], break_peaks[0]['item']['time'])['gap_abs_min']
         if latest_break_gap_min >= mountain_foot_min:
             # 直近のブレイクポイントが山の裾野より以前にある場合（従来の想定のパターンで、山間にBreak無しで、山のすそ野は大体70分程度）
             print("Break有だが、山の裾野の範囲にBreakはなし")
-            comment = "裾野Break無し、前Break" + str(len(break_peaks)) + "個"
-            break_judge = True
+            bp = 10
         else:
-            # 直近のブレイクポイントが比較的近く、山間にBreakが存在する場合
-            if len(break_peaks) == 1:
-                # Breakポイントが一つだけの場合　　⇒　どの程度超えているかによって、変わるかも・・？
-                print("裾野内のBreakが一つだけなので、とりあえず実行する", len(break_peaks))
-                break_judge = True
-                comment = "裾野Break1個、前Break" + str(len(break_peaks)) + "個"
+            # 直近のブレイクポイント裾野内に存在する場合
+            if len(break_peaks_inner) <= 1:
+                print("裾野内のBreakが1個")
+                bp = 11
             else:
-                # breakポイントが2個以上の場合
-                second_break_gap_min = gene.cal_str_time_gap(target_peak['time'], break_peaks[1]['item']['time'])[
-                    'gap_abs_min']
-                if second_break_gap_min <= mountain_foot_min:
-                    # 直近から二個目に近いBreakも、山の裾野の内部にある場合
-                    print("裾野内にBreakが多いため、除外", len(break_peaks))
-                    return default_return_item
-                else:
-                    comment = "裾野Break2個以上、それ含めたBreak数" + str(len(break_peaks)) + "個"
-                    print("ようわからん")
+                print("裾野内にBreakが２個以上、除外対象（この場合のみ除外対象）")
+                bp = 19
     else:
         # Breakが発生していない場合（かなりレアケースだが、相当強い抵抗線の可能性がある）
-        print("Breakポイントがない強めの抵抗線")
-        comment = "Break完全無し"
-        break_judge = True
-    # Breakまとめ
-    if break_judge:
-        pass
-    else:
-        print("Breakの条件が合わないため検証終了")
-        return default_return_item
+        bp = 0
 
-    # ■同一価格が作る抵抗線の強度の検証
+    # ■同一価格が作る抵抗線の強度の
+    print("自身があるかのテスト", same_price_list[0])
     latest_peak = same_price_list[1]  # [0]はTarget自身。[1]が自身を除く、Latestとなる
-    oldest_peak = same_price_list[-1]
-    is_flag = False
     gap_latest_same_price_min = gene.cal_str_time_gap(target_peak['time'], latest_peak['item']['time'])['gap_abs_min']
-    gap_oldest_same_price_min = gene.cal_str_time_gap(target_peak['time'], oldest_peak['item']['time'])['gap_abs_min']
-    print("target確認", target_peak['time'], "直近", latest_peak['item']['time'], "差", gap_latest_same_price_min)
-    print("直近の折り返しピーク", peaks_class.peaks_original[1]['direction'])
+    sp = 0
     if gap_latest_same_price_min >= mountain_foot_min:
         # 【基本パターン】直近の同一価格が、山の裾野(約70分)を満たす場合
-        print("基本的なパターン　直近の同一価格が、山の裾野を満たす")
-        if t_gap >= peaks_class.recent_fluctuation_range * 0.3:  # 下げれば下げるほど、山が低くてもOKになる(基準0.38)
-            # 最大の7割以上ある山が形成されている場合
-            print("強い抵抗線と推定", t_gap / peaks_class.recent_fluctuation_range)
-            take_position = True
-            # flag_judge = judge_flag_figure(filtered_peaks, peaks_class.peaks_original[1]['direction'], 8)
-            flag_judge = judge_flag_figure_new(peaks_class.peaks_original,
-                                               same_price_list,
-                                               peaks_class.peaks_original[1]['direction'] * -1)
-            is_flag = flag_judge['is_flag']
-        else:
-            print("山が低すぎるため、強い抵抗線と判定せず")
-        comment = comment + "_基本パターン" + "_高さ率(" + str(
-            round(t_gap / peaks_class.recent_fluctuation_range, 1)) + ")"
-
+        print("基本的なパターン　直近の同一価格が、山の裾野以前であること、を満たす")
+        sp = 1
     else:
-        # 山の裾野以内にも同一価格が存在(細かく抵抗線に当たっている)場合 ⇒　個数やフラッグ形状を判断する
-        # 反対側の傾きでBreakか突破（旗形状）か判断する
-        print("直近短期間に同一価格にアタックされている場合　⇒　旗形状の場合はBreak？ ⇒分前", gap_latest_same_price_min)
-        comment = comment + "_基本に似たパターン"
-        if len(same_price_list) >= 3:
-            # 頻度多い（3回以上当たっている）場合、旗形状を警戒する
-            # flag_judge = judge_flag_figure(filtered_peaks, peaks_class.peaks_original[1]['direction'], 8)
-            flag_judge = judge_flag_figure_new(peaks_class.peaks_original,
-                                               same_price_list,
-                                               peaks_class.peaks_original[1]['direction'] * -1)
-            is_flag = flag_judge['is_flag']
+        # 直近の同一価格が、山の裾野内に存在してしまう場合（個数を確認する）
+        if len(same_price_list_inner) >= 3:
+            # ターゲット自身を含んで3個以上、同一価格が裾野内にある場合 (いつかこれを2個以上にしてみたい）
             print("直近近いが、頻度高いため、抵抗線とみなす")
-            take_position = True
-            comment = comment + "_フラッグ以外の短期複数アタック"
-        else:
+            sp = 3
+        elif len(same_price_list_inner) == 2:
+            # ターゲット自身を含んで2個、同一価格が裾野内にある場合 (高さ次第では抵抗線の可能性あり？）
             print("直近近く、単発的なものなので、抵抗線とみなさない", len(same_price_list))
+            sp = 2
 
-    # 検証の結果、以下の条件では実行しない方がよさそう ←結果的によかったが、取引回数を増やすための検証のため、いったん除外
-    if len(same_price_list) <= 3:
-        print("★★★とりあえずオリジナル,Breakともに抵抗線の構成ピークが3個以下の場合、勝率が低いためNG")
-        return default_return_item
+    # 一番強いのは、bpが19以外（0,10,11の比率を今後知りたい）、SP=1かつflag=Trueかつ山が割と高い、または、sp
 
     # ■■オーダーの設定
     # 初期値の設定
     exe_orders = []  # 返却用
-    # ★★履歴によるオーダー調整を実施する（TPを拡大する）★★★
-    # for_history_class = classPosition.order_information("test", "test", False)  # 履歴参照用
-    # tuned_data = for_history_class.tuning_by_history()  # TuneされたTPやLCChangeを取得する
-    # tp_range = tuned_data['tuned_tp_range']
-    # lc_change_type = tuned_data['tuned_lc_change_type']
-    # print("TP設定", tp_range, "lcChange設定", lc_change_type)
-    # tp_up_border_minus = -0.045  # これ以上のマイナスの場合、取り返しに行く。
-    # # 過去の履歴を確認する
-    # if len(for_history_class.history_plus_minus) == 1:
-    #     # 過去の履歴が一つだけの場合
-    #     latest_plu = for_history_class.history_plus_minus[-1]
-    #     print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", for_history_class.history_plus_minus[-1])
-    # else:
-    #     # 過去の履歴が二つ以上の場合、直近の二つの合計で判断する
-    #     latest_plu = for_history_class.history_plus_minus[-1] + for_history_class.history_plus_minus[-2]  # 変数化(短縮用)
-    #     print("  直近の勝敗pips", latest_plu, "詳細(直近)", for_history_class.history_plus_minus[-1], for_history_class.history_plus_minus[-2])
-    # # 最大でも現実的な10pips程度のTPに収める
-    # if abs(latest_plu) >= 0.01:
-    #     latest_plu = 0.01
-    # # 値を調整する
-    # if latest_plu == 0:
-    #     print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
-    #     # 通常環境の場合
-    #     tp_range = 0.5
-    #     lc_change_type = 1
-    # else:
-    #     if latest_plu <= tp_up_border_minus:
-    #         print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）", latest_plu * 0.8)
-    #         # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
-    #         tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
-    #         lc_change_type = 0  # LCchangeの設定なし
-    #     else:
-    #         # 直近がプラスの場合プラスの場合、普通。
-    #         print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）")
-    #         tp_range = 0.5
-    #         lc_change_type = 1  # LCchangeの設定なし
+    take_position = False
+    if sp == 1 and is_flag and bp != 19:
+        # if mountain_ratio >= 0.7:
+        # 従来勝てるの条件１
+        comment = "★sp=1, フラッグ＝" + str(is_flag) + ", bp=" + str(bp) + "_break@" + str(mountain_ratio) + "@" + str(
+            len(same_price_list))
+        take_position = True
+        exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
+    elif sp == 3 and is_flag and bp != 19:
+        # if mountain_ratio >= 0.7:
+        # 従来勝てるの条件２
+        comment = "★sp=3, フラッグ＝" + str(is_flag) + ", bp=" + str(bp) + "_break@" + str(mountain_ratio) + "@" + str(
+            len(same_price_list))
+        take_position = True
+        exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
+    else:
+        comment = "NG_sp=" + str(sp) + "フラッグ＝" + str(is_flag) + ", bp=" + str(bp) + "_resi@" + str(
+            mountain_ratio) + "@" + str(len(same_price_list))
+        take_position = True
+        exe_orders.append(resistnce_order(peaks, peaks_class, comment, same_price_list))
 
-    # オーダーの作成
-    if take_position:
-        # オーダーありの場合
-        if is_flag:
-            # flag形状の場合（＝Breakの場合）
-            exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
-            # base_order_dic = {
-            #     "target": peaks[1]['latest_wick_peak_price'] + (0.006 * peaks[1]['direction']),
-            #     "type": "STOP",
-            #     "expected_direction": peaks[1]['direction'],
-            #     "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
-            #     "lc": 0.09,  # 0.06,
-            #     'priority': 3,
-            #     "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
-            #     "decision_price": peaks_class.df_r_original.iloc[1]['close'],
-            #     "order_timeout_min": 20,
-            #     "lc_change_type": lc_change_type,
-            #     "name": "Breakオーダー_" + comment + "_(" + str(len(same_price_list)) + ")"
-            # }
-            # base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
-            # exe_orders.append(base_order_class.finalized_order)  # オーダー登録
-        else:
-            # (当初の基本）抵抗線をBreakしないと判断される場合
+    if len(exe_orders) == 0:
+        return default_return_item
 
-            peaks = peaks_class.peaks_original
-            exe_orders.append(resistnce_order(peaks, peaks_class, comment, same_price_list))
-            # # 最大LCの調整
-            # target_price = peaks_class.latest_peak_price + (peaks[0]['direction'] * 0.024)
-            # lc_price = OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03,
-            #                                                      peaks[0]['direction'])
-            # gap = abs(lc_price - target_price)
-            # re_lc_range = gene.cal_at_most(0.09, gap)
-            # print("Orderのgap確認", gap, "target_price:", target_price, "deci_price:",
-            #       peaks_class.df_r_original.iloc[1]['close'])
-            # base_order_dic = {
-            #     "target": target_price,
-            #     "type": "STOP",
-            #     "expected_direction": peaks[0]['direction'],
-            #     "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
-            #     "lc": lc_price,  # 0.06,
-            #     'priority': 3,
-            #     "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
-            #     "decision_price": peaks_class.df_r_original.iloc[1]['close'],
-            #     "order_timeout_min": 20,
-            #     "lc_change_type": lc_change_type,
-            #     "name": "山_" + comment + "_(" + str(len(same_price_list)) + ")"
-            # }
-            # base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成
-            # # gene.print_json(base_order_class.finalized_order_without_lc_change)  # 表示
-            #
-            # # オーダーの修正と、場合によって追加オーダー設定
-            # lc_max = 0.15
-            # lc_change_after = 0.075
-            # if base_order_class.finalized_order['lc_range'] >= lc_max:
-            #     # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
-            #     print("LCが大きいため再オーダー設定")
-            #     base_order_dic['lc'] = lc_change_after
-            #     base_order_dic['name'] = base_order_dic['name'] + "LC大で修正_"
-            #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
-            #     # gene.print_json(base_order_class.finalized_order_without_lc_change)  # 表示
-            #     exe_orders.append(base_order_class.finalized_order)
-            #
-            # else:
-            #     print("LCRange基準内のため、そのまま設定（延長先のオーダーもなし")
-            #     exe_orders.append(base_order_class.finalized_order)  # オーダー登録
+    print("結果")
+    print(comment)
+    print(take_position)
 
     return {
         "take_position_flag": take_position,
         "exe_orders": exe_orders,
         "for_inspection_dic": {}
     }
-
 
 
 def break_order(peaks, peaks_class, comment, same_price_list):
@@ -476,7 +748,7 @@ def break_order(peaks, peaks_class, comment, same_price_list):
 
     # ★★履歴によるオーダー調整を実施する（TPを拡大する）★★★
     for_history_class = classPosition.order_information("test", "test", False)  # 履歴参照用
-    tuned_data = for_history_class.tuning_by_history()  # TuneされたTPやLCChangeを取得する
+    tuned_data = for_history_class.tuning_by_history_break()  # TuneされたTPやLCChangeを取得する
     tp_range = tuned_data['tuned_tp_range']
     lc_change_type = tuned_data['tuned_lc_change_type']
     print("TP設定", tp_range, "lcChange設定", lc_change_type)
@@ -495,7 +767,8 @@ def break_order(peaks, peaks_class, comment, same_price_list):
         "decision_price": peaks_class.df_r_original.iloc[1]['close'],
         "order_timeout_min": 20,
         "lc_change_type": lc_change_type,
-        "name": comment + "_(" + str(same_price_len) + ")"
+        "units": 20000,
+        "name": comment + "@" + str(same_price_len)
     }
     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
     return base_order_class.finalized_order
@@ -511,7 +784,7 @@ def resistnce_order(peaks, peaks_class, comment, same_price_list):
 
     # ★★履歴によるオーダー調整を実施する（TPを拡大する）★★★
     for_history_class = classPosition.order_information("test", "test", False)  # 履歴参照用
-    tuned_data = for_history_class.tuning_by_history()  # TuneされたTPやLC.finalized_orderChangeを取得する
+    tuned_data = for_history_class.tuning_by_history_resi()  # TuneされたTPやLC.finalized_orderChangeを取得する
     tp_range = tuned_data['tuned_tp_range']
     lc_change_type = tuned_data['tuned_lc_change_type']  #0 i no
     print("TP設定", tp_range, "lcChange設定", lc_change_type)
@@ -532,12 +805,12 @@ def resistnce_order(peaks, peaks_class, comment, same_price_list):
         "lc": lc_price,  # 0.06,
         # "tp": 0.075,
         # "lc": 0.075,
-        'priority': 3,
+        'priority': 2,
         "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
         "decision_price": peaks_class.df_r_original.iloc[1]['close'],
         "order_timeout_min": 20,
-        "lc_change_type": lc_change_type,
-        "name": comment + "_(" + str(same_price_len) + ")"
+        "lc_change_type": lc_change_type, #lc_change_type,  1=d
+        "name": comment + "@" + str(same_price_len)
     }
     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成
     # gene.print_json(base_order_class.finalized_order_without_lc_change)  # 表示

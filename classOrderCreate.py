@@ -108,7 +108,7 @@ class OrderCreateClass:
 
         # Unitsがない場合は初期値を入れる
         if "units" in order_json:
-            pass  # いずれこれで割合を決めたりしたい
+            self.order_base["units"] = self.order_base["units"]
         else:
             # print("Unit指定がないため、Unitsを基本のものを入れておく")
             self.order_base["units"] = self.basic_unit
@@ -128,15 +128,17 @@ class OrderCreateClass:
         # LC_Changeを付与する 検証環境の都合で、必須。(finalizedに直接追加）
         if "lc_change_type" not in order_json:
             # typeしていない場合はノーマルを追加
-            self.add_lc_change_normal()
+            self.add_lc_change_defence()
         else:
+            # 指定されている場合は、指定のLC_Change処理へ
             if order_json['lc_change_type'] == 1:
-                self.add_lc_change_normal()
+                self.add_lc_change_defence()
             elif order_json['lc_change_type'] == 0:
                 self.add_lc_change_no_change()
-            else:
-                # 少し狭めのもの
+            elif order_json['lc_change_type'] == 3:
                 self.add_lc_change_offence()
+            elif order_json['lc_change_type'] == 4:
+                self.add_lc_change_after_lc()
 
         # 表示用
         self.finalized_order_without_lc_change = copy.deepcopy(self.finalized_order)
@@ -157,56 +159,122 @@ class OrderCreateClass:
         return price_dic['mid']
 
     def add_lc_change_no_change(self):
+        """
+        lcChange = 0で選ばれるもの
+        形式的に入れたもの（形式的に入れないとエラーになるので）
+        ほぼ到達しない１円を入れておく
+        """
         self.finalized_order['lc_change'] = [
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.9, "lc_ensure_range": 0.7},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 1, "lc_ensure_range": 1},
         ]
 
     def add_lc_change_offence(self):
+        """
+        lcChange = 3で選ばれるもの
+        実際の運用をイメージ
+        ・最初の30分はlc_1.3程度をトリガーにしてLC分を確実に回収できるように
+        　（一度20pips位上がった後に、LCまで戻っており、悔しかった。上がるのは大体直前
+        ・30分以降は、ローソク形状の効果が切れたとみなし、プラスにいる場合はとにかく利確に向けた動きをする
+        """
+        lc = self.finalized_order['lc_range']
         self.finalized_order['lc_change'] = [
-            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
-            # 2022-2023は 0.05トリガーにすると、マイナスになる！！
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.019, "lc_ensure_range": -0.015},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.023, "lc_ensure_range": 0.014},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": round(lc * 1.1, 3), "lc_ensure_range": round(lc * 0.8, 3)},
+            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
+            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
+            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
-            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
-            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
-            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
-            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
-            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
-            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
-        ]
-
-    def add_lc_change_normal(self):
-        self.finalized_order['lc_change'] = [
-            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
-            # 2022-2023は 0.05トリガーにすると、マイナスになる！！
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.023, "lc_ensure_range": 0.014},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.03, "lc_ensure_range": -0.040},  # ★
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.03, "lc_ensure_range": 0.006},  # これ通常
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.043, "lc_ensure_range": 0.011},  # ★元々 0.03
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
             # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.23, "lc_ensure_range": 0.20},  # ★
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
+            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
+            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
+            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
         ]
+
+    def add_lc_change_after_lc(self):
+        """
+        lcChange = 4で選ばれるもの
+        実際の運用をイメージ
+        ・LCの取引の後は、そのLCを取り返す動きをする
+        """
+        lc = self.finalized_order['lc_range']
+        self.finalized_order['lc_change'] = [
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": round(lc * 1.1, 3), "lc_ensure_range": round(lc * 0.8, 3)},
+            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
+            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
+            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
+            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
+            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
+            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
+            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
+            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
+            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
+        ]
+
+    def add_lc_change_defence(self):
+        """
+        lcChange = 1で選ばれるもの
+        負ける可能性は高くなる可能性高い。
+        少しプラスになったらLCの幅を減らしていく手法
+        """
+        lc = self.finalized_order['lc_range']
+        self.finalized_order['lc_change'] = [
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.018, "lc_ensure_range": -0.02},
+            {"lc_change_exe": True, "time_after": 300, "lc_trigger_range": 0.02, "lc_ensure_range": 0.01},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": round(lc * 1.1, 3), "lc_ensure_range": round(lc * 0.8, 3)},
+            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
+            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
+            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
+            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
+            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
+            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
+            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
+            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
+            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
+        ]
+
+        # self.finalized_order['lc_change'] = [
+        #     # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
+        #     # 2022-2023は 0.05トリガーにすると、マイナスになる！！
+        #     # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.023, "lc_ensure_range": 0.014},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.02, "lc_ensure_range": -0.02},  # ★
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.03, "lc_ensure_range": 0.006},  # これ通常
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.043, "lc_ensure_range": 0.011},  # ★元々 0.03
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.06, "lc_ensure_range": 0.04},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
+        #     # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
+        #     # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.23, "lc_ensure_range": 0.20},  # ★
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
+        #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
+        # ]
 
 
     def add_counter_order(self, finalized_counter_order):

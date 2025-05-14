@@ -1,4 +1,5 @@
 import datetime
+from datetime import datetime
 from datetime import timedelta
 
 import classOanda
@@ -25,6 +26,19 @@ class PeaksClass:
     latest_peak_price = 0  # 直近のピーク
     # 動きの数値化された情報
     is_big_move = False
+    ave_move = 0  # ここ5足程度の動きの大きさ（髭を含む）
+    ave_move_for_lc = 0  # ここ5足程度の動きの大きさ（髭を含む）を加味した、LCの提案価格
+
+    # samePriceList関係
+    same_price_list = []
+    same_price_list_till_break = []
+    same_price_list_inner = []
+    same_price_list_outer = []
+    result_not_same_price_list = []
+    opposite_peaks = []
+    break_peaks = []
+    break_peaks_inner = []
+    break_peaks_outer = []
 
     def __init__(self, original_df):
         """
@@ -48,7 +62,7 @@ class PeaksClass:
 
         # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
         self.peak_strength_border = 0.03  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
-        self.peak_strength_border_second = 0.08  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
+        self.peak_strength_border_second = 0.07  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
 
         # SkipPeaksの際の基準(SkipPeaks関数）
         self.skip_gap_border = 0.3 # 0.045  # この値以下のGapをもつPeakは、問答無用でスキップ処理される
@@ -91,7 +105,7 @@ class PeaksClass:
             gene.print_arr(PeaksClass.peaks_original[-2:])
             print("")
             print(s, "<SKIP後　対象>")
-            gene.print_arr(PeaksClass.skipped_peaks[:6])
+            gene.print_arr(PeaksClass.skipped_peaks[:8])
             # print(s, "Latest", PeaksClass.skipped_peaks[0])
             # print(s, "river ", PeaksClass.skipped_peaks[1])
             # print(s, "turn", PeaksClass.skipped_peaks[2])
@@ -100,6 +114,9 @@ class PeaksClass:
 
             # (2)move_sizeの算出
             self.cal_move_size()
+
+            # (3)samePriceの算出
+            # self.make_same_price_list(1, False)  # スタンダードな引数で出しておく
 
     def make_peak(self, df_r):
         """
@@ -353,7 +370,7 @@ class PeaksClass:
         for i in range(len(peaks)):  # 中で配列を買い替えるため、for i in peaksは使えない！！
             vanish_num = i + adjuster  # 削除後に、それを起点にもう一度削除処理ができる
             if vanish_num == 0 or vanish_num >= len(peaks) - 1:
-                # print("最初か最後のため、Vanish候補ではない", vanish_num)
+                # print("最初か最後のため、Vanish候補ではない", vanish_num, latest_item)
                 continue
 
             # わかりやすく命名 （vanish_itemは中央のアイテムを示す）
@@ -367,11 +384,12 @@ class PeaksClass:
             # (0)スキップフラグの設定
             is_skip = False
             # (1)基本判定 サイズが小さいときが対象
-            count_border = 3
+            count_border = 2
             if vanish_item['count'] <= count_border and vanish_item['gap'] <= self.skip_gap_border:
                 pass
             else:
                 # そこそこサイズがあるので、スキップ
+                # print(s4,s4, "サイズあるためスキップ　latest:", latest_item['time'], latest_item['count'], latest_item['gap'])
                 continue
 
             # (2)ラップ判定
@@ -380,11 +398,21 @@ class PeaksClass:
             vanish_oldest_ratio = vanish_item['gap'] / oldest_merged_item['gap']
             # 判定１
             overlap_ratio = 0.65  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
-            # print(s4, s4, latest_item['gap'], latest_item['gap'], oldest_merged_item['gap'], latest_item['time'],  vanish_item['time'],  vanish_item['gap'], vanish_latest_ratio, vanish_oldest_ratio)
+            overlap_min_ratio = 0.3
+            # print(s4, s4, "latest", latest_item['time'], latest_item['gap'], "oldest", oldest_merged_item['time'], oldest_merged_item['gap'])
+            # print(s4, s4, "  vanish:", vanish_item['time'], "vanish_latest_ratio:", vanish_latest_ratio, ",vanish_oldest_ratio:", vanish_oldest_ratio)
             if vanish_latest_ratio >= overlap_ratio and vanish_oldest_ratio >= overlap_ratio:
                 # 両サイドが同じ程度のサイズ感の場合、レンジ感があるため、スキップはしない（ほとんどラップしている状態）
-                # print(s4, s4, "スキップ無し", latest_item['gap'], latest_item['gap'], oldest_merged_item['gap'])
                 continue
+            else:
+                if vanish_item['count'] <= 2:
+                    if vanish_latest_ratio <= overlap_min_ratio:
+                        # print("　latestに対して、Vanishが小さく、ラップが小さいほうがあるため、SKIP")
+                        is_skip = True
+                    elif vanish_oldest_ratio <= overlap_min_ratio:
+                        # print("  oldestに対して、Vanishが小さく、ラップが小さい方があるため、SKIP")
+                        is_skip = True
+
             # 判定２
             if vanish_item['gap'] <= self.skip_gap_border_second:
                 if vanish_latest_ratio <= overlap_ratio and vanish_oldest_ratio <= overlap_ratio:
@@ -393,25 +421,23 @@ class PeaksClass:
 
             # ■スキップ処理
             if is_skip:
-                # print(" 結合処理", vanish_item)
-                # oldestに情報を集約（midはCount以外はなかったと同様、latestはOldestの'latest系'に転記される）
-                peaks[oldest_merged_num]['latest_body_peak_price'] = latest_item['latest_body_peak_price']
-                peaks[oldest_merged_num]['latest_time_jp'] = latest_item['latest_time_jp']
-                peaks[oldest_merged_num]['latest_price'] = latest_item['latest_price']
-                peaks[oldest_merged_num]['count'] = (latest_item['count'] + vanish_item['count'] +
-                                                     oldest_merged_item['count']) - 2
-                peaks[oldest_merged_num]['next'] = latest_item['next']
-                peaks[oldest_merged_num]['gap'] = round(abs(oldest_merged_item['latest_body_peak_price'] -
-                                                            oldest_merged_item['oldest_body_peak_price']), 3)
-                peaks[oldest_merged_num]['peak_strength'] = self.ps_default  # 従来はlatest_item['strength']だが、結合＝０にした方がよい場合が、、
-                # 互換性確保用（いつか消したい）
-                peaks[oldest_merged_num]['time'] = latest_item['time']
-                peaks[oldest_merged_num]['peak'] = latest_item['peak']
-                # 情報を吸い取った後、latestおよびmidは削除する
-                del peaks[latest_num:oldest_merged_num]
-                adjuster = -1
+                if 'previous' in oldest_merged_item:
+                    # 最後の一つはやらないため、IF文で最後の手前まで実施する
+                    peaks[latest_num]['oldest_body_peak_price'] = oldest_merged_item['oldest_body_peak_price']
+                    peaks[latest_num]['oldest_time_jp'] = oldest_merged_item['oldest_time_jp']
+                    peaks[latest_num]['oldest_price'] = oldest_merged_item['oldest_price']
+                    peaks[latest_num]['count'] = (latest_item['count'] + vanish_item['count'] +
+                                                         oldest_merged_item['count']) - 2
+                    peaks[latest_num]['previous'] = oldest_merged_item['previous']
+                    peaks[latest_num]['gap'] = round(abs(latest_item['latest_body_peak_price'] -
+                                                                oldest_merged_item['oldest_body_peak_price']), 3)
+                    peaks[latest_num]['peak_strength'] = self.ps_default  # 従来はlatest_item['strength']だが、結合＝０にした方がよい場合が、、
+                    # 互換性確保用（いつか消したい）
+                    # 情報を吸い取った後、latestおよびmidは削除する
+                    del peaks[latest_num + 1:latest_num + 3]
+                    adjuster = -1
             else:
-                adjuster = 0
+                adjuster = -1
 
         return peaks
 
@@ -422,10 +448,13 @@ class PeaksClass:
         max_high = sorted_df["inner_high"].max()
         min_low = sorted_df['inner_low'].min()
         self.recent_fluctuation_range = round(max_high - min_low, 3)
+        self.ave_move = filtered_df.head(5)["highlow"].mean()
+        self.ave_move_for_lc = self.ave_move * 1.6
         print("   ＜稼働範囲サマリ＞")
         print("    検出範囲", filtered_df.iloc[0]["time_jp"], "-", filtered_df.iloc[-1]['time_jp'])
         print("    最大値、最小値", max_high, min_low, "差分")
-        print("    最大値、最小値", max_high, min_low, "差分")
+        print("    平均キャンドル長", filtered_df.head(5)["highlow"].mean())
+        print("    提唱LC幅", self.ave_move_for_lc)
         # print(t6, "最大足(最高-最低),", sorted_df.iloc[0]['time_jp'], sorted_df.iloc[0]['highlow'])
         # print(t6, "最小足(最高-最低),", sorted_df.iloc[-1]['time_jp'], sorted_df.iloc[-1]['highlow'])
         # print(t6, "平均(最高-最低)", sorted_df['highlow'].mean())
@@ -496,147 +525,125 @@ class PeaksClass:
                 ans_num = i  # 回答ほ保存
         print("一番近いやつループ", peaks_same_direction[ans_num])
 
-    # def cal_big_mountain(self):
-    #     """
-    #     直近のピーク（latest_peakはこれから伸びるPeakなので、直前のpeakは[1]の物を示す
-    #     """
-    #     # ■基本情報の取得
-    #     take_position = False
-    #     s = "    "
-    #
-    #     # ■実行除外
-    #     if PeaksClass.peaks_original[0]['count'] != 2:
-    #         return {
-    #             "take_position_flag": take_position
-    #         }
-    #
-    #     # ■■■実行
-    #     target_peak = PeaksClass.peaks_original[1]
-    #
-    #     # ■同一価格の調査を行う（BodyPeakと髭ピークの組み合わせ。ただしどちらかはBodyPeakとする）
-    #     target_num = 1  # 以下のループで「自分以外」を定義するため、変数に入れておく(同一方向の配列に対して）
-    #     t = PeaksClass.peaks_original[target_num]
-    #     print(t)
-    #     arrowed_range = self.recent_fluctuation_range * 0.04  # 最大変動幅の4パーセント程度
-    #     result_same_price_list = []
-    #     result_same_price_num_list = []
-    #     result_not_same_price_num_list = []
-    #     opposite_peaks = []
-    #     opposite_peaks_num = []
-    #     print("  ArrowedGap", arrowed_range)
-    #     for i, item in enumerate(PeaksClass.peaks_original):
-    #         # Continue
-    #         # if i == target_num:
-    #         #     print("飛ばす", PeaksClass.peaks_original[target_num])
-    #         #     continue  # 自分自身は比較しない
-    #
-    #         # 反対方向のピークの場合
-    #         if item['direction'] != target_peak['direction']:
-    #             # ターゲットのピークと逆方向のピークの場合
-    #             opposite_peaks.append(item)
-    #             opposite_peaks_num.append(i)
-    #
-    #         # ■判定１　全ての近い価格を取得
-    #         body_gap_abs = abs(t['peak'] - item['peak'])
-    #         body_wick_gap_abs = abs(t['peak'] - item['latest_wick_peak_price'])
-    #         wick_body_gap_abs = abs(t['latest_wick_peak_price'] - item['peak'])
-    #         if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range or wick_body_gap_abs <= arrowed_range:
-    #             # 同一価格とみなせる場合
-    #             result_same_price_list.append(item)
-    #             result_same_price_num_list.append(i)
-    #         else:
-    #             print("         違う価格", item['time'], body_gap_abs)
-    #             result_not_same_price_num_list.append(i)
-    #
-    #     print("同一価格Ansew")
-    #     gene.print_arr(result_same_price_list)
-    #     gene.print_arr(result_same_price_num_list)
-    #
-    #     if len(result_same_price_list) == 2:
-    #         # ターゲットのピークに対して、同一とみなせる価格のピークが１つの場合(自身含め２個）、直近が何時間前だったかを確認する(最初と最後？）
-    #         sec_gap_latest_same_price = gene.cal_str_time_gap(t['time'], result_same_price_list[0]['time'])
-    #         sec_gap_oldest_same_price = gene.cal_str_time_gap(t['time'], result_same_price_list[-1]['time'])
-    #         print("最古の同一の時間", sec_gap_oldest_same_price['gap_abs']/60)
-    #         if sec_gap_oldest_same_price['gap_abs']/60 >= 70:
-    #             # 90分以上の場合は、山検証の対象
-    #             fr = result_same_price_num_list[0]  # f はfromを示す（短く書く変数化）
-    #             t = result_same_price_num_list[-1]  # t はtoを示す（短く書く変数化）
-    #             filtered_peaks = PeaksClass.peaks_original[fr: t + 1]  # 間のピークス（両方の方向）
-    #             filtered_peaks_oppo_peak = [d for d in filtered_peaks if
-    #                                         d["direction"] == target_peak['direction'] * -1]
-    #             gene.print_arr(filtered_peaks)
-    #             print("逆サイドのみ")
-    #             gene.print_arr(filtered_peaks_oppo_peak)
-    #
-    #             # 最大値（逆サイドの方向が1の場合。-1の場合は最小値）は？
-    #             if target_peak['direction'] * -1 == 1:
-    #                 far_item = max(filtered_peaks_oppo_peak, key=lambda x: x["peak"])
-    #             else:
-    #                 far_item = min(filtered_peaks_oppo_peak, key=lambda x: x["peak"])
-    #             t_gap = abs(far_item['peak'] - target_peak['peak'])
-    #             print("対象は", far_item)
-    #             print(t_gap, far_item['time'], target_peak['time'])
-    #             print(self.recent_fluctuation_range, self.recent_fluctuation_range * 0.38)
-    #             if t_gap >= self.recent_fluctuation_range * 0.38:  # 最大の7割以上ある山が形成されている場合
-    #                 print("☆☆戻ると判定 2個", t_gap/self.recent_fluctuation_range)
-    #                 take_position = True
-    #             # self.recent_fluctuation_range * 0.7
-    #     elif len(result_same_price_list) == 3:
-    #         # 二つの場合、近いほうと遠いほうの比率を検討する
-    #         sec_gap_latest_same_price = gene.cal_str_time_gap(t['time'], result_same_price_list[0]['time'])
-    #         sec_gap_oldest_same_price = gene.cal_str_time_gap(t['time'], result_same_price_list[-1]['time'])
-    #         print("最古の同一の時間", sec_gap_oldest_same_price['gap_abs']/60)
-    #         if sec_gap_oldest_same_price['gap_abs']/60 >= 90:
-    #             # 90分以上の場合は、山検証の対象
-    #             fr = result_same_price_num_list[0]  # f はfromを示す（短く書く変数化）
-    #             t = result_same_price_num_list[-1]  # t はtoを示す（短く書く変数化）
-    #             filtered_peaks = PeaksClass.peaks_original[fr: t + 1]  # 間のピークス（両方の方向）
-    #             filtered_peaks_oppo_peak = [d for d in filtered_peaks if
-    #                                         d["direction"] == target_peak['direction'] * -1]
-    #             gene.print_arr(filtered_peaks)
-    #             print("逆サイドのみ")
-    #             gene.print_arr(filtered_peaks_oppo_peak)
-    #
-    #             # 最大値（逆サイドの方向が1の場合。-1の場合は最小値）は？
-    #             if target_peak['direction'] * -1 == 1:
-    #                 far_item = max(filtered_peaks_oppo_peak, key=lambda x: x["peak"])
-    #             else:
-    #                 far_item = min(filtered_peaks_oppo_peak, key=lambda x: x["peak"])
-    #             t_gap = abs(far_item['peak'] - target_peak['peak'])
-    #             print("対象は", far_item)
-    #             print(t_gap)
-    #             print(self.recent_fluctuation_range, self.recent_fluctuation_range * 0.7)
-    #             if t_gap >= self.recent_fluctuation_range * 0.7:  # 最大の7割以上ある山が形成されている場合
-    #                 print("☆☆戻ると判定 3個", t_gap/self.recent_fluctuation_range)
-    #                 take_position = True
-    #     else:
-    #         # 3個以上の場合は結構突破している・・・？
-    #         pass
-    #
-    #     # 返却用
-    #     exe_orders = []
-    #     if take_position:
-    #         # オーダーありの場合
-    #         peaks = PeaksClass.peaks_original
-    #         base_order_dic = {
-    #             "target": 0.02,
-    #             "type": "STOP",
-    #             "expected_direction": peaks[0]['direction'],
-    #             "tp": 0.9,
-    #             "lc": OCreate.cal_lc_price_from_line_and_margin(peaks[1], 0.03, peaks[0]['direction']),  # 0.06,
-    #             'priority': 3,
-    #             "decision_time": PeaksClass.df_r_original.iloc[0]['time_jp'],
-    #             "decision_price": PeaksClass.df_r_original.iloc[1]['close'],
-    #             "order_timeout_min": 20,
-    #             "name": "山"
-    #         }
-    #         base_order_class = OCreate.OrderCreateClass(base_order_dic)
-    #         exe_orders.append(base_order_class.finalized_order)
-    #
-    #     return {
-    #         "take_position_flag": take_position,
-    #         "exe_orders": exe_orders
-    #     }
+    def make_same_price_list(self, target_num, skip):
+        """
+        samePriceListを作成する（指定のピーク価格を基準とする）
+        ・一番近いピークまで何分か、一番近いピークまでの間にBreakがあるかどうか
+        ・Breakが発生するまでの同一価格
+        ・同一価格のリスト（全区間）
+        ・同一価格のリスト（時間内）
+        """
+        # skip = True
+        if skip:
+            # Skip Peakを利用する
+            peaks = PeaksClass.skipped_peaks
+        else:
+            peaks = PeaksClass.peaks_original
+        # ターゲット情報
+        # target_num = 2
+        target_peak = peaks[target_num]
+        target_price = target_peak['latest_body_peak_price']
+        print("実行時引数 SKIP：", skip, " TargetNum:", target_num)
+        print("ターゲットになるピーク@cp:", target_peak)
+        # Margin情報
+        arrowed_range = self.recent_fluctuation_range * 0.04  # 最大変動幅の4パーセント程度
+        # 山の情報
+        mountain_foot_min = 60  # 山のすそ野の広さ（この値以上の山の裾野の広さを狙う）
+        base_time = datetime.strptime(peaks[0]['time'], '%Y/%m/%d %H:%M:%S')
+
+        # ■■同一価格の探索
+        break_num = 0  #
+        same_price_num = 0
+        break_border = 1  # この数以上のBreakが発生するまでの同一価格リストを求める
+        for i, item in enumerate(peaks):
+            # print("     検証対象：", item['time'], item['peak_strength'], base_time)
+
+            # 既定の裾野の内側にある場合inner=True
+            time_gap_sec = abs(datetime.strptime(item['latest_time_jp'], '%Y/%m/%d %H:%M:%S') - base_time)
+            if time_gap_sec <= timedelta(minutes=mountain_foot_min):
+                is_inner = True
+            else:
+                is_inner = False
+
+            # 最初の一つは確保する（自分自身はたとえ強度が低くても、確保する）
+            if i == target_num:
+                # print("          FIRST：", item['time'], item['peak_strength'])
+                PeaksClass.same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                PeaksClass.same_price_list_till_break.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                if is_inner:
+                    PeaksClass.same_price_list_inner.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                else:
+                    PeaksClass.same_price_list_outer.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                continue
+            # 除外条件（ターゲットより前の場合)
+            if i < target_num:
+                continue
+
+            # Breakかを先に判定する
+            if target_peak['direction'] == 1:
+                if item['peak'] > target_price + arrowed_range:
+                    # print("          Break up：", item['time'], item['peak_strength'])
+                    # ターゲットピークを越えている場合(UpperLineで、上側に突き抜け）、NG
+                    PeaksClass.break_peaks.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                    if is_inner:
+                        PeaksClass.break_peaks_inner.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                    else:
+                        PeaksClass.break_peaks_outer.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                    # 共通
+                    break_num = break_num + 1
+            else:
+                if item['peak'] < target_price - arrowed_range:
+                    # print("          Break：", item['time'], item['peak_strength'])
+                    # ターゲットピークを越えている場合（lowerLineで下に突き抜け）、NG
+                    PeaksClass.break_peaks.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                    if is_inner:
+                        PeaksClass.break_peaks_inner.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                    else:
+                        PeaksClass.break_peaks_outer.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                    # 共通
+                    break_num = break_num + 1
+
+            # 同一価格リストを取得（Breakがn個発生するまでの同一価格、全体の同一価格、時間内の同一価格）
+            body_gap_abs = abs(target_price - item['peak'])
+            if abs(item['latest_wick_peak_price'] - item['peak']) >= arrowed_range:
+                # 髭が長すぎる場合は無効（無効は、上限をオーバーする値に設定してしまう
+                body_wick_gap_abs = arrowed_range + 1  # 確実にarrowed_rangeより大きな値
+            else:
+                body_wick_gap_abs = abs(target_price - item['latest_wick_peak_price'])
+            # wick_body_gap_abs = abs(target_peak['latest_wick_peak_price'] - item['peak'])
+            # if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range or wlen(result_same_price_list)ick_body_gap_abs <= arrowed_range:
+            if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range:
+                # 同一価格とみなせる場合
+                # print("          同一価格：")
+                PeaksClass.same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                # 同一価格とみなせる場合で、さらに時間いないかどうかを検証する
+                if is_inner:
+                    # print("         　 　　　　inner：")
+                    PeaksClass.same_price_list_inner.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                else:
+                    # print("         　 　　　　outer：")
+                    PeaksClass.same_price_list_outer.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                # BreakがN個以下までの同一価格
+                if break_num <= break_border:
+                    PeaksClass.same_price_list_till_break.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                # 共通
+                same_price_num = same_price_num + 1
+            else:
+                # print("          Not：",body_gap_abs,arrowed_range,body_wick_gap_abs,arrowed_range)
+                PeaksClass.result_not_same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
+        # 表示用
+        print("同一価格一覧 @cp")
+        f.print_arr(PeaksClass.same_price_list)
+        print("70分以内の同一価格一覧 @cp")
+        f.print_arr(PeaksClass.same_price_list_inner)
+        print("Break一覧 @cp")
+        f.print_arr(PeaksClass.break_peaks)
+        print("70分以内のBreak一覧 @cp")
+        f.print_arr(PeaksClass.break_peaks_inner)
+        print("70分より前のBreak一覧 @cp")
+        f.print_arr(PeaksClass.break_peaks_outer)
+        print("Breakまでの同一価格 @cp")
+        f.print_arr(PeaksClass.same_price_list_till_break)
 
 def judge_peak_is_belong_peak_group(peaks, target_peak):
     """

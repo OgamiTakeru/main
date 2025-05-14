@@ -983,7 +983,51 @@ class order_information:
                        "保証", lc_range, "約定価格", self.t_execution_price,
                        "予定価格", self.plan['price'])
 
-    def tuning_by_history(self):
+    def tuning_by_history_break(self):
+        """
+        検討中
+        呼びもとで過去１回分の結果を参照し、それが大きなLCだった場合は、この関数を呼ぶ。
+        この関数は、リスクをとってそのLCと同額をTPとする。
+        """
+
+        tp_up_border_minus = -0.045  # これ以上のマイナスの場合、取り返しに行く。
+        # 過去の履歴を確認する
+        if len(order_information.history_plus_minus) == 1:
+            # 過去の履歴が一つだけの場合
+            latest_plu = order_information.history_plus_minus[-1]
+            print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", order_information.history_plus_minus[-1])
+        else:
+            # 過去の履歴が二つ以上の場合、直近の二つの合計で判断する
+            latest_plu = order_information.history_plus_minus[-1] + order_information.history_plus_minus[-2]  # 変数化(短縮用)
+            print("  直近の勝敗pips", latest_plu, "詳細(直近)", order_information.history_plus_minus[-1],
+                  order_information.history_plus_minus[-2])
+        # 最大でも現実的な10pips程度のTPに収める
+        if abs(latest_plu) >= 0.01:
+            latest_plu = 0.01
+
+        # 値を調整する
+        if latest_plu == 0:
+            print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
+            # 通常環境の場合
+            tp_range = 0.5
+            lc_change_type = 3
+        else:
+            if latest_plu <= tp_up_border_minus:
+                print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）", latest_plu * 0.8)
+                # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
+                tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
+                lc_change_type = 4  # LCchangeの設定なし
+                tk.line_send("取り返し調整発生")
+            else:
+                # 直近がプラスの場合プラスの場合、普通。
+                print("  ★前回プラスのため、通常TP設定")
+                tp_range = 0.5
+                lc_change_type = 3  # LCchangeの設定なし
+
+        return {"tuned_tp_range": tp_range, "tuned_lc_change_type": lc_change_type}
+
+
+    def tuning_by_history_resi(self):
         """
         検討中
         呼びもとで過去１回分の結果を参照し、それが大きなLCだった場合は、この関数を呼ぶ。
@@ -1016,7 +1060,7 @@ class order_information:
                 print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）", latest_plu * 0.8)
                 # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
                 tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
-                lc_change_type = 0  # LCchangeの設定なし
+                lc_change_type = 3  # LCchangeの設定なし
                 tk.line_send("取り返し調整発生")
             else:
                 # 直近がプラスの場合プラスの場合、普通。
@@ -1025,6 +1069,7 @@ class order_information:
                 lc_change_type = 1  # LCchangeの設定なし
 
         return {"tuned_tp_range": tp_range, "tuned_lc_change_type": lc_change_type}
+
 
 
 def error_end(info):
