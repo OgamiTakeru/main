@@ -83,6 +83,10 @@ class order_information:
         self.counter_order_peace = {}  # 全ての情報は受け取れないので、CounterOrderで追記する
         self.counter_order_done = False
 
+        # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
+        self.try_update_limit = 2
+        self.try_update_num = 0
+
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
         print("    OrderClassリセット")
@@ -130,6 +134,10 @@ class order_information:
         self.counter_order_done = False
         self.lc_change_less_minus_done = False
 
+        # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
+        self.try_update_limit = 2
+        self.try_update_num = 0
+
     def print_info(self):
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
         print("　 【life】", self.life)
@@ -157,6 +165,18 @@ class order_information:
             # Life終了時（＝能動オーダークローズ、能動ポジションクローズ、市場で発生した成り行きのポジションクローズで発動）
             print(" LIFE 終了", self.name)
             # self.output_res()  # 解析用にポジション情報を収集しておく
+
+    def count_up_position_check(self):
+        """
+        オーダーが謎な状態になる（Class外関数のposition_check関数で）
+        時間的に、登録⇒チェックのタイミングが、単発的におかしくなっていると推定。
+        従来、謎な状態を検知した時点で、LifeをFalseにしていたが、何回かposition_checkで実行する
+        この関数は、外部から、そのトライの回数をポジションごとにカウントアップする物
+        """
+        if self.life:
+            self.try_update_num = self.try_update_num + 1
+
+
 
     def send_line(self, *args):
         """
@@ -893,7 +913,7 @@ class order_information:
         ローソクを取得するのは、５分に１回のみで問題ないため、メインと同じコードを書くことになるが、それで対応する。
         """
         # print("  ★LC＿ChangeFromCandle実行関数")
-        if self.t_state != "OPEN" or self.t_pl_u < 0 or self.t_time_past_sec < 100:  # 足数×〇分足×秒
+        if self.t_state != "OPEN" or self.t_pl_u < 0 or self.t_time_past_sec < 300:  # 足数×〇分足×秒
             # ポジションがない場合、プラス域ではない場合、所持時間が短い場合は実行しない
             # print("       lc_change_candleの実行無", self.t_state, self.t_pl_u, self.t_time_past_sec)
             return 0
@@ -1272,10 +1292,17 @@ def position_check_no_args():
                 pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
             else:
                 # どうやらt_stateが入っていない状態（オーダーエラーや謎の状態）
-                print(" 謎の状態(t_state)", item.t_state, "o_state", item.o_state, item.name)
-                tk.line_send("謎の状態発生(t_state)", item.t_state, "o_state", item.o_state, item.name)
-                item.life_set(False)  # 強制的にクローズ
-
+                print(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=", item.life, ",try_num", item.try_update_num)
+                # tk.line_send(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=", item.life, ",try_num", item.try_update_num)
+                if item.try_update_num <= item.try_update_limit:
+                    # まだ何回か確認するまで、LifeはFalseにしない
+                    tk.line_send(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name,
+                                 ",life=", item.life, ",try_num", item.try_update_num, "回目　⇒再トライ")
+                    item.count_up_position_check()  # 対象ポジションのtry_update_numをカウントアップする
+                else:
+                    item.life_set(False)  # 強制的にクローズ
+                    tk.line_send(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name,
+                                 ",life=", item.life, ",try_num", item.try_update_num, "回目のため終了（lifeFalse)")
         # else:
         #     # Lifeが終わっているもの
 

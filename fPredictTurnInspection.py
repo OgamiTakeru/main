@@ -187,8 +187,8 @@ def cal_predict_turn(peaks_class):
 
     # ■実行除外
     # 範囲が少ない
-    if peaks[0]['count'] == 2 and peaks[1]['count'] >= 3:
-        print("　カウント数は合格", peaks[0]['count'], "が２で、", peaks[1]['count'], "が３以上が対象")
+    if peaks[0]['count'] == 3 and peaks[1]['count'] >= 3:  # [0]countは２では微妙（２はBreakのケースが多く見える）ので３．
+        print("　カウント数は合格", peaks[0]['count'], "が3で、", peaks[1]['count'], "が３以上が対象")
     else:
         print("  山を形成するカウント不足", peaks[0]['count'], "が２で、", peaks[1]['count'], "が３以上が対象")
         return default_return_item
@@ -217,12 +217,14 @@ def cal_predict_turn(peaks_class):
     print("最古の同一価格時間差", old_same_price_time_gap)
     exe_orders = []
     if len(peaks_class.same_price_list_till_break) >= 1 and old_same_price_time_gap >=timedelta(minutes=25):
-        print("オーダーします！！！！")
+        take_position = True
         exe_orders.append(resistnce_order(peaks, peaks_class, "Predict抵抗", target_num))
     else:
         print("オーダーしません", len(peaks_class.same_price_list_till_break), old_same_price_time_gap)
 
-    print(exe_orders)
+    if take_position:
+        print("オーダーします", "predict抵抗")
+        print(exe_orders)
 
     return {
         "take_position_flag": take_position,
@@ -256,7 +258,7 @@ def break_order(peaks, peaks_class, comment, same_price_list):
         # "tp": 0.075,
         # "lc": 0.075,
         "tp": 0.075,
-        "lc": 0.05,
+        "lc": peaks_class.ave_move_for_lc,
         'priority': 3,
         "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
         "decision_price": peaks_class.df_r_original.iloc[1]['close'],
@@ -292,7 +294,7 @@ def resistnce_order(peaks, peaks_class, comment, target_num):
         # "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
         # "lc": lc_price,  # 0.06,
         "tp": peaks[1]['latest_body_peak_price'],  #0.03,
-        "lc": 0.05,
+        "lc": peaks_class.ave_move_for_lc,
         'priority': 3,
         "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
         "decision_price": peaks_class.df_r_original.iloc[1]['close'],

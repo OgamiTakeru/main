@@ -89,7 +89,8 @@ def how_to_new_order_judge(inspection_result_dic):
             print(" 既存オーダーが、新規同等の重要度のため、既存をキャンセルし、改めてオーダーしなおす")
             # print(" 既存オーダーが、新規同等の重要度のため、既存を生かし今回はキャンセル")
             # how_to_new_order_str = "cancel"
-            how_to_new_order_str = "replace"
+            # how_to_new_order_str = "replace"
+            how_to_new_order_str = "add"
         else:
             print("既存オーダーが、新規より重要度が低いため、既存オーダーを削除し、新規オーダーを入れる")
             how_to_new_order_str = "replace"

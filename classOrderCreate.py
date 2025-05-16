@@ -13,7 +13,7 @@ import fBlockInspection as fTurn
 
 
 class OrderCreateClass:
-    basic_unit = 10000
+    basic_unit = 20000
     oa = None
 
     def __init__(self, order_json):

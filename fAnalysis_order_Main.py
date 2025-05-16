@@ -556,7 +556,6 @@ def analysis_predict_mountain(df_r):
         flag_and_orders["take_position_flag"] = True
         flag_and_orders["exe_orders"] = mountain_result['exe_orders']
         # 代表プライオリティの追加
-        print(flag_and_orders["exe_orders"])
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority
         flag_and_orders['for_inspection_dic'] = {}
@@ -570,7 +569,6 @@ def analysis_predict_mountain(df_r):
                 flag_and_orders["take_position_flag"] = True
                 flag_and_orders["exe_orders"] = mountain_result['exe_orders']
                 # 代表プライオリティの追加
-                print(flag_and_orders["exe_orders"])
                 max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
                 flag_and_orders['max_priority'] = max_priority
                 flag_and_orders['for_inspection_dic'] = {}
@@ -582,7 +580,6 @@ def analysis_predict_mountain(df_r):
             flag_and_orders["take_position_flag"] = True
             flag_and_orders["exe_orders"] = mountain_result['exe_orders']
             # 代表プライオリティの追加
-            print(flag_and_orders["exe_orders"])
             max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
             flag_and_orders['max_priority'] = max_priority
             flag_and_orders['for_inspection_dic'] = {}
