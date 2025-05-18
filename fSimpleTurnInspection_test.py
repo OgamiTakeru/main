@@ -380,7 +380,7 @@ def resistnce_order(peaks, peaks_class, comment, same_price_list):
         "expected_direction": peaks[0]['direction'],
         # "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
         # "lc": lc_price,  # 0.06,
-        "tp": 0.03,
+        "tp": 0.05,
         "lc": 0.05,
         'priority': 3,
         "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],

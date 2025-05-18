@@ -295,7 +295,7 @@ def resistnce_order(peaks, peaks_class, comment, target_num):
         # "lc": lc_price,  # 0.06,
         "tp": peaks[1]['latest_body_peak_price'],  #0.03,
         "lc": peaks_class.ave_move_for_lc,
-        'priority': 3,
+        'priority': 4,
         "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
         "decision_price": peaks_class.df_r_original.iloc[1]['close'],
         "order_timeout_min": 40,

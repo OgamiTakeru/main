@@ -675,12 +675,12 @@ gl_start_time_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" 
 
 print("--------------------------------検証開始-------------------------------")
 # ■　検証の設定
-gl_exist_data = True
-gl_jp_time = datetime.datetime(2025, 3, 14, 19, 40, 0)  # TOの時刻
+# gl_exist_data = False
+gl_jp_time = datetime.datetime(2025, 5, 17, 10, 40, 0)  # TOの時刻
 gl_haba = "M5"
-gl_m5_count = 100
+gl_m5_count = 4000
 gl_m5_loop = 1
-memo = " LCchangeのパターン変更"
+memo = " 直近分でテスト"
 memo = "少量24_25 " + memo
 
 # gl_exist_date = Trueの場合の読み込みファイル

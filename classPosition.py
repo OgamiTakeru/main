@@ -7,6 +7,7 @@ import fGeneric as gene
 import gc
 import fCommonFunction as cf
 import sys
+import classPeaks as cpk
 
 class order_information:
     total_yen = 0  # トータルの円
@@ -942,6 +943,7 @@ class order_information:
                 else:
                     self.latest_df = d5_df['data']
                     self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
+                    peaks_class = cpk.PeaksClass(self.latest_df)
         #             print("LCChange用にDFを取得しました", self.latest_df_get_time)
         #             print(self.latest_df)
         #             print("1行のみ抽出")
@@ -954,14 +956,22 @@ class order_information:
         # else:
         #     print("データ取得無し　 時刻条件合わず",time_min,"分", time_sec,"秒")
 
-        if self.plan['direction']>0:
-            # 買い方向の場合、ひとつ前のローソクのLowの値をLC価格に
-            lc_price_temp = float(self.latest_df.iloc[-2]['low']) - order_information.add_margin
+        # 逆張り注文の際、self.latest_df.iloc[-2]['low']基準だとおかしいくなる。
+        # peakを算出し、peaks[0]がカウント２以上ある場合のみ、self.latest_df.iloc[-2]['low']を参照するケースに変更(25/5/17)
+        peaks = peaks_class.peaks_original
+        if peaks[0]['count'] >=3:
+            # self.latest_df.iloc[-2]['low']の-2が選択できる状態であれば、実行する
+            if self.plan['direction'] > 0:
+                # 買い方向の場合、ひとつ前のローソクのLowの値をLC価格に
+                lc_price_temp = float(self.latest_df.iloc[-2]['low']) - order_information.add_margin
+            else:
+                # 売り方向の場合、ひとつ前のローソクのHighの値をLC価格に
+                lc_price_temp = float(self.latest_df.iloc[-2]['high']) + order_information.add_margin
+            print("LCcandleChangeにて、直近peakカウント:", peaks[0]['count'], "変更基準ローソク時間:", self.latest_df.iloc[-2]['time_jp'])
         else:
-            # 売り方向の場合、ひとつ前のローソクのHighの値をLC価格に
-            lc_price_temp = float(self.latest_df.iloc[-2]['high']) + order_information.add_margin
-
-        # print("対象となるLC基準", self.latest_df.iloc[-2]['time_jp'], lc_price_temp)
+            # self.latest_df.iloc[-2]['low']は逆張りの時におかしくなる
+            print("LCcandleChange中断　直近peakカウント:", peaks[0]['count'], "間違えたローソク時間:", self.latest_df.iloc[-2]['time_jp'])
+            return -1
 
         if self.lc_change_from_candle_lc_price == lc_price_temp:
             # print(" 既にこの価格のLCとなっているため、変更処理は実施せず")
