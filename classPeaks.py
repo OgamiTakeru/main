@@ -557,6 +557,7 @@ class PeaksClass:
         # ■■SamePriceListのリセット(繰り返し呼ばれた場合、.appendで追加だけされてしまう）
         PeaksClass.same_price_list = []
         PeaksClass.same_price_list_till_break = []
+        PeaksClass.same_price_list_till_break2 = []
         PeaksClass.same_price_list_inner = []
         PeaksClass.same_price_list_outer = []
         PeaksClass.result_not_same_price_list = []
@@ -568,6 +569,7 @@ class PeaksClass:
         break_num = 0  #
         same_price_num = 0
         break_border = 1  # この数以上のBreakが発生するまでの同一価格リストを求める
+        break_border2 = 2  # この数以上のBreakが発生するまでの同一価格リストを求める
         for i, item in enumerate(peaks):
             # print("     検証対象：", item['time'], item['peak_strength'], base_time)
 
@@ -583,6 +585,7 @@ class PeaksClass:
                 # print("          FIRST：", item['time'], item['peak_strength'])
                 PeaksClass.same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 PeaksClass.same_price_list_till_break.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                PeaksClass.same_price_list_till_break2.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 if is_inner:
                     PeaksClass.same_price_list_inner.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 else:
@@ -639,6 +642,8 @@ class PeaksClass:
                 # BreakがN個以下までの同一価格
                 if break_num <= break_border:
                     PeaksClass.same_price_list_till_break.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                if break_num <= break_border2:
+                    PeaksClass.same_price_list_till_break2.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 # 共通
                 same_price_num = same_price_num + 1
             else:
@@ -657,6 +662,8 @@ class PeaksClass:
         f.print_arr(PeaksClass.break_peaks_outer)
         print("Breakまでの同一価格 @cp")
         f.print_arr(PeaksClass.same_price_list_till_break)
+        print("Break2までの同一価格 @cp")
+        f.print_arr(PeaksClass.same_price_list_till_break2)
 
 def judge_peak_is_belong_peak_group(peaks, target_peak):
     """

@@ -13,7 +13,7 @@ import fBlockInspection as fTurn
 
 
 class OrderCreateClass:
-    basic_unit = 20000
+    basic_unit = 10000
     oa = None
 
     def __init__(self, order_json):
@@ -144,6 +144,20 @@ class OrderCreateClass:
         self.finalized_order_without_lc_change = copy.deepcopy(self.finalized_order)
         self.finalized_order_without_lc_change.pop("lc_change", None)  # キーがなければ None を返す
 
+    def change_lc_change(self, type_no):
+        """
+        LC Changeを直接執行する
+        """
+        # 指定されている場合は、指定のLC_Change処理へ
+        if type_no == 1:
+            self.add_lc_change_defence()
+        elif type_no == 0:
+            self.add_lc_change_no_change()
+        elif type_no == 3:
+            self.add_lc_change_offence()
+        elif type_no == 4:
+            self.add_lc_change_after_lc()
+
     def get_now_mid_price(self):
         """
         各関数の行数削減（特にエラー対応）のため、関数に出す
@@ -223,8 +237,8 @@ class OrderCreateClass:
         """
         lc = self.finalized_order['lc_range']
         self.finalized_order['lc_change'] = [
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.018, "lc_ensure_range": -0.025},
-            {"lc_change_exe": True, "time_after": 300, "lc_trigger_range": 0.025, "lc_ensure_range": -0.015},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.018, "lc_ensure_range": -0.015},
+            {"lc_change_exe": True, "time_after": 300, "lc_trigger_range": 0.025, "lc_ensure_range": 0.006},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": round(lc * 1.1, 3), "lc_ensure_range": round(lc * 0.8, 3)},
             {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
             {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},

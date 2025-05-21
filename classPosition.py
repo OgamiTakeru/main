@@ -944,6 +944,12 @@ class order_information:
                     self.latest_df = d5_df['data']
                     self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
                     peaks_class = cpk.PeaksClass(self.latest_df)
+            else:
+                # 30秒以上立っていない場合
+                peaks_class = cpk.PeaksClass(self.latest_df)
+        else:
+            # 5分（足が新規で完成するタイミングじゃない場合）
+            return 0
         #             print("LCChange用にDFを取得しました", self.latest_df_get_time)
         #             print(self.latest_df)
         #             print("1行のみ抽出")
@@ -1303,7 +1309,7 @@ def position_check_no_args():
             else:
                 # どうやらt_stateが入っていない状態（オーダーエラーや謎の状態）
                 print(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=", item.life, ",try_num", item.try_update_num)
-                # tk.line_send(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=", item.life, ",try_num", item.try_update_num)
+                # tk.line_send(" 謎の状態(分岐前）　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=", item.life, ",try_num", item.try_update_num)
                 if item.try_update_num <= item.try_update_limit:
                     # まだ何回か確認するまで、LifeはFalseにしない
                     tk.line_send(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name,

@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from datetime import datetime
 import classOrderCreate as OCreate
 import classPosition
+import matplotlib.dates as mdates
 import bisect
 
 
@@ -54,6 +55,20 @@ def judge_flag_figure_new(peaks, same_price_list, direction):
 
         print("フラッグ検証をする範囲の中で、傾きを求めたい側のPeaks")
         opposite_peaks = [item for item in target_peaks if item["direction"] == search_direction]
+        gene.print_arr(opposite_peaks)
+
+        print("最小（最大）値までのPeaks")
+        if search_direction == 1:
+            # 上側の傾きを求めたいときは、最大値までのPeaksを利用する
+            peak_index = max(range(len(opposite_peaks)), key=lambda i: opposite_peaks[i]['latest_body_peak_price'])
+            # 先頭から最小価格の位置までのデータを取得（含む）
+            opposite_peaks = opposite_peaks[:peak_index + 1]
+        else:
+            # 下側の傾きを求めたいときは、最小値までのPeaksを利用する
+            peak_index = min(range(len(opposite_peaks)), key=lambda i: opposite_peaks[i]['latest_body_peak_price'])
+            # 先頭から最小価格の位置までのデータを取得（含む）
+            opposite_peaks = opposite_peaks[:peak_index + 1]
+        print("　　最小(大)値の場所", peak_index, opposite_peaks[peak_index]['latest_time_jp'])
         gene.print_arr(opposite_peaks)
 
         # 近似線を算出する
@@ -161,6 +176,7 @@ def judge_flag_figure_new(peaks, same_price_list, direction):
     except:
         return {"is_flag": False}
 
+
 def cal_big_mountain(peaks_class):
     """
     args[0]は必ずpeaks_classであること。
@@ -229,28 +245,44 @@ def cal_big_mountain(peaks_class):
     is_flag = flag_judge['is_flag']
 
     # ■Breakの有無（全体的にない場合「強」、部分的にある場合「直近同一ピークまではない」または「直近同一ピークまでもある」
-    if len(peaks_class.break_peaks) != 0:
-        # Breakが発生している場合（ほとんどのケースだと思われる）
-        latest_break_gap_min = gene.cal_str_time_gap(target_peak['time'], peaks_class.break_peaks[0]['item']['time'])['gap_abs_min']
-        if latest_break_gap_min >= mountain_foot_min:
-            # 直近のブレイクポイントが山の裾野より以前にある場合（従来の想定のパターンで、山間にBreak無しで、山のすそ野は大体70分程度）
-            print("Break有だが、山の裾野の範囲にBreakはなし")
-            bp = 10
-        else:
-            # 直近のブレイクポイント裾野内に存在する場合
-            if len(peaks_class.break_peaks_inner) <= 1:
-                print("裾野内のBreakが1個")
-                bp = 11
-            else:
-                print("裾野内にBreakが２個以上、除外対象（この場合のみ除外対象）")
-                bp = 19
-    else:
-        # Breakが発生していない場合（かなりレアケースだが、相当強い抵抗線の可能性がある）
+    # if len(peaks_class.break_peaks) != 0:
+    #     # Breakが発生している場合（ほとんどのケースだと思われる）
+    #     latest_break_gap_min = gene.cal_str_time_gap(target_peak['time'], peaks_class.break_peaks[0]['item']['time'])['gap_abs_min']
+    #     print("BreakPeakは", peaks_class.break_peaks[0]['item']['time'], "分前", latest_break_gap_min)
+    #     if latest_break_gap_min >= mountain_foot_min:
+    #         # 直近のブレイクポイントが山の裾野より以前にある場合（従来の想定のパターンで、山間にBreak無しで、山のすそ野は大体70分程度）
+    #         print("Break有だが、山の裾野の範囲にBreakはなし")
+    #         bp = 10
+    #     else:
+    #         # 直近のブレイクポイント裾野内に存在する場合
+    #         if len(peaks_class.break_peaks_inner) <= 1:
+    #             print("裾野内のBreakが1個")
+    #             bp = 11
+    #         else:
+    #             print("裾野内にBreakが２個以上、除外対象（この場合のみ除外対象）")
+    #             bp = 19
+    # else:
+    #     # Breakが発生していない場合（かなりレアケースだが、相当強い抵抗線の可能性がある）
+    #     bp = 0
+    if len(peaks_class.same_price_list_till_break) >= 3:
+        # ブレイクまで3回の同一価格がある⇒結構強い抵抗線とみられる
         bp = 0
+        print("強い抵抗線になりえる", len(peaks_class.same_price_list_till_break))
+    elif len(peaks_class.same_price_list_till_break) >= 2:
+        # ブレイクまで2回の同一価格がある⇒そこそこ強い抵抗線とみられる
+        bp = 0
+        print("やや強い抵抗線", len(peaks_class.same_price_list_till_break))
+    elif len(peaks_class.same_price_list_till_break2) >= 3:
+        # 1回はブレイクを許容している、抵抗線⇒少し弱いがまた抵抗線といえる？
+        bp = 10
+        print("ブレイクを一回許容している、少し弱めの抵抗線", len(peaks_class.same_price_list_till_break2))
+    else:
+        bp = 19
 
     # ■同一価格が作る抵抗線の強度の
-    print("自身があるかのテスト", same_price_list[0])
     latest_peak = same_price_list[1]  # [0]はTarget自身。[1]が自身を除く、Latestとなる
+    print("target（自身）⇒", same_price_list[0])
+    print("latestのPeak⇒", same_price_list[1]['item']['time'])
     gap_latest_same_price_min = gene.cal_str_time_gap(target_peak['time'], latest_peak['item']['time'])['gap_abs_min']
     sp = 0
     if gap_latest_same_price_min >= mountain_foot_min:
@@ -274,32 +306,63 @@ def cal_big_mountain(peaks_class):
     # 初期値の設定
     exe_orders = []  # 返却用
     take_position = False
-    if sp == 1 and is_flag and bp != 19:
-        # if mountain_ratio >= 0.7:
-        # 従来勝てるの条件１
-        comment = "★sp=1_break, フラッグ＝"+str(is_flag)+",@" + str(bp) + "@" + str(mountain_ratio) + "@" + str(len(same_price_list))
-        take_position = True
-        exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
-    elif sp == 3 and is_flag and bp != 19:
-        # if mountain_ratio >= 0.7:
-        # 従来勝てるの条件２
-        comment = "★sp=3_break, フラッグ＝"+str(is_flag)+", @" + str(bp) + "@" + str(mountain_ratio) + "@" + str(len(same_price_list))
-        take_position = True
-        exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
-    elif sp == 2 and bp < 19:
+    if sp == 1 and bp == 0:
+        if len(peaks_class.break_peaks_inner) == 0:
+            comment = " ★理想形(SP=1,bp=0,70以内ブレイク無し）のためResiオーダー"
+            take_position = True
+            exe_orders.append(resistnce_order(peaks, peaks_class, comment, same_price_list))
+        elif len(peaks_class.break_peaks_inner) <= 2:
+            comment = " ★やや理想形(SP=1,bp=0,70以内ブレイク２以下）のためResiオーダー"
+            take_position = True
+            exe_orders.append(resistnce_order(peaks, peaks_class, comment, same_price_list))
+        else:
+            comment = "　★ダメな形（SP=1,bp=0だが、70以内ブレイク多数) 一応ブレイクオーダー"
+            take_position = True
+            exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
+    elif bp == 0:
+        # 70分は問わず、とりあえず強い抵抗線が見受けられる場合
         if is_flag:
-            # 従来勝てるの条件２
-            comment = "★sp=2_break, フラッグ＝"+str(is_flag)+", @" + str(bp) + "@" + str(mountain_ratio) + "@" + str(len(same_price_list))
+            comment = " ★強い抵抗線(bp=0)＋フラッグ成立のためブレイクオーダー"
             take_position = True
             exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
         else:
-            comment = "★sp=2_resi, フラッグ＝"+str(is_flag)+", @" + str(bp) + "@" + str(mountain_ratio) + "@" + str(len(same_price_list))
+            comment = " ★強い抵抗線(bp=0)＋フラッグ無しのためResiオーダー"
             take_position = True
             exe_orders.append(resistnce_order(peaks, peaks_class, comment, same_price_list))
-    # else:
-    #     comment = "NG_sp=" + str(sp) + "_resi, フラッグ＝" + str(is_flag) + ", @" + str(bp) + "@" + str(mountain_ratio) + "@" + str(len(same_price_list))
+    elif bp == 10:
+        # 抵抗線が弱そうな場合
+        comment = " ★弱そうな抵抗線 bp=10のためブレイクオーダー"
+        take_position = True
+        exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
+    elif bp == 19:
+        # よくわからない抵抗線
+        comment = " ★最弱の抵抗線 bp=19のためブレイクオーダー"
+        take_position = True
+        exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
+
+    # if sp == 1 and is_flag and bp != 19:
+    #     # if mountain_ratio >= 0.7:
+    #     # 従来勝てるの条件１
+    #     comment = "★sp=1_break, フラッグ＝"+str(is_flag)+",@" + str(bp) + "@" + str(mountain_ratio) + "@" + str(len(same_price_list))
     #     take_position = True
-    #     exe_orders.append(resistnce_order(peaks, peaks_class, comment, same_price_list))
+    #     exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
+    # elif sp == 3 and is_flag and bp != 19:
+    #     # if mountain_ratio >= 0.7:
+    #     # 従来勝てるの条件２
+    #     comment = "★sp=3_break, フラッグ＝"+str(is_flag)+", @" + str(bp) + "@" + str(mountain_ratio) + "@" + str(len(same_price_list))
+    #     take_position = True
+    #     exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
+    # elif sp == 2 and bp < 19:
+    #     if is_flag:
+    #         # 従来勝てるの条件２
+    #         comment = "★sp=2_break, フラッグ＝"+str(is_flag)+", @" + str(bp) + "@" + str(mountain_ratio) + "@" + str(len(same_price_list))
+    #         take_position = True
+    #         exe_orders.append(break_order(peaks, peaks_class, comment, same_price_list))
+    #     else:
+    #         comment = "★sp=2_resi, フラッグ＝"+str(is_flag)+", @" + str(bp) + "@" + str(mountain_ratio) + "@" + str(len(same_price_list))
+    #         take_position = True
+    #         exe_orders.append(resistnce_order(peaks, peaks_class, comment, same_price_list))
+
 
     if len(exe_orders) == 0:
         return default_return_item
@@ -345,7 +408,8 @@ def break_order(peaks, peaks_class, comment, same_price_list):
         "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
         "decision_price": peaks_class.df_r_original.iloc[1]['close'],
         "order_timeout_min": 20,
-        "lc_change_type": 0,
+        # "lc_change_type": 0,
+        "lc_change_type": lc_change_type,
         "name": comment
     }
     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
@@ -386,7 +450,8 @@ def resistnce_order(peaks, peaks_class, comment, same_price_list):
         "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
         "decision_price": peaks_class.df_r_original.iloc[1]['close'],
         "order_timeout_min": 20,
-        "lc_change_type": 3,
+        # "lc_change_type": 3,
+        "lc_change_type": lc_change_type,
         "name": comment
     }
     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成
