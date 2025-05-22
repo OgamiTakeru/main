@@ -219,8 +219,7 @@ def mode1():
     # ■■■■オーダー
     time_hour = gl_now.hour  # 現在時刻の「時」のみを取得
     time_min = gl_now.minute  # 現在時刻の「分」のみを取得
-    # inspection_result_dic = am.new_analysis(gl_data5r_df)  # 警告回避用
-    inspection_result_dic = am.analysis_predict_mountain(gl_data5r_df)  # 警告回避用
+    inspection_result_dic = gl_target_function(gl_data5r_df)  # 警告回避用
 
     # if 2 <= time_hour <= 7:
     #     # 深夜帯(6～7時はループで落とされるが念のため）⇒レンジになりがちのため、突破系は信頼度落とす
@@ -456,6 +455,8 @@ print(classes[0].name)
 
 
 # ■処理の開始
+gl_target_function = am.analysis_predict_mountain_test  # ★★利用する解析関数 ★★★
+
 classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
 tk.line_send("■■新規スタート", gl_live)
 # main()
