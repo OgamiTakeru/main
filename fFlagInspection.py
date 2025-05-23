@@ -985,19 +985,22 @@ def analysis(peaksclass):
         # フラッグが成立している場合
         print("■■■")
         # 表示用　（↓返却の中身に等しい）
-        # for i, item in enumerate(flags):
-        #     print(s6, "今回")
-        #     print(s6, item['line_base_info'])
-        #     print(s6, item['same_price_list'])
-        #     print(s6, item['strength_info'])
-        #     print(s6, item['flag_info'])
+        for i, item in enumerate(flags):
+            print(s6, "今回")
+            print(s6, item['line_base_info'])
+            print(s6, item['same_price_list'])
+            print(s6, item['strength_info'])
+            print(s6, item['flag_info'])
 
         # 対象を一つに絞る処理
         if flag_flag:
             # 念のためLineStrengthが-1のもの（そもそもここにはFlag成立＝strength-1のものしか来ないはず）
             flags = [d for d in flags if d["strength_info"]["line_strength"] == -1]
             # 一番新しい時間を含むSamePriceListを採用する
-            latest_flag_info = max(flags, key=lambda x: max(detail["time"] for detail in x["same_price_list"]))
+            # latest_flag_info = max(flags, key=lambda x: max(detail["time"] for detail in x["same_price_list"]))
+            # ↑max()emptyエラーになることがあったため、変更
+            filtered_flags = [x for x in flags if x["same_price_list"]]
+            latest_flag_info = max(filtered_flags, key=lambda x: max(detail["time"] for detail in x["same_price_list"]))
             # 今回対象の直近のピークを抵抗線に持つフラッグ形状
             print(s4, "結論", latest_flag_info)
             print(s4, "line_base_info", latest_flag_info['line_base_info'])

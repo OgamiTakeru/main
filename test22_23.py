@@ -6,8 +6,8 @@ import classInspection as ci
 
 
 memo = "大量22_23"
-# func = im.analysis_predict_mountain_test
-func = im.analysis_old_flag
+func = im.analysis_predict_mountain_test
+# func = im.analysis_old_flag
 
 intest = ci.Inspection(func,
                        True,
@@ -16,5 +16,5 @@ intest = ci.Inspection(func,
                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv',
                        600,
                        1,
-                       " *** " + memo
+                       "旧フラッグで実施" + memo
                        )

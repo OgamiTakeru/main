@@ -6,11 +6,8 @@ import pandas as pd
 import tokens as tk
 import fGeneric as gene
 import math
-import fAnalysis_order_Main as im
-import gc
-import fCommonFunction as cf
-import sys
-import classPeaks as cpk
+import plotly.graph_objects as go
+import pandas as pd
 
 
 class Order:
@@ -61,6 +58,22 @@ class Order:
 
 class Inspection:
     def __init__(self, target_func, is_exist_data, target_to_time, m5_data_path, s5_data_path, m5_count, loop, memo):
+        """
+        引数は色々取るが、二パターン
+        必ず必要なのは、
+        ・target_func⇒オーダーの発行フラグや、オーダーの内容を持っている物。
+        ・memo ⇒　検証の後に、Memoを記入する用　何か記入が必要
+        それ以外は条件によって異なる
+        1,　既存のデータを使う場合
+            5分足と、その範囲に適合する5秒足のファイルを利用する場合、
+            is_exist_dataをTrueで渡し、m5_data_pathとs5_data_pathを指定する必要がある。
+        ２，時間を指定する場合
+            指定した時間を利用する場合、
+            is_exist_dataをFalseにし、target_to_timeに対象の時刻を渡し、
+            そこから何個分（時系列的に前まで）とるかを、m5_countとloopでしていする（5000×２回分のような）
+            なおm5_countは5000が最大値
+        """
+
         self.target_func = target_func
         self.gl_classes = []
         self.gl_exist_data = is_exist_data
@@ -69,6 +82,7 @@ class Inspection:
         self.gl_m5_count = m5_count
         self.gl_m5_loop = loop
         self.memo = memo
+        self.result_df = None
 
         # gl_exist_date = Trueの場合の読み込みファイル
         # ■■■メイン（5分足や30分足）
@@ -104,11 +118,11 @@ class Inspection:
         self.gl_start_time_str = str(self.gl_now.month).zfill(2) + str(self.gl_now.day).zfill(2) + "_" + \
                             str(self.gl_now.hour).zfill(2) + str(self.gl_now.minute).zfill(2) + str(self.gl_now.second).zfill(2)
 
-
         # 処理
         self.get_data()
         self.main()
         self.cal_result()
+        self.draw_graph()
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
@@ -368,6 +382,7 @@ class Inspection:
         # 元のDataFrameに残りの name_parts を結合（name_0 は除く）
         name_parts_rest = name_parts.drop(columns=['param_0'])
         result_df = pd.concat([result_df, name_parts_rest], axis=1)
+        self.result_df = result_df  # インスタンス変数にもコピーしておく
 
         # 保存
         try:
@@ -499,6 +514,71 @@ class Inspection:
             result_dic = {**result_dic, **cur_class.for_inspection_dic}
             self.gl_results_list.append(result_dic)
 
+    def draw_graph(self):
+        #  各データフレームの時刻をDateTimeに変換
+        self.gl_d5_df['time_jp'] = pd.to_datetime(self.gl_d5_df['time_jp'])
+        self.result_df['order_time'] = pd.to_datetime(self.result_df['order_time'])  # 決心時間（少しずれるので見にくい？）
+        self.result_df['take_time'] = pd.to_datetime(self.result_df['take_time'])  # 決心時間（少しずれるので見にくい？）
+
+        # ローソク足チャート作成
+        fig = go.Figure(data=[
+            go.Candlestick(
+                x=self.gl_d5_df["time_jp"],
+                open=self.gl_d5_df["open"],
+                high=self.gl_d5_df["high"],
+                low=self.gl_d5_df["low"],
+                close=self.gl_d5_df["close"],
+                name="Candles"
+            )
+        ])
+
+        # マーカー追加（買いの場合は▲、売りの場合は▼、結果がプラスの場合青、マイナスの場合赤で表示される）
+        for _, row in self.result_df.iterrows():
+            # 【必須】三角マーカーを追加
+            # 向き
+            symbol = "triangle-up" if row["units"] > 0 else "triangle-down"
+            # 色
+            color = "blue" if row["pl"] > 0 else "red"
+
+            fig.add_trace(go.Scatter(
+                # x=[row["order_time"]],
+                x=[row["take_time"]],
+                y=[row["take_price"]],
+                mode="markers",
+                marker=dict(symbol=symbol, size=12, color=color),
+                name="Trade",
+                showlegend=False  # 凡例がうるさい場合はOFF
+            ))
+
+            # オプション（一時的な解析用）
+            # PredictLineOrder を含む場合 → price + 0.01 に中抜きの星印
+            if "PredictLineOrder" in row.get("name", ""):
+                fig.add_trace(go.Scatter(
+                    x=[row["take_time"]],
+                    y=[row["take_price"] + 0.2],
+                    mode="markers",
+                    marker=dict(
+                        symbol="star",
+                        size=12,
+                        color="black",
+                        line=dict(width=2, color="black")  # 中抜きスタイル
+                    ),
+                    name="PredictLineMark",
+                    showlegend=False
+                ))
+
+
+
+        # レイアウト調整
+        fig.update_layout(
+            title="ローソク足チャート + 取引ポイント",
+            xaxis_title="時間",
+            yaxis_title="価格",
+            xaxis_rangeslider_visible=False
+        )
+
+        # 表示
+        fig.show()
 
 def str_to_time(str_time):
     """
