@@ -89,7 +89,7 @@ gl_use_now = False  # 現在時刻実行するかどうか False True　　True�
 # gl_target_time = datetime.datetime(2025, 4, 30, 5, 0, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # gl_target_time = datetime.datetime(2024, 5, 31, 11, 30, 6)
 gl_target_time = datetime.datetime(2024, 10, 2, 17, 30, 6)
-gl_target_time = datetime.datetime(2023, 4, 10, 23, 40, 6)  #SKIPテスト
+gl_target_time = datetime.datetime(2024, 10, 2, 2, 15, 6)  #SKIPテスト
 # gl_target_time = datetime.datetime(2024, 11, 13, 14, 20, 6)
 
 # Mainスタート

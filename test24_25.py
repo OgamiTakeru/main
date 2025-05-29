@@ -20,13 +20,14 @@ func = im.analysis_predict_mountain_test
 
 intest = ci.Inspection(func,
                        False,
-                       # datetime.datetime(2024, 10, 3, 9, 25, 0),  # いいマイナスデータ
+                       datetime.datetime(2024, 10, 3, 9, 25, 0),  # いいマイナスデータ
                        #  datetime.datetime(2024, 10, 10, 9, 25, 0),  # いいマイナスデータ
-                        datetime.datetime(2023, 4, 10, 23, 40, 6),
+                       #  datetime.datetime(2023, 4, 10, 23, 40, 6),
                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/202503_m5_df.csv',
                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/202503_s5_df.csv',
                        600,
                        1,
-                       " テスト" + memo
+                       " テスト" + memo,
+                       True,  # グラフの描画あり
                        )
 

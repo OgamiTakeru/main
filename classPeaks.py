@@ -370,13 +370,18 @@ class PeaksClass:
         """
         s4 = "    "
         # print(s4, "SKIP Peaks")
+        s4 = "    "
+        print(s4, "SKIP Peaks　はーど")
         adjuster = 0
         peaks = copy.deepcopy(PeaksClass.peaks_original)  # PeaksClass.peaks_original.copy()では浅いコピーとなる
+        ans_peaks = []
         # for vanish_num, vanish_item in enumerate(peaks):
-        for i in range(len(peaks)):  # 中で配列を買い替えるため、for i in peaksは使えない！！
+        i = 1
+        while i < len(peaks) -1:  # 中で配列を買い替えるため、for i in peaksは使えない！！
             vanish_num = i + adjuster  # 削除後に、それを起点にもう一度削除処理ができる
             if vanish_num == 0 or vanish_num >= len(peaks) - 1:
                 # print("最初か最後のため、Vanish候補ではない", vanish_num, latest_item)
+                i = i + 1
                 continue
 
             # わかりやすく命名 （vanish_itemは中央のアイテムを示す）
@@ -395,7 +400,8 @@ class PeaksClass:
                 pass
             else:
                 # そこそこサイズがあるので、スキップ
-                # print(s4,s4, "サイズあるためスキップ　latest:", latest_item['time'], latest_item['count'], latest_item['gap'])
+                print(s4,s4, "サイズあるためスキップ　vanish_item:", vanish_item['time'], vanish_item['count'], vanish_item['gap'])
+                i = i + 1
                 continue
 
             # (2)ラップ判定
@@ -403,12 +409,13 @@ class PeaksClass:
             vanish_latest_ratio = vanish_item['gap'] / latest_item['gap']
             vanish_oldest_ratio = vanish_item['gap'] / oldest_merged_item['gap']
             # 判定１
-            overlap_ratio = 0.65  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
-            overlap_min_ratio = 0.3
-            # print(s4, s4, "latest", latest_item['time'], latest_item['gap'], "oldest", oldest_merged_item['time'], oldest_merged_item['gap'])
-            # print(s4, s4, "  vanish:", vanish_item['time'], "vanish_latest_ratio:", vanish_latest_ratio, ",vanish_oldest_ratio:", vanish_oldest_ratio)
+            overlap_ratio = 0.6  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
+            overlap_min_ratio = 0.35
+            print(s4, s4, "latest", latest_item['time'], latest_item['gap'], "oldest", oldest_merged_item['time'], oldest_merged_item['gap'])
+            print(s4, s4, "  vanish:", vanish_item['time'], "vanish_latest_ratio:", vanish_latest_ratio, ",vanish_oldest_ratio:", vanish_oldest_ratio)
             if vanish_latest_ratio >= overlap_ratio and vanish_oldest_ratio >= overlap_ratio:
                 # 両サイドが同じ程度のサイズ感の場合、レンジ感があるため、スキップはしない（ほとんどラップしている状態）
+                i = i + 1
                 continue
             else:
                 if vanish_item['count'] <= count_border:
@@ -428,6 +435,7 @@ class PeaksClass:
             # ■スキップ処理
             if is_skip:
                 if 'previous' in oldest_merged_item:
+                    print(s4, s4, "  削除")
                     # 最後の一つはやらないため、IF文で最後の手前まで実施する
                     peaks[latest_num]['oldest_body_peak_price'] = oldest_merged_item['oldest_body_peak_price']
                     peaks[latest_num]['oldest_time_jp'] = oldest_merged_item['oldest_time_jp']
@@ -442,9 +450,17 @@ class PeaksClass:
                     # 互換性確保用（いつか消したい）
                     # 情報を吸い取った後、latestおよびmidは削除する
                     del peaks[latest_num + 1:latest_num + 3]
-                    adjuster = -1
+                    # adjuster = -2
+                    # ans_peaks.append(peaks[latest_num])
+                else:
+                    i = i + 1
             else:
-                adjuster = -1
+                # adjuster = -1
+                # ans_peaks.append(vanish_item)
+                i = i + 1
+
+            if i > len(peaks):
+                return peaks
 
         return peaks
 
@@ -688,6 +704,9 @@ class PeaksClass:
         for i, item in enumerate(peaks):
             # print("     検証対象：", item['time'], item['peak_strength'], base_time)
 
+            # 同一方向のものの、検索対象
+            if item['direction'] != target_peak['direction']:
+                continue
             # 既定の裾野の内側にある場合inner=True
             time_gap_sec = abs(datetime.strptime(item['latest_time_jp'], '%Y/%m/%d %H:%M:%S') - base_time)
             if time_gap_sec <= timedelta(minutes=mountain_foot_min):
@@ -765,20 +784,20 @@ class PeaksClass:
                 # print("          Not：",body_gap_abs,arrowed_range,body_wick_gap_abs,arrowed_range)
                 PeaksClass.result_not_same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
         # 表示用
-        print("同一価格一覧 @cp")
-        f.print_arr(PeaksClass.same_price_list)
-        print("70分以内の同一価格一覧 @cp")
-        f.print_arr(PeaksClass.same_price_list_inner)
-        print("Break一覧 @cp")
-        f.print_arr(PeaksClass.break_peaks)
-        print("70分以内のBreak一覧 @cp")
-        f.print_arr(PeaksClass.break_peaks_inner)
-        print("70分より前のBreak一覧 @cp")
-        f.print_arr(PeaksClass.break_peaks_outer)
-        print("Breakまでの同一価格 @cp")
-        f.print_arr(PeaksClass.same_price_list_till_break)
-        print("Break2までの同一価格 @cp")
-        f.print_arr(PeaksClass.same_price_list_till_break2)
+        # print("同一価格一覧 @cp")
+        # f.print_arr(PeaksClass.same_price_list)
+        # print("70分以内の同一価格一覧 @cp")
+        # f.print_arr(PeaksClass.same_price_list_inner)
+        # print("Break一覧 @cp")
+        # f.print_arr(PeaksClass.break_peaks)
+        # print("70分以内のBreak一覧 @cp")
+        # f.print_arr(PeaksClass.break_peaks_inner)
+        # print("70分より前のBreak一覧 @cp")
+        # f.print_arr(PeaksClass.break_peaks_outer)
+        # print("Breakまでの同一価格 @cp")
+        # f.print_arr(PeaksClass.same_price_list_till_break)
+        # print("Break2までの同一価格 @cp")
+        # f.print_arr(PeaksClass.same_price_list_till_break2)
 
 def judge_peak_is_belong_peak_group(peaks, target_peak):
     """

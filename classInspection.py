@@ -57,7 +57,7 @@ class Order:
 
 
 class Inspection:
-    def __init__(self, target_func, is_exist_data, target_to_time, m5_data_path, s5_data_path, m5_count, loop, memo):
+    def __init__(self, target_func, is_exist_data, target_to_time, m5_data_path, s5_data_path, m5_count, loop, memo, is_graph):
         """
         引数は色々取るが、二パターン
         必ず必要なのは、
@@ -121,59 +121,9 @@ class Inspection:
         # 処理
         self.get_data()
         self.main()
-        self.cal_result()
-        self.draw_graph()
-
-    # def reset(self):
-    #     # 情報の完全リセット（テンプレートに戻す）
-    #     print("    OrderClassリセット")
-    #     self.name = ""
-    #     self.priority = 0  # このポジションのプライオリティ
-    #     # self.is_live = True  # 本番環境か練習か（Boolean）　⇒する必要なし
-    #     self.life = False
-    #     self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
-    #     # オーダー情報(オーダー発行時に基本的に上書きされる）
-    #     self.o_id = 0
-    #     self.o_time = 0
-    #     self.o_state = ""
-    #     self.o_time_past_sec = 0  # オーダー発行からの経過秒
-    #     # トレード情報
-    #     self.t_id = 0
-    #     self.t_state = ""
-    #     self.t_type = ""  # 結合ポジションか？　plantとinitialとcurrentのユニットの推移でわかる？
-    #     self.t_initial_units = 0  # Planで代用可？少し意味異なる？
-    #     self.t_current_units = 0
-    #     self.t_time = 0
-    #     self.t_time_past_sec = 0
-    #     self.t_execution_price = 0  # 約定価格
-    #     self.t_unrealize_pl = 0
-    #     self.t_realize_pl = 0
-    #     self.t_pl_u = 0
-    #     self.t_close_time = 0
-    #     self.t_close_price = 0
-    #     self.already_offset_notice = False  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
-    #     # 経過時間管理
-    #     self.order_timeout_min = 45  # 分単位で指定
-    #     self.trade_timeout_min = 50
-    #     self.over_write_block = False
-    #     # 勝ち負け情報更新用
-    #     self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
-    #     self.win_hold_time_sec = 0
-    #     self.lose_hold_time_sec = 0
-    #     self.win_max_plu = 0
-    #     self.lose_max_plu = 0
-    #
-    #     # ロスカット変更情報
-    #     self.lc_change_dic = {}  # 空を持っておくだけ
-    #     self.lc_change_from_candle_lc_price = 0
-    #     self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行でTrueに変更される
-    #     self.counter_order_peace = {}
-    #     self.counter_order_done = False
-    #     self.lc_change_less_minus_done = False
-    #
-    #     # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
-    #     self.try_update_limit = 2
-    #     self.try_update_num = 0
+        self.cal_result_and_send_line()
+        if is_graph:
+            self.draw_graph()
 
     def get_data(self):
         """
@@ -360,7 +310,7 @@ class Inspection:
                     # ロスカ（利確）判定や、LCチェンジ等の処理を行う
                     self.execute_position_finish(each_c, row_s5, index)
 
-    def cal_result(self):
+    def cal_result_and_send_line(self):
         # ■結果処理
         # 検証内容をデータフレームに変換
         print(self.gl_results_list)

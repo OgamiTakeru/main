@@ -21,6 +21,125 @@ import classOrderCreate as OCreate
 import classPosition
 import bisect
 
+def for_test_wrap_upALL(peaks_class):
+    """
+    クラスをたくさん用いがケース
+    args[0]は必ずdf_rであることで、必須。
+    args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
+    """
+    print("■■■■調査開始■■■■")
+
+    #
+    flag_and_orders = {
+        "take_position_flag": False,
+        "exe_orders": [],  # 本番用（本番運用では必須）
+    }
+
+    # predict 初期
+    predict_result = cal_predict_turn(peaks_class)  #
+    if predict_result['take_position_flag']:
+        flag_and_orders["take_position_flag"] = True
+        flag_and_orders["exe_orders"] = predict_result['exe_orders']
+        # 代表プライオリティの追加
+        max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+        flag_and_orders['max_priority'] = max_priority
+        flag_and_orders['for_inspection_dic'] = {}
+
+        return flag_and_orders
+
+    # predict2
+    predict_result2 = cal_predict_turn2(peaks_class)
+    if predict_result2['take_position_flag']:
+        flag_and_orders["take_position_flag"] = True
+        flag_and_orders["exe_orders"] = predict_result2['exe_orders']
+        # 代表プライオリティの追加
+        max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+        flag_and_orders['max_priority'] = max_priority
+        flag_and_orders['for_inspection_dic'] = {}
+
+        return flag_and_orders
+
+    return flag_and_orders
+def for_test_wrap_only1(peaks_class):
+    """
+    クラスをたくさん用いがケース
+    args[0]は必ずdf_rであることで、必須。
+    args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
+    """
+    print("■■■■調査開始■■■■")
+
+    #
+    flag_and_orders = {
+        "take_position_flag": False,
+        "exe_orders": [],  # 本番用（本番運用では必須）
+    }
+
+    # predict 初期
+    predict_result = cal_predict_turn(peaks_class)  #
+    if predict_result['take_position_flag']:
+        flag_and_orders["take_position_flag"] = True
+        flag_and_orders["exe_orders"] = predict_result['exe_orders']
+        # 代表プライオリティの追加
+        max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+        flag_and_orders['max_priority'] = max_priority
+        flag_and_orders['for_inspection_dic'] = {}
+
+        return flag_and_orders
+
+    # predict2
+    # predict_result2 = cal_predict_turn2(peaks_class)
+    # if predict_result2['take_position_flag']:
+    #     flag_and_orders["take_position_flag"] = True
+    #     flag_and_orders["exe_orders"] = predict_result2['exe_orders']
+    #     # 代表プライオリティの追加
+    #     max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+    #     flag_and_orders['max_priority'] = max_priority
+    #     flag_and_orders['for_inspection_dic'] = {}
+    #
+    #     return flag_and_orders
+
+    return flag_and_orders
+def for_test_wrap_only2(peaks_class):
+    """
+    クラスをたくさん用いがケース
+    args[0]は必ずdf_rであることで、必須。
+    args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
+    """
+    print("■■■■調査開始■■■■")
+
+    #
+    flag_and_orders = {
+        "take_position_flag": False,
+        "exe_orders": [],  # 本番用（本番運用では必須）
+    }
+
+    # predict 初期
+    # predict_result = cal_predict_turn(peaks_class)  #
+    # if predict_result['take_position_flag']:
+    #     flag_and_orders["take_position_flag"] = True
+    #     flag_and_orders["exe_orders"] = predict_result['exe_orders']
+    #     # 代表プライオリティの追加
+    #     max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+    #     flag_and_orders['max_priority'] = max_priority
+    #     flag_and_orders['for_inspection_dic'] = {}
+    #
+    #     return flag_and_orders
+
+    # predict2
+    predict_result2 = cal_predict_turn2(peaks_class)
+    if predict_result2['take_position_flag']:
+        flag_and_orders["take_position_flag"] = True
+        flag_and_orders["exe_orders"] = predict_result2['exe_orders']
+        # 代表プライオリティの追加
+        max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
+        flag_and_orders['max_priority'] = max_priority
+        flag_and_orders['for_inspection_dic'] = {}
+
+        return flag_and_orders
+
+    return flag_and_orders
+
+
 
 def wrap_up_predict(peaks_class):
     """
@@ -61,6 +180,7 @@ def wrap_up_predict(peaks_class):
         return flag_and_orders
 
     return flag_and_orders
+
 
 def cal_predict_turn(peaks_class):
     """
@@ -167,66 +287,54 @@ def cal_predict_turn2(peaks_class):
     # ■基本情報の取得
     print("★★PREDICT　TURN2222")
     take_position = False
-    s = "    "
-
-    # ■Peaks等、大事な変数の設定
-    target_num = 1  # 以下のループで「自分以外」を定義するため、変数に入れておく(同一方向の配列に対して）
-    # peaks = peaks_class.skipped_peaks
-    peaks = peaks_class.skipped_peaks
-    peaks_class.make_same_price_list(target_num, True)  # クラス内でSamePriceListを実行
-    target_peak = peaks[target_num]
-    target_price = target_peak['latest_body_peak_price']
-    print("ターゲットになるピーク:", target_peak['peak'], target_peak)
-
     # ■返却値の設定
     default_return_item = {
         "take_position_flag": take_position,
         "for_inspection_dic": {}
     }
+    s = "    "
+
+    # ■Peaks等、大事な変数の設定
+    # ターゲットになるピークを選択
+    target_num = 1  # 以下のループで「自分以外」を定義するため、変数に入れておく(同一方向の配列に対して）
+    # peaks = peaks_class.skipped_peaks
+    peaks = peaks_class.skipped_peaks
+    target_peak = peaks[target_num]
+    print("ターゲットになるピーク:", target_peak['peak'], target_peak)
 
     # ■実行除外
-    # 範囲が少ない
+    # latestのカウントが既定の物かを確認
     if peaks[0]['count'] == 4:  # and peaks[1]['count'] >= 3:  # [0]countは２では微妙（２はBreakのケースが多く見える）ので３．
         print("　カウント数は合格", peaks[0]['count'], "が4以上が対象")
     else:
         print("  山を形成するカウント不足", peaks[0]['count'], "が4以上が対象")
         return default_return_item
+    # 対象のPeakのサイズを確認（小さすぎる場合、除外）
+    if peaks[1]['gap'] < 0.04:
+        print("対象が小さい", peaks[1]['gap'])
+        return default_return_item
 
     # ■形状等の判定
-    old_same_price_time_gap = peaks_class.same_price_list_till_break[-1]['time_gap']
-    print("最古の同一価格時間差", old_same_price_time_gap)
-    exe_orders = []
-    # [2]～[6]まで(同方向を2個づつ）を見て、サイズ感が不均等であれば、急上昇とみなす
-    # directionごとの合計を辞書で保持
-    totals = {
-        1: {'count': 0, 'gap': 0},
-        -1: {'count': 0, 'gap': 0},
-    }
-    # 集計処理
-    for item in peaks[2:6]:
-        dir = item['direction']
-        totals[dir]['count'] += item['count']
-        totals[dir]['gap'] += item['gap']
-    print("比率1", totals[1], "-1", totals[-1])
-    print("1-2比　1", peaks[1]['gap'], "2", peaks[2]['gap'] , peaks[1]['latest_time_jp'], peaks[2]['latest_time_jp'])
-    if (totals[1]['gap'] >= totals[-1]['gap'] * 1.7 or totals[-1]['gap'] >= totals[1]['gap'] * 1.7 or
-            totals[1]['count'] >= totals[-1]['count'] * 2 or totals[-1]['count'] >= totals[1]['count'] * 2):
-        print("オーダーなし[2]の長さが長い⇒勢い有", peaks[2]['count'], peaks[2]['latest_time_jp'])
-        return default_return_item
-    elif peaks[2]['gap'] >= peaks[1]['gap'] * 3:
+    # 急激な変動かを確認（急激な変動の場合、突き抜けるリスク高いため実行無し）
+    if peaks[2]['gap'] >= peaks[1]['gap'] * 3:
         print("オーダーなし[1]と[2]が急激な変動の続きになりそう")
         return default_return_item
     elif peaks[1]['gap'] >= peaks[0]['gap'] * 3 or peaks[1]['count'] >= peaks[0]['count'] * 3:
         print("オーダーなし[1]と[2]が急激な変動の続きになりそう")
         return default_return_item
+    # SamePriceListを更新＆確認し、抵抗線としての強度を確認する（NotSkipで確認したい）
+    peaks_class.make_same_price_list(target_num, False)  # クラス内でSamePriceListを実行
+    print("同一価格リスト（抵抗線強度検討用）")
+    gene.print_arr(peaks_class.same_price_list)
+    total_strength = sum(d["item"]["peak_strength"] for d in peaks_class.same_price_list)
+    print("samePriceListの強度の合計値;", total_strength)
+    # 10以上だと強い⇒抵抗OrderのLCを小さくとる（越えた場合大きく越えそう）
+    # なんなら、その場合はBreakOrderも出してみたい。
 
-
-    if peaks[1]['gap'] >= 0.04:
-        take_position = True
-        exe_orders.append(resistnce_order_for_1(peaks, peaks_class, "Predict抵抗2", target_num))
-    else:
-        print("オーダーしません", len(peaks_class.same_price_list_till_break), old_same_price_time_gap)
-
+    # オーダー発行（ここまで来ていれば、発行）
+    take_position = True
+    exe_orders = []
+    exe_orders.append(resistnce_order_for_1(peaks, peaks_class, "Predict抵抗2", target_num))
     if take_position:
         print("オーダーします", "predict抵抗")
         print(exe_orders)
