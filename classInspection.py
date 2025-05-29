@@ -27,7 +27,7 @@ class Order:
         self.units = order_dic['units'] * order_dic['direction']  # 正の値しか来ないようだ！？ なので、directionをかけておく
         self.direction = order_dic['direction']  # self.units / abs(self.units)
         self.order_keeping_time_sec = 0  # 現在オーダーをキープしている時間
-        self.order_timeout_sec = 50 * 60
+        self.order_timeout_sec = order_dic['order_timeout_min'] * 60
         self.position_timeout_sec = 120 * 60  # 45 * 60
 
         self.unrealized_pl = 0  # 含み損益
@@ -124,56 +124,56 @@ class Inspection:
         self.cal_result()
         self.draw_graph()
 
-    def reset(self):
-        # 情報の完全リセット（テンプレートに戻す）
-        print("    OrderClassリセット")
-        self.name = ""
-        self.priority = 0  # このポジションのプライオリティ
-        # self.is_live = True  # 本番環境か練習か（Boolean）　⇒する必要なし
-        self.life = False
-        self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
-        # オーダー情報(オーダー発行時に基本的に上書きされる）
-        self.o_id = 0
-        self.o_time = 0
-        self.o_state = ""
-        self.o_time_past_sec = 0  # オーダー発行からの経過秒
-        # トレード情報
-        self.t_id = 0
-        self.t_state = ""
-        self.t_type = ""  # 結合ポジションか？　plantとinitialとcurrentのユニットの推移でわかる？
-        self.t_initial_units = 0  # Planで代用可？少し意味異なる？
-        self.t_current_units = 0
-        self.t_time = 0
-        self.t_time_past_sec = 0
-        self.t_execution_price = 0  # 約定価格
-        self.t_unrealize_pl = 0
-        self.t_realize_pl = 0
-        self.t_pl_u = 0
-        self.t_close_time = 0
-        self.t_close_price = 0
-        self.already_offset_notice = False  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
-        # 経過時間管理
-        self.order_timeout_min = 45  # 分単位で指定
-        self.trade_timeout_min = 50
-        self.over_write_block = False
-        # 勝ち負け情報更新用
-        self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
-        self.win_hold_time_sec = 0
-        self.lose_hold_time_sec = 0
-        self.win_max_plu = 0
-        self.lose_max_plu = 0
-
-        # ロスカット変更情報
-        self.lc_change_dic = {}  # 空を持っておくだけ
-        self.lc_change_from_candle_lc_price = 0
-        self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行でTrueに変更される
-        self.counter_order_peace = {}
-        self.counter_order_done = False
-        self.lc_change_less_minus_done = False
-
-        # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
-        self.try_update_limit = 2
-        self.try_update_num = 0
+    # def reset(self):
+    #     # 情報の完全リセット（テンプレートに戻す）
+    #     print("    OrderClassリセット")
+    #     self.name = ""
+    #     self.priority = 0  # このポジションのプライオリティ
+    #     # self.is_live = True  # 本番環境か練習か（Boolean）　⇒する必要なし
+    #     self.life = False
+    #     self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
+    #     # オーダー情報(オーダー発行時に基本的に上書きされる）
+    #     self.o_id = 0
+    #     self.o_time = 0
+    #     self.o_state = ""
+    #     self.o_time_past_sec = 0  # オーダー発行からの経過秒
+    #     # トレード情報
+    #     self.t_id = 0
+    #     self.t_state = ""
+    #     self.t_type = ""  # 結合ポジションか？　plantとinitialとcurrentのユニットの推移でわかる？
+    #     self.t_initial_units = 0  # Planで代用可？少し意味異なる？
+    #     self.t_current_units = 0
+    #     self.t_time = 0
+    #     self.t_time_past_sec = 0
+    #     self.t_execution_price = 0  # 約定価格
+    #     self.t_unrealize_pl = 0
+    #     self.t_realize_pl = 0
+    #     self.t_pl_u = 0
+    #     self.t_close_time = 0
+    #     self.t_close_price = 0
+    #     self.already_offset_notice = False  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
+    #     # 経過時間管理
+    #     self.order_timeout_min = 45  # 分単位で指定
+    #     self.trade_timeout_min = 50
+    #     self.over_write_block = False
+    #     # 勝ち負け情報更新用
+    #     self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
+    #     self.win_hold_time_sec = 0
+    #     self.lose_hold_time_sec = 0
+    #     self.win_max_plu = 0
+    #     self.lose_max_plu = 0
+    #
+    #     # ロスカット変更情報
+    #     self.lc_change_dic = {}  # 空を持っておくだけ
+    #     self.lc_change_from_candle_lc_price = 0
+    #     self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行でTrueに変更される
+    #     self.counter_order_peace = {}
+    #     self.counter_order_done = False
+    #     self.lc_change_less_minus_done = False
+    #
+    #     # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
+    #     self.try_update_limit = 2
+    #     self.try_update_num = 0
 
     def get_data(self):
         """
@@ -337,7 +337,11 @@ class Inspection:
                                                         'for_inspection_dic']))  # 【配列追加】インスタンス生成し、オーダーと検証用データを渡す。
                             # 結果表示用の情報を作成
                             self.gl_order_list.append(
-                                {"order_time": order_time, "name": analysis_result['exe_orders'][i_order]['name']})
+                                {"order_time": order_time,
+                                 "direction": analysis_result['exe_orders'][i_order]['direction'],
+                                 "price": analysis_result['exe_orders'][i_order]['target_price'],
+                                 "name": analysis_result['exe_orders'][i_order]['name']
+                                 })
 
             # 【実質的な検証処理】各クラスを巡回し取得、解消　を5秒単位で実行する
             for i, each_c in enumerate(self.gl_classes):
@@ -550,8 +554,20 @@ class Inspection:
                 showlegend=False  # 凡例がうるさい場合はOFF
             ))
 
-            # オプション（一時的な解析用）
-            # PredictLineOrder を含む場合 → price + 0.01 に中抜きの星印
+        # オプション（一時的な解析用）
+        # PredictLineOrder の上書き三角マーカー（条件つき色）
+        for _, row in self.result_df.iterrows():
+            if "PredictLineOrder" in row["name"]:
+                symbol = "triangle-up" if row["units"] > 0 else "triangle-down"
+                color = "#87CEFA" if row["pl"] > 0 else "orange"  # 薄い青 or オレンジ
+                fig.add_trace(go.Scatter(
+                    x=[row["take_time"]],
+                    y=[row["take_price"]],
+                    mode="markers",
+                    marker=dict(symbol=symbol, size=14, color=color),
+                    name="PredictLineOrder",
+                    showlegend=False
+                ))
             if "PredictLineOrder" in row.get("name", ""):
                 fig.add_trace(go.Scatter(
                     x=[row["take_time"]],

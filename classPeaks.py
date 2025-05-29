@@ -20,6 +20,7 @@ class PeaksClass:
     # ピーク情報
     peaks_original = []
     skipped_peaks = []
+    skipped_peaks_hard = []
     latest_resistance_line = {}  # Nullか、情報が入っているかのどちらか（Null＝抵抗線ではない）
     peak_strength = 0
     latest_price = 0  # 現在価格（場合よっては最新価格）
@@ -90,6 +91,7 @@ class PeaksClass:
             print("調査範囲　From", self.df_r.iloc[-1]['time_jp'], "to", self.df_r.iloc[0]['time_jp'])
             PeaksClass.peaks_original = self.make_peaks(self.df_r)  # 一番感度のいいPeaks。引数は書くとするなら。self.df_r。
             PeaksClass.skipped_peaks = self.skip_peaks()  # スキップピークの算出
+            PeaksClass.skipped_peaks_hard = self.skip_peaks_hard()
             self.recalculation_peak_strength_for_peaks()  # ピークストレングスの算出
 
             # (2) ある程度よく使う値は変数に入れておく
@@ -106,6 +108,9 @@ class PeaksClass:
             print("")
             print(s, "<SKIP後　対象>")
             gene.print_arr(PeaksClass.skipped_peaks[:8])
+            print("")
+            print(s, "<hard SKIP後　対象>")
+            gene.print_arr(PeaksClass.skipped_peaks_hard[:8])
             # print(s, "Latest", PeaksClass.skipped_peaks[0])
             # print(s, "river ", PeaksClass.skipped_peaks[1])
             # print(s, "turn", PeaksClass.skipped_peaks[2])
@@ -157,6 +162,7 @@ class PeaksClass:
             "peak": 0,  # ピーク価格（重複するが、わかりやすい名前で持っておく）
             "time_old": 0,
             "peak_old": 0,
+            "skip_include_num":0  # SKIP関数を通した場合、ここにピークの中で何回スキップしたかが入る
         }
         if len(data_df) <= 1:  # データが１つ以上存在していれば実施
             return ans_dic
@@ -405,7 +411,7 @@ class PeaksClass:
                 # 両サイドが同じ程度のサイズ感の場合、レンジ感があるため、スキップはしない（ほとんどラップしている状態）
                 continue
             else:
-                if vanish_item['count'] <= 2:
+                if vanish_item['count'] <= count_border:
                     if vanish_latest_ratio <= overlap_min_ratio and vanish_oldest_ratio <= overlap_ratio:
                         # print("　latestに対して、Vanishが小さく、ラップが小さいほうがあるため、SKIP")
                         is_skip = True
@@ -432,12 +438,111 @@ class PeaksClass:
                     peaks[latest_num]['gap'] = round(abs(latest_item['latest_body_peak_price'] -
                                                                 oldest_merged_item['oldest_body_peak_price']), 3)
                     peaks[latest_num]['peak_strength'] = self.ps_default  # 従来はlatest_item['strength']だが、結合＝０にした方がよい場合が、、
+                    peaks[latest_num]['skip_include_num'] = peaks[latest_num]['skip_include_num'] + 1
                     # 互換性確保用（いつか消したい）
                     # 情報を吸い取った後、latestおよびmidは削除する
                     del peaks[latest_num + 1:latest_num + 3]
                     adjuster = -1
             else:
                 adjuster = -1
+
+        return peaks
+
+    def skip_peaks_hard(self):
+        """
+        peaksを受け取り、必要に応じてスキップする
+        """
+        s4 = "    "
+        print(s4, "SKIP Peaks　はーど")
+        adjuster = 0
+        peaks = copy.deepcopy(PeaksClass.peaks_original)  # PeaksClass.peaks_original.copy()では浅いコピーとなる
+        ans_peaks = []
+        # for vanish_num, vanish_item in enumerate(peaks):
+        i = 1
+        while i < len(peaks) -1:  # 中で配列を買い替えるため、for i in peaksは使えない！！
+            vanish_num = i + adjuster  # 削除後に、それを起点にもう一度削除処理ができる
+            if vanish_num == 0 or vanish_num >= len(peaks) - 1:
+                # print("最初か最後のため、Vanish候補ではない", vanish_num, latest_item)
+                i = i + 1
+                continue
+
+            # わかりやすく命名 （vanish_itemは中央のアイテムを示す）
+            latest_num = vanish_num - 1
+            latest_item = peaks[latest_num]
+            oldest_merged_num = vanish_num + 1
+            oldest_merged_item = peaks[oldest_merged_num]
+            vanish_item = peaks[vanish_num]
+
+            # ■スキップ判定 (vanishは真ん中のPeakを意味する）
+            # (0)スキップフラグの設定
+            is_skip = False
+            # (1)基本判定 サイズが小さいときが対象
+            count_border = 5
+            if vanish_item['count'] <= count_border and vanish_item['gap'] <= self.skip_gap_border:
+                pass
+            else:
+                # そこそこサイズがあるので、スキップ
+                print(s4,s4, "サイズあるためスキップ　vanish_item:", vanish_item['time'], vanish_item['count'], vanish_item['gap'])
+                i = i + 1
+                continue
+
+            # (2)ラップ判定
+            # 変数の設定
+            vanish_latest_ratio = vanish_item['gap'] / latest_item['gap']
+            vanish_oldest_ratio = vanish_item['gap'] / oldest_merged_item['gap']
+            # 判定１
+            overlap_ratio = 0.6  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
+            overlap_min_ratio = 0.35
+            print(s4, s4, "latest", latest_item['time'], latest_item['gap'], "oldest", oldest_merged_item['time'], oldest_merged_item['gap'])
+            print(s4, s4, "  vanish:", vanish_item['time'], "vanish_latest_ratio:", vanish_latest_ratio, ",vanish_oldest_ratio:", vanish_oldest_ratio)
+            if vanish_latest_ratio >= overlap_ratio and vanish_oldest_ratio >= overlap_ratio:
+                # 両サイドが同じ程度のサイズ感の場合、レンジ感があるため、スキップはしない（ほとんどラップしている状態）
+                i = i + 1
+                continue
+            else:
+                if vanish_item['count'] <= count_border:
+                    if vanish_latest_ratio <= overlap_min_ratio and vanish_oldest_ratio <= overlap_ratio:
+                        # print("　latestに対して、Vanishが小さく、ラップが小さいほうがあるため、SKIP")
+                        is_skip = True
+                    elif vanish_oldest_ratio <= overlap_min_ratio and vanish_latest_ratio <= overlap_ratio:
+                        # print("  oldestに対して、Vanishが小さく、ラップが小さい方があるため、SKIP")
+                        is_skip = True
+
+            # 判定２
+            if vanish_item['gap'] <= self.skip_gap_border_second:
+                if vanish_latest_ratio <= overlap_ratio and vanish_oldest_ratio <= overlap_ratio:
+                    # print(s4, s4, "Gap小かつ微妙な折り返し", vanish_item['gap'], vanish_latest_ratio,vanish_oldest_ratio, latest_item['time'])
+                    is_skip = True
+
+            # ■スキップ処理
+            if is_skip:
+                if 'previous' in oldest_merged_item:
+                    print(s4, s4, "  削除")
+                    # 最後の一つはやらないため、IF文で最後の手前まで実施する
+                    peaks[latest_num]['oldest_body_peak_price'] = oldest_merged_item['oldest_body_peak_price']
+                    peaks[latest_num]['oldest_time_jp'] = oldest_merged_item['oldest_time_jp']
+                    peaks[latest_num]['oldest_price'] = oldest_merged_item['oldest_price']
+                    peaks[latest_num]['count'] = (latest_item['count'] + vanish_item['count'] +
+                                                         oldest_merged_item['count']) - 2
+                    peaks[latest_num]['previous'] = oldest_merged_item['previous']
+                    peaks[latest_num]['gap'] = round(abs(latest_item['latest_body_peak_price'] -
+                                                                oldest_merged_item['oldest_body_peak_price']), 3)
+                    peaks[latest_num]['peak_strength'] = self.ps_default  # 従来はlatest_item['strength']だが、結合＝０にした方がよい場合が、、
+                    peaks[latest_num]['skip_include_num'] = peaks[latest_num]['skip_include_num'] + 1
+                    # 互換性確保用（いつか消したい）
+                    # 情報を吸い取った後、latestおよびmidは削除する
+                    del peaks[latest_num + 1:latest_num + 3]
+                    # adjuster = -2
+                    # ans_peaks.append(peaks[latest_num])
+                else:
+                    i = i + 1
+            else:
+                # adjuster = -1
+                # ans_peaks.append(vanish_item)
+                i = i + 1
+
+            if i > len(peaks):
+                return peaks
 
         return peaks
 
@@ -489,6 +594,16 @@ class PeaksClass:
         # print(t6, "変動幅検証関数　ここまで")
         # print(t6, "最大ギャップ", max_gap)
         # print(t6, other_max_gap_items)
+
+    def cal_move_size_lc(self, times):
+        """
+        直近の動き幅のtimes倍の数値を返却する(直接LC Rangeに利用することを想定）
+        """
+        # ■データフレームの状態で、サイズ感を色々求める
+        filtered_df = PeaksClass.df_r_original[:65]  # 直近4時間の場合、12×4 48
+        self.ave_move = filtered_df.head(9)["highlow"].mean()
+        self.ave_move_for_lc = self.ave_move * times
+        return self.ave_move_for_lc
 
     def temp(self):
 

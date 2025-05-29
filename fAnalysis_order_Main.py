@@ -161,38 +161,15 @@ def analysis_predict_mountain_test(df_r):
 
     # peaksの算出
     peaks_class = cpk.PeaksClass(df_r)
-    mountain_result = sti_t.cal_big_mountain(peaks_class)  #
-    if mountain_result['take_position_flag']:
+
+    predict_result = pi.wrap_up_predict(peaks_class)  #
+    if predict_result['take_position_flag']:
         flag_and_orders["take_position_flag"] = True
-        flag_and_orders["exe_orders"] = mountain_result['exe_orders']
+        flag_and_orders["exe_orders"] = predict_result['exe_orders']
         # 代表プライオリティの追加
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority
         flag_and_orders['for_inspection_dic'] = {}
-
-    if mountain_result['take_position_flag']:
-        if "NG" in mountain_result['exe_orders'][0]['name']:
-            # NGがある場合のみ、やり直す
-            print(" 予測も調査")
-            mountain_result = pi.cal_predict_turn(peaks_class)  #
-            if mountain_result['take_position_flag']:
-                flag_and_orders["take_position_flag"] = True
-                flag_and_orders["exe_orders"] = mountain_result['exe_orders']
-                # 代表プライオリティの追加
-                max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
-                flag_and_orders['max_priority'] = max_priority
-                flag_and_orders['for_inspection_dic'] = {}
-    else:
-        # peaksの算出
-        print(" 予測も調査")
-        mountain_result = pi.cal_predict_turn(peaks_class)  #
-        if mountain_result['take_position_flag']:
-            flag_and_orders["take_position_flag"] = True
-            flag_and_orders["exe_orders"] = mountain_result['exe_orders']
-            # 代表プライオリティの追加
-            max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
-            flag_and_orders['max_priority'] = max_priority
-            flag_and_orders['for_inspection_dic'] = {}
 
     return flag_and_orders
 
