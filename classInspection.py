@@ -24,6 +24,7 @@ class Order:
         self.target_price = order_dic['target_price']
         self.tp_price = order_dic['tp_price']
         self.lc_price = order_dic['lc_price']
+        self.lc_price_original = order_dic['lc_price_original']
         self.units = order_dic['units'] * order_dic['direction']  # 正の値しか来ないようだ！？ なので、directionをかけておく
         self.direction = order_dic['direction']  # self.units / abs(self.units)
         self.order_keeping_time_sec = 0  # 現在オーダーをキープしている時間
@@ -251,6 +252,8 @@ class Inspection:
                           len(self.gl_inspection_base_df), "中")
                     # analysis_result = im.new_analysis_test(analysis_df)  # 検証専用コード
                     analysis_result = self.target_func(analysis_df)  # 検証専用コード
+                    for order in analysis_result["exe_orders"]:  # original_lc_priceの追加
+                        order["lc_price_original"] = order["lc_price"]
                     # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
                     if not analysis_result['take_position_flag']:
                         # オーダー判定なしの場合、次のループへ（5秒後）
@@ -461,6 +464,7 @@ class Inspection:
                 "settlement_price": cur_class.settlement_price,
                 "tp_price": cur_class.tp_price,
                 "lc_price": cur_class.lc_price,
+                "lc_price_original": cur_class.lc_price_original,
                 "direction": cur_class.direction,
                 "units": cur_class.units,
             }
@@ -503,6 +507,24 @@ class Inspection:
                 name="Trade",
                 showlegend=False  # 凡例がうるさい場合はOFF
             ))
+            # 黒い横棒（lc_price）：細い
+            fig.add_trace(go.Scatter(
+                x=[row["take_time"]],
+                y=[row["lc_price_original"]],
+                mode="markers",
+                marker=dict(symbol='line-ew', size=7, color='black', line=dict(width=1)),
+                name="LC Price",
+                showlegend=False
+            ))
+            # 黒い横棒（tp_price）：太い
+            fig.add_trace(go.Scatter(
+                x=[row["take_time"]],
+                y=[row["tp_price"]],
+                mode="markers",
+                marker=dict(symbol='line-ew', size=7, color='black', line=dict(width=3)),
+                name="TP Price",
+                showlegend=False
+            ))
 
         # オプション（一時的な解析用）
         # PredictLineOrder の上書き三角マーカー（条件つき色）
@@ -518,6 +540,7 @@ class Inspection:
                     name="PredictLineOrder",
                     showlegend=False
                 ))
+            # 星印をつける
             if "PredictLineOrder" in row.get("name", ""):
                 fig.add_trace(go.Scatter(
                     x=[row["take_time"]],
@@ -532,6 +555,26 @@ class Inspection:
                     name="PredictLineMark",
                     showlegend=False
                 ))
+            # TPとLCを記入
+            # 黒い横棒（lc_price）：細い
+            fig.add_trace(go.Scatter(
+                x=[row["take_time"]],
+                y=[row["lc_price_original"]],
+                mode="markers",
+                marker=dict(symbol='line-ew', size=7, color='black', line=dict(width=1)),
+                name="LC Price",
+                showlegend=False
+            ))
+
+            # 黒い横棒（tp_price）：太い
+            fig.add_trace(go.Scatter(
+                x=[row["take_time"]],
+                y=[row["tp_price"]],
+                mode="markers",
+                marker=dict(symbol='line-ew', size=7, color='black', line=dict(width=3)),
+                name="TP Price",
+                showlegend=False
+            ))
 
 
 

@@ -330,19 +330,31 @@ class PeaksClass:
                 # このアイテムのGapが小さい場合、直前も低くなる事に注意
                 item['peak_strength'] = self.ps_most_min  # これで元データ入れ替えられるんだ？！
                 peaks[i + 1]['peak_strength'] = self.ps_most_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
+                continue
 
             # 判定2　（両サイドとの比率による判定）
             item_latest_ratio = item['gap'] / latest_item['gap']
             item_oldest_ratio = item['gap'] / oldest_merged_item['gap']
-            overlap_ratio = 0.6  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
+            overlap_ratio = 0.4  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
+            overlap_ratio_2 = 0.65
             if item_latest_ratio <= overlap_ratio and item_oldest_ratio <= overlap_ratio:
                 # このアイテムのGapが小さい場合、直前も低くなる事に注意
+                # print("ラップ率が両サイドに比べてかなり低い⇒ほぼスキップされる）
+                # print("", item['time'], latest_item['time'], oldest_merged_item['time'])
+                # print("", item['gap'], latest_item['gap'], oldest_merged_item['gap'])
+                # print("Peak現象判定(直近との比率）", item_latest_ratio,)
+                # print("Peak現象判定(直古との比率）", item_oldest_ratio,)
+                item['peak_strength'] = self.ps_most_min  # これで元データ入れ替えられるんだ？！
+                peaks[i + 1]['peak_strength'] = self.ps_most_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
+            elif item_latest_ratio <= overlap_ratio and item_oldest_ratio <= overlap_ratio:
+                # print("ラップ率が両サイドに比べてそこそこ低め⇒多少スキップの可能性が上がる）
                 # print("", item['time'], latest_item['time'], oldest_merged_item['time'])
                 # print("", item['gap'], latest_item['gap'], oldest_merged_item['gap'])
                 # print("Peak現象判定(直近との比率）", item_latest_ratio,)
                 # print("Peak現象判定(直古との比率）", item_oldest_ratio,)
                 item['peak_strength'] = self.ps_min  # これで元データ入れ替えられるんだ？！
                 peaks[i + 1]['peak_strength'] = self.ps_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
+
 
         return peaks
 
@@ -681,6 +693,7 @@ class PeaksClass:
         # ■■閾値の情報
         # Margin情報
         arrowed_range = self.recent_fluctuation_range * 0.04  # 最大変動幅の4パーセント程度
+        arrowed_range = self.recent_fluctuation_range * 0.1  # 最大変動幅の4パーセント程度
         # 山の情報
         mountain_foot_min = 60  # 山のすそ野の広さ（この値以上の山の裾野の広さを狙う）
         base_time = datetime.strptime(peaks[0]['time'], '%Y/%m/%d %H:%M:%S')

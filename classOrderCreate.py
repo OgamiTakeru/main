@@ -191,8 +191,17 @@ class OrderCreateClass:
         ・30分以降は、ローソク形状の効果が切れたとみなし、プラスにいる場合はとにかく利確に向けた動きをする
         """
         lc = self.finalized_order['lc_range']
+        if lc <= 0.05:
+            trigger = round(lc*1.1, 3)
+            ensure = round(lc*0.8, 3)
+        else:
+            # 小さい場合は、発散の可能性をみて、大きなくくりにしておく
+            trigger = 0.05
+            ensure = 0.02
+
         self.finalized_order['lc_change'] = [
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": round(lc * 1.1, 3), "lc_ensure_range": round(lc * 0.8, 3)},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.031, "lc_ensure_range": 0.01},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": round(lc * 1.1, 3), "lc_ensure_range": round(lc * 0.8, 3)},
             {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
             {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
             {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
@@ -236,10 +245,19 @@ class OrderCreateClass:
         少しプラスになったらLCの幅を減らしていく手法
         """
         lc = self.finalized_order['lc_range']
+        if lc <= 0.05:
+            trigger = round(lc*1.1, 3)
+            ensure = round(lc*0.8, 3)
+        else:
+            # 小さい場合は、発散の可能性をみて、大きなくくりにしておく
+            trigger = 0.05
+            ensure = 0.02
+
         self.finalized_order['lc_change'] = [
+            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": trigger, "lc_ensure_range": ensure},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.018, "lc_ensure_range": -0.015},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.018, "lc_ensure_range": 0.001},
-            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.006},
+            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.006},
             # {"lc_change_exe": True, "time_after": 300, "lc_trigger_range": 0.025, "lc_ensure_range": 0.015},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": round(lc * 1.1, 3), "lc_ensure_range": round(lc * 0.8, 3)},
             {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
