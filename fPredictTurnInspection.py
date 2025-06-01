@@ -350,8 +350,13 @@ def cal_predict_turn2(peaks_class):
         # 抵抗が少ない場合
         if total_strength <= 7:
             # スキップされるレベルの抵抗線群の場合
-            print("RESI オーダー発行（弱抵抗）", total_strength)
-            exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
+            if len(peaks_class.same_price_list) == 1 and total_strength == 5:
+                print("抵抗線は一つだが、それが5点（直近の最低値）の場合、抵抗線とみなす")
+                exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
+            else:
+                print("RESI オーダー発行（弱抵抗）", total_strength)
+                # exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
+                exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
         else:
             # 抵抗線として、ある程度強そうな場合(Breakまではいたらない）
             print("RESI オーダー発行（強抵抗）", total_strength)
@@ -471,7 +476,8 @@ def resistance_order_weak(peaks, peaks_class, comment, target_num):
     print("TP設定", tp_range, "lcChange設定", lc_change_type)
     print("target_num確認表示", target_num)
 
-    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_size_lc(0.4) * -1)
+    # 抵抗側（逆バリ）のため　0.01 * -1だと、取得しにくい方向になる
+    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_size_lc(0.05) * -1)  # 0.4もよかった
     lc_price = OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03,
                                                          peaks[0]['direction'])
     gap = abs(lc_price - target_price)
@@ -529,7 +535,7 @@ def resistance_order_strong(peaks, peaks_class, comment, target_num):
     print("TP設定", tp_range, "lcChange設定", lc_change_type)
     print("target_num確認表示", target_num)
 
-    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_size_lc(0.2) * -1)
+    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_size_lc(0.01) * -1)  # 0.2
     lc_price = OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03,
                                                          peaks[0]['direction'])
     gap = abs(lc_price - target_price)
@@ -583,7 +589,8 @@ def break_order_week(peaks, peaks_class, comment, same_price_list):
 
     # flag形状の場合（＝Breakの場合）
     base_order_dic = {
-        "target": peaks[1]['latest_wick_peak_price'] + (peaks_class.cal_move_size_lc(1) * peaks[1]['direction']),
+        "target": peaks[1]['latest_wick_peak_price'] - (peaks_class.cal_move_size_lc(0.5) * peaks[1]['direction']),
+        # "target": peaks[1]['latest_wick_peak_price'] + (peaks_class.cal_move_size_lc(1) * peaks[1]['direction']),
         "type": "STOP",
         "expected_direction": peaks[1]['direction'],
         # "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
@@ -591,7 +598,7 @@ def break_order_week(peaks, peaks_class, comment, same_price_list):
         # "tp": 0.075,
         # "lc": 0.075,
         "tp": gene.cal_at_least(0.05, peaks_class.cal_move_size_lc(1.5)),
-        "lc": gene.cal_at_least(0.05, peaks_class.cal_move_size_lc(1.0)),
+        "lc": gene.cal_at_least(0.05, peaks_class.cal_move_size_lc(0.5)),
         # "tp": peaks_class.cal_move_size_lc(1.8),
         # "lc": peaks_class.cal_move_size_lc(1.5),
         'priority': 3,
@@ -599,7 +606,7 @@ def break_order_week(peaks, peaks_class, comment, same_price_list):
         "decision_price": peaks_class.df_r_original.iloc[1]['close'],
         "order_timeout_min": 20,
         "lc_change_type": 3,
-        "name": comment
+        "name": comment + "Break"
     }
     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
     return base_order_class.finalized_order

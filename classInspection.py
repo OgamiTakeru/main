@@ -1,5 +1,6 @@
 import datetime
 from datetime import timedelta
+from scipy.stats import binomtest
 
 import classOanda
 import pandas as pd
@@ -378,12 +379,25 @@ class Inspection:
             tk.line_send("test fin 【結果】", round(self.gl_total, 3), ",\n"
                          , "【検証期間】", self.gl_actual_start_time, "-", self.gl_actual_end_time, ",\n"
                          , "【Unit平均】", round(absolute_mean, 0), ",\n"
-                         , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), ",\n"
+                         , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), " 計:", len(plus_df) + len(minus_df), ",\n"
                          , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":",
                          round(minus_df['pl_per_units'].mean(), 3), ",\n"
-                         , "【+域/-域のゾーン】", result_df['group'].value_counts().idxmax(), ":",
-                         result_df['group'].value_counts().idxmin(), ",\n"
+                         , "【有意】", self.check_skill_difference(len(plus_df), len(minus_df)), ",\n"
                          , "【条件】", self.memo, ",\n参考:処理開始時刻", self.gl_now)
+
+    def check_skill_difference(self, wins, losses):
+        total = wins + losses
+        result = binomtest(wins, n=total, p=0.5, alternative='two-sided')
+        p = result.pvalue
+        p_percent = round(p * 100, 0)
+
+        comment = "発生率:" + str(p_percent)
+        if p<0.05:
+            comment = comment + "(有意差有)"
+        else:
+            comment = comment + "(有意差無)"
+
+        return comment
 
     def execute_position_finish(self, cur_class, cur_row, cur_row_index):
         """

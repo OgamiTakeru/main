@@ -366,15 +366,29 @@ class PeaksClass:
         peaks = PeaksClass.peaks_original
         # peak が最大の要素を取得
         max_peak_element = max(peaks, key=lambda x: x["peak"])
+        max_peak_element["peak_strength"] = self.ps_most_max  # strength を 10 に変更
         # print("最大の要素", max_peak_element)
-        # strength を 10 に変更
-        max_peak_element["peak_strength"] = self.ps_most_max
 
         # peak が最小の要素を取得
         min_peak_element = min(peaks, key=lambda x: x["peak"])
-        # strength を 10 に変更
+        min_peak_element["peak_strength"] = self.ps_most_max  # strength を 10 に変更
         # print("最小の要素", min_peak_element)
-        min_peak_element["peak_strength"] = self.ps_most_max
+
+        # 追加要素　（最大の-1方向の抵抗値は、弱い（最大の1方向が強いわけだから））
+        max_price_neg1_dict = max(
+            (p for p in peaks if p['direction'] == -1),
+            key=lambda p: p['peak'],
+            default=None
+        )
+        max_price_neg1_dict['peak_strength'] = self.ps_most_min
+
+        # directionが1の中で最小のprice
+        min_price_pos1_dict = min(
+            (p for p in peaks if p['direction'] == 1),
+            key=lambda p: p['peak'],
+            default=None
+        )
+        min_price_pos1_dict['peak_strength'] = self.ps_most_min
 
     def skip_peaks(self):
         """
