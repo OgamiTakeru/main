@@ -397,7 +397,7 @@ class PeaksClass:
         s4 = "    "
         # print(s4, "SKIP Peaks")
         s4 = "    "
-        print(s4, "SKIP Peaks　はーど")
+        # print(s4, "SKIP Peaks")
         adjuster = 0
         peaks = copy.deepcopy(PeaksClass.peaks_original)  # PeaksClass.peaks_original.copy()では浅いコピーとなる
         ans_peaks = []
@@ -426,7 +426,7 @@ class PeaksClass:
                 pass
             else:
                 # そこそこサイズがあるので、スキップ
-                print(s4,s4, "サイズあるためスキップ　vanish_item:", vanish_item['time'], vanish_item['count'], vanish_item['gap'])
+                # print(s4,s4, "サイズあるためスキップ　vanish_item:", vanish_item['time'], vanish_item['count'], vanish_item['gap'])
                 i = i + 1
                 continue
 
@@ -437,8 +437,8 @@ class PeaksClass:
             # 判定１
             overlap_ratio = 0.6  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
             overlap_min_ratio = 0.35
-            print(s4, s4, "latest", latest_item['time'], latest_item['gap'], "oldest", oldest_merged_item['time'], oldest_merged_item['gap'])
-            print(s4, s4, "  vanish:", vanish_item['time'], "vanish_latest_ratio:", vanish_latest_ratio, ",vanish_oldest_ratio:", vanish_oldest_ratio)
+            # print(s4, s4, "latest", latest_item['time'], latest_item['gap'], "oldest", oldest_merged_item['time'], oldest_merged_item['gap'])
+            # print(s4, s4, "  vanish:", vanish_item['time'], "vanish_latest_ratio:", vanish_latest_ratio, ",vanish_oldest_ratio:", vanish_oldest_ratio)
             if vanish_latest_ratio >= overlap_ratio and vanish_oldest_ratio >= overlap_ratio:
                 # 両サイドが同じ程度のサイズ感の場合、レンジ感があるため、スキップはしない（ほとんどラップしている状態）
                 i = i + 1
@@ -461,7 +461,7 @@ class PeaksClass:
             # ■スキップ処理
             if is_skip:
                 if 'previous' in oldest_merged_item:
-                    print(s4, s4, "  削除")
+                    # print(s4, s4, "  削除")
                     # 最後の一つはやらないため、IF文で最後の手前まで実施する
                     peaks[latest_num]['oldest_body_peak_price'] = oldest_merged_item['oldest_body_peak_price']
                     peaks[latest_num]['oldest_time_jp'] = oldest_merged_item['oldest_time_jp']
@@ -495,7 +495,7 @@ class PeaksClass:
         peaksを受け取り、必要に応じてスキップする
         """
         s4 = "    "
-        print(s4, "SKIP Peaks　はーど")
+        # print(s4, "SKIP Peaks　はーど")
         adjuster = 0
         peaks = copy.deepcopy(PeaksClass.peaks_original)  # PeaksClass.peaks_original.copy()では浅いコピーとなる
         ans_peaks = []
@@ -524,7 +524,7 @@ class PeaksClass:
                 pass
             else:
                 # そこそこサイズがあるので、スキップ
-                print(s4,s4, "サイズあるためスキップ　vanish_item:", vanish_item['time'], vanish_item['count'], vanish_item['gap'])
+                # print(s4,s4, "サイズあるためスキップ　vanish_item:", vanish_item['time'], vanish_item['count'], vanish_item['gap'])
                 i = i + 1
                 continue
 
@@ -535,8 +535,8 @@ class PeaksClass:
             # 判定１
             overlap_ratio = 0.6  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
             overlap_min_ratio = 0.35
-            print(s4, s4, "latest", latest_item['time'], latest_item['gap'], "oldest", oldest_merged_item['time'], oldest_merged_item['gap'])
-            print(s4, s4, "  vanish:", vanish_item['time'], "vanish_latest_ratio:", vanish_latest_ratio, ",vanish_oldest_ratio:", vanish_oldest_ratio)
+            # print(s4, s4, "latest", latest_item['time'], latest_item['gap'], "oldest", oldest_merged_item['time'], oldest_merged_item['gap'])
+            # print(s4, s4, "  vanish:", vanish_item['time'], "vanish_latest_ratio:", vanish_latest_ratio, ",vanish_oldest_ratio:", vanish_oldest_ratio)
             if vanish_latest_ratio >= overlap_ratio and vanish_oldest_ratio >= overlap_ratio:
                 # 両サイドが同じ程度のサイズ感の場合、レンジ感があるため、スキップはしない（ほとんどラップしている状態）
                 i = i + 1
@@ -559,7 +559,7 @@ class PeaksClass:
             # ■スキップ処理
             if is_skip:
                 if 'previous' in oldest_merged_item:
-                    print(s4, s4, "  削除")
+                    # print(s4, s4, "  削除")
                     # 最後の一つはやらないため、IF文で最後の手前まで実施する
                     peaks[latest_num]['oldest_body_peak_price'] = oldest_merged_item['oldest_body_peak_price']
                     peaks[latest_num]['oldest_time_jp'] = oldest_merged_item['oldest_time_jp']
@@ -707,7 +707,7 @@ class PeaksClass:
         # ■■閾値の情報
         # Margin情報
         arrowed_range = self.recent_fluctuation_range * 0.04  # 最大変動幅の4パーセント程度
-        arrowed_range = self.recent_fluctuation_range * 0.1  # 最大変動幅の4パーセント程度
+        # arrowed_range = self.recent_fluctuation_range * 0.07  # 最大変動幅の4パーセント程度
         # 山の情報
         mountain_foot_min = 60  # 山のすそ野の広さ（この値以上の山の裾野の広さを狙う）
         base_time = datetime.strptime(peaks[0]['time'], '%Y/%m/%d %H:%M:%S')

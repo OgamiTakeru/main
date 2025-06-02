@@ -300,8 +300,8 @@ def cal_predict_turn2(peaks_class):
     # ■Peaks等、大事な変数の設定
     # ターゲットになるピークを選択
     target_num = 1  # 以下のループで「自分以外」を定義するため、変数に入れておく(同一方向の配列に対して）
+    peaks = peaks_class.peaks_original
     # peaks = peaks_class.skipped_peaks
-    peaks = peaks_class.skipped_peaks
     target_peak = peaks[target_num]
     print("ターゲットになるピーク:", target_peak['peak'], target_peak)
 
@@ -317,52 +317,103 @@ def cal_predict_turn2(peaks_class):
         print("対象が小さい", peaks[1]['gap'])
         return default_return_item
 
-    # ■形状等の判定
-    # 1- 急激な変動かを確認（急激な変動の場合、突き抜けるリスク高いため実行無し。hardSkipを使う）
-    hard_peaks = peaks_class.skipped_peaks_hard
-    if hard_peaks[2]['gap'] >= hard_peaks[1]['gap'] * 3:
-        print("オーダーなし[1]と[2]が急激な変動の続きになりそう")
-        return default_return_item
-    elif hard_peaks[1]['gap'] >= hard_peaks[0]['gap'] * 3 or hard_peaks[1]['count'] >= hard_peaks[0]['count'] * 3:
-        print("オーダーなし[1]と[2]が急激な変動の続きになりそう")
-        return default_return_item
-    else:
-        print("オーダーなし[1]と[2]に問題なし！")
-        print(hard_peaks[0]['latest_time_jp'], hard_peaks[0]['count'], hard_peaks[0]['gap'])
-        print(hard_peaks[1]['latest_time_jp'], hard_peaks[1]['count'], hard_peaks[1]['gap'])
-        print(hard_peaks[2]['latest_time_jp'], hard_peaks[2]['count'], hard_peaks[2]['gap'])
-    # 2- SamePriceListを更新＆確認し、抵抗線としての強度を確認する（NotSkipで確認したい）
+    # ■判定に必要な数字の算出
+    # 1 強度の判定
     peaks_class.make_same_price_list(target_num, False)  # クラス内でSamePriceListを実行
     print("同一価格リスト（抵抗線強度検討用）")
     gene.print_arr(peaks_class.same_price_list)
     total_strength = sum(d["item"]["peak_strength"] for d in peaks_class.same_price_list)
     print("samePriceListの強度の合計値;", total_strength)
-    # 10以上だと強い⇒抵抗OrderのLCを小さくとる（越えた場合大きく越えそう）
-    # なんなら、その場合はBreakOrderも出してみたい。
+    #    10以上だと強い⇒抵抗OrderのLCを小さくとる（越えた場合大きく越えそう）
+    #    なんなら、その場合はBreakOrderも出してみたい。
+    # 2 判定に使うハードスキップ情報の取得
+    hard_peaks = peaks_class.skipped_peaks_hard
 
-    # ★★オーダー発行（ここまで来ていれば、発行）
-    if total_strength >= 10:
-        # 抵抗が強い場合
-        print("BREAK オーダー発行")
-        exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
-        # exe_orders = [resistnce_order_for_1(peaks, peaks_class, "Predict抵抗2", target_num)]
-    else:
+    # ■判
+    # 急変動直後を思われる場合群
+    # if hard_peaks[2]['gap'] >= hard_peaks[1]['gap'] * 3:
+    #     # 急変動から一瞬落ち着いた部分（[0]の[1]への戻り具合にもよる）⇒　基本的に[2]を突き抜けるBreakを想定。 ５－３
+    #     comment = "急変動後のBreak（2-1間)"
+    #     print(comment, hard_peaks[2]['gap'], ">", hard_peaks[2]['gap'], "*3")
+    #     # target2が一番良い(事実上Market)（感覚的には0だし、2まで戻ってないことを想定していた。。）
+    #     exe_orders = [order_make_dir0_s(peaks_class, comment, 0, 0.01, 1,
+    #                                     peaks_class.cal_move_size_lc(0.8), peaks_class.cal_move_size_lc(1))]
+    # elif hard_peaks[1]['gap'] >= hard_peaks[0]['gap'] * 3:
+    #     # 急変動がまさに起こっていそうな場合（急変動から折り返した状態）⇒　[0]は今後すぐに折り返すことを想定。★精度悪い可能性大？
+    #     comment = "急変動中のBreak（2-1間)"
+    #     print(comment, hard_peaks[2]['gap'], ">", hard_peaks[2]['gap'], "*3")
+    #     exe_orders = [order_make_dir1_l(peaks_class, comment, 0, 0.01, 1,
+    #                                     0.1, peaks[2]['latest_wick_peak_price'])]
+
+    # 急変動後以外の場合
+    # else:
+    # if total_strength >= 10:
+    #     # 0の抵抗が強い場合、越えたら突き抜ける(急変動がない前提のため、レジスタンスにするかも？）
+    #     comment = "強抵抗のBreakオーダー"  # これも精度悪いなぁ
+    #     print(comment, total_strength, "同一価格個数", len(peaks_class.same_price_list))
+    #     exe_orders = [order_make_dir1_s(peaks_class, comment, 1, 0, 1,
+    #                                     peaks_class.cal_move_size_lc(0.8), peaks_class.cal_move_size_lc(0.8))]
+    # else:
+    #     # 抵抗が少ない場合
+    #     if total_strength <= 8:  # ８は最小最大の既定の数字なので、７くらいがよい・・？
+    #         # スキップされるレベルの抵抗線群の場合
+    #         if len(peaks_class.same_price_list) == 1 and total_strength == 5:
+    #             comment = "抵抗5点の一つのみの抵抗オーダー"
+    #             print("抵抗線は一つだが、それが5点（直近の最低値）の場合、抵抗線とみなす")
+    #             # exe_orders = [resistance_order_weak(peaks, peaks_class, comment, target_num)]
+    #             exe_orders = [order_make_dir1_l(peaks_class, comment, 1, 0, 1,
+    #                                             peaks_class.cal_move_size_lc(0.8),
+    #                                             peaks_class.cal_move_size_lc(0.8))]
+    #         else:
+    #             print("RESI オーダー発行（弱抵抗）", total_strength)
+    #             comment = "弱抵抗の抵抗オーダー"
+    #             # exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
+    #             # exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
+    #             exe_orders = [order_make_dir1_l(peaks_class, comment, 1, 0, 1,
+    #                                             peaks_class.cal_move_size_lc(0.8),
+    #                                             peaks_class.cal_move_size_lc(0.8))]
+    #     else:
+    #         # 抵抗線として、ある程度強そうな場合(Breakまではいたらない） ⇒昔は強レジスタンスだった
+    #         print("RESI オーダー発行（弱抵抗）⇒現在ノーオーダー", total_strength)
+    #         return default_return_item
+
+    if total_strength < 10:
         # 抵抗が少ない場合
-        if total_strength <= 7:
+        if total_strength <= 8:  # ８は最小最大の既定の数字なので、７くらいがよい・・？
             # スキップされるレベルの抵抗線群の場合
             if len(peaks_class.same_price_list) == 1 and total_strength == 5:
+                comment = "抵抗5点の一つのみの抵抗オーダー"  # Peak[0]のほうが適切化も？？
                 print("抵抗線は一つだが、それが5点（直近の最低値）の場合、抵抗線とみなす")
-                exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
-            else:
-                print("RESI オーダー発行（弱抵抗）", total_strength)
-                # exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
-                exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
-        else:
-            # 抵抗線として、ある程度強そうな場合(Breakまではいたらない）
-            print("RESI オーダー発行（強抵抗）", total_strength)
-            exe_orders = [resistance_order_strong(peaks, peaks_class, "Predict抵抗2", target_num)]
+                # exe_orders = [resistance_order_weak(peaks, peaks_class, comment, target_num)]
 
-    print("オーダーします", "predict抵抗")
+                # パターン１　少し[0]が同方向に進んだ位置に、逆張りオーダーを仕掛ける
+                if peaks[0]['direction'] == 1:
+                    # 直近の向きが登りの場合、df.iloc[1]の下側を取得する（
+                    target = peaks_class.df_r_original.iloc[1]['low']
+                else:
+                    # 直近の向きが下理の場合、df.iloc[1]の上側を取得する
+                    target = peaks_class.df_r_original.iloc[1]['high']
+                exe_orders = [order_make_dir1_l(peaks_class, comment, target,
+                                                peaks_class.cal_move_size_lc(0.3), 1,
+                                                peaks_class.cal_move_size_lc(0.8),
+                                                peaks_class.cal_move_size_lc(0.8))]
+            else:
+                return default_return_item
+                print("RESI オーダー発行（弱抵抗）", total_strength)
+                comment = "弱抵抗の抵抗オーダー"
+                # exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
+                # exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
+                exe_orders = [order_make_dir1_l(peaks_class, comment, 1, 0, 1,
+                                                peaks_class.cal_move_size_lc(0.8),
+                                                peaks_class.cal_move_size_lc(0.8))]
+        else:
+            # 抵抗線として、ある程度強そうな場合(Breakまではいたらない） ⇒昔は強レジスタンスだった
+            print("RESI オーダー発行（弱抵抗）⇒現在ノーオーダー", total_strength)
+            return default_return_item
+    else:
+        return default_return_item
+
+    print("オーダーします")
     print(exe_orders)
 
     return {
@@ -370,6 +421,217 @@ def cal_predict_turn2(peaks_class):
         "exe_orders": exe_orders,
         "for_inspection_dic": {}
     }
+
+
+def order_make_dir0_s(peaks_class, comment, target_num, margin, margin_dir, tp, lc):
+    """
+    基本的に[0]の方向にオーダーを出すSTOPを想定
+    target_num: オーダーの起点となるPeak.
+    margin: どれくらいのマージンを取るか
+    margin_dir: 1の場合取得しにくい方向に、－1の場合取得しやすいほうに
+    tp:TPの価格かレンジ
+    lc:lcの価格かレンジ
+    """
+    # 履歴によるオーダー調整を実施する（TPを拡大する）
+
+    # 必要項目を取得
+    peaks = peaks_class.skipped_peaks
+    order_dir = peaks[0]['direction']
+
+    # flag形状の場合（＝Breakの場合）
+    base_order_dic = {
+        # targetはプラスで取得しにくい方向に。
+        "target": peaks[target_num]['latest_wick_peak_price'] + (margin * order_dir) * margin_dir,
+        "type": "STOP",
+        "expected_direction": order_dir,
+        # "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
+        # # "lc": 0.09,  # 0.06,
+        # "tp": 0.075,
+        # "lc": 0.075,
+        "tp": tp,
+        "lc": lc,
+        'priority': 3,
+        "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
+        "decision_price": peaks_class.df_r_original.iloc[1]['close'],
+        "order_timeout_min": 20,
+        "lc_change_type": 1,
+        "name": comment
+    }
+    base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
+    # オーダーの修正と、場合によって追加オーダー設定
+    # lc_max = 0.15
+    # lc_change_after = 0.075
+    # if base_order_class.finalized_order['lc_range'] >= lc_max:
+    #     # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
+    #     print("LCが大きいため再オーダー設定")
+    #     base_order_dic['lc'] = lc_change_after
+    #     base_order_dic['name'] = base_order_dic['name'] + "_LC大で修正_"
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
+    # else:
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)
+    return base_order_class.finalized_order
+
+
+def order_make_dir0_l(peaks_class, comment, target_num, margin, margin_dir, tp, lc):
+    """
+    基本的に[0]の方向にオーダーを出すLIMITを想定
+    target_num: オーダーの起点となるPeak.
+    margin: どれくらいのマージンを取るか
+    margin_dir: 1の場合取得しにくい方向に、－1の場合取得しやすいほうに
+    tp:TPの価格かレンジ
+    lc:lcの価格かレンジ
+    """
+    # 履歴によるオーダー調整を実施する（TPを拡大する）
+
+    # 必要項目を取得
+    peaks = peaks_class.skipped_peaks
+    order_dir = peaks[0]['direction']
+
+    # flag形状の場合（＝Breakの場合）
+    base_order_dic = {
+        # targetはプラスで取得しにくい方向に。
+        "target": peaks[target_num]['latest_wick_peak_price'] + (margin * order_dir) * (margin_dir * -1),
+        "type": "STOP",
+        "expected_direction": order_dir,
+        # "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
+        # # "lc": 0.09,  # 0.06,
+        # "tp": 0.075,
+        # "lc": 0.075,
+        "tp": tp,
+        "lc": lc,
+        'priority': 3,
+        "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
+        "decision_price": peaks_class.df_r_original.iloc[1]['close'],
+        "order_timeout_min": 20,
+        "lc_change_type": 1,
+        "name": comment
+    }
+    base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
+    # オーダーの修正と、場合によって追加オーダー設定
+    # lc_max = 0.15
+    # lc_change_after = 0.075
+    # if base_order_class.finalized_order['lc_range'] >= lc_max:
+    #     # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
+    #     print("LCが大きいため再オーダー設定")
+    #     base_order_dic['lc'] = lc_change_after
+    #     base_order_dic['name'] = base_order_dic['name'] + "_LC大で修正_"
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
+    # else:
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)
+    return base_order_class.finalized_order
+
+
+def order_make_dir1_l(peaks_class, comment, target_num, margin, margin_dir, tp, lc):
+    """
+    基本的に[1]の方向にオーダーを出す場合（Breakに相当）。基本的にLIMITオーダーを想定（STOPもあり得る）
+    target_num: オーダーの起点となるPeak.
+    margin: どれくらいのマージンを取るか
+    margin_dir: 1の場合取得しにくい方向に、－1の場合取得しやすいほうに
+    tp:TPの価格かレンジ
+    lc:lcの価格かレンジ
+    """
+    # 履歴によるオーダー調整を実施する（TPを拡大する）
+
+    # 必要項目を取得
+    peaks = peaks_class.skipped_peaks
+    order_dir = peaks[1]['direction']
+    # targetの設定
+    if target_num <= 5:
+        # target_numが、添え字とみなす場合
+        target = peaks[target_num]['latest_wick_peak_price'] + (margin * order_dir) * (margin_dir * -1)
+    else:
+        # target_numが、添え字ではなく、直接価格を指定している場合
+        target = target_num + (margin * order_dir) * (margin_dir * -1)
+
+    # flag形状の場合（＝Breakの場合）
+    base_order_dic = {
+        # targetはプラスで取得しにくい方向に。
+        "target": target,
+        "type": "LIMIT",
+        "expected_direction": order_dir,
+        # "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
+        # # "lc": 0.09,  # 0.06,
+        # "tp": 0.075,
+        # "lc": 0.075,
+        "tp": tp,
+        "lc": lc,
+        'priority': 3,
+        "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
+        "decision_price": peaks_class.df_r_original.iloc[1]['close'],
+        "order_timeout_min": 20,
+        "lc_change_type": 1,
+        "name": comment
+    }
+    base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
+    # オーダーの修正と、場合によって追加オーダー設定
+    # lc_max = 0.15
+    # lc_change_after = 0.075
+    # if base_order_class.finalized_order['lc_range'] >= lc_max:
+    #     # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
+    #     print("LCが大きいため再オーダー設定")
+    #     base_order_dic['lc'] = lc_change_after
+    #     base_order_dic['name'] = base_order_dic['name'] + "_LC大で修正_"
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
+    # else:
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)
+    return base_order_class.finalized_order
+
+
+def order_make_dir1_s(peaks_class, comment, target_num, margin, margin_dir, tp, lc):
+    """
+    基本的に[1]の方向にオーダーを出すSTOPオーダー
+    target_num: オーダーの起点となるPeak.
+    margin: どれくらいのマージンを取るか
+    margin_dir: 1の場合取得しにくい方向に、－1の場合取得しやすいほうに
+    tp:TPの価格かレンジ
+    lc:lcの価格かレンジ
+    """
+    # 履歴によるオーダー調整を実施する（TPを拡大する）
+
+    # 必要項目を取得
+    peaks = peaks_class.skipped_peaks
+    order_dir = peaks[1]['direction']
+
+    # targetの設定
+    if target_num <= 5:
+        # target_numが、添え字とみなす場合
+        target = peaks[target_num]['latest_wick_peak_price'] + (margin * order_dir) * margin_dir
+    else:
+        # target_numが、添え字ではなく、直接価格を指定している場合
+        target = target_num + (margin * order_dir) * margin_dir
+
+    # flag形状の場合（＝Breakの場合）
+    base_order_dic = {
+        # targetはプラスで取得しにくい方向に。
+        "target": target,
+        "type": "STOP",
+        "expected_direction": order_dir,
+        # "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
+        # # "lc": 0.09,  # 0.06,
+        # "tp": 0.075,
+        # "lc": 0.075,
+        "tp": tp,
+        "lc": lc,
+        'priority': 3,
+        "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
+        "decision_price": peaks_class.df_r_original.iloc[1]['close'],
+        "order_timeout_min": 20,
+        "lc_change_type": 1,
+        "name": comment
+    }
+    base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
+    # オーダーの修正と、場合によって追加オーダー設定
+    # lc_max = 0.15
+    # lc_change_after = 0.075
+    # if base_order_class.finalized_order['lc_range'] >= lc_max:
+    #     # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
+    #     print("LCが大きいため再オーダー設定")
+    #     base_order_dic['lc'] = lc_change_after
+    #     base_order_dic['name'] = base_order_dic['name'] + "_LC大で修正_"
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
+    # else:
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)
+    return base_order_class.finalized_order
 
 
 def break_order(peaks, peaks_class, comment, same_price_list):
@@ -406,6 +668,18 @@ def break_order(peaks, peaks_class, comment, same_price_list):
         "name": comment
     }
     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
+
+    # オーダーの修正と、場合によって追加オーダー設定
+    # lc_max = 0.15
+    # lc_change_after = 0.075
+    # if base_order_class.finalized_order['lc_range'] >= lc_max:
+    #     # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
+    #     print("LCが大きいため再オーダー設定")
+    #     base_order_dic['lc'] = lc_change_after
+    #     base_order_dic['name'] = base_order_dic['name'] + "_LC大で修正_"
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
+    # else:
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)
     return base_order_class.finalized_order
 
 
@@ -476,8 +750,8 @@ def resistance_order_weak(peaks, peaks_class, comment, target_num):
     print("TP設定", tp_range, "lcChange設定", lc_change_type)
     print("target_num確認表示", target_num)
 
-    # 抵抗側（逆バリ）のため　0.01 * -1だと、取得しにくい方向になる
-    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_size_lc(0.05) * -1)  # 0.4もよかった
+    # peak[1]からのレジスタンス方向のため、peak[0]方向のポジション。その為、＋だと取得しにくく、ーだと取得しやすくなる
+    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_size_lc(1))  # 0.4もよかった
     lc_price = OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03,
                                                          peaks[0]['direction'])
     gap = abs(lc_price - target_price)
@@ -491,7 +765,8 @@ def resistance_order_weak(peaks, peaks_class, comment, target_num):
         "expected_direction": peaks[0]['direction'],
         # "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
         # "lc": lc_price,  # 0.06,
-        "tp": gene.cal_at_least(0.1, peaks_class.cal_move_size_lc(1.5)),
+        # "tp": gene.cal_at_least(0.1, peaks_class.cal_move_size_lc(1.5)),
+        "tp": 0.5,
         "lc": peaks_class.cal_move_size_lc(0.8),
         # "lc": peaks_class.ave_move_for_lc,
         # "lc": 0.4,
@@ -506,16 +781,16 @@ def resistance_order_weak(peaks, peaks_class, comment, target_num):
     # gene.print_json(base_order_class.finalized_order_without_lc_change)  # 表示
 
     # オーダーの修正と、場合によって追加オーダー設定
-    lc_max = 0.15
-    lc_change_after = 0.075
-    if base_order_class.finalized_order['lc_range'] >= lc_max:
-        # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
-        print("LCが大きいため再オーダー設定")
-        base_order_dic['lc'] = lc_change_after
-        base_order_dic['name'] = base_order_dic['name'] + "_LC大で修正_"
-        base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
-    else:
-        base_order_class = OCreate.OrderCreateClass(base_order_dic)
+    # lc_max = 0.15
+    # lc_change_after = 0.075
+    # if base_order_class.finalized_order['lc_range'] >= lc_max:
+    #     # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
+    #     print("LCが大きいため再オーダー設定")
+    #     base_order_dic['lc'] = lc_change_after
+    #     base_order_dic['name'] = base_order_dic['name'] + "_LC大で修正_"
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
+    # else:
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)
 
     return base_order_class.finalized_order
 
@@ -535,7 +810,8 @@ def resistance_order_strong(peaks, peaks_class, comment, target_num):
     print("TP設定", tp_range, "lcChange設定", lc_change_type)
     print("target_num確認表示", target_num)
 
-    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_size_lc(0.01) * -1)  # 0.2
+    # peak[1]からのレジスタンス方向のため、peak[0]方向のポジション。その為、＋だと取得しにくく、ーだと取得しやすくなる
+    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_size_lc(0.01))  # 0.2
     lc_price = OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03,
                                                          peaks[0]['direction'])
     gap = abs(lc_price - target_price)
@@ -549,7 +825,8 @@ def resistance_order_strong(peaks, peaks_class, comment, target_num):
         "expected_direction": peaks[0]['direction'],
         # "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
         # "lc": lc_price,  # 0.06,
-        "tp": gene.cal_at_least(0.1, peaks_class.cal_move_size_lc(1.5)),
+        # "tp": gene.cal_at_least(0.1, peaks_class.cal_move_size_lc(1.5)),
+        "tp": 0.5,
         "lc": peaks_class.cal_move_size_lc(1.5),
         # "lc": peaks_class.ave_move_for_lc,
         # "lc": 0.4,
@@ -564,16 +841,16 @@ def resistance_order_strong(peaks, peaks_class, comment, target_num):
     # gene.print_json(base_order_class.finalized_order_without_lc_change)  # 表示
 
     # オーダーの修正と、場合によって追加オーダー設定
-    lc_max = 0.15
-    lc_change_after = 0.075
-    if base_order_class.finalized_order['lc_range'] >= lc_max:
-        # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
-        print("LCが大きいため再オーダー設定")
-        base_order_dic['lc'] = lc_change_after
-        base_order_dic['name'] = base_order_dic['name'] + "_LC大で修正_"
-        base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
-    else:
-        base_order_class = OCreate.OrderCreateClass(base_order_dic)
+    # lc_max = 0.15
+    # lc_change_after = 0.075
+    # if base_order_class.finalized_order['lc_range'] >= lc_max:
+    #     # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
+    #     print("LCが大きいため再オーダー設定")
+    #     base_order_dic['lc'] = lc_change_after
+    #     base_order_dic['name'] = base_order_dic['name'] + "_LC大で修正_"
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
+    # else:
+    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)
 
     return base_order_class.finalized_order
 
@@ -589,7 +866,8 @@ def break_order_week(peaks, peaks_class, comment, same_price_list):
 
     # flag形状の場合（＝Breakの場合）
     base_order_dic = {
-        "target": peaks[1]['latest_wick_peak_price'] - (peaks_class.cal_move_size_lc(0.5) * peaks[1]['direction']),
+        # 指定価格-整数は取得しやすくなる方向。指定価格＋整数は取得しにくくなる方向
+        "target": peaks[1]['latest_wick_peak_price'] + (peaks_class.cal_move_size_lc(0.5) * peaks[1]['direction']),
         # "target": peaks[1]['latest_wick_peak_price'] + (peaks_class.cal_move_size_lc(1) * peaks[1]['direction']),
         "type": "STOP",
         "expected_direction": peaks[1]['direction'],
@@ -598,9 +876,9 @@ def break_order_week(peaks, peaks_class, comment, same_price_list):
         # "tp": 0.075,
         # "lc": 0.075,
         "tp": gene.cal_at_least(0.05, peaks_class.cal_move_size_lc(1.5)),
-        "lc": gene.cal_at_least(0.05, peaks_class.cal_move_size_lc(0.5)),
+        # "lc": gene.cal_at_least(0.05, peaks_class.cal_move_size_lc(1)),
         # "tp": peaks_class.cal_move_size_lc(1.8),
-        # "lc": peaks_class.cal_move_size_lc(1.5),
+        "lc": peaks[2]['latest_wick_peak_price'],
         'priority': 3,
         "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
         "decision_price": peaks_class.df_r_original.iloc[1]['close'],
@@ -609,4 +887,17 @@ def break_order_week(peaks, peaks_class, comment, same_price_list):
         "name": comment + "Break"
     }
     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
+
+    # オーダーの修正と、場合によって追加オーダー設定
+    lc_max = 0.25
+    lc_change_after = 0.25
+    if base_order_class.finalized_order['lc_range'] >= lc_max:
+        # LCレンジを計算してLCが大きすぎた場合、オーダー修正（LC短縮）
+        print("LCが大きいため再オーダー設定")
+        base_order_dic['lc'] = lc_change_after
+        base_order_dic['name'] = base_order_dic['name'] + "_LC大で修正_"
+        base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダー生成（というか作り直し）
+    else:
+        base_order_class = OCreate.OrderCreateClass(base_order_dic)
+
     return base_order_class.finalized_order

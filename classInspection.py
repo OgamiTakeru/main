@@ -376,13 +376,16 @@ class Inspection:
             print("●プラスの個数", len(plus_df), ", マイナスの個数", len(minus_df))
             print("●最終的な合計", round(self.gl_total, 3), round(self.gl_total_per_units, 3))
             # LINEを送る
+            inspection_day_gap_sec = gene.cal_str_time_gap(self.gl_actual_start_time, self.gl_actual_end_time)
+            inspection_day_gap = inspection_day_gap_sec['gap_abs'] // (24 * 60 * 60)
             tk.line_send("test fin 【結果】", round(self.gl_total, 3), ",\n"
-                         , "【検証期間】", self.gl_actual_start_time, "-", self.gl_actual_end_time, ",\n"
+                         , "【検証期間】", self.gl_actual_start_time, "-", self.gl_actual_end_time, "(", inspection_day_gap, "日)", "\n"
                          , "【Unit平均】", round(absolute_mean, 0), ",\n"
                          , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), " 計:", len(plus_df) + len(minus_df), ",\n"
                          , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":",
                          round(minus_df['pl_per_units'].mean(), 3), ",\n"
                          , "【有意】", self.check_skill_difference(len(plus_df), len(minus_df)), ",\n"
+                         , "【回数/日】", round((len(plus_df) + len(minus_df))/inspection_day_gap, 0), ",\n"
                          , "【条件】", self.memo, ",\n参考:処理開始時刻", self.gl_now)
 
     def check_skill_difference(self, wins, losses):
@@ -463,22 +466,22 @@ class Inspection:
                 "order_time": cur_class.order_time,
                 "res": cur_class.comment,
                 "pl": round(cur_class.realized_pl, 3),
-                "end_time": cur_row['time_jp'],
-                "end_price": cur_class.settlement_price,
-                "take_price": cur_class.target_price,
                 "take_time": cur_class.position_time,
+                "take_price": round(cur_class.target_price, 3),
+                "end_time": cur_row['time_jp'],
+                "end_price": round(cur_class.settlement_price, 3),
                 "name": cur_class.name,
                 "pl_per_units": round(cur_class.realized_pl_per_units, 3),
-                "max_plus": cur_class.max_plus,
+                "max_plus": round(cur_class.max_plus, 3),
                 "max_plus_time_past": cur_class.max_plus_time_past,
-                "max_minus": cur_class.max_minus,
+                "max_minus": round(cur_class.max_minus, 3),
                 "max_minus_time_past": cur_class.max_minus_time_past,
                 "priority": cur_class.priority,
                 "position_keeping_time": cur_class.position_keeping_time_sec,
-                "settlement_price": cur_class.settlement_price,
-                "tp_price": cur_class.tp_price,
-                "lc_price": cur_class.lc_price,
-                "lc_price_original": cur_class.lc_price_original,
+                "settlement_price": round(cur_class.settlement_price, 3),
+                "tp_price": round(cur_class.tp_price, 3),
+                "lc_price": round(cur_class.lc_price, 3),
+                "lc_price_original": round(cur_class.lc_price_original, 3),
                 "direction": cur_class.direction,
                 "units": cur_class.units,
             }
@@ -514,7 +517,7 @@ class Inspection:
 
             fig.add_trace(go.Scatter(
                 # x=[row["order_time"]],
-                x=[row["take_time"]],
+                x=[row["order_time"]],
                 y=[row["take_price"]],
                 mode="markers",
                 marker=dict(symbol=symbol, size=12, color=color),
@@ -523,7 +526,7 @@ class Inspection:
             ))
             # 黒い横棒（lc_price）：細い
             fig.add_trace(go.Scatter(
-                x=[row["take_time"]],
+                x=[row["order_time"]],
                 y=[row["lc_price_original"]],
                 mode="markers",
                 marker=dict(symbol='line-ew', size=7, color='black', line=dict(width=1)),
@@ -532,7 +535,7 @@ class Inspection:
             ))
             # 黒い横棒（tp_price）：太い
             fig.add_trace(go.Scatter(
-                x=[row["take_time"]],
+                x=[row["order_time"]],
                 y=[row["tp_price"]],
                 mode="markers",
                 marker=dict(symbol='line-ew', size=7, color='black', line=dict(width=3)),
@@ -547,7 +550,7 @@ class Inspection:
                 symbol = "triangle-up" if row["units"] > 0 else "triangle-down"
                 color = "#87CEFA" if row["pl"] > 0 else "orange"  # 薄い青 or オレンジ
                 fig.add_trace(go.Scatter(
-                    x=[row["take_time"]],
+                    x=[row["order_time"]],
                     y=[row["take_price"]],
                     mode="markers",
                     marker=dict(symbol=symbol, size=14, color=color),
@@ -557,7 +560,7 @@ class Inspection:
             # 星印をつける
             if "PredictLineOrder" in row.get("name", ""):
                 fig.add_trace(go.Scatter(
-                    x=[row["take_time"]],
+                    x=[row["order_time"]],
                     y=[row["take_price"] + 0.2],
                     mode="markers",
                     marker=dict(
@@ -572,7 +575,7 @@ class Inspection:
             # TPとLCを記入
             # 黒い横棒（lc_price）：細い
             fig.add_trace(go.Scatter(
-                x=[row["take_time"]],
+                x=[row["order_time"]],
                 y=[row["lc_price_original"]],
                 mode="markers",
                 marker=dict(symbol='line-ew', size=7, color='black', line=dict(width=1)),
@@ -582,7 +585,7 @@ class Inspection:
 
             # 黒い横棒（tp_price）：太い
             fig.add_trace(go.Scatter(
-                x=[row["take_time"]],
+                x=[row["order_time"]],
                 y=[row["tp_price"]],
                 mode="markers",
                 marker=dict(symbol='line-ew', size=7, color='black', line=dict(width=3)),
@@ -639,8 +642,10 @@ def cal_str_time_gap(time_str_1, time_str_2):
     # gap = time1 - time2  # 渡されたものをそのまま引き算（これエラーになりそうだから消しておく）
 
     return {
-        "gap_abs": gap_abs.seconds,
-        "gap": gap_abs.seconds * r
+        "gap_abs": gap_abs.total_seconds(),
+        "gap": gap_abs.total_seconds() * r
+        # "gap_abs": gap_abs.seconds,
+        # "gap": gap_abs.seconds * r
     }
 
 

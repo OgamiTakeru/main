@@ -143,8 +143,8 @@ def cal_str_time_gap(time_str_1, time_str_2):
     # gap = time1 - time2  # 渡されたものをそのまま引き算（これエラーになりそうだから消しておく）
 
     return {
-        "gap_abs": gap_abs.seconds,
-        "gap": gap_abs.seconds * r,
+        "gap_abs": gap_abs.total_seconds(),
+        "gap": gap_abs.total_seconds() * r,
         "gap_abs_min": round(gap_abs.seconds / 60, 1)
     }
 

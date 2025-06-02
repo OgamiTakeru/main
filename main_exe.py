@@ -17,6 +17,7 @@ import fAnalysis_order_Main as am
 import fGeneric as gene
 import making as ins
 import fResistanceLineInspection as ri
+import fPredictTurnInspection as pi
 
 
 def how_to_new_order_judge(inspection_result_dic):
@@ -455,7 +456,8 @@ print(classes[0].name)
 
 
 # ■処理の開始
-gl_target_function = am.analysis_predict_mountain_test  # ★★利用する解析関数 ★★★
+# gl_target_function = am.analysis_predict_mountain_test  # ★★利用する解析関数 ★★★
+gl_target_function = pi.for_test_wrap_only2
 
 classPosition.reset_all_position(classes)  # 開始時は全てのオーダーを解消し、初期アップデートを行う
 tk.line_send("■■新規スタート", gl_live)
