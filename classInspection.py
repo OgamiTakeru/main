@@ -123,9 +123,10 @@ class Inspection:
         # 処理
         self.get_data()
         self.main()
-        self.cal_result_and_send_line()
-        if is_graph:
-            self.draw_graph()
+        ans = self.cal_result_and_send_line()  # １は通常終了 0は異常終了
+        if ans == 1:
+            if is_graph:
+                self.draw_graph()
 
     def get_data(self):
         """
@@ -320,7 +321,7 @@ class Inspection:
         print(self.gl_results_list)
         if len(self.gl_results_list) == 0:
             print("結果無し（０件）")
-            exit()
+            return 0
         result_df = pd.DataFrame(self.gl_results_list)  # 結果の辞書配列をデータフレームに変換
         # 解析に使いそうな情報をつけてしまう（オプショナルでなくてもいいかも）
         result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 else 1)  # プラスかマイナスかのカウント用
@@ -387,6 +388,7 @@ class Inspection:
                          , "【有意】", self.check_skill_difference(len(plus_df), len(minus_df)), ",\n"
                          , "【回数/日】", round((len(plus_df) + len(minus_df))/inspection_day_gap, 0), ",\n"
                          , "【条件】", self.memo, ",\n参考:処理開始時刻", self.gl_now)
+        return 1
 
     def check_skill_difference(self, wins, losses):
         total = wins + losses

@@ -322,8 +322,8 @@ def cal_predict_turn2(peaks_class):
     peaks_class.make_same_price_list(target_num, False)  # クラス内でSamePriceListを実行
     print("同一価格リスト（抵抗線強度検討用）")
     gene.print_arr(peaks_class.same_price_list)
-    total_strength = sum(d["item"]["peak_strength"] for d in peaks_class.same_price_list)
-    print("samePriceListの強度の合計値;", total_strength)
+    total_strength_of_1 = sum(d["item"]["peak_strength"] for d in peaks_class.same_price_list)
+    print("samePriceListの強度の合計値;", total_strength_of_1)
     #    10以上だと強い⇒抵抗OrderのLCを小さくとる（越えた場合大きく越えそう）
     #    なんなら、その場合はBreakOrderも出してみたい。
     # 2 判定に使うハードスキップ情報の取得
@@ -332,6 +332,7 @@ def cal_predict_turn2(peaks_class):
     # ■判
     # 急変動直後を思われる場合群
     # if hard_peaks[2]['gap'] >= hard_peaks[1]['gap'] * 3:
+    #     return default_return_item
     #     # 急変動から一瞬落ち着いた部分（[0]の[1]への戻り具合にもよる）⇒　基本的に[2]を突き抜けるBreakを想定。 ５－３
     #     comment = "急変動後のBreak（2-1間)"
     #     print(comment, hard_peaks[2]['gap'], ">", hard_peaks[2]['gap'], "*3")
@@ -339,25 +340,25 @@ def cal_predict_turn2(peaks_class):
     #     exe_orders = [order_make_dir0_s(peaks_class, comment, 0, 0.01, 1,
     #                                     peaks_class.cal_move_size_lc(0.8), peaks_class.cal_move_size_lc(1))]
     # elif hard_peaks[1]['gap'] >= hard_peaks[0]['gap'] * 3:
+    #     return default_return_item
     #     # 急変動がまさに起こっていそうな場合（急変動から折り返した状態）⇒　[0]は今後すぐに折り返すことを想定。★精度悪い可能性大？
     #     comment = "急変動中のBreak（2-1間)"
     #     print(comment, hard_peaks[2]['gap'], ">", hard_peaks[2]['gap'], "*3")
     #     exe_orders = [order_make_dir1_l(peaks_class, comment, 0, 0.01, 1,
     #                                     0.1, peaks[2]['latest_wick_peak_price'])]
-
     # 急変動後以外の場合
     # else:
-    # if total_strength >= 10:
+    # if total_strength_of_1 >= 10:
     #     # 0の抵抗が強い場合、越えたら突き抜ける(急変動がない前提のため、レジスタンスにするかも？）
     #     comment = "強抵抗のBreakオーダー"  # これも精度悪いなぁ
-    #     print(comment, total_strength, "同一価格個数", len(peaks_class.same_price_list))
+    #     print(comment, total_strength_of_1, "同一価格個数", len(peaks_class.same_price_list))
     #     exe_orders = [order_make_dir1_s(peaks_class, comment, 1, 0, 1,
     #                                     peaks_class.cal_move_size_lc(0.8), peaks_class.cal_move_size_lc(0.8))]
     # else:
     #     # 抵抗が少ない場合
-    #     if total_strength <= 8:  # ８は最小最大の既定の数字なので、７くらいがよい・・？
+    #     if total_strength_of_1 <= 8:  # ８は最小最大の既定の数字なので、７くらいがよい・・？
     #         # スキップされるレベルの抵抗線群の場合
-    #         if len(peaks_class.same_price_list) == 1 and total_strength == 5:
+    #         if len(peaks_class.same_price_list) == 1 and total_strength_of_1 == 5:
     #             comment = "抵抗5点の一つのみの抵抗オーダー"
     #             print("抵抗線は一つだが、それが5点（直近の最低値）の場合、抵抗線とみなす")
     #             # exe_orders = [resistance_order_weak(peaks, peaks_class, comment, target_num)]
@@ -365,7 +366,7 @@ def cal_predict_turn2(peaks_class):
     #                                             peaks_class.cal_move_size_lc(0.8),
     #                                             peaks_class.cal_move_size_lc(0.8))]
     #         else:
-    #             print("RESI オーダー発行（弱抵抗）", total_strength)
+    #             print("RESI オーダー発行（弱抵抗）", total_strength_of_1)
     #             comment = "弱抵抗の抵抗オーダー"
     #             # exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
     #             # exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
@@ -374,32 +375,37 @@ def cal_predict_turn2(peaks_class):
     #                                             peaks_class.cal_move_size_lc(0.8))]
     #     else:
     #         # 抵抗線として、ある程度強そうな場合(Breakまではいたらない） ⇒昔は強レジスタンスだった
-    #         print("RESI オーダー発行（弱抵抗）⇒現在ノーオーダー", total_strength)
+    #         print("RESI オーダー発行（弱抵抗）⇒現在ノーオーダー", total_strength_of_1)
     #         return default_return_item
 
-    if total_strength < 10:
+    if total_strength_of_1 < 10:
         # 抵抗が少ない場合
-        if total_strength <= 8:  # ８は最小最大の既定の数字なので、７くらいがよい・・？
-            # スキップされるレベルの抵抗線群の場合
-            if len(peaks_class.same_price_list) == 1 and total_strength == 5:
+        if total_strength_of_1 <= 8:  # ８は最小最大の既定の数字なので、７くらいがよい・・？
+            if peaks[0]['latest_body_peak_price'] <= peaks[2]['latest_body_peak_price']:
+            #     return default_return_item
+            # # スキップされるレベルの抵抗線群の場合
+            # if len(peaks_class.same_price_list) == 1 and total_strength_of_1 == 5:
                 comment = "抵抗5点の一つのみの抵抗オーダー"  # Peak[0]のほうが適切化も？？
                 print("抵抗線は一つだが、それが5点（直近の最低値）の場合、抵抗線とみなす")
                 # exe_orders = [resistance_order_weak(peaks, peaks_class, comment, target_num)]
 
                 # パターン１　少し[0]が同方向に進んだ位置に、逆張りオーダーを仕掛ける
+                i = 0
                 if peaks[0]['direction'] == 1:
                     # 直近の向きが登りの場合、df.iloc[1]の下側を取得する（
-                    target = peaks_class.df_r_original.iloc[1]['low']
+                    target = peaks_class.df_r_original.iloc[i]['high']
+                    print(" ベース価格low", peaks_class.df_r_original.iloc[i])
                 else:
                     # 直近の向きが下理の場合、df.iloc[1]の上側を取得する
-                    target = peaks_class.df_r_original.iloc[1]['high']
+                    target = peaks_class.df_r_original.iloc[i]['low']
+                    print(" ベース価格high", peaks_class.df_r_original.iloc[i])
                 exe_orders = [order_make_dir1_l(peaks_class, comment, target,
-                                                peaks_class.cal_move_size_lc(0.3), 1,
-                                                peaks_class.cal_move_size_lc(0.8),
-                                                peaks_class.cal_move_size_lc(0.8))]
+                                                peaks_class.cal_move_size_lc(0.2), 1,
+                                                peaks_class.cal_move_size_lc(1.5),
+                                                peaks_class.cal_move_size_lc(0.5))]
             else:
                 return default_return_item
-                print("RESI オーダー発行（弱抵抗）", total_strength)
+                print("RESI オーダー発行（弱抵抗）", total_strength_of_1)
                 comment = "弱抵抗の抵抗オーダー"
                 # exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
                 # exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
@@ -408,7 +414,7 @@ def cal_predict_turn2(peaks_class):
                                                 peaks_class.cal_move_size_lc(0.8))]
         else:
             # 抵抗線として、ある程度強そうな場合(Breakまではいたらない） ⇒昔は強レジスタンスだった
-            print("RESI オーダー発行（弱抵抗）⇒現在ノーオーダー", total_strength)
+            print("RESI オーダー発行（弱抵抗）⇒現在ノーオーダー", total_strength_of_1)
             return default_return_item
     else:
         return default_return_item
@@ -538,6 +544,7 @@ def order_make_dir1_l(peaks_class, comment, target_num, margin, margin_dir, tp, 
     # targetの設定
     if target_num <= 5:
         # target_numが、添え字とみなす場合
+        print("髭価格", peaks[target_num]['latest_wick_peak_price'])
         target = peaks[target_num]['latest_wick_peak_price'] + (margin * order_dir) * (margin_dir * -1)
     else:
         # target_numが、添え字ではなく、直接価格を指定している場合
@@ -598,7 +605,7 @@ def order_make_dir1_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         target = peaks[target_num]['latest_wick_peak_price'] + (margin * order_dir) * margin_dir
     else:
         # target_numが、添え字ではなく、直接価格を指定している場合
-        target = target_num + (margin * order_dir) * margin_dir
+        target = target_num + (margin * order_dir) * margin_dir * -1
 
     # flag形状の場合（＝Breakの場合）
     base_order_dic = {
