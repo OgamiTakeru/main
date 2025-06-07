@@ -300,14 +300,14 @@ def cal_predict_turn2(peaks_class):
     # ■Peaks等、大事な変数の設定
     # ターゲットになるピークを選択
     target_num = 1  # 以下のループで「自分以外」を定義するため、変数に入れておく(同一方向の配列に対して）
-    peaks = peaks_class.peaks_original
+    peaks = peaks_class.peaks_original_marked_hard_skip
     # peaks = peaks_class.skipped_peaks
     target_peak = peaks[target_num]
-    print("ターゲットになるピーク:", target_peak['peak'], target_peak)
+    # print("ターゲットになるピーク:", target_peak['peak'], target_peak)
 
     # ■実行除外
     # latestのカウントが既定の物かを確認
-    if peaks[0]['count'] == 4:  # and peaks[1]['count'] >= 3:  # [0]countは２では微妙（２はBreakのケースが多く見える）ので３．
+    if peaks[0]['count'] == 3:  # and peaks[1]['count'] >= 3:  # [0]countは２では微妙（２はBreakのケースが多く見える）ので３．
         print("　カウント数は合格", peaks[0]['count'], "が4以上が対象")
     else:
         print("  山を形成するカウント不足", peaks[0]['count'], "が4以上が対象")
@@ -326,96 +326,101 @@ def cal_predict_turn2(peaks_class):
     print("samePriceListの強度の合計値;", total_strength_of_1)
     #    10以上だと強い⇒抵抗OrderのLCを小さくとる（越えた場合大きく越えそう）
     #    なんなら、その場合はBreakOrderも出してみたい。
-    # 2 判定に使うハードスキップ情報の取得
-    hard_peaks = peaks_class.skipped_peaks_hard
 
     # ■判
-    # 急変動直後を思われる場合群
-    # if hard_peaks[2]['gap'] >= hard_peaks[1]['gap'] * 3:
-    #     return default_return_item
-    #     # 急変動から一瞬落ち着いた部分（[0]の[1]への戻り具合にもよる）⇒　基本的に[2]を突き抜けるBreakを想定。 ５－３
-    #     comment = "急変動後のBreak（2-1間)"
-    #     print(comment, hard_peaks[2]['gap'], ">", hard_peaks[2]['gap'], "*3")
-    #     # target2が一番良い(事実上Market)（感覚的には0だし、2まで戻ってないことを想定していた。。）
-    #     exe_orders = [order_make_dir0_s(peaks_class, comment, 0, 0.01, 1,
-    #                                     peaks_class.cal_move_size_lc(0.8), peaks_class.cal_move_size_lc(1))]
-    # elif hard_peaks[1]['gap'] >= hard_peaks[0]['gap'] * 3:
-    #     return default_return_item
-    #     # 急変動がまさに起こっていそうな場合（急変動から折り返した状態）⇒　[0]は今後すぐに折り返すことを想定。★精度悪い可能性大？
-    #     comment = "急変動中のBreak（2-1間)"
-    #     print(comment, hard_peaks[2]['gap'], ">", hard_peaks[2]['gap'], "*3")
-    #     exe_orders = [order_make_dir1_l(peaks_class, comment, 0, 0.01, 1,
-    #                                     0.1, peaks[2]['latest_wick_peak_price'])]
-    # 急変動後以外の場合
-    # else:
-    # if total_strength_of_1 >= 10:
-    #     # 0の抵抗が強い場合、越えたら突き抜ける(急変動がない前提のため、レジスタンスにするかも？）
-    #     comment = "強抵抗のBreakオーダー"  # これも精度悪いなぁ
-    #     print(comment, total_strength_of_1, "同一価格個数", len(peaks_class.same_price_list))
-    #     exe_orders = [order_make_dir1_s(peaks_class, comment, 1, 0, 1,
-    #                                     peaks_class.cal_move_size_lc(0.8), peaks_class.cal_move_size_lc(0.8))]
-    # else:
-    #     # 抵抗が少ない場合
-    #     if total_strength_of_1 <= 8:  # ８は最小最大の既定の数字なので、７くらいがよい・・？
-    #         # スキップされるレベルの抵抗線群の場合
-    #         if len(peaks_class.same_price_list) == 1 and total_strength_of_1 == 5:
-    #             comment = "抵抗5点の一つのみの抵抗オーダー"
-    #             print("抵抗線は一つだが、それが5点（直近の最低値）の場合、抵抗線とみなす")
-    #             # exe_orders = [resistance_order_weak(peaks, peaks_class, comment, target_num)]
-    #             exe_orders = [order_make_dir1_l(peaks_class, comment, 1, 0, 1,
-    #                                             peaks_class.cal_move_size_lc(0.8),
-    #                                             peaks_class.cal_move_size_lc(0.8))]
-    #         else:
-    #             print("RESI オーダー発行（弱抵抗）", total_strength_of_1)
-    #             comment = "弱抵抗の抵抗オーダー"
-    #             # exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
-    #             # exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
-    #             exe_orders = [order_make_dir1_l(peaks_class, comment, 1, 0, 1,
-    #                                             peaks_class.cal_move_size_lc(0.8),
-    #                                             peaks_class.cal_move_size_lc(0.8))]
-    #     else:
-    #         # 抵抗線として、ある程度強そうな場合(Breakまではいたらない） ⇒昔は強レジスタンスだった
-    #         print("RESI オーダー発行（弱抵抗）⇒現在ノーオーダー", total_strength_of_1)
-    #         return default_return_item
+    if total_strength_of_1 >= 10:
+        # 抵抗がかなり強い場合 (元々
+        return default_return_item
 
-    if total_strength_of_1 < 10:
-        # 抵抗が少ない場合
-        if total_strength_of_1 <= 8:  # ８は最小最大の既定の数字なので、７くらいがよい・・？
-            if peaks[0]['latest_body_peak_price'] <= peaks[2]['latest_body_peak_price']:
-            #     return default_return_item
-            # # スキップされるレベルの抵抗線群の場合
-            # if len(peaks_class.same_price_list) == 1 and total_strength_of_1 == 5:
-                comment = "抵抗5点の一つのみの抵抗オーダー"  # Peak[0]のほうが適切化も？？
-                print("抵抗線は一つだが、それが5点（直近の最低値）の場合、抵抗線とみなす")
-                # exe_orders = [resistance_order_weak(peaks, peaks_class, comment, target_num)]
+    if total_strength_of_1 > 8:
+        # 抵抗が強すぎる場合 (target1の抵抗[同一価格リスト]が8以上ある)（これどうしよう・・？）
+        # ８は最小最大の既定の数字なので、７くらいがよい・・？
+        return default_return_item
 
-                # パターン１　少し[0]が同方向に進んだ位置に、逆張りオーダーを仕掛ける
-                i = 0
-                if peaks[0]['direction'] == 1:
-                    # 直近の向きが登りの場合、df.iloc[1]の下側を取得する（
-                    target = peaks_class.df_r_original.iloc[i]['high']
-                    print(" ベース価格low", peaks_class.df_r_original.iloc[i])
-                else:
-                    # 直近の向きが下理の場合、df.iloc[1]の上側を取得する
-                    target = peaks_class.df_r_original.iloc[i]['low']
-                    print(" ベース価格high", peaks_class.df_r_original.iloc[i])
-                exe_orders = [order_make_dir1_l(peaks_class, comment, target,
-                                                peaks_class.cal_move_size_lc(0.2), 1,
-                                                peaks_class.cal_move_size_lc(1.5),
-                                                peaks_class.cal_move_size_lc(0.5))]
-            else:
-                return default_return_item
-                print("RESI オーダー発行（弱抵抗）", total_strength_of_1)
-                comment = "弱抵抗の抵抗オーダー"
-                # exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
-                # exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
-                exe_orders = [order_make_dir1_l(peaks_class, comment, 1, 0, 1,
-                                                peaks_class.cal_move_size_lc(0.8),
-                                                peaks_class.cal_move_size_lc(0.8))]
+    # 急変動系を除外
+    if peaks[1]['gap'] >= peaks[0]['gap'] * 3:
+        # 長い変動直後の折り返しの場合
+        return default_return_item
+
+    # include_large': False, 'include_very_large'
+    # includeをSKIPP作成時に考慮できていない！！！！！！
+    if peaks[0]['include_large'] or peaks[1]['include_large'] or peaks[2]['include_large']:
+        print("ラージあるため、スキップ", peaks[0]['include_large'], peaks[1]['include_large'], peaks[2]['include_large'])
+        return default_return_item
+
+    # 直近がスキップがあったかを確認したい
+    skipped_num = 0  # 初期値
+    for item in peaks_class.skipped_peaks_hard:
+        print("検索対象", item['latest_time_jp'])
+        if item["latest_time_jp"] == peaks[1]['latest_time_jp']:
+            skipped_num = item.get('skip_include_num', 0)
+            print(" 同一価格発見（Skipされていない）", item["time"], item['skip_include_num'])
+            break
         else:
-            # 抵抗線として、ある程度強そうな場合(Breakまではいたらない） ⇒昔は強レジスタンスだった
-            print("RESI オーダー発行（弱抵抗）⇒現在ノーオーダー", total_strength_of_1)
-            return default_return_item
+            print("時刻がない", item['latest_time_jp'], peaks[1]['latest_time_jp'])
+
+    print(" SKIPED_NUM", skipped_num)
+    if skipped_num >= 1:
+        print("直近でSKIPがあった（急変動有？）")
+        comment = "直近でSKIPあり⇒[1]方向に突破予想"
+        # パターン１　少し[0]が同方向に進んだ位置に、逆張りオーダー([1])を仕掛ける
+        # これ割といいパターンがあるので、捨てにくい。
+        i = 0
+        if peaks[0]['direction'] == 1:
+            # 直近の向きが登りの場合、df.iloc[1]の下側を取得する（
+            target = peaks_class.df_r_original.iloc[i]['high']
+            print(" ベース価格low", peaks_class.df_r_original.iloc[i])
+        else:
+            # 直近の向きが下理の場合、df.iloc[1]の上側を取得する
+            target = peaks_class.df_r_original.iloc[i]['low']
+            print(" ベース価格high", peaks_class.df_r_original.iloc[i])
+        exe_orders = [order_make_dir1_l(peaks_class, comment, target,
+                                        peaks_class.cal_move_ave(0.2), 1,
+                                        peaks_class.cal_move_ave(1.5),
+                                        peaks_class.cal_move_ave(1))]
+        # 本当の理想は↓なんだけど。。
+        # exe_orders = [order_make_dir1_l(peaks_class, comment, peaks[0]['latest_body_peak_price'],
+        #                                 peaks_class.cal_move_ave(1), 1,
+        #                                 peaks_class.cal_move_ave(3),
+        #                                 peaks_class.cal_move_ave(1))]
+
+        return default_return_item
+        return {
+            "take_position_flag": True,
+            "exe_orders": exe_orders,
+            "for_inspection_dic": {}
+        }
+    # else:
+    #     return default_return_item
+
+
+
+    if (peaks[0]['direction'] == 1 and peaks[0]['latest_body_peak_price'] <= peaks[2]['latest_body_peak_price']) \
+            or (peaks[0]['direction'] == -1 and peaks[0]['latest_body_peak_price'] >= peaks[2]['latest_body_peak_price']):
+        # if peaks[0]['direction'] == 1 and peaks[0]['latest_body_peak_price'] <= peaks[2]['latest_body_peak_price']:
+        # if peaks[0]['latest_body_peak_price'] <= peaks[2]['latest_body_peak_price']:
+        # if peaks[0]['direction'] == -1 and peaks[0]['latest_body_peak_price'] >= peaks[2]['latest_body_peak_price']:
+        # if peaks[0]['latest_body_peak_price'] >= peaks[2]['latest_body_peak_price']:
+
+        # # スキップされるレベルの抵抗線群の場合
+        # if len(peaks_class.same_price_list) == 1 and total_strength_of_1 == 5:
+        comment = "抵抗5点の一つのみの抵抗オーダー"  # Peak[0]のほうが適切化も？？
+        print("抵抗線は一つだが、それが5点（直近の最低値）の場合、抵抗線とみなす")
+        # パターン１　少し[0]が同方向に進んだ位置に、逆張りオーダーを仕掛ける
+        i = 0
+        target_price = peaks[0]['latest_body_peak_price']
+        # if peaks[0]['direction'] == 1:
+        #     # 直近の向きが登りの場合、df.iloc[1]の下側を取得する（
+        #     target_price = peaks_class.df_r_original.iloc[i]['high']
+        #     # print(" ベース価格low", peaks_class.df_r_original.iloc[i])
+        # else:
+        #     # 直近の向きが下理の場合、df.iloc[1]の上側を取得する
+        #     target_price = peaks_class.df_r_original.iloc[i]['low']
+        #     # print(" ベース価格high", peaks_class.df_r_original.iloc[i])
+        exe_orders = [order_make_dir1_s(peaks_class, comment, target_price,
+                                        peaks_class.cal_move_ave(1), 1,
+                                        peaks_class.cal_move_ave(3),
+                                        peaks_class.cal_move_ave(1))]
     else:
         return default_return_item
 
@@ -714,7 +719,7 @@ def resistance_order(peaks, peaks_class, comment, target_num):
         # "tp": tp_range,  # 短期では0.15でもOK.ただ長期だと、マイナスの平均が0.114のためマイナスの数が多くなる
         # "lc": lc_price,  # 0.06,
         "tp": peaks[1]['latest_body_peak_price'],  #0.03,
-        "lc": peaks_class.cal_move_size_lc(1),
+        "lc": peaks_class.cal_move_ave(1),
         # "lc": peaks_class.ave_move_for_lc,
         # "lc": 0.4,
         'priority': 4,
@@ -758,7 +763,7 @@ def resistance_order_weak(peaks, peaks_class, comment, target_num):
     print("target_num確認表示", target_num)
 
     # peak[1]からのレジスタンス方向のため、peak[0]方向のポジション。その為、＋だと取得しにくく、ーだと取得しやすくなる
-    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_size_lc(1))  # 0.4もよかった
+    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_ave(1))  # 0.4もよかった
     lc_price = OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03,
                                                          peaks[0]['direction'])
     gap = abs(lc_price - target_price)
@@ -774,7 +779,7 @@ def resistance_order_weak(peaks, peaks_class, comment, target_num):
         # "lc": lc_price,  # 0.06,
         # "tp": gene.cal_at_least(0.1, peaks_class.cal_move_size_lc(1.5)),
         "tp": 0.5,
-        "lc": peaks_class.cal_move_size_lc(0.8),
+        "lc": peaks_class.cal_move_ave(0.8),
         # "lc": peaks_class.ave_move_for_lc,
         # "lc": 0.4,
         'priority': 4,
@@ -818,7 +823,7 @@ def resistance_order_strong(peaks, peaks_class, comment, target_num):
     print("target_num確認表示", target_num)
 
     # peak[1]からのレジスタンス方向のため、peak[0]方向のポジション。その為、＋だと取得しにくく、ーだと取得しやすくなる
-    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_size_lc(0.01))  # 0.2
+    target_price = target_peak['peak'] + (peaks[0]['direction'] * peaks_class.cal_move_ave(0.01))  # 0.2
     lc_price = OCreate.cal_lc_price_from_line_and_margin(peaks[1]['latest_wick_peak_price'], 0.03,
                                                          peaks[0]['direction'])
     gap = abs(lc_price - target_price)
@@ -834,7 +839,7 @@ def resistance_order_strong(peaks, peaks_class, comment, target_num):
         # "lc": lc_price,  # 0.06,
         # "tp": gene.cal_at_least(0.1, peaks_class.cal_move_size_lc(1.5)),
         "tp": 0.5,
-        "lc": peaks_class.cal_move_size_lc(1.5),
+        "lc": peaks_class.cal_move_ave(1.5),
         # "lc": peaks_class.ave_move_for_lc,
         # "lc": 0.4,
         'priority': 4,
@@ -874,7 +879,7 @@ def break_order_week(peaks, peaks_class, comment, same_price_list):
     # flag形状の場合（＝Breakの場合）
     base_order_dic = {
         # 指定価格-整数は取得しやすくなる方向。指定価格＋整数は取得しにくくなる方向
-        "target": peaks[1]['latest_wick_peak_price'] + (peaks_class.cal_move_size_lc(0.5) * peaks[1]['direction']),
+        "target": peaks[1]['latest_wick_peak_price'] + (peaks_class.cal_move_ave(0.5) * peaks[1]['direction']),
         # "target": peaks[1]['latest_wick_peak_price'] + (peaks_class.cal_move_size_lc(1) * peaks[1]['direction']),
         "type": "STOP",
         "expected_direction": peaks[1]['direction'],
@@ -882,7 +887,7 @@ def break_order_week(peaks, peaks_class, comment, same_price_list):
         # # "lc": 0.09,  # 0.06,
         # "tp": 0.075,
         # "lc": 0.075,
-        "tp": gene.cal_at_least(0.05, peaks_class.cal_move_size_lc(1.5)),
+        "tp": gene.cal_at_least(0.05, peaks_class.cal_move_ave(1.5)),
         # "lc": gene.cal_at_least(0.05, peaks_class.cal_move_size_lc(1)),
         # "tp": peaks_class.cal_move_size_lc(1.8),
         "lc": peaks[2]['latest_wick_peak_price'],
@@ -908,3 +913,159 @@ def break_order_week(peaks, peaks_class, comment, same_price_list):
         base_order_class = OCreate.OrderCreateClass(base_order_dic)
 
     return base_order_class.finalized_order
+
+
+# 以下保存用
+# def cal_predict_turn2(peaks_class):
+#     """
+#     args[0]は必ずpeaks_classであること。
+#     args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
+#
+#     直近[0]がcount4の時、riverPeakにレジスタンスオーダーを入れる
+#     """
+#     # ■基本情報の取得
+#     print("★★PREDICT　TURN2222")
+#     take_position = False
+#     # ■返却値の設定
+#     default_return_item = {
+#         "take_position_flag": take_position,
+#         "for_inspection_dic": {}
+#     }
+#     s = "    "
+#
+#     # ■Peaks等、大事な変数の設定
+#     # ターゲットになるピークを選択
+#     target_num = 1  # 以下のループで「自分以外」を定義するため、変数に入れておく(同一方向の配列に対して）
+#     peaks = peaks_class.peaks_original_marked_hard_skip
+#     # peaks = peaks_class.skipped_peaks
+#     target_peak = peaks[target_num]
+#     print("ターゲットになるピーク:", target_peak['peak'], target_peak)
+#
+#     # ■実行除外
+#     # latestのカウントが既定の物かを確認
+#     if peaks[0]['count'] == 3:  # and peaks[1]['count'] >= 3:  # [0]countは２では微妙（２はBreakのケースが多く見える）ので３．
+#         print("　カウント数は合格", peaks[0]['count'], "が4以上が対象")
+#     else:
+#         print("  山を形成するカウント不足", peaks[0]['count'], "が4以上が対象")
+#         return default_return_item
+#     # 対象のPeakのサイズを確認（小さすぎる場合、除外）
+#     if peaks[1]['gap'] < 0.04:
+#         print("対象が小さい", peaks[1]['gap'])
+#         return default_return_item
+#
+#     # ■判定に必要な数字の算出
+#     # 1 強度の判定
+#     peaks_class.make_same_price_list(target_num, False)  # クラス内でSamePriceListを実行
+#     print("同一価格リスト（抵抗線強度検討用）")
+#     gene.print_arr(peaks_class.same_price_list)
+#     total_strength_of_1 = sum(d["item"]["peak_strength"] for d in peaks_class.same_price_list)
+#     print("samePriceListの強度の合計値;", total_strength_of_1)
+#     #    10以上だと強い⇒抵抗OrderのLCを小さくとる（越えた場合大きく越えそう）
+#     #    なんなら、その場合はBreakOrderも出してみたい。
+#     # 2 判定に使うハードスキップ情報の取得
+#     hard_peaks = peaks_class.skipped_peaks_hard
+#
+#     # ■判
+#     # 急変動直後を思われる場合群
+#     # if hard_peaks[2]['gap'] >= hard_peaks[1]['gap'] * 3:
+#     #     return default_return_item
+#     #     # 急変動から一瞬落ち着いた部分（[0]の[1]への戻り具合にもよる）⇒　基本的に[2]を突き抜けるBreakを想定。 ５－３
+#     #     comment = "急変動後のBreak（2-1間)"
+#     #     print(comment, hard_peaks[2]['gap'], ">", hard_peaks[2]['gap'], "*3")
+#     #     # target2が一番良い(事実上Market)（感覚的には0だし、2まで戻ってないことを想定していた。。）
+#     #     exe_orders = [order_make_dir0_s(peaks_class, comment, 0, 0.01, 1,
+#     #                                     peaks_class.cal_move_size_lc(0.8), peaks_class.cal_move_size_lc(1))]
+#     # elif hard_peaks[1]['gap'] >= hard_peaks[0]['gap'] * 3:
+#     #     return default_return_item
+#     #     # 急変動がまさに起こっていそうな場合（急変動から折り返した状態）⇒　[0]は今後すぐに折り返すことを想定。★精度悪い可能性大？
+#     #     comment = "急変動中のBreak（2-1間)"
+#     #     print(comment, hard_peaks[2]['gap'], ">", hard_peaks[2]['gap'], "*3")
+#     #     exe_orders = [order_make_dir1_l(peaks_class, comment, 0, 0.01, 1,
+#     #                                     0.1, peaks[2]['latest_wick_peak_price'])]
+#     # 急変動後以外の場合
+#     # else:
+#     # if total_strength_of_1 >= 10:
+#     #     # 0の抵抗が強い場合、越えたら突き抜ける(急変動がない前提のため、レジスタンスにするかも？）
+#     #     comment = "強抵抗のBreakオーダー"  # これも精度悪いなぁ
+#     #     print(comment, total_strength_of_1, "同一価格個数", len(peaks_class.same_price_list))
+#     #     exe_orders = [order_make_dir1_s(peaks_class, comment, 1, 0, 1,
+#     #                                     peaks_class.cal_move_size_lc(0.8), peaks_class.cal_move_size_lc(0.8))]
+#     # else:
+#     #     # 抵抗が少ない場合
+#     #     if total_strength_of_1 <= 8:  # ８は最小最大の既定の数字なので、７くらいがよい・・？
+#     #         # スキップされるレベルの抵抗線群の場合
+#     #         if len(peaks_class.same_price_list) == 1 and total_strength_of_1 == 5:
+#     #             comment = "抵抗5点の一つのみの抵抗オーダー"
+#     #             print("抵抗線は一つだが、それが5点（直近の最低値）の場合、抵抗線とみなす")
+#     #             # exe_orders = [resistance_order_weak(peaks, peaks_class, comment, target_num)]
+#     #             exe_orders = [order_make_dir1_l(peaks_class, comment, 1, 0, 1,
+#     #                                             peaks_class.cal_move_size_lc(0.8),
+#     #                                             peaks_class.cal_move_size_lc(0.8))]
+#     #         else:
+#     #             print("RESI オーダー発行（弱抵抗）", total_strength_of_1)
+#     #             comment = "弱抵抗の抵抗オーダー"
+#     #             # exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
+#     #             # exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
+#     #             exe_orders = [order_make_dir1_l(peaks_class, comment, 1, 0, 1,
+#     #                                             peaks_class.cal_move_size_lc(0.8),
+#     #                                             peaks_class.cal_move_size_lc(0.8))]
+#     #     else:
+#     #         # 抵抗線として、ある程度強そうな場合(Breakまではいたらない） ⇒昔は強レジスタンスだった
+#     #         print("RESI オーダー発行（弱抵抗）⇒現在ノーオーダー", total_strength_of_1)
+#     #         return default_return_item
+#
+#     if total_strength_of_1 < 10:
+#         # 抵抗が少ない場合
+#         if total_strength_of_1 <= 8:  # ８は最小最大の既定の数字なので、７くらいがよい・・？
+#             if (peaks[0]['direction'] == 1 and peaks[0]['latest_body_peak_price'] <= peaks[2]['latest_body_peak_price'])\
+#                     or (peaks[0]['direction'] == -1 and peaks[0]['latest_body_peak_price'] >= peaks[2]['latest_body_peak_price']):
+#             # if peaks[0]['direction'] == 1 and peaks[0]['latest_body_peak_price'] <= peaks[2]['latest_body_peak_price']:
+#             # if peaks[0]['latest_body_peak_price'] <= peaks[2]['latest_body_peak_price']:
+#             # if peaks[0]['direction'] == -1 and peaks[0]['latest_body_peak_price'] >= peaks[2]['latest_body_peak_price']:
+#             # if peaks[0]['latest_body_peak_price'] >= peaks[2]['latest_body_peak_price']:
+#
+#             #     return default_return_item
+#             # # スキップされるレベルの抵抗線群の場合
+#             # if len(peaks_class.same_price_list) == 1 and total_strength_of_1 == 5:
+#                 comment = "抵抗5点の一つのみの抵抗オーダー"  # Peak[0]のほうが適切化も？？
+#                 print("抵抗線は一つだが、それが5点（直近の最低値）の場合、抵抗線とみなす")
+#                 # exe_orders = [resistance_order_weak(peaks, peaks_class, comment, target_num)]
+#
+#                 # パターン１　少し[0]が同方向に進んだ位置に、逆張りオーダーを仕掛ける
+#                 i = 0
+#                 if peaks[0]['direction'] == 1:
+#                     # 直近の向きが登りの場合、df.iloc[1]の下側を取得する（
+#                     target = peaks_class.df_r_original.iloc[i]['high']
+#                     print(" ベース価格low", peaks_class.df_r_original.iloc[i])
+#                 else:
+#                     # 直近の向きが下理の場合、df.iloc[1]の上側を取得する
+#                     target = peaks_class.df_r_original.iloc[i]['low']
+#                     print(" ベース価格high", peaks_class.df_r_original.iloc[i])
+#                 exe_orders = [order_make_dir1_l(peaks_class, comment, target,
+#                                                 peaks_class.cal_move_ave(0.2), 1,
+#                                                 peaks_class.cal_move_ave(1.5),
+#                                                 peaks_class.cal_move_ave(1))]
+#             else:
+#                 return default_return_item
+#                 print("RESI オーダー発行（弱抵抗）", total_strength_of_1)
+#                 comment = "弱抵抗の抵抗オーダー"
+#                 # exe_orders = [resistance_order_weak(peaks, peaks_class, "Predict抵抗2", target_num)]
+#                 # exe_orders = [break_order_week(peaks, peaks_class, "Predict抵抗2", target_num)]
+#                 exe_orders = [order_make_dir1_l(peaks_class, comment, 1, 0, 1,
+#                                                 peaks_class.cal_move_ave(0.8),
+#                                                 peaks_class.cal_move_ave(0.8))]
+#         else:
+#             # 抵抗線として、ある程度強そうな場合(Breakまではいたらない） ⇒昔は強レジスタンスだった
+#             print("RESI オーダー発行（弱抵抗）⇒現在ノーオーダー", total_strength_of_1)
+#             return default_return_item
+#     else:
+#         return default_return_item
+#
+#     print("オーダーします")
+#     print(exe_orders)
+#
+#     return {
+#         "take_position_flag": True,
+#         "exe_orders": exe_orders,
+#         "for_inspection_dic": {}
+#     }

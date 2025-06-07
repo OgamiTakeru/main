@@ -26,12 +26,13 @@ if single_exe:
                            #  datetime.datetime(2024, 10, 10, 9, 25, 0),  # いいマイナスデータ
                            #  datetime.datetime(2023, 9, 10, 23, 40, 6),  # 謎の飛びデータ
                            #  datetime.datetime(2023, 9, 23, 23, 40, 6),  # Break系のいいマイナスデータ
-                            datetime.datetime(2023, 3, 6, 23, 40, 6),  # いいマイナスデータ
+                           #  datetime.datetime(2023, 3, 6, 23, 40, 6),  # いいマイナスデータ
                            #  datetime.datetime(2022, 2, 6, 23, 40, 6),  # いいマイナスデータ
                            # datetime.datetime(2022, 2, 21, 23, 40, 6),  # いいマイナスデータ
+                           datetime.datetime(2025, 6, 7, 5, 0, 6),
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/202503_m5_df.csv',
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/202503_s5_df.csv',
-                           600,
+                           300,
                            1,
                            " テスト" + memo,
                            True,  # グラフの描画あり

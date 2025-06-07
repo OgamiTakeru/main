@@ -86,11 +86,11 @@ gl_times = 1  # Count(最大5000件）を何セット取るか  大体2225×３�
 
 # ■■取得時間の指定
 gl_use_now = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
-gl_target_time = datetime.datetime(2025, 6, 4, 20, 40, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
-# gl_target_time = datetime.datetime(2024, 5, 31, 11, 30, 6)
+gl_target_time = datetime.datetime(2025, 6, 6, 18, 30, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
+# gl_target_time = datetime.datetime(2025, 6, 6, 14, 30, 6)
 # gl_target_time = datetime.datetime(2022, 2, 18, 3, 40, 6)
 # gl_target_time = datetime.datetime(2023, 3, 6, 21, 40, 6)  #SKIPテスト
-# gl_target_time = datetime.datetime(2024, 11, 13, 14, 20, 6)
+gl_target_time = datetime.datetime(2022, 2, 4, 16, 5, 6)
 
 # Mainスタート
 main(im.analysis_predict_mountain_test)

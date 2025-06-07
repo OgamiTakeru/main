@@ -21,6 +21,8 @@ class PeaksClass:
     peaks_original = []
     skipped_peaks = []
     skipped_peaks_hard = []
+    peaks_original_marked_skip = []
+    peaks_original_marked_hard_skip = []  # peaksとしてはオリジナル同様だが、スキップピークに、フラグが付いている物
     latest_resistance_line = {}  # Nullか、情報が入っているかのどちらか（Null＝抵抗線ではない）
     peak_strength = 0
     latest_price = 0  # 現在価格（場合よっては最新価格）
@@ -102,20 +104,25 @@ class PeaksClass:
             # (3) 表示
             s = "   "
             print(s, "<SKIP前>", )
-            gene.print_arr(PeaksClass.peaks_original[:6])
+            gene.print_arr(PeaksClass.peaks_original[:10])
             print("   |")
             gene.print_arr(PeaksClass.peaks_original[-2:])
+
             print("")
             print(s, "<SKIP後　対象>")
-            gene.print_arr(PeaksClass.skipped_peaks[:8])
+            gene.print_arr(PeaksClass.skipped_peaks[:10])
+
+            # print("")
+            # print(s, "<SKIPのフラグのみ")
+            # gene.print_arr(PeaksClass.peaks_original_marked_skip[:15])
+
             print("")
             print(s, "<hard SKIP後　対象>")
-            gene.print_arr(PeaksClass.skipped_peaks_hard[:8])
-            # print(s, "Latest", PeaksClass.skipped_peaks[0])
-            # print(s, "river ", PeaksClass.skipped_peaks[1])
-            # print(s, "turn", PeaksClass.skipped_peaks[2])
-            # print(s, "flop3", PeaksClass.skipped_peaks[3])
-            # print(s, "flop2", PeaksClass.skipped_peaks[4])
+            gene.print_arr(PeaksClass.skipped_peaks_hard[:10])
+
+            print("")
+            print(s, "<hard SKIPのフラグのみ")
+            gene.print_arr(PeaksClass.peaks_original_marked_hard_skip[:15])
 
             # (2)move_sizeの算出
             self.cal_move_size()
@@ -400,10 +407,14 @@ class PeaksClass:
         # print(s4, "SKIP Peaks")
         adjuster = 0
         peaks = copy.deepcopy(PeaksClass.peaks_original)  # PeaksClass.peaks_original.copy()では浅いコピーとなる
-        ans_peaks = []
-        # for vanish_num, vanish_item in enumerate(peaks):
+        # フラグつけ用
+        PeaksClass.peaks_original_marked_skip = copy.deepcopy(PeaksClass.peaks_original)
+        for item in PeaksClass.peaks_original_marked_skip:
+            item["skipped"] = False
+        skip_counter = 0  # 何個スキップしたかをカウントする（フラグ付けのループの個数調整で利用。）
+
         i = 1
-        while i < len(peaks) -1:  # 中で配列を買い替えるため、for i in peaksは使えない！！
+        while i < len(peaks) - 1:  # 中で配列を買い替えるため、for i in peaksは使えない！！
             vanish_num = i + adjuster  # 削除後に、それを起点にもう一度削除処理ができる
             if vanish_num == 0 or vanish_num >= len(peaks) - 1:
                 # print("最初か最後のため、Vanish候補ではない", vanish_num, latest_item)
@@ -461,8 +472,13 @@ class PeaksClass:
             # ■スキップ処理
             if is_skip:
                 if 'previous' in oldest_merged_item:
-                    # print(s4, s4, "  削除")
                     # 最後の一つはやらないため、IF文で最後の手前まで実施する
+                    # marked_onlyの方にフラグを付けていく
+                    PeaksClass.peaks_original_marked_skip[i+skip_counter]['skipped'] = True
+                    PeaksClass.peaks_original_marked_skip[i+skip_counter + 1]['skipped'] = True
+                    skip_counter = skip_counter + 2  # 2個消すので、2個分インクリメントが必要
+
+                    # 消す作業の本番
                     peaks[latest_num]['oldest_body_peak_price'] = oldest_merged_item['oldest_body_peak_price']
                     peaks[latest_num]['oldest_time_jp'] = oldest_merged_item['oldest_time_jp']
                     peaks[latest_num]['oldest_price'] = oldest_merged_item['oldest_price']
@@ -476,10 +492,11 @@ class PeaksClass:
                     # 互換性確保用（いつか消したい）
                     # 情報を吸い取った後、latestおよびmidは削除する
                     del peaks[latest_num + 1:latest_num + 3]
-                    # adjuster = -2
-                    # ans_peaks.append(peaks[latest_num])
+
                 else:
                     i = i + 1
+                    # marked_onlyの方にフラグを付けていく
+
             else:
                 # adjuster = -1
                 # ans_peaks.append(vanish_item)
@@ -497,9 +514,14 @@ class PeaksClass:
         s4 = "    "
         # print(s4, "SKIP Peaks　はーど")
         adjuster = 0
-        peaks = copy.deepcopy(PeaksClass.peaks_original)  # PeaksClass.peaks_original.copy()では浅いコピーとなる
-        ans_peaks = []
-        # for vanish_num, vanish_item in enumerate(peaks):
+        # peaks = copy.deepcopy(PeaksClass.peaks_original)  # PeaksClass.peaks_original.copy()では浅いコピーとなる
+        peaks = copy.deepcopy(PeaksClass.skipped_peaks)  # PeaksClass.peaks_original.copy()では浅いコピーとなる
+        # PeaksClass.peaks_original_marked_hard_skip = copy.deepcopy(PeaksClass.peaks_original)
+        PeaksClass.peaks_original_marked_hard_skip = copy.deepcopy(PeaksClass.peaks_original_marked_skip)
+        for item in PeaksClass.peaks_original_marked_hard_skip:
+            item["skipped"] = False
+        skip_counter = 0  # 何個スキップしたかをカウントする（フラグ付けのループの個数調整で利用。）
+
         i = 1
         while i < len(peaks) -1:  # 中で配列を買い替えるため、for i in peaksは使えない！！
             vanish_num = i + adjuster  # 削除後に、それを起点にもう一度削除処理ができる
@@ -511,9 +533,13 @@ class PeaksClass:
             # わかりやすく命名 （vanish_itemは中央のアイテムを示す）
             latest_num = vanish_num - 1
             latest_item = peaks[latest_num]
-            oldest_merged_num = vanish_num + 1
-            oldest_merged_item = peaks[oldest_merged_num]
+            oldest_num = vanish_num + 1
+            oldest_item = peaks[oldest_num]
             vanish_item = peaks[vanish_num]
+
+            # print(s4, s4, latest_item['time'])
+            # print(s4, s4, s4, vanish_item['time'])
+            # print(s4, s4, s4, oldest_item['time'])
 
             # ■スキップ判定 (vanishは真ん中のPeakを意味する）
             # (0)スキップフラグの設定
@@ -531,11 +557,11 @@ class PeaksClass:
             # (2)ラップ判定
             # 変数の設定
             vanish_latest_ratio = vanish_item['gap'] / latest_item['gap']
-            vanish_oldest_ratio = vanish_item['gap'] / oldest_merged_item['gap']
+            vanish_oldest_ratio = vanish_item['gap'] / oldest_item['gap']
             # 判定１
             overlap_ratio = 0.6  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
             overlap_min_ratio = 0.35
-            # print(s4, s4, "latest", latest_item['time'], latest_item['gap'], "oldest", oldest_merged_item['time'], oldest_merged_item['gap'])
+            # print(s4, s4, "latest", latest_item['time'], latest_item['gap'], "oldest", oldest_item['time'], oldest_item['gap'])
             # print(s4, s4, "  vanish:", vanish_item['time'], "vanish_latest_ratio:", vanish_latest_ratio, ",vanish_oldest_ratio:", vanish_oldest_ratio)
             if vanish_latest_ratio >= overlap_ratio and vanish_oldest_ratio >= overlap_ratio:
                 # 両サイドが同じ程度のサイズ感の場合、レンジ感があるため、スキップはしない（ほとんどラップしている状態）
@@ -558,24 +584,28 @@ class PeaksClass:
 
             # ■スキップ処理
             if is_skip:
-                if 'previous' in oldest_merged_item:
-                    # print(s4, s4, "  削除")
+                # print("  削除対象", vanish_item['time'], i, i+skip_counter)
+                if 'previous' in oldest_item:
                     # 最後の一つはやらないため、IF文で最後の手前まで実施する
-                    peaks[latest_num]['oldest_body_peak_price'] = oldest_merged_item['oldest_body_peak_price']
-                    peaks[latest_num]['oldest_time_jp'] = oldest_merged_item['oldest_time_jp']
-                    peaks[latest_num]['oldest_price'] = oldest_merged_item['oldest_price']
+                    # marked_onlyの方にフラグを付けていく
+                    PeaksClass.peaks_original_marked_hard_skip[i+skip_counter]['skipped'] = True
+                    PeaksClass.peaks_original_marked_hard_skip[i+skip_counter + 1]['skipped'] = True
+                    skip_counter = skip_counter + 2  # 2個消すので、2個分インクリメントが必要
+
+                    # 消す作業の本番
+                    peaks[latest_num]['oldest_body_peak_price'] = oldest_item['oldest_body_peak_price']
+                    peaks[latest_num]['oldest_time_jp'] = oldest_item['oldest_time_jp']
+                    peaks[latest_num]['oldest_price'] = oldest_item['oldest_price']
                     peaks[latest_num]['count'] = (latest_item['count'] + vanish_item['count'] +
-                                                         oldest_merged_item['count']) - 2
-                    peaks[latest_num]['previous'] = oldest_merged_item['previous']
+                                                         oldest_item['count']) - 2
+                    peaks[latest_num]['previous'] = oldest_item['previous']
                     peaks[latest_num]['gap'] = round(abs(latest_item['latest_body_peak_price'] -
-                                                                oldest_merged_item['oldest_body_peak_price']), 3)
+                                                                oldest_item['oldest_body_peak_price']), 3)
                     peaks[latest_num]['peak_strength'] = self.ps_default  # 従来はlatest_item['strength']だが、結合＝０にした方がよい場合が、、
                     peaks[latest_num]['skip_include_num'] = peaks[latest_num]['skip_include_num'] + 1
                     # 互換性確保用（いつか消したい）
                     # 情報を吸い取った後、latestおよびmidは削除する
                     del peaks[latest_num + 1:latest_num + 3]
-                    # adjuster = -2
-                    # ans_peaks.append(peaks[latest_num])
                 else:
                     i = i + 1
             else:
@@ -637,7 +667,7 @@ class PeaksClass:
         # print(t6, "最大ギャップ", max_gap)
         # print(t6, other_max_gap_items)
 
-    def cal_move_size_lc(self, times):
+    def cal_move_ave(self, times):
         """
         直近の動き幅のtimes倍の数値を返却する(直接LC Rangeに利用することを想定）
         """
@@ -926,172 +956,172 @@ def print_peaks():
     copy_data.pop('previous', None)
     return copy_data
 
-def make_same_price_list_from_target_price(target_price, target_dir, peaks_all, same_price_range, is_recall):
-    """
-    target_dir方向（1の場合は上側、-1の場合は下側）のピーク値について以下を調査する
-    target_priceで指定された価格と近い価格(same_price_rangeの幅以内)にあるピークを検出する。
-    検討の上、一つ目の該当するピークが発見された場合、それをtarget_priceに置き換えで再帰する（ただし一回のみ。is_recallでコントロール）
-
-    返却値
-    """
-
-    s4 = "    "
-    s6 = "      "
-    # print(s4, "同価格リスト関数", is_recall)
-    # ■通貨等に依存する数字
-    dependence_same_price_range = same_price_range  # 0.027ガベスト
-
-    # ■各初期値
-    counter = 0  # 何回同等の値が出現したかを把握する
-    depth_point_gap = 0  # 今のピークと一番離れている値、かつ、逆方向のポイント（同価格発見のタイミングでリセット）
-    depth_point = 0
-    depth_point_time = 0
-    depth_break_count = depth_fit_count = 0
-    near_point_gap = 100  # 同価格ではないが、一番近い値、かつ、同方向のポイント(同価格を発見のタイミングでリセットされる）
-    near_point = 0
-    near_point_time = 0
-    near_break_count = near_fit_count = 0
-    same_price_list = []
-    start_adjuster = 0
-    between_peaks_num = start_adjuster  # 間に何個のピークがあったか。予測の場合は０
-
-    # peakの並び替えを実施（テスト中）
-    peaks_all_for_loop = peaks_all  # テストの時にコメントアウトしやすいように。。
-    # if target_dir == 1:
-    #     # 求める方向が上側のピークLineであれば、降順
-    #     peaks_all_for_loop = sorted(peaks_all, key=lambda x: x["peak"], reverse=True)
-    # else:
-    #     # 求める方向が下側のピークLineであれば、昇順
-    #     peaks_all_for_loop = sorted(peaks_all, key=lambda x: x["peak"])
-
-    # 返却値
-    return_dic = {
-        "same_price_list": [],
-        "strength_info": {"line_strength": 0},
-    }
-
-    for i, item in enumerate(peaks_all_for_loop):
-        # 判定を行う
-        # print(s6, " 判定", item['time'], target_price - dependence_same_price_range, "<", item['peak'], "<=",
-        # target_price + dependence_same_price_range, item['direction'],
-        # target_price - dependence_same_price_range <= item['peak'] <= target_price + dependence_same_price_range)
-        this_peak_price_info = {
-            "time": item['time'],
-            "peak": item['peak'],
-            "same_dir": True,  # これは直後で上書きする
-            "direction": target_dir,
-            "count_foot_gap": i,
-            "depth_point_gap": round(depth_point_gap, 3),
-            'depth_point': depth_point,
-            "depth_point_time": depth_point_time,
-            "depth_break_count": depth_break_count,
-            "depth_fit_count": depth_fit_count,
-            "near_point_gap": round(near_point_gap, 3),
-            "near_point": near_point,
-            "near_point_time": near_point_time,
-            'near_break_count': near_break_count,
-            'near_fit_count': near_fit_count,
-            "between_peaks_num": between_peaks_num,
-            "i": i,  # 何個目か
-            "peak_strength": item['peak_strength']  # 最終日の場合のみ後で上書きされる
-        }
-
-        # 最後尾のPeakを参考用として付属させる場合(本当は使いたいが、いったん機能削除）
-        add_oldest_peak = False
-        if add_oldest_peak and i == len(peaks_all_for_loop) - 1 and len(same_price_list) != 0:
-            # 最後尾の場合、痕跡として追加する。ただし、何か情報がある場合のみ追加する（何もない場合は０で返したいため）
-            this_peak_price_info['same_dir'] = False  # 一部上書き
-            this_peak_price_info['peak_strength'] = 0  # 一部上書き
-            same_price_list.append(this_peak_price_info)
-            break  # 重複して登録しないようにループ終了（同一価格を見逃すが、最後の時点で遠い話なので無視する）
-
-        # 実際のループの中身↓
-        if target_price - dependence_same_price_range <= item['peak'] <= target_price + dependence_same_price_range:
-            # ■同価格のピークがあった場合
-            if counter == 0:
-                if not is_recall:
-                    # (recall(2個目以上の対象)の場合は、基準であるtargetPrice変更しない）
-                    # 今回のtargetPriceで最初の発見（最低値か最高値）の場合、それにtargetPriceを合わせに行く(それ基準で近い物を探すため）
-                    # (再起呼び出しされている場合は、ここはやらずに結果を返却するのみ)
-                    # print(s6, "target 変更 ", target_price, " ⇒", item['peak'], dependence_same_price_range)
-                    recall_result = make_same_price_list_from_target_price(item['peak'], target_dir, peaks_all,
-                                                                           same_price_range, True)
-                    return recall_result
-            # 同一価格のピークの情報を取得する
-            counter += 1
-            # 方向に関する判定
-            if item['direction'] == target_dir:
-                # print("　　　　同方向の近似ピーク（≒ダブルピークの素）", item['time'], near_point_gap)
-                this_peak_price_info['same_dir'] = True  # 一部上書き
-                same_price_list.append(this_peak_price_info)
-                # same_price_list.append({"time": item['time'],
-                #                   "peak": item['peak'],
-                #                   "same_dir": True,  # 同じ方向のピークかどうか
-                #                   "direction": target_dir,
-                #                   "count_foot_gap": i,
-                #                   "depth_point_gap": round(depth_point_gap, 3),
-                #                   'depth_point': depth_point,
-                #                   "depth_point_time": depth_point_time,
-                #                   "depth_break_count": depth_break_count,
-                #                   "depth_fit_count": depth_fit_count,
-                #                   "near_point_gap": round(near_point_gap, 3),
-                #                   "near_point": near_point,
-                #                   "near_point_time": near_point_time,
-                #                   'near_break_count': near_break_count,
-                #                   'near_fit_count': near_fit_count,
-                #                   "between_peaks_num": between_peaks_num,
-                #                   "i": i,  # 何個目か
-                #                   "peak_strength": item['peak_strength']
-                #                   })
-                # 通過したピーク情報を初期化する
-                near_point_gap = 100
-                near_break_count = near_fit_count = depth_break_count = depth_fit_count = depth_point_gap = 0
-                between_peaks_num = start_adjuster  # 初期値は1のため注意
-
-        else:
-            # ■同価格のピークではなかったの場合、通過するが記録は残す。
-            between_peaks_num += 1
-            # 条件分岐
-            peak_gap = (target_price - item['peak']) * target_dir
-            # 計算
-            if item['direction'] != target_dir:
-                # 方向が異なるピークの場合→Depthの方
-                # 深さの値を取得する
-                if peak_gap > depth_point_gap:
-                    # 最大深度を更新する場合
-                    depth_point_gap = peak_gap
-                    depth_point = item['peak']
-                    depth_point_time = item['time']
-                # マイナスプラスをカウントする
-                if peak_gap <= 0:
-                    depth_break_count += 1  # マイナスというより、LINEを突破している位置にあるカウント
-                else:
-                    depth_fit_count += 1
-
-            if item['direction'] == target_dir:
-                # 同じピークの場合→Nearの方　ニアの方の深さの値を取得する
-                # print("     TIME", item['time'])
-                if peak_gap < near_point_gap:
-                    # 最も近い価格を超える（かつ逆方向）場合
-                    near_point_gap = peak_gap
-                    near_point = item['peak']
-                    near_point_time = item['time']
-                # マイナスプラスをカウントする
-                # print("     nearPointGap", peak_gap, item['time'])
-                if peak_gap <= 0:
-                    near_break_count += 1
-                else:
-                    near_fit_count += 1
-
-    # リスト完成後の処理（並び替えや、強度の算出）
-    if len(same_price_list) == 0:
-        # 同一価格が存在しない場合、何もしない
-        pass
-    else:
-        # 同一価格が存在する場合、強度を算出しておく
-        same_price_list = sorted(same_price_list, key=lambda x: x["time"], reverse=True)  # 念のため時間順に並び替え
-        strength_info = cal_strength_of_same_price_list(same_price_list, peaks_all, target_price, target_dir)
-        return_dic['same_price_list'] = same_price_list  # 返却値にセット
-        return_dic['strength_info'] = strength_info  # 返却値にセット
-
-    return return_dic
+# def make_same_price_list_from_target_price(target_price, target_dir, peaks_all, same_price_range, is_recall):
+#     """
+#     target_dir方向（1の場合は上側、-1の場合は下側）のピーク値について以下を調査する
+#     target_priceで指定された価格と近い価格(same_price_rangeの幅以内)にあるピークを検出する。
+#     検討の上、一つ目の該当するピークが発見された場合、それをtarget_priceに置き換えで再帰する（ただし一回のみ。is_recallでコントロール）
+#
+#     返却値
+#     """
+#
+#     s4 = "    "
+#     s6 = "      "
+#     # print(s4, "同価格リスト関数", is_recall)
+#     # ■通貨等に依存する数字
+#     dependence_same_price_range = same_price_range  # 0.027ガベスト
+#
+#     # ■各初期値
+#     counter = 0  # 何回同等の値が出現したかを把握する
+#     depth_point_gap = 0  # 今のピークと一番離れている値、かつ、逆方向のポイント（同価格発見のタイミングでリセット）
+#     depth_point = 0
+#     depth_point_time = 0
+#     depth_break_count = depth_fit_count = 0
+#     near_point_gap = 100  # 同価格ではないが、一番近い値、かつ、同方向のポイント(同価格を発見のタイミングでリセットされる）
+#     near_point = 0
+#     near_point_time = 0
+#     near_break_count = near_fit_count = 0
+#     same_price_list = []
+#     start_adjuster = 0
+#     between_peaks_num = start_adjuster  # 間に何個のピークがあったか。予測の場合は０
+#
+#     # peakの並び替えを実施（テスト中）
+#     peaks_all_for_loop = peaks_all  # テストの時にコメントアウトしやすいように。。
+#     # if target_dir == 1:
+#     #     # 求める方向が上側のピークLineであれば、降順
+#     #     peaks_all_for_loop = sorted(peaks_all, key=lambda x: x["peak"], reverse=True)
+#     # else:
+#     #     # 求める方向が下側のピークLineであれば、昇順
+#     #     peaks_all_for_loop = sorted(peaks_all, key=lambda x: x["peak"])
+#
+#     # 返却値
+#     return_dic = {
+#         "same_price_list": [],
+#         "strength_info": {"line_strength": 0},
+#     }
+#
+#     for i, item in enumerate(peaks_all_for_loop):
+#         # 判定を行う
+#         # print(s6, " 判定", item['time'], target_price - dependence_same_price_range, "<", item['peak'], "<=",
+#         # target_price + dependence_same_price_range, item['direction'],
+#         # target_price - dependence_same_price_range <= item['peak'] <= target_price + dependence_same_price_range)
+#         this_peak_price_info = {
+#             "time": item['time'],
+#             "peak": item['peak'],
+#             "same_dir": True,  # これは直後で上書きする
+#             "direction": target_dir,
+#             "count_foot_gap": i,
+#             "depth_point_gap": round(depth_point_gap, 3),
+#             'depth_point': depth_point,
+#             "depth_point_time": depth_point_time,
+#             "depth_break_count": depth_break_count,
+#             "depth_fit_count": depth_fit_count,
+#             "near_point_gap": round(near_point_gap, 3),
+#             "near_point": near_point,
+#             "near_point_time": near_point_time,
+#             'near_break_count': near_break_count,
+#             'near_fit_count': near_fit_count,
+#             "between_peaks_num": between_peaks_num,
+#             "i": i,  # 何個目か
+#             "peak_strength": item['peak_strength']  # 最終日の場合のみ後で上書きされる
+#         }
+#
+#         # 最後尾のPeakを参考用として付属させる場合(本当は使いたいが、いったん機能削除）
+#         add_oldest_peak = False
+#         if add_oldest_peak and i == len(peaks_all_for_loop) - 1 and len(same_price_list) != 0:
+#             # 最後尾の場合、痕跡として追加する。ただし、何か情報がある場合のみ追加する（何もない場合は０で返したいため）
+#             this_peak_price_info['same_dir'] = False  # 一部上書き
+#             this_peak_price_info['peak_strength'] = 0  # 一部上書き
+#             same_price_list.append(this_peak_price_info)
+#             break  # 重複して登録しないようにループ終了（同一価格を見逃すが、最後の時点で遠い話なので無視する）
+#
+#         # 実際のループの中身↓
+#         if target_price - dependence_same_price_range <= item['peak'] <= target_price + dependence_same_price_range:
+#             # ■同価格のピークがあった場合
+#             if counter == 0:
+#                 if not is_recall:
+#                     # (recall(2個目以上の対象)の場合は、基準であるtargetPrice変更しない）
+#                     # 今回のtargetPriceで最初の発見（最低値か最高値）の場合、それにtargetPriceを合わせに行く(それ基準で近い物を探すため）
+#                     # (再起呼び出しされている場合は、ここはやらずに結果を返却するのみ)
+#                     # print(s6, "target 変更 ", target_price, " ⇒", item['peak'], dependence_same_price_range)
+#                     recall_result = make_same_price_list_from_target_price(item['peak'], target_dir, peaks_all,
+#                                                                            same_price_range, True)
+#                     return recall_result
+#             # 同一価格のピークの情報を取得する
+#             counter += 1
+#             # 方向に関する判定
+#             if item['direction'] == target_dir:
+#                 # print("　　　　同方向の近似ピーク（≒ダブルピークの素）", item['time'], near_point_gap)
+#                 this_peak_price_info['same_dir'] = True  # 一部上書き
+#                 same_price_list.append(this_peak_price_info)
+#                 # same_price_list.append({"time": item['time'],
+#                 #                   "peak": item['peak'],
+#                 #                   "same_dir": True,  # 同じ方向のピークかどうか
+#                 #                   "direction": target_dir,
+#                 #                   "count_foot_gap": i,
+#                 #                   "depth_point_gap": round(depth_point_gap, 3),
+#                 #                   'depth_point': depth_point,
+#                 #                   "depth_point_time": depth_point_time,
+#                 #                   "depth_break_count": depth_break_count,
+#                 #                   "depth_fit_count": depth_fit_count,
+#                 #                   "near_point_gap": round(near_point_gap, 3),
+#                 #                   "near_point": near_point,
+#                 #                   "near_point_time": near_point_time,
+#                 #                   'near_break_count': near_break_count,
+#                 #                   'near_fit_count': near_fit_count,
+#                 #                   "between_peaks_num": between_peaks_num,
+#                 #                   "i": i,  # 何個目か
+#                 #                   "peak_strength": item['peak_strength']
+#                 #                   })
+#                 # 通過したピーク情報を初期化する
+#                 near_point_gap = 100
+#                 near_break_count = near_fit_count = depth_break_count = depth_fit_count = depth_point_gap = 0
+#                 between_peaks_num = start_adjuster  # 初期値は1のため注意
+#
+#         else:
+#             # ■同価格のピークではなかったの場合、通過するが記録は残す。
+#             between_peaks_num += 1
+#             # 条件分岐
+#             peak_gap = (target_price - item['peak']) * target_dir
+#             # 計算
+#             if item['direction'] != target_dir:
+#                 # 方向が異なるピークの場合→Depthの方
+#                 # 深さの値を取得する
+#                 if peak_gap > depth_point_gap:
+#                     # 最大深度を更新する場合
+#                     depth_point_gap = peak_gap
+#                     depth_point = item['peak']
+#                     depth_point_time = item['time']
+#                 # マイナスプラスをカウントする
+#                 if peak_gap <= 0:
+#                     depth_break_count += 1  # マイナスというより、LINEを突破している位置にあるカウント
+#                 else:
+#                     depth_fit_count += 1
+#
+#             if item['direction'] == target_dir:
+#                 # 同じピークの場合→Nearの方　ニアの方の深さの値を取得する
+#                 # print("     TIME", item['time'])
+#                 if peak_gap < near_point_gap:
+#                     # 最も近い価格を超える（かつ逆方向）場合
+#                     near_point_gap = peak_gap
+#                     near_point = item['peak']
+#                     near_point_time = item['time']
+#                 # マイナスプラスをカウントする
+#                 # print("     nearPointGap", peak_gap, item['time'])
+#                 if peak_gap <= 0:
+#                     near_break_count += 1
+#                 else:
+#                     near_fit_count += 1
+#
+#     # リスト完成後の処理（並び替えや、強度の算出）
+#     if len(same_price_list) == 0:
+#         # 同一価格が存在しない場合、何もしない
+#         pass
+#     else:
+#         # 同一価格が存在する場合、強度を算出しておく
+#         same_price_list = sorted(same_price_list, key=lambda x: x["time"], reverse=True)  # 念のため時間順に並び替え
+#         strength_info = cal_strength_of_same_price_list(same_price_list, peaks_all, target_price, target_dir)
+#         return_dic['same_price_list'] = same_price_list  # 返却値にセット
+#         return_dic['strength_info'] = strength_info  # 返却値にセット
+#
+#     return return_dic

@@ -429,6 +429,9 @@ mag_tp_l = 1  # 負けているときのLC幅の調整
 # Rangeinspectionの結果保存用
 gl_lower_line = 0
 gl_upper_line = 0
+gl_start_time = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
+gl_start_time_str = str(gl_start_time.month).zfill(2) + str(gl_start_time.day).zfill(2) + "_" + \
+             str(gl_start_time.hour).zfill(2) + str(gl_start_time.minute).zfill(2)
 
 # ■オアンダクラスの設定
 fx_mode = 0  # 1=practice, 0=Live
