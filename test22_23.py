@@ -18,7 +18,8 @@ intest = ci.Inspection(pi.for_test_wrap_only2,
                        600,
                        1,
                        memo + "2のみ",
-                        False)  # グラフの描画あり
+                        False,
+                       "")  # グラフの描画あり
 
 # intest = ci.Inspection(pi.for_test_wrap_only1,
 #                        True,

@@ -14,6 +14,7 @@ import fBlockInspection as fTurn
 
 class OrderCreateClass:
     basic_unit = 10000
+    # basic_unit = 25000
     oa = None
 
     def __init__(self, order_json):
@@ -106,9 +107,24 @@ class OrderCreateClass:
         print("priorityがありません") if "priority" not in order_json else None
         # print("decision_priceがありません（なければここで入れます）") if "decision_price" not in order_json else None
 
+        # ref情報（なくてもかまわない、オーダーの基礎になりそうな参考情報）
+        # 現状、LCChangeのもとになる数字を取得するのに利用
+        self.move_ave = 0  # 最初のLCChangeの値(一番最初は、平均変動を利用したい）
+        if "ref" in order_json:
+            # 参考となる数字がインプットされている場合
+            self.move_ave = order_json['ref']
+
         # Unitsがない場合は初期値を入れる
         if "units" in order_json:
-            self.order_base["units"] = self.order_base["units"]
+            if order_json['units'] == 1:
+                # unit指定が１の場合は、基本値を入れる
+                self.order_base["units"] = self.basic_unit
+            elif order_json['units'] <= 100:
+                # 100以下の数字は倍率とみなす
+                self.order_base["units"] = self.basic_unit * order_json['units']
+            else:
+                # 直接の指定と判断
+                self.order_base["units"] = self.order_base["units"]
         else:
             # print("Unit指定がないため、Unitsを基本のものを入れておく")
             self.order_base["units"] = self.basic_unit
@@ -199,13 +215,19 @@ class OrderCreateClass:
             trigger = 0.035
             ensure = 0.02
 
+        # 動き代を基にする
+        # first_trigger = 0.025
+        # first_ensure = round(first_trigger - self.move_ave, 3)
+        first_ensure = 0.01
+        first_trigger = round(first_ensure + (self.move_ave * 1), 3)
         self.finalized_order['lc_change'] = [
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.015},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": trigger, "lc_ensure_range": ensure},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": round(lc * 1.1, 3), "lc_ensure_range": round(lc * 0.8, 3)},
-            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
-            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
-            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
+            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.002},
+            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.001},
+            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
+            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": trigger, "lc_ensure_range": ensure},
+            # {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
+            # {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
+            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
             {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
             {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
@@ -254,12 +276,19 @@ class OrderCreateClass:
             trigger = 0.05
             ensure = 0.02
 
+        # 動き代を基にする
+        # first_trigger = 0.025
+        # first_ensure = round(first_trigger - self.move_ave, 3)
+        first_ensure = 0.025
+        first_trigger = round(first_ensure + (self.move_ave * 1), 3)
+
         self.finalized_order['lc_change'] = [
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": trigger, "lc_ensure_range": ensure},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.018, "lc_ensure_range": -0.015},
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.018, "lc_ensure_range": 0.001},
             # {"lc_change_exe": True, "time_after": 900, "lc_trigger_range": 0.013, "lc_ensure_range": 0.001},
             {"lc_change_exe": True, "time_after": 900, "lc_trigger_range": 0.025, "lc_ensure_range": 0.015},
+            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
             # {"lc_change_exe": True, "time_after": 300, "lc_trigger_range": 0.025, "lc_ensure_range": 0.015},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": round(lc * 1.1, 3), "lc_ensure_range": round(lc * 0.8, 3)},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},

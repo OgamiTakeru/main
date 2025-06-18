@@ -59,7 +59,8 @@ class Order:
 
 
 class Inspection:
-    def __init__(self, target_func, is_exist_data, target_to_time, m5_data_path, s5_data_path, m5_count, loop, memo, is_graph):
+    def __init__(self, target_func, is_exist_data, target_to_time, m5_data_path, s5_data_path, m5_count, loop, memo,
+                 is_graph, params):
         """
         引数は色々取るが、二パターン
         必ず必要なのは、
@@ -91,6 +92,11 @@ class Inspection:
         self.gl_main_csv_path = m5_data_path  # 大量データ(25)5分
         # ■■■検証用5秒足
         self.gl_s5_csv_path = s5_data_path  # 大量データ(25)5秒
+        # params
+        if not params:
+            self.params = ""
+        else:
+            self.params = params
         # 最初の一つをインスタンスを生成する  150.284 149.834
         gl_classes = []
         pd.set_option('display.max_columns', None)
@@ -114,6 +120,11 @@ class Inspection:
         self.gl_not_overwrite_orders = []
         self.gl_results_list = []
         self.gl_order_list = []
+        self.res_res = 0
+        self.res_p = 0
+        self.res_m = 0
+        self.res_all = ""
+
         # 時間計測用（データの保存用等）
         self.gl_start_time = datetime.datetime.now()  # 検証時間の計測用
         self.gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
@@ -124,9 +135,13 @@ class Inspection:
         self.get_data()
         self.main()
         ans = self.cal_result_and_send_line()  # １は通常終了 0は異常終了
+        self.res_send()
         if ans == 1:
             if is_graph:
                 self.draw_graph()
+
+    def res_send(self):
+        self.res_all = str(self.res_res) + "/" + str(self.res_p) + "-" + str(self.res_m)
 
     def get_data(self):
         """
@@ -250,10 +265,25 @@ class Inspection:
                     continue  # returnではなく、次のループへ
                 else:
                     # ★★★ 解析を呼び出す★★★★★
+                    # ★★★ 解析を呼び出す★★★★★
+                    # ★★★ 解析を呼び出す★★★★★
+                    # ★★★ 解析を呼び出す★★★★★
+                    # ★★★ 解析を呼び出す★★★★★
+                    # ★★★ 解析を呼び出す★★★★★
+                    # ★★★ 解析を呼び出す★★★★★
+                    # ★★★ 解析を呼び出す★★★★★
+                    # ★★★ 解析を呼び出す★★★★★
+                    # ★★★ 解析を呼び出す★★★★★
                     print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/",
                           len(self.gl_inspection_base_df), "中")
                     # analysis_result = im.new_analysis_test(analysis_df)  # 検証専用コード
-                    analysis_result = self.target_func(analysis_df)  # 検証専用コード
+                    # analysis_result = self.target_func(analysis_df)  # 検証専用コード
+                    # print("TARAMS確認", self.params)
+                    if self.params:
+                        analysis_result = self.target_func(analysis_df, self.params)  # 検証専用コード
+                    else:
+                        analysis_result = self.target_func(analysis_df)  # 検証専用コード
+
                     for order in analysis_result["exe_orders"]:  # original_lc_priceの追加
                         order["lc_price_original"] = order["lc_price"]
                     # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
@@ -388,6 +418,10 @@ class Inspection:
                          , "【有意】", self.check_skill_difference(len(plus_df), len(minus_df)), ",\n"
                          , "【回数/日】", round((len(plus_df) + len(minus_df))/inspection_day_gap, 0), ",\n"
                          , "【条件】", self.memo, ",\n参考:処理開始時刻", self.gl_now)
+
+            self.res_p=len(plus_df)
+            self.res_m=len(minus_df)
+            self.res_res=round(self.gl_total, 3)
         return 1
 
     def check_skill_difference(self, wins, losses):

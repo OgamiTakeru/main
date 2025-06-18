@@ -82,7 +82,8 @@ class PeaksClass:
         # ■実処理
         if original_df.equals(PeaksClass.df_r_original):
             # print("         [既にPeaksに変換済みのデータフレーム]")
-            print(PeaksClass.peaks_original)
+            # print(PeaksClass.peaks_original)
+            pass
         else:
             # (1)ピークスの算出
             PeaksClass.df_r_original = original_df
@@ -92,6 +93,13 @@ class PeaksClass:
             print("API取得したデータ範囲　From", original_df.iloc[-1]['time_jp'], "to", original_df.iloc[0]['time_jp'])
             print("調査範囲　From", self.df_r.iloc[-1]['time_jp'], "to", self.df_r.iloc[0]['time_jp'])
             PeaksClass.peaks_original = self.make_peaks(self.df_r)  # 一番感度のいいPeaks。引数は書くとするなら。self.df_r。
+            # たまに起きる謎のエラー対応
+            if len(PeaksClass.peaks_original) <= 2:
+                print("おかしなことが起きている@peakclass")
+                gene.print_arr(PeaksClass.peaks_original)
+                print(PeaksClass.df_r_original)
+                print("↑", len(PeaksClass.df_r_original))
+
             PeaksClass.skipped_peaks = self.skip_peaks()  # スキップピークの算出
             PeaksClass.skipped_peaks_hard = self.skip_peaks_hard()
             self.recalculation_peak_strength_for_peaks()  # ピークストレングスの算出
@@ -120,9 +128,9 @@ class PeaksClass:
             print(s, "<hard SKIP後　対象>")
             gene.print_arr(PeaksClass.skipped_peaks_hard[:10])
 
-            print("")
-            print(s, "<hard SKIPのフラグのみ")
-            gene.print_arr(PeaksClass.peaks_original_marked_hard_skip[:15])
+            # print("")
+            # print(s, "<hard SKIPのフラグのみ")
+            # gene.print_arr(PeaksClass.peaks_original_marked_hard_skip[:15])
 
             # (2)move_sizeの算出
             self.cal_move_size()
@@ -387,7 +395,14 @@ class PeaksClass:
             key=lambda p: p['peak'],
             default=None
         )
-        max_price_neg1_dict['peak_strength'] = self.ps_most_min
+        if max_price_neg1_dict is not None:
+            # 安全にアクセスできる
+            max_price_neg1_dict['peak_strength'] = self.ps_most_max
+        else:
+            print("direction == -1 のデータが見つかりませんでした")
+            gene.print_arr(peaks)
+            # tk.line_send(" Maxに対する　peak_strength （classPeaks 395行目） のエラー発生（-1が見つからなかった）")
+        # max_price_neg1_dict['peak_strength'] = self.ps_most_max  # minになってたけど・・・？
 
         # directionが1の中で最小のprice
         min_price_pos1_dict = min(
@@ -395,7 +410,13 @@ class PeaksClass:
             key=lambda p: p['peak'],
             default=None
         )
-        min_price_pos1_dict['peak_strength'] = self.ps_most_min
+        if min_price_pos1_dict is not None:
+            # 安全にアクセスできる
+            min_price_pos1_dict['peak_strength'] = self.ps_most_min
+        else:
+            print("direction == 1 のデータが見つかりませんでした")
+            gene.print_arr(peaks)
+            # tk.line_send(" Minに対する　peak_strength （classPeaks 404行目） のエラー発生（1が見つからなかった）")
 
     def skip_peaks(self):
         """
@@ -676,6 +697,20 @@ class PeaksClass:
         self.ave_move = filtered_df.head(9)["highlow"].mean()
         self.ave_move_for_lc = self.ave_move * times
         return self.ave_move_for_lc
+
+    def cal_target_times_skip_num(self, peaks, target_time):
+        """
+        データフレームのJP形式の日付が渡され、そのピークがスキップを含むかを返却
+        （スキップない場合は初期値の０、スキップありの場合は自然数を）
+        """
+        skipped_num = 0
+        for item in peaks:
+            # print("検索対象", item['latest_time_jp'])
+            if item["latest_time_jp"] == target_time:
+                skipped_num = item.get('skip_include_num', 0)
+                # print(" 同一価格発見（Skipされていない）", item["time"], item['skip_include_num'])
+                break
+        return skipped_num
 
     def temp(self):
 

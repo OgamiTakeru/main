@@ -89,8 +89,10 @@ gl_use_now = False  # 現在時刻実行するかどうか False True　　True�
 gl_target_time = datetime.datetime(2025, 6, 6, 18, 30, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 # gl_target_time = datetime.datetime(2025, 6, 6, 14, 30, 6)
 # gl_target_time = datetime.datetime(2022, 2, 18, 3, 40, 6)
-# gl_target_time = datetime.datetime(2023, 3, 6, 21, 40, 6)  #SKIPテスト
-gl_target_time = datetime.datetime(2022, 2, 4, 16, 5, 6)
+gl_target_time = datetime.datetime(2024, 10, 2, 0, 5, 6)  #SKIPテスト
+gl_target_time = datetime.datetime(2022, 2, 3, 16, 55, 6)
+gl_target_time = datetime.datetime(2025, 6, 17, 19, 35, 6)
+# gl_target_time = datetime.datetime(2025, 6, 17, 21, 30, 6)
 
 # Mainスタート
 main(im.analysis_predict_mountain_test)
