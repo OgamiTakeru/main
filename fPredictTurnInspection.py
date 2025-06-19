@@ -423,15 +423,16 @@ def cal_predict_turn2(peaks_class):
 
     # 本番用★★
     if total_strength_of_1 <= 8 and not is_over:
-        if is_latest_skip_hard and return_ratio_0_1 <= 0.6:
+        if is_latest_skip_hard and return_ratio_0_1 <= 0.36:
+            # return default_return_item
             # 伸びる傾向のやつ
-            comment = "strength<8、[2]越えてない、スキップあり　戻り弱⇒越えるやつ"  # Peak[0]のほうが適切化も？？
+            comment = "★strength<8、[2]越えてない、スキップあり　戻り弱⇒越えるやつ"  # Peak[0]のほうが適切化も？？
             print(comment)  # > の向きが越え
             target_price = peaks[0]['latest_body_peak_price']
             exe_orders = [order_make_dir1_s(peaks_class, comment, target_price,
-                                            peaks_class.cal_move_ave(0.5), 1,
+                                            peaks_class.cal_move_ave(0.6), -1,
                                             peaks_class.cal_move_ave(2.2),
-                                            peaks_class.cal_move_ave(2),
+                                            peaks_class.cal_move_ave(2.2),
                                             3)]
         else:
             return default_return_item
@@ -1025,7 +1026,9 @@ def order_make_dir0_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         "lc_change_type": lc_change,
         "units": units,
         "name": comment,
-        "ref": peaks_class.cal_move_ave(1)
+        "ref": {"move_ave": peaks_class.cal_move_ave(1),
+                "peak1_target_gap": abs(peaks[1]['latest_body_peak_price'] - target)
+                }
     }
     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
     # オーダーの修正と、場合によって追加オーダー設定
@@ -1217,7 +1220,9 @@ def order_make_dir1_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         "lc_change_type": lc_change,
         "units": units,
         "name": comment,
-        "ref": peaks_class.cal_move_ave(1)
+        "ref": {"move_ave": peaks_class.cal_move_ave(1),
+                "peak1_target_gap": abs(peaks[1]['latest_body_peak_price'] - target)
+                }
     }
     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
     # オーダーの修正と、場合によって追加オーダー設定

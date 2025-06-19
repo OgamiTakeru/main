@@ -18,7 +18,7 @@ loop = [
 ]
 # mode = 1
 mode = 2
-mode = 3
+# mode = 3
 
 if mode == 1:
     intest = ci.Inspection(pi.for_test_wrap_only2,
@@ -73,15 +73,29 @@ elif mode == 3:
     # overFilter 1=Overなし 0=全部 -1=Overのみ
     # skipFilter 1=skipなしのみ　0=全部　-1=Skipありのみ
     pt = [
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1, "lc": l, "tp": t,
-         "margin": m, "lc_change": ch, "rat": rat, "pat": 1, "c": "c3"},
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1, "lc": l, "tp": t,
-         "margin": m, "lc_change": ch, "rat": rat, "pat": 2, "c": "c3"},
+        # {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
+        #  "lc": l, "tp": t, "margin": m, "lc_change": ch, "rat": rat, "pat": 1, "c": "c3"},
+        # {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
+        #  "lc": l, "tp": t, "margin": m, "lc_change": ch, "rat": rat, "pat": 2, "c": "c3"},
+        #
+        # {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
+        #  "lc": l, "tp": l, "margin": m, "lc_change": ch, "rat": rat, "pat": 1, "c": "c3"},
+        # {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
+        #  "lc": l, "tp": l, "margin": m, "lc_change": ch, "rat": rat, "pat": 2, "c": "c3"},
 
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1, "lc": l, "tp": l,
-         "margin": m, "lc_change": ch, "rat": rat, "pat": 1, "c": "c3"},
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1, "lc": l, "tp": l,
-         "margin": m, "lc_change": ch, "rat": rat, "pat": 2, "c": "c3"}
+        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
+         "lc": l, "tp": l, "margin": m, "lc_change": ch, "rat": 0.5, "pat": 1, "c": "c3"},
+        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
+         "lc": l, "tp": l, "margin": m, "lc_change": ch, "rat": 0.5, "pat": 2, "c": "c3"},
+
+        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
+         "lc": l, "tp": l, "margin": 1, "lc_change": ch, "rat": 0.5, "pat": 1, "c": "c3"},
+        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
+         "lc": l, "tp": l, "margin": 1, "lc_change": ch, "rat": 0.5, "pat": 2, "c": "c3"},
+        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
+         "lc": l, "tp": l, "margin": 1, "lc_change": ch, "rat": 0.5, "pat": 3, "c": "c3"},
+        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
+         "lc": l, "tp": l, "margin": 1, "lc_change": ch, "rat": 0.5, "pat": 4, "c": "c3"}
     ]
     for d in pt:
         min_st = d['min_resi_stg']
