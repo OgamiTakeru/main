@@ -228,7 +228,7 @@ class OrderCreateClass:
         self.finalized_order['lc_change'] = [
             {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.001},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.043, "lc_ensure_range": 0.0},
+            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.043, "lc_ensure_range": 0.018},
             {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": trigger, "lc_ensure_range": ensure},
             # {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
