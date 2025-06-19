@@ -430,7 +430,7 @@ def cal_predict_turn2(peaks_class):
             print(comment)  # > の向きが越え
             target_price = peaks[0]['latest_body_peak_price']
             exe_orders = [order_make_dir1_s(peaks_class, comment, target_price,
-                                            peaks_class.cal_move_ave(0.6), -1,
+                                            peaks_class.cal_move_ave(0.3), 1,
                                             peaks_class.cal_move_ave(2.2),
                                             peaks_class.cal_move_ave(2.2),
                                             3)]
