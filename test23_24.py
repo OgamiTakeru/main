@@ -8,17 +8,17 @@ import fPredictTurnInspection as pi
 
 
 memo = "大量23_24LONG"
-func = im.analysis_predict_mountain_test
+func = im.wrap_all_inspections
 # func = im.analysis_old_flag
 
-intest = ci.Inspection(pi.for_test_wrap_only2,
+intest = ci.Inspection(pi.wrap_predict_turn_inspection_test,
                        True,
                        datetime.datetime(2025, 5, 22, 15, 55, 0),
                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv',
                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv',
                        600,
                        1,
-                        memo + "2のみ",
+                       memo + "2のみ",
                        False,
                        ""
                        )

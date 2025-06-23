@@ -110,14 +110,14 @@ class OrderCreateClass:
         # ref情報（なくてもかまわない、オーダーの基礎になりそうな参考情報）
         # 現状、LCChangeのもとになる数字を取得するのに利用
         self.move_ave = 0  # 最初のLCChangeの値(一番最初は、平均変動を利用したい）
-        self.peak_1 = 0
+        self.peak1_target_gap = 0
         print(order_json['ref'])
         if "ref" in order_json:
             # 参考となる数字がインプットされている場合
             if "move_ave" in order_json['ref']:
                 self.move_ave = order_json['ref']['move_ave']
-            if "peak_1" in order_json['ref']:
-                self.peak_1 = order_json['ref']["peak_1"]
+            if "peak1_target_gap" in order_json['ref']:
+                self.peak1_target_gap = order_json['ref']["peak1_target_gap"]
 
         # Unitsがない場合は初期値を入れる
         if "units" in order_json:
@@ -211,33 +211,28 @@ class OrderCreateClass:
         　（一度20pips位上がった後に、LCまで戻っており、悔しかった。上がるのは大体直前
         ・30分以降は、ローソク形状の効果が切れたとみなし、プラスにいる場合はとにかく利確に向けた動きをする
         """
-        lc = self.finalized_order['lc_range']
-        if lc <= 0.05:
-            trigger = round(lc*1.1, 3)
-            ensure = round(lc*0.1, 3)
-        else:
-            # 小さい場合は、発散の可能性をみて、大きなくくりにしておく
-            trigger = 0.035
-            ensure = 0.02
-
         # 動き代を基にする
         # first_trigger = 0.025
         # first_ensure = round(first_trigger - self.move_ave, 3)
         first_ensure = 0.01
         first_trigger = round(first_ensure + (self.move_ave * 1), 3)
+
+        # 動きを基にする　パート２
+        first_ensure = self.peak1_target_gap
+        first_trigger = round(first_ensure + (self.move_ave * 0.5), 3)
+
         self.finalized_order['lc_change'] = [
             {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
-            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.001},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.043, "lc_ensure_range": 0.018},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
-            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": trigger, "lc_ensure_range": ensure},
-            # {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.043, "lc_ensure_range": 0.018},
-            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
+            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
+            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
+            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.40, "lc_ensure_range": 0.35},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.55},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.65},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.75},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.85},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 1.00, "lc_ensure_range": 0.95},
         ]
 
     def add_lc_change_after_lc(self):

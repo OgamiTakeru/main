@@ -6,22 +6,22 @@ import classInspection as ci
 import fPredictTurnInspection as pi
 
 memo = "少量24_25 "
-func = im.analysis_predict_mountain_test
+func = im.wrap_all_inspections
 # func = im.analysis_old_flag
 
 loop = [
     datetime.datetime(2024, 10, 3, 9, 25, 0),  # いいマイナスデータ
-    datetime.datetime(2024, 10, 10, 9, 25, 0),  # いいマイナスデータ
+    # datetime.datetime(2024, 10, 10, 9, 25, 0),  # いいマイナスデータ
     datetime.datetime(2023, 9, 23, 23, 40, 6),  # Break系のいいマイナスデータ
-    datetime.datetime(2023, 3, 6, 23, 40, 6),  # いいマイナスデータ
+    # datetime.datetime(2023, 3, 6, 23, 40, 6),  # いいマイナスデータ
     datetime.datetime(2022, 2, 6, 23, 40, 6),  # いいマイナスデータ
 ]
 # mode = 1
 mode = 2
-# mode = 3
+mode = 3
 
 if mode == 1:
-    intest = ci.Inspection(pi.for_test_wrap_only2,
+    intest = ci.Inspection(pi.wrap_predict_turn_inspection_test,
                            False,
                            # datetime.datetime(2024, 10, 3, 9, 25, 0),  # いいマイナスデータ
                            #  datetime.datetime(2024, 10, 10, 9, 25, 0),  # いいマイナスデータ
@@ -44,7 +44,7 @@ elif mode == 2:
     i = 1
     res = ""
     for item in loop:
-        intest = ci.Inspection(pi.for_test_wrap_only2,
+        intest = ci.Inspection(pi.wrap_predict_turn_inspection_test,
                                False,
                                item,  # いいマイナスデータ
                                'C:/Users/taker/OneDrive/Desktop/oanda_logs/202503_m5_df.csv',
@@ -83,19 +83,18 @@ elif mode == 3:
         # {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
         #  "lc": l, "tp": l, "margin": m, "lc_change": ch, "rat": rat, "pat": 2, "c": "c3"},
 
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
-         "lc": l, "tp": l, "margin": m, "lc_change": ch, "rat": 0.5, "pat": 1, "c": "c3"},
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
-         "lc": l, "tp": l, "margin": m, "lc_change": ch, "rat": 0.5, "pat": 2, "c": "c3"},
+        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
+         "lc": 2.2, "tp": 2.2, "margin": 0.6, "lc_change": 3, "rat":  0.36, "pat": 2, "c": "c3[強]"},
 
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
-         "lc": l, "tp": l, "margin": 1, "lc_change": ch, "rat": 0.5, "pat": 1, "c": "c3"},
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
-         "lc": l, "tp": l, "margin": 1, "lc_change": ch, "rat": 0.5, "pat": 2, "c": "c3"},
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
-         "lc": l, "tp": l, "margin": 1, "lc_change": ch, "rat": 0.5, "pat": 3, "c": "c3"},
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": 1,
-         "lc": l, "tp": l, "margin": 1, "lc_change": ch, "rat": 0.5, "pat": 4, "c": "c3"}
+        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
+         "lc": 2.2, "tp": 2.2, "margin": 0.6, "lc_change": 3, "rat":  0.7, "pat": 2, "c": "c3 ratのみ"},
+
+        {"ret_count": 3, "min_resi_stg": 8, "max_resi_stg": 15, "over_filter": 1, "skip_filter": -1,
+         "lc": 2.2, "tp": 2.2, "margin": 0.6, "lc_change": 3, "rat": 0.36, "pat": 2, "c": "c3 stgのみ"},
+
+        {"ret_count": 3, "min_resi_stg": 8, "max_resi_stg": 15, "over_filter": 1, "skip_filter": -1,
+         "lc": 2.2, "tp": 2.2, "margin": 0.6, "lc_change": 3, "rat": 0.36, "pat": 3, "c": "c3"},
+
     ]
     for d in pt:
         min_st = d['min_resi_stg']
@@ -118,13 +117,14 @@ elif mode == 3:
     for each_pt in pt:
         res = res + '\n' + each_pt['c']
         for item in loop:
-            intest = ci.Inspection(pi.for_test_wrap_only2_test,
+            intest = ci.Inspection(pi.wrap_predict_turn_inspection_looptest,
                                    False,
                                    item,  # いいマイナスデータ
                                    'C:/Users/taker/OneDrive/Desktop/oanda_logs/202503_m5_df.csv',
                                    'C:/Users/taker/OneDrive/Desktop/oanda_logs/202503_s5_df.csv',
-                                   600,
-                                   1,
+                                   # 600,
+                                   4900,
+                                   3,
                                    " テスト" + memo,
                                    False,  # グラフの描画あり
                                    each_pt
