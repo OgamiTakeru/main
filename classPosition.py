@@ -80,6 +80,7 @@ class order_information:
         self.lc_change_from_candle_lc_price = 0
         self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行で加算される。０は未実行。１以上は執行済み。
         self.lc_change_less_minus_done = False
+        self.lc_change_candle_done = False
         # 特殊　カウンターオーダー
         self.counter_order_peace = {}  # 全ての情報は受け取れないので、CounterOrderで追記する
         self.counter_order_done = False

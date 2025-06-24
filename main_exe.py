@@ -329,6 +329,12 @@ def exe_manage():
             tc = (datetime.datetime.now().replace(microsecond=0) - classOanda.str_to_time(d5_df.iloc[-1]['time_jp'])).seconds
             if tc > 420:  # 何故か直近の時間がおかしい時がる
                 print(" ★★直近データがおかしい", d5_df.iloc[-1]['time_jp'], f.now())
+            if len(d5_df) <= 10:
+                print("　取得したデータフレームの行数がおかしい", len(d5_df))
+                print(d5_df)
+                print("ｄｆここまで")
+            else:
+                print("取得したデータは正常と思われる")
 
             gl_data5r_df = d5_df.sort_index(ascending=False)  # 対象となるデータフレーム（直近が上の方にある＝時間降順）をグローバルに
             d5_df.to_csv(tk.folder_path + 'main_data5.csv', index=False, encoding="utf-8")  # 直近保存用

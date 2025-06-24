@@ -83,16 +83,16 @@ elif mode == 3:
         # {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
         #  "lc": l, "tp": l, "margin": m, "lc_change": ch, "rat": rat, "pat": 2, "c": "c3"},
 
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
-         "lc": 2.2, "tp": 2.2, "margin": 0.6, "lc_change": 3, "rat":  0.36, "pat": 2, "c": "c3[強]"},
+        # {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
+        #  "lc": 2.2, "tp": 2.2, "margin": 0.6, "lc_change": 3, "rat":  0.36, "pat": 2, "c": "c3[強]"},
+        #
+        # {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
+        #  "lc": 2.2, "tp": 2.2, "margin": 0.6, "lc_change": 3, "rat":  0.7, "pat": 2, "c": "c3 ratのみ"},
 
-        {"ret_count": 3, "min_resi_stg": 0, "max_resi_stg": 8, "over_filter": 1, "skip_filter": -1,
-         "lc": 2.2, "tp": 2.2, "margin": 0.6, "lc_change": 3, "rat":  0.7, "pat": 2, "c": "c3 ratのみ"},
-
-        {"ret_count": 3, "min_resi_stg": 8, "max_resi_stg": 15, "over_filter": 1, "skip_filter": -1,
+        {"ret_count": 3, "min_resi_stg": 8, "max_resi_stg": 10, "over_filter": 9, "skip_filter": -1,
          "lc": 2.2, "tp": 2.2, "margin": 0.6, "lc_change": 3, "rat": 0.36, "pat": 2, "c": "c3 stgのみ"},
 
-        {"ret_count": 3, "min_resi_stg": 8, "max_resi_stg": 15, "over_filter": 1, "skip_filter": -1,
+        {"ret_count": 3, "min_resi_stg": 8, "max_resi_stg": 10, "over_filter": 9, "skip_filter": -1,
          "lc": 2.2, "tp": 2.2, "margin": 0.6, "lc_change": 3, "rat": 0.36, "pat": 3, "c": "c3"},
 
     ]

@@ -33,7 +33,7 @@ def wrap_all_inspections(df_r):
     args[0]は必ずdf_rであることで、必須。
     args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
     """
-    print("■■■■調査開始■■■■")
+    print("  WrapUpAllInspection")
 
     #
     flag_and_orders = {

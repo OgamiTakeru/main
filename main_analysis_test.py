@@ -91,9 +91,8 @@ gl_target_time = datetime.datetime(2025, 6, 6, 18, 30, 6)  # 検証時間 (以�
 # gl_target_time = datetime.datetime(2022, 2, 18, 3, 40, 6)
 gl_target_time = datetime.datetime(2024, 10, 2, 0, 5, 6)  #SKIPテスト
 gl_target_time = datetime.datetime(2022, 2, 3, 16, 55, 6)
-gl_target_time = datetime.datetime(2025, 6, 23, 12, 40, 6)
+gl_target_time = datetime.datetime(2025, 6, 24, 15, 40, 6)
 # gl_target_time = datetime.datetime(2025, 6, 17, 21, 30, 6)
 
 # Mainスタート
-main(im.wrap_all_inspections)
-# main(im.analysis_old_flag)
+main(im.wrap_all_inspections)  # 本番環境

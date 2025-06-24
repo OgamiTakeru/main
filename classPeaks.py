@@ -99,6 +99,8 @@ class PeaksClass:
                 gene.print_arr(PeaksClass.peaks_original)
                 print(PeaksClass.df_r_original)
                 print("↑", len(PeaksClass.df_r_original))
+                print(original_df)
+                print("↑　originalDf")
 
             PeaksClass.skipped_peaks = self.skip_peaks()  # スキップピークの算出
             PeaksClass.skipped_peaks_hard = self.skip_peaks_hard()
