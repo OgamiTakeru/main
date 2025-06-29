@@ -451,7 +451,7 @@ def cal_little_turn_at_trend_test(peaks_class):
 
     if (r['count'] == r_count and (skip_exist or tc_min <= t['count'] < tc_max)  #  and not is_over
             and ts_min < turn_strength <= ts_max and rt_ratio_min < rt_ratio <= rt_ratio_max):
-        comment = "最強(brake無し)" + gene.str_merge("Rカウント:", r_count, ",Tカウント:", tc_min, "<tc<", tc_max,
+        comment = "最強(brake無)" + gene.str_merge("Rカウント:", r_count, ",Tカウント:", tc_min, "<tc<", tc_max,
                                           ",T強さ:", ts_min, "<ts<", ts_max, ",RT比率:", rt_ratio_min, "<rt比率<",
                                           rt_ratio_max, ",", c_base)
         exe_orders.append(
