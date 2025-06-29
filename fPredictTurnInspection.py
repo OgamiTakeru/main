@@ -422,8 +422,8 @@ def cal_little_turn_at_trend_test(peaks_class):
             brake_trend_exist = True
         else:
             print("ボディ的には急ブレーキかかってない")
-    if brake_trend_exist:
-        return default_return_item
+    # if brake_trend_exist:
+    #     return default_return_item
 
     # 本番用★★
     # ★★繰り返し用
