@@ -91,7 +91,8 @@ gl_target_time = datetime.datetime(2025, 6, 6, 18, 30, 6)  # 検証時間 (以�
 # gl_target_time = datetime.datetime(2022, 2, 18, 3, 40, 6)
 gl_target_time = datetime.datetime(2024, 10, 2, 0, 5, 6)  #SKIPテスト
 gl_target_time = datetime.datetime(2022, 2, 3, 16, 55, 6)
-gl_target_time = datetime.datetime(2025, 6, 24, 15, 40, 6)
+gl_target_time = datetime.datetime(2025, 6, 27, 16, 15, 6)
+# gl_target_time = datetime.datetime(2025, 6, 25, 14, 45, 6)
 # gl_target_time = datetime.datetime(2025, 6, 17, 21, 30, 6)
 
 # Mainスタート

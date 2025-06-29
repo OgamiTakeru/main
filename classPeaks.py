@@ -19,10 +19,11 @@ class PeaksClass:
     df_r_original = None  # 直近の時刻が[0]となるデータフレーム。API取得のデータとは逆順
     # ピーク情報
     peaks_original = []
+    peaks_original_with_df = []  # 要素にdataとdataremainを持つ。SKipは結合させたりでめんどいのでやらない。
     skipped_peaks = []
     skipped_peaks_hard = []
-    peaks_original_marked_skip = []
-    peaks_original_marked_hard_skip = []  # peaksとしてはオリジナル同様だが、スキップピークに、フラグが付いている物
+    peaks_original_marked_skip = []  # 使ってない？？
+    peaks_original_marked_hard_skip = []  # 使ってない？？　peaksとしてはオリジナル同様だが、スキップピークに、フラグが付いている物
     latest_resistance_line = {}  # Nullか、情報が入っているかのどちらか（Null＝抵抗線ではない）
     peak_strength = 0
     latest_price = 0  # 現在価格（場合よっては最新価格）
@@ -93,6 +94,7 @@ class PeaksClass:
             print("API取得したデータ範囲　From", original_df.iloc[-1]['time_jp'], "to", original_df.iloc[0]['time_jp'])
             print("調査範囲　From", self.df_r.iloc[-1]['time_jp'], "to", self.df_r.iloc[0]['time_jp'])
             PeaksClass.peaks_original = self.make_peaks(self.df_r)  # 一番感度のいいPeaks。引数は書くとするなら。self.df_r。
+            PeaksClass.peaks_original_with_df = self.make_peaks_with_df(self.df_r)  # 一番感度のいいPeaksにDfがついたもの
             # たまに起きる謎のエラー対応
             if len(PeaksClass.peaks_original) <= 2:
                 print("おかしなことが起きている@peakclass")
@@ -113,26 +115,41 @@ class PeaksClass:
             print("直近ピーク", PeaksClass.latest_peak_price)
             # (3) 表示
             s = "   "
+            peaks_original = copy.deepcopy(PeaksClass.peaks_original)# 深いコピーを作成
+            for d in peaks_original:# 指定キーを削除
+                d.pop('next', None)
+                d.pop('previous_time_peak', None)
+                d.pop('support_info', None)
+                d.pop('memo_time', None)
             print(s, "<SKIP前>", )
-            gene.print_arr(PeaksClass.peaks_original[:10])
+            gene.print_arr(peaks_original[:10])
             print("   |")
-            gene.print_arr(PeaksClass.peaks_original[-2:])
-
-            print("")
-            print(s, "<SKIP後　対象>")
-            gene.print_arr(PeaksClass.skipped_peaks[:10])
+            gene.print_arr(peaks_original[-2:])
 
             # print("")
-            # print(s, "<SKIPのフラグのみ")
-            # gene.print_arr(PeaksClass.peaks_original_marked_skip[:15])
+            # print(s, "<SKIP後　対象>")
+            # skipped_peaks = copy.deepcopy(PeaksClass.skipped_peaks)# 深いコピーを作成
+            # for d in skipped_peaks:# 指定キーを削除
+            #     d.pop('next', None)
+            #     d.pop('previous_time_peak', None)
+            #     d.pop('support_info', None)
+            #     d.pop('memo_time', None)
+            # gene.print_arr(skipped_peaks[:10])
 
             print("")
             print(s, "<hard SKIP後　対象>")
-            gene.print_arr(PeaksClass.skipped_peaks_hard[:10])
+            skipped_peaks_hard = copy.deepcopy(PeaksClass.skipped_peaks_hard)# 深いコピーを作成
+            for d in skipped_peaks_hard:# 指定キーを削除
+                d.pop('next', None)
+                d.pop('previous_time_peak', None)
+                d.pop('support_info', None)
+                d.pop('memo_time', None)
+            gene.print_arr(skipped_peaks_hard[:10])
 
             # print("")
             # print(s, "<hard SKIPのフラグのみ")
             # gene.print_arr(PeaksClass.peaks_original_marked_hard_skip[:15])
+
 
             # (2)move_sizeの算出
             self.cal_move_size()
@@ -315,7 +332,99 @@ class PeaksClass:
             # peakのコピーを生成（PreviousやNextがない状態）
             this_peak_simple_copy = this_peak.copy()  # 処理的に次（時間的には後）のピークとして保管
             # 後ピークの追加（時間的に後）
-            # this_peak['next_time_peak'] = next_time_peak
+            this_peak['next'] = next_time_peak
+            next_time_peak = this_peak_simple_copy  # 処理的に次（時間的には後）のピークとして保管
+            # 前関係の追加 (現在処理⇒Peak,ひとつ前の処理（時間的には次）はpeaks[-1])
+            if i != 0:
+                # 先頭以外の時(next_timeはある状態。previousは次の処理で取得される）。先頭の時は実施しない。
+                peaks[-1]['previous_time_peak'] = this_peak_simple_copy  # next_timeのpreviousに今回のpeakを追加
+                peaks[-1]['previous'] = this_peak_simple_copy
+            # 結果を追加
+            peaks.append(this_peak)  # 情報の蓄積
+
+            # ■ループ処理
+            df_r = df_r[this_peak['count'] - 1:]  # 処理データフレームを次に進める
+
+        # ■■■■■■■■ピークの強さを付与する(最大１0）
+        for i, item in enumerate(peaks):
+            # ほとんどスキップと同じ感じだが、Gapが0.05以下の場合は問答無用で低ランク
+            # Gapがクリアしても、両側に比べて小さい場合、低ランク
+            if i == 0 or i == len(peaks) - 1:
+                continue
+
+            # わかりやすく命名 （vanish_itemは中央のアイテムを示す）
+            latest_item = peaks[i - 1]
+            oldest_merged_item = peaks[i + 1]
+
+            # 判定1 (サイズによる判定）
+            count_border = 2
+            if (item['gap'] <= self.peak_strength_border or
+                    (item['gap'] <= self.peak_strength_border_second and item['count'] <= count_border)):
+                # このアイテムのGapが小さい場合、直前も低くなる事に注意
+                item['peak_strength'] = self.ps_most_min  # これで元データ入れ替えられるんだ？！
+                peaks[i + 1]['peak_strength'] = self.ps_most_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
+                continue
+
+            # 判定2　（両サイドとの比率による判定）
+            item_latest_ratio = item['gap'] / latest_item['gap']
+            item_oldest_ratio = item['gap'] / oldest_merged_item['gap']
+            overlap_ratio = 0.4  # ラップ率のボーダー値　(0.7以上でラップ大。0.7以下でラップ小）
+            overlap_ratio_2 = 0.65
+            if item_latest_ratio <= overlap_ratio and item_oldest_ratio <= overlap_ratio:
+                # このアイテムのGapが小さい場合、直前も低くなる事に注意
+                # print("ラップ率が両サイドに比べてかなり低い⇒ほぼスキップされる）
+                # print("", item['time'], latest_item['time'], oldest_merged_item['time'])
+                # print("", item['gap'], latest_item['gap'], oldest_merged_item['gap'])
+                # print("Peak現象判定(直近との比率）", item_latest_ratio,)
+                # print("Peak現象判定(直古との比率）", item_oldest_ratio,)
+                item['peak_strength'] = self.ps_most_min  # これで元データ入れ替えられるんだ？！
+                peaks[i + 1]['peak_strength'] = self.ps_most_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
+            elif item_latest_ratio <= overlap_ratio and item_oldest_ratio <= overlap_ratio:
+                # print("ラップ率が両サイドに比べてそこそこ低め⇒多少スキップの可能性が上がる）
+                # print("", item['time'], latest_item['time'], oldest_merged_item['time'])
+                # print("", item['gap'], latest_item['gap'], oldest_merged_item['gap'])
+                # print("Peak現象判定(直近との比率）", item_latest_ratio,)
+                # print("Peak現象判定(直古との比率）", item_oldest_ratio,)
+                item['peak_strength'] = self.ps_min  # これで元データ入れ替えられるんだ？！
+                peaks[i + 1]['peak_strength'] = self.ps_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
+
+
+        return peaks
+
+    def make_peaks_with_df(self, df_r):
+        """
+        リバースされたデータフレーム（直近が上）から、ピークを一覧にして返却する これがメイン
+        :return:
+        """
+        # ■引数の整理
+        df_r = df_r.copy()
+
+        # ■処理の開始
+        peaks = []  # 結果格納用
+        next_time_peak = {}  # 処理的に次（時間的には後）のピークとして保管
+        for i in range(222):
+            if len(df_r) == 0:
+                break
+            # ■ピークの取得
+            this_peak = self.make_peak(df_r)
+
+            # ■ループ終了処理　ループ終了、または、 重複対策（←原因不明なので、とりあえず入れておく）
+            if len(peaks) != 0 and peaks[-1]['latest_time_jp'] == this_peak['latest_time_jp']:
+                # 最後が何故か重複しまくる！時間がかぶったら何もせず終了
+                break
+            elif len(peaks) > self.max_peak_num:
+                # 終了（ピーク数検索数が上限に到達した場合）
+                break
+
+            # ■（エラー対応 基本必須）timeが０のものが最後に追加されるケース有。
+            if this_peak['time'] == 0:
+                break
+
+            # ■■■■■■■■実処理の追加(前後関係の追加）
+            # peakの簡素化
+            # peakのコピーを生成（PreviousやNextがない状態）
+            this_peak_simple_copy = this_peak.copy()  # 処理的に次（時間的には後）のピークとして保管
+            # 後ピークの追加（時間的に後）
             this_peak['next'] = next_time_peak
             next_time_peak = this_peak_simple_copy  # 処理的に次（時間的には後）のピークとして保管
             # 前関係の追加 (現在処理⇒Peak,ひとつ前の処理（時間的には次）はpeaks[-1])

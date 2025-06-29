@@ -187,7 +187,7 @@ def mode1_order_control(inspection_result_dic):
     # 注文結果を送信する（複数のオーダーでも一つにまとめて送信する）
     tk.line_send("★オーダー発行", gl_trade_num, "回目: ", " 　　　", line_send,
                  ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread),
-                 "直前の結果", classPosition.order_information.before_latest_name, classPosition.order_information.before_latest_plu)
+                 "直前の結果:", classPosition.order_information.before_latest_plu)
 
 
 def mode1():
@@ -318,7 +318,7 @@ def exe_manage():
             past_time = (datetime.datetime.now().replace(microsecond=0) - gl_latest_exe_time).seconds
 
         if time_min % 5 == 0 and 6 <= time_sec < 30 and past_time > 60:  # キャンドルの確認　秒指定だと飛ぶので、前回から●秒経過&秒数に余裕を追加
-            print("■■■Candle調査", gl_live, gl_now, past_time)  # 表示用（実行時）
+            print("■■■■■■5分ごと調査■■■■", gl_live, gl_now, past_time)  # 表示用（実行時）
             classPosition.all_update_information(classes)  # 情報アップデート
             d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": gl_need_df_num}, 1)  # 時間昇順(直近が最後尾）
             if d5_df['error'] == -1:

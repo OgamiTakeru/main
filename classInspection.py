@@ -409,7 +409,7 @@ class Inspection:
             # LINEを送る
             inspection_day_gap_sec = gene.cal_str_time_gap(self.gl_actual_start_time, self.gl_actual_end_time)
             inspection_day_gap = inspection_day_gap_sec['gap_abs'] // (24 * 60 * 60)
-            tk.line_send("test fin 【結果】", round(self.gl_total, 3), ",\n"
+            tk.line_send("test fin 【結果】", round(self.gl_total, 0), ",\n"
                          , "【検証期間】", self.gl_actual_start_time, "-", self.gl_actual_end_time, "(", inspection_day_gap, "日)", "\n"
                          , "【Unit平均】", round(absolute_mean, 0), ",\n"
                          , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), " 計:", len(plus_df) + len(minus_df), ",\n"
@@ -422,6 +422,21 @@ class Inspection:
             self.res_p=len(plus_df)
             self.res_m=len(minus_df)
             self.res_res=round(self.gl_total, 3)
+
+            # 名前ごとにも集計
+            # nameごとに集約
+            result = result_df.groupby('name_only').agg(
+                total_pl=('pl', 'sum'),
+                positive_count=('pl', lambda x: (x > 0).sum()),
+                negative_count=('pl', lambda x: (x < 0).sum())
+            ).reset_index()
+
+            # 文字列を生成
+            output = "検証期間LONG\n"
+            for _, row in result.iterrows():
+                output += f"【名前】{row['name_only']}【計】:{round(row['total_pl'], 0)}({row['positive_count']}:{row['negative_count']})\n\n"
+            print(output)
+            tk.line_send(output, "検証期間LONG")
         return 1
 
     def check_skill_difference(self, wins, losses):

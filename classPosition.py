@@ -908,6 +908,12 @@ class order_information:
                              "予定価格", self.plan['price'])
                 break
 
+    def relational_order(self):
+        """
+        同時に二つのオーダーを出し、どのどちらかが成立した場合、もう一つのオーダーを消去する仕組み。
+        名前に、KillBy[呼び出し元]
+        """
+
     def lc_change_from_candle(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
         ロスカット底上げを実施する。セルフとレールに近い
