@@ -414,8 +414,8 @@ def cal_little_turn_at_trend_test(peaks_class):
         brake_trend_exist = True
     else:
         # BodyAveで検討
-        older_body_ave = round((target_df.iloc[2]['body_abs']+target_df.iloc[3]['body_abs'])/2, 2)
-        later_body_ave = round((target_df.iloc[0]['body_abs']+target_df.iloc[1]['body_abs'])/2,2)
+        older_body_ave = round((target_df.iloc[2]['body_abs']+target_df.iloc[3]['body_abs'])/2, 2) + 0.0000000001  # 0防止
+        later_body_ave = round((target_df.iloc[0]['body_abs']+target_df.iloc[1]['body_abs'])/2, 2) + 0.0000000001  # 0防止
         print("ratio", round(older_body_ave / later_body_ave, 2), "older", older_body_ave, "latet", later_body_ave)
         if older_body_ave / later_body_ave >= 3.5:  # 数が大きければ、よりブレーキがかかる
             print("傾きの顕著な減少（ボディ）")
@@ -451,7 +451,7 @@ def cal_little_turn_at_trend_test(peaks_class):
 
     if (r['count'] == r_count and (skip_exist or tc_min <= t['count'] < tc_max)  #  and not is_over
             and ts_min < turn_strength <= ts_max and rt_ratio_min < rt_ratio <= rt_ratio_max):
-        comment = "最強" + gene.str_merge("Rカウント:", r_count, ",Tカウント:", tc_min, "<tc<", tc_max,
+        comment = "最強(brake無し)" + gene.str_merge("Rカウント:", r_count, ",Tカウント:", tc_min, "<tc<", tc_max,
                                           ",T強さ:", ts_min, "<ts<", ts_max, ",RT比率:", rt_ratio_min, "<rt比率<",
                                           rt_ratio_max, ",", c_base)
         exe_orders.append(
