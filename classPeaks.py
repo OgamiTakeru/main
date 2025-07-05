@@ -1,6 +1,7 @@
 import datetime
 from datetime import datetime
 from datetime import timedelta
+import pandas as pd
 
 import classOanda
 import tokens as tk
@@ -1101,6 +1102,9 @@ def print_peaks():
     copy_data.pop('next', None)
     copy_data.pop('previous', None)
     return copy_data
+
+
+
 
 # def make_same_price_list_from_target_price(target_price, target_dir, peaks_all, same_price_range, is_recall):
 #     """

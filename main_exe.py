@@ -17,7 +17,7 @@ import fAnalysis_order_Main as am
 import fGeneric as gene
 import making as ins
 import fResistanceLineInspection as ri
-import fPredictTurnInspection as pi
+import fTurnInspection as pi
 
 
 def how_to_new_order_judge(inspection_result_dic):
@@ -187,7 +187,7 @@ def mode1_order_control(inspection_result_dic):
     # 注文結果を送信する（複数のオーダーでも一つにまとめて送信する）
     tk.line_send("★オーダー発行", gl_trade_num, "回目: ", " 　　　", line_send,
                  ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread),
-                 "直前の結果:", classPosition.order_information.before_latest_plu)
+                 "直前の結果:", classPosition.order_information.before_latest_plu, ",開始時間", gl_start_time_str)
 
 
 def mode1():
@@ -250,13 +250,15 @@ def mode2():
     global gl_exe_mode
     # print("MODE2")
     classPosition.all_update_information(classes)  # 情報アップデート
-    if classPosition.life_check(classes):
+    life_check_res = classPosition.life_check_no_args()
+    if life_check_res['life_exist']:
         # オーダー以上がある場合。表示用（１分に１回表示させたい）
         temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
         if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒と２秒)
             # have_position = classPosition.position_check(classes)
             have_position = classPosition.position_check_no_args()
             print("■■■Mode2(いずれかポジション有)", f.now(), "これは１分に１回表示")
+            print("     ", life_check_res['one_line_comment'])
             # if have_position['position_exist']:
                 # ポジションがある場合
                 # classPosition.close_opposite_order(classes)

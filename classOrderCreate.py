@@ -147,19 +147,25 @@ class OrderCreateClass:
         self.finalized_order['for_inspection_dic'] = {}
 
         # LC_Changeを付与する 検証環境の都合で、必須。(finalizedに直接追加）
+        # lc_changeは数字か辞書が入る。辞書の場合、lc_changeの先頭にそれが入る
         if "lc_change_type" not in order_json:
             # typeしていない場合はノーマルを追加
             self.add_lc_change_defence()
         else:
-            # 指定されている場合は、指定のLC_Change処理へ
-            if order_json['lc_change_type'] == 1:
-                self.add_lc_change_defence()
-            elif order_json['lc_change_type'] == 0:
-                self.add_lc_change_no_change()
-            elif order_json['lc_change_type'] == 3:
-                self.add_lc_change_offence()
-            elif order_json['lc_change_type'] == 4:
-                self.add_lc_change_after_lc()
+            if isinstance(order_json['lc_change_type'], int):
+                print("処理A: int型です")
+                # 指定されている場合は、指定のLC_Change処理へ
+                if order_json['lc_change_type'] == 1:
+                    self.add_lc_change_defence()
+                elif order_json['lc_change_type'] == 0:
+                    self.add_lc_change_no_change()
+                elif order_json['lc_change_type'] == 3:
+                    self.add_lc_change_offence()
+                elif order_json['lc_change_type'] == 4:
+                    self.add_lc_change_after_lc()
+            else:
+                self.add_lc_change_start_with_dic(order_json['lc_change_type'])
+
 
         # 表示用
         self.finalized_order_without_lc_change = copy.deepcopy(self.finalized_order)
@@ -228,8 +234,8 @@ class OrderCreateClass:
         self.finalized_order['lc_change'] = [
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 1, "lc_ensure_range": 1},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.043, "lc_ensure_range": 0.010},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
+            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.04, "lc_ensure_range": 0.010},
+            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
             {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
             {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.40, "lc_ensure_range": 0.35},
@@ -239,6 +245,47 @@ class OrderCreateClass:
             {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.85},
             {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 1.00, "lc_ensure_range": 0.95},
         ]
+
+    def add_lc_change_start_with_dic(self, dic):
+        """
+        lcChange = 3で選ばれるもの
+        実際の運用をイメージ
+        ・最初の30分はlc_1.3程度をトリガーにしてLC分を確実に回収できるように
+        　（一度20pips位上がった後に、LCまで戻っており、悔しかった。上がるのは大体直前
+        ・30分以降は、ローソク形状の効果が切れたとみなし、プラスにいる場合はとにかく利確に向けた動きをする
+        """
+        # 動き代を基にする
+        # first_trigger = 0.025
+        # first_ensure = round(first_trigger - self.move_ave, 3)
+        first_ensure = 0.01
+        first_trigger = round(first_ensure + (self.move_ave * 1), 3)
+
+        # 動きを基にする　パート２
+        first_ensure = self.peak1_target_gap
+        first_trigger = round(first_ensure + (self.move_ave * 0.5), 3)
+
+        # 動きを基にする　パート２
+        first_ensure = self.move_ave * 2.0
+        first_trigger = self.move_ave * 2.2
+        print("特殊LCChange")
+
+        base = [dic]
+
+        add = [
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 1, "lc_ensure_range": 1},
+            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.04, "lc_ensure_range": 0.010},
+            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
+            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.40, "lc_ensure_range": 0.35},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.55},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.65},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.75},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.85},
+            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 1.00, "lc_ensure_range": 0.95},
+        ]
+        self.finalized_order['lc_change'] = base + add
 
     def add_lc_change_after_lc(self):
         """
@@ -284,10 +331,11 @@ class OrderCreateClass:
         first_trigger = round(first_ensure + (self.move_ave * 0.5), 3)
 
         self.finalized_order['lc_change'] = [
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.043, "lc_ensure_range": 0.018},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
+            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.05, "lc_ensure_range": 0.025},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
             {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.40, "lc_ensure_range": 0.35},
             {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.55},
@@ -372,13 +420,13 @@ class OrderCreateClass:
             else:
                 # 調整なしでOK
                 order_base_info['tp_price'] = round(order_base_info['tp'], 3)
-                order_base_info['tp_range'] = abs(order_base_info['target_price'] - order_base_info['tp'])
+                order_base_info['tp_range'] = round(abs(order_base_info['target_price'] - order_base_info['tp']), 3)
         elif order_base_info['tp'] < dependence_price_or_range_criteria:
             # print("    TP　Range指定")
             # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
             order_base_info['tp_price'] = round(
                 order_base_info['target_price'] + (order_base_info['tp'] * order_base_info['expected_direction']), 3)
-            order_base_info['tp_range'] = order_base_info['tp']
+            order_base_info['tp_range'] = round(order_base_info['tp'], 3)
 
         # ③ LC_priceとLC_rangeを求める
         if not ('lc' in order_base_info):
@@ -403,7 +451,7 @@ class OrderCreateClass:
             # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
             order_base_info['lc_price'] = round(
                 order_base_info['target_price'] - (order_base_info['lc'] * order_base_info['expected_direction']), 3)
-            order_base_info['lc_range'] = order_base_info['lc']
+            order_base_info['lc_range'] = round(order_base_info['lc'], 3)
 
         # 最終的にオーダーで必要な情報を付与する(項目名を整えるためにコピーするだけ）。LimitかStopかを算出
         order_base_info['direction'] = order_base_info['expected_direction']
@@ -481,6 +529,14 @@ class OrderCreateClass:
         temp = order_base_info['decision_price']  # いったん保存
         del order_base_info["decision_price"]
         order_base_info['decision_price'] = temp
+        # lc_Change_type
+        temp = order_base_info['lc_change_type']  # いったん保存
+        del order_base_info["lc_change_type"]
+        order_base_info['lc_change_type'] = temp
+        # ref
+        temp = order_base_info['ref']  # いったん保存
+        del order_base_info["ref"]
+        order_base_info['red'] = temp
 
         # LCChange(これが最後尾にしたい）
         if "lc_change" in order_base_info:

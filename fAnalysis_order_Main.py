@@ -19,10 +19,11 @@ import fHookFigureInspection as hi
 import fCrossMoveInspection as cm
 import fFlagInspection as fi
 import fFlagInspection_AnotherFoot as fia
-import fSimpleTurnInspection as sti
-import fSimpleTurnInspection_test as sti_t
+import fOLDSimpleTurnInspection as sti
+import fOLDSimpleTurnInspection_test as sti_t
 import classPeaks as cpk
-import fPredictTurnInspection as pi
+import fTurnInspection as ti
+import fPredictTurn as pi
 
 oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
@@ -44,14 +45,17 @@ def wrap_all_inspections(df_r):
     # peaksの算出
     peaks_class = cpk.PeaksClass(df_r)
 
-    predict_result = pi.wrap_predict_turn_inspection(peaks_class)  #
-    if predict_result['take_position_flag']:
+    turn_result = ti.wrap_predict_turn_inspection(peaks_class)  #
+    if turn_result['take_position_flag']:
         flag_and_orders["take_position_flag"] = True
-        flag_and_orders["exe_orders"] = predict_result['exe_orders']
+        flag_and_orders["exe_orders"] = turn_result['exe_orders']
         # 代表プライオリティの追加
         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
         flag_and_orders['max_priority'] = max_priority
         flag_and_orders['for_inspection_dic'] = {}
+
+    print("　PREDICTテスト★★★")
+    turn_result = pi.wrap_predict_turn_inspection(peaks_class)  #
 
     return flag_and_orders
 

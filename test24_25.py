@@ -3,7 +3,7 @@ import classOanda as classOanda
 import datetime
 import fAnalysis_order_Main as im
 import classInspection as ci
-import fPredictTurnInspection as pi
+import fTurnInspection as pi
 
 memo = "少量24_25 "
 func = im.wrap_all_inspections

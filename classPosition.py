@@ -9,6 +9,7 @@ import fCommonFunction as cf
 import sys
 import classPeaks as cpk
 
+
 class order_information:
     total_yen = 0  # トータルの円
     total_yen_max = 0  # これは０以上を検出したいので、float(-inf)ではNG
@@ -81,6 +82,7 @@ class order_information:
         self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行で加算される。０は未実行。１以上は執行済み。
         self.lc_change_less_minus_done = False
         self.lc_change_candle_done = False
+        self.lc_change_status = ""
         # 特殊　カウンターオーダー
         self.counter_order_peace = {}  # 全ての情報は受け取れないので、CounterOrderで追記する
         self.counter_order_done = False
@@ -396,7 +398,7 @@ class order_information:
             order_information.total_yen = round(order_information.total_yen + float(trade_latest['unrealizedPL']), 2)
             order_information.total_PLu = round(order_information.total_PLu + trade_latest['PLu'], 3)
         # 計算する（回数）
-        if float(trade_latest['realizedPL'])<0:
+        if float(trade_latest['realizedPL']) < 0:
             order_information.minus_yen_position_num = order_information.minus_yen_position_num + 1
         else:
             order_information.plus_yen_position_num = order_information.plus_yen_position_num + 1
@@ -426,11 +428,15 @@ class order_information:
             res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past'])
             res4 = "【今回結果】" + str(trade_latest['PLu']) + "," + str(trade_latest['realizedPL']) + "円\n"
             res5 = "【合計】計" + str(order_information.total_PLu) + ",計" + str(order_information.total_yen) + "円"
-            res6 = "【合計】累積最大円:" + str(order_information.total_yen_max) + ",最小円:" + str(order_information.total_yen_min)
-            res7 = "【合計】累計最大PL:" + str(order_information.total_PLu_max) + ",最小PL:" + str(order_information.total_PLu_min)
-            res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(order_information.minus_yen_position_num)
+            res6 = "【合計】累積最大円:" + str(order_information.total_yen_max) + ",最小円:" + str(
+                order_information.total_yen_min)
+            res7 = "【合計】累計最大PL:" + str(order_information.total_PLu_max) + ",最小PL:" + str(
+                order_information.total_PLu_min)
+            res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
+                order_information.minus_yen_position_num)
             self.send_line("■■■解消:", self.name, '\n', gene.now(), '\n',
-                           res4, res5, res1, id_info, res2, res3, res6, res7, res8, position_check_no_args()['name_list'])
+                           res4, res5, res1, id_info, res2, res3, res6, res7, res8,
+                           position_check_no_args()['name_list'])
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
             # res1 = "強制Close【Unit】" + str(trade_latest['currentUnits'])
@@ -445,10 +451,12 @@ class order_information:
                 order_information.total_yen_min)
             res7 = "【合計】累計最大PL" + str(order_information.total_PLu_max) + ",最小PL" + str(
                 order_information.total_PLu_min)
-            res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(order_information.minus_yen_position_num)
+            res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
+                order_information.minus_yen_position_num)
 
             self.send_line("■■■解消:", self.name, '\n', gene.now(), '\n',
-                           res4, res5, res1, id_info, res2, res3, res6, res7, res8, position_check_no_args()['name_list'])
+                           res4, res5, res1, id_info, res2, res3, res6, res7, res8,
+                           position_check_no_args()['name_list'])
 
             # 結果のCSV保存
             tk.write_result({
@@ -469,7 +477,7 @@ class order_information:
         # カウンターのオーダーを入れる。AfterCloseFunctionから呼ばれる
         # このクラスを再利用するため、LifeをTrueに戻すことを忘れずに
         if len(self.counter_order_peace) != 0 and not self.counter_order_done and 1 <= self.lc_change_num <= 2:
-        # if len(self.counter_order_peace) != 0 and not self.counter_order_done and 0 <= self.lc_change_num:
+            # if len(self.counter_order_peace) != 0 and not self.counter_order_done and 0 <= self.lc_change_num:
             # カウンタオーダーがあり、カウンターオーダーが未執行で、なおかつ、LCChangeが執行されている場合（プラス確定の場合）
             # lcChangeが執行されていない場合は、だいぶ負けているため、自動的なカウンターは入れてはいけない、
             self.life_set(True)
@@ -496,10 +504,10 @@ class order_information:
             self.order_plan_registration(self.counter_order_peace)
             # order_base(target_price, df_r.iloc[0]['time_jp'])
             print("カウンターオーダー実施。決済価格", self.t_json['averageClosePrice']
-                           , "現時刻(dfFOrmat)", gene.now_df_format(), self.life, self.counter_order_done)
+                  , "現時刻(dfFOrmat)", gene.now_df_format(), self.life, self.counter_order_done)
             self.send_line("カウンターオーダー実施。決済価格", self.t_json['averageClosePrice']
-                           ,"現時刻(dfFOrmat)", gene.now_df_format(), " 現在価格", self.oa.NowPrice_exe("USD_JPY")
-                           ,self.life, self.counter_order_done, "lcDoneNum:", self.lc_change_num)
+                           , "現時刻(dfFOrmat)", gene.now_df_format(), " 現在価格", self.oa.NowPrice_exe("USD_JPY")
+                           , self.life, self.counter_order_done, "lcDoneNum:", self.lc_change_num)
             sys.exit(0)
 
     def close_trade(self, units):
@@ -542,7 +550,8 @@ class order_information:
             units = res_json['orderFillTransaction']['tradeReduced']['units']
             realizedPL = res_json['orderFillTransaction']['tradeReduced']['realizedPL']
             price = res_json['orderFillTransaction']['tradeReduced']['price']
-            self.send_line("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL, "price", price)
+            self.send_line("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL,
+                           "price", price)
 
     def updateWinLoseTime(self, new_pl):
         """
@@ -581,7 +590,8 @@ class order_information:
         # print("detect_change関数")
         # print(order_latest)
         # print(trade_latest)
-        if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
+        if (self.o_state == "PENDING" or self.o_state == "") and order_latest[
+            'state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
                 self.send_line("    (取得)", self.name, trade_latest['price'])
                 #  取得時には、ローソクデータも取得しておく
@@ -671,15 +681,17 @@ class order_information:
         if trade_latest['state'] == "OPEN":
             # 規定時間を過ぎ、マイナス継続時間も１分程度ある場合は、もう強制ロスカットにする
             if self.t_time_past_sec > self.trade_timeout_min * 60 and self.lose_hold_time_sec > 60:
-                self.send_line("   Trade解消(マイナス×時間)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold", self.lose_hold_time_sec
+                self.send_line("   Trade解消(マイナス×時間)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold",
+                               self.lose_hold_time_sec
                                , position_check_no_args()['name_list'])
                 self.close_trade(None)
         if trade_latest['state'] == "OPEN":
             # 規定時間を過ぎ、大きくプラスもなくふらふらしている場合
             if self.t_time_past_sec > self.trade_timeout_min * 60:  # 時間が経過している
                 if self.win_max_plu <= dependence_win_max_plu_max and self.t_pl_u <= dependence_t_pl_u_max:
-                    self.send_line("   Trade解消(微プラス膠着)@", self.name, "PastTime", self.t_time_past_sec, ",LoseHold",
-                                 self.win_max_plu, self.t_pl_u)
+                    self.send_line("   Trade解消(微プラス膠着)@", self.name, "PastTime", self.t_time_past_sec,
+                                   ",LoseHold",
+                                   self.win_max_plu, self.t_pl_u)
                     self.close_trade(None)
 
     def update_information(self):  # orderとpositionを両方更新する
@@ -713,12 +725,13 @@ class order_information:
             if "tradeOpenedID" in order_latest:
                 # ポジションが存在している場合
                 # 他のオーダーを完全にクローズさせた場合
-                if "tradeClosedIDs" in order_latest and not(self.already_offset_notice):
+                if "tradeClosedIDs" in order_latest and not (self.already_offset_notice):
                     self.already_offset_notice = True  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
                     # ただし、tradeCloseIDsもある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
                     # ★トレード有かつ相殺有の場合は、このオーダーがトレードよりも多いユニット注文があったことを意味する。
                     #  その為、オーダーのユニットの一部が相殺され、残るユニットがトレードとして存在する（その為Lifeを消さない）
-                    tk.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）", self.name, "(",
+                    tk.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
+                                 self.name, "(",
                                  self.o_json['id'], ")")
                 #
                 self.t_id = order_latest['tradeOpenedID']
@@ -743,14 +756,17 @@ class order_information:
                 # print("トレード")
                 # print(trade_latest)
                 # 以下相殺発生分のみの情報に置き換え
-                tk.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(",   self.o_json['id'], ")" ,
-                             "相殺したトレード", str(reduced_trade_id) + ",相殺したUNIT", transaction_info['transactions'][0]['requestedUnits'])
+                tk.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
+                             "相殺したトレード", str(reduced_trade_id) + ",相殺したUNIT",
+                             transaction_info['transactions'][0]['requestedUnits'])
                 trade_latest['state'] = "CLOSE"
                 trade_latest['id'] = reduced_trade_id
                 trade_latest['unrealizedPL'] = transaction_info['transactions'][0]['pl']  #
-                trade_latest['currentUnits'] = float(transaction_info['transactions'][0]['requestedUnits'])  # 暫定的に相殺した分に置き換え
+                trade_latest['currentUnits'] = float(
+                    transaction_info['transactions'][0]['requestedUnits'])  # 暫定的に相殺した分に置き換え
                 trade_latest['state'] = "CLOSE"
-                trade_latest['PLu'] = round(float(trade_latest['unrealizedPL']) / abs(float(transaction_info['transactions'][0]['requestedUnits'])), 3)
+                trade_latest['PLu'] = round(float(trade_latest['unrealizedPL']) / abs(
+                    float(transaction_info['transactions'][0]['requestedUnits'])), 3)
                 self.t_json = trade_latest  # Json自体も格納
                 # ★この場合に限り、このオーダーは存在しなくなるため、Close処理を実施する
                 self.life_set(False)
@@ -822,10 +838,12 @@ class order_information:
                     self.send_line("    LC変更ミス＠lc_change")
                     return 0  # APIエラー時は終了
                 # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-                self.send_line("　(LC底上げ★即反対に行ったやつ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
-                             "lc底上げ", lc_ensure_range, "Posiprice", self.t_execution_price,
-                             "予定価格", self.plan['price'], "[追加分]元々のRangeは", self.plan['lc_range'],
-                               "現在マイナスは", self.t_pl_u, "最大Plusは", self.win_max_plu, "所持時間", self.t_time_past_sec)
+                self.send_line("　(LC底上げ★即反対に行ったやつ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒",
+                               new_lc_price,
+                               "lc底上げ", lc_ensure_range, "Posiprice", self.t_execution_price,
+                               "予定価格", self.plan['price'], "[追加分]元々のRangeは", self.plan['lc_range'],
+                               "現在マイナスは", self.t_pl_u, "最大Plusは", self.win_max_plu, "所持時間",
+                               self.t_time_past_sec)
                 self.lc_change_less_minus_done = True  # フラグの成立（変更済）
 
             # # ボーダーラインを超えた場合
@@ -871,6 +889,7 @@ class order_information:
         if self.lc_change_candle_done:  # 既にキャンドルLCChangeに行った場合は、執行しない
             return 0
 
+        status_res = "   LCCHANGE_status:"
         for i, item in enumerate(self.lc_change_dic):
             # コードの１行を短くするため、置きかておく
             lc_exe = item['lc_change_exe']
@@ -886,7 +905,12 @@ class order_information:
             # このループで実行しない場合（フラグオフの場合、DoneがTrueの場合^
             if not lc_exe or 'done' in item or self.t_time_past_sec < lc_change_waiting_time_sec:  # or self.t_time_past_sec > lc_change_till_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
+                status_res = status_res + gene.str_merge("[", i, "] Done,lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
+                                           , "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range)
                 continue
+            else:
+                status_res = status_res + gene.str_merge("[", i, "] 未,lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
+                                           , "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range)
 
             # ボーダーラインを超えた場合
             if self.t_pl_u >= lc_trigger_range:
@@ -904,9 +928,11 @@ class order_information:
                 item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
                 # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
                 self.send_line("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
-                             "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice", self.t_execution_price,
-                             "予定価格", self.plan['price'])
+                               "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice",
+                               self.t_execution_price,
+                               "予定価格", self.plan['price'])
                 break
+        self.lc_change_status = status_res
 
     def relational_order(self):
         """
@@ -944,7 +970,8 @@ class order_information:
             time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
             seconds_difference = abs(time_difference.total_seconds())
             if seconds_difference >= 30:
-                d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 5}, 1)  # 時間昇順(直近が最後尾）
+                d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 5},
+                                                             1)  # 時間昇順(直近が最後尾）
                 if d5_df['error'] == -1:
                     print("error Candle")
                     return -1
@@ -973,7 +1000,7 @@ class order_information:
         # 逆張り注文の際、self.latest_df.iloc[-2]['low']基準だとおかしいくなる。
         # peakを算出し、peaks[0]がカウント２以上ある場合のみ、self.latest_df.iloc[-2]['low']を参照するケースに変更(25/5/17)
         peaks = peaks_class.peaks_original
-        if peaks[0]['count'] >=3:
+        if peaks[0]['count'] >= 3:
             # self.latest_df.iloc[-2]['low']の-2が選択できる状態であれば、実行する
             if self.plan['direction'] > 0:
                 # 買い方向の場合、ひとつ前のローソクのLowの値をLC価格に
@@ -1023,7 +1050,7 @@ class order_information:
         self.lc_change_from_candle_lc_price = lc_price_temp  # ロスカット価格の保存
         lc_range = round(abs(float(lc_price_temp) - float(self.t_execution_price)), 5)
         self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
-        self.send_line("　(LCCandle底上げ)", self.name, "現在のPL" ,self.t_pl_u, "新LC価格⇒", new_lc_price,
+        self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "新LC価格⇒", new_lc_price,
                        "保証", lc_range, "約定価格", self.t_execution_price,
                        "予定価格", self.plan['price'])
 
@@ -1050,7 +1077,7 @@ class order_information:
         #     latest_plu = 0.01
 
         # 値を調整する
-        print("tuning @ classPosition1043, ", latest_plu, "<=",tp_up_border_minus )
+        print("tuning @ classPosition1043, ", latest_plu, "<=", tp_up_border_minus)
         if latest_plu == 0:
             print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
             # 通常環境の場合
@@ -1075,7 +1102,6 @@ class order_information:
         return {"is_previous_lose": is_previous_lose,
                 "tuned_tp_range": tp_range,
                 "tuned_lc_change_type": lc_change_type}
-
 
     # def tuning_by_history_resi(self):
     #     """
@@ -1183,9 +1209,13 @@ def life_check_no_args():
     classes = get_instances_of_class()
     life = []
     unlife = []
+    comment = ""
     for item in classes:
         if item.life:
             life.append(item)
+            if item.t_state == "OPEN":
+                # print(item.name, "comment", comment, "lcStatus", item.lc_change_status)
+                comment = comment + "," + item.lc_change_status
         else:
             unlife.append(item)
     # 結果を集約する
@@ -1195,7 +1225,7 @@ def life_check_no_args():
         ans = True  # 一つでもLifeがある場合はＴｒｕｅ
         # print(" 残っているLIFE", life)
 
-    return ans
+    return {"life_exist": ans, "one_line_comment": comment}
 
 
 def close_opposite_order(classes):
@@ -1322,7 +1352,8 @@ def position_check_no_args():
                 pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
             else:
                 # どうやらt_stateが入っていない状態（オーダーエラーや謎の状態）
-                print(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=", item.life, ",try_num", item.try_update_num)
+                print(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=",
+                      item.life, ",try_num", item.try_update_num)
                 # tk.line_send(" 謎の状態(分岐前）　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=", item.life, ",try_num", item.try_update_num)
                 if item.try_update_num <= item.try_update_limit:
                     # まだ何回か確認するまで、LifeはFalseにしない
@@ -1366,4 +1397,3 @@ def position_check_no_args():
         "total_pl": total_pl,
         "name_list": name_list
     }
-
