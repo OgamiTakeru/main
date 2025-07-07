@@ -137,9 +137,6 @@ def cal_little_turn_at_trend(peaks_class):
         if ((skip_exist or 6 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
                 0 < turn_strength <= 8 and 0 < rt_ratio <= 0.16) and latest_same:
             comment = "●●Count2のすぐBreak"
-            if 14 <= peaks_class.time_hour <= 16 or 8 <= peaks_class.time_hour <= 9:
-                tk.line_send("●●count2Breaksだが、時間悪い")
-                return default_return_item
             target_price = t['latest_body_peak_price']  # targetはTurnのピーク値
             margin_border = 0.02
             if abs(target_price - peaks_class.latest_price) <= margin_border:
@@ -160,10 +157,10 @@ def cal_little_turn_at_trend(peaks_class):
                 peaks_class, comment, target_price, margin, 1,
                 peaks_class.cal_move_ave(1.2),
                 peaks_class.cal_move_ave(1),
-                # [{"lc_change_exe": True, "time_after": 0, "lc_trigger_range": change_temp + 0.01,
-                #  "lc_ensure_range": change_temp - 0.01}],
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": change_temp + 0.01,
+                #  "lc_ensure_range": change_temp - 0.01},
                 1,
-                2,
+                1.5,
                 3)
             order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
             exe_orders.append(order)
@@ -191,7 +188,7 @@ def cal_little_turn_at_trend(peaks_class):
                 peaks_class.cal_move_ave(1.5),
                 peaks_class.cal_move_ave(1.0),
                 1,
-                1,
+                0.5,
                 3)
             order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
             exe_orders.append(order)
@@ -202,9 +199,6 @@ def cal_little_turn_at_trend(peaks_class):
         if ((skip_exist or 7 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
                 0 < turn_strength <= 8 and 0 < rt_ratio <= 0.36):
             comment = "●●●強いやつ"
-            if peaks_class.time_hour == 4 or peaks_class.time_hour == 5:
-                tk.line_send("●●●強いやつだが、時間悪い")
-                return default_return_item
             # target_price = peaks[0]['latest_body_peak_price']
             target_price = peaks_class.latest_price
             temp = round(abs(target_price - t['latest_wick_peak_price']), 3)
@@ -215,7 +209,7 @@ def cal_little_turn_at_trend(peaks_class):
                     peaks_class.cal_move_ave(5),
                     peaks_class.cal_move_ave(2.2),
                     3,
-                    3,
+                    2.5,
                     4)
             )
         else:
@@ -400,9 +394,6 @@ def cal_little_turn_at_trend_test(peaks_class):
         if ((skip_exist or 6 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
                 0 < turn_strength <= 8 and 0 < rt_ratio <= 0.16) and latest_same:
             comment = "●●Count2のすぐBreak"
-            if 14 <= peaks_class.time_hour <= 16 or 8 <= peaks_class.time_hour <= 9:
-                # tk.line_send("●●count2Breaksだが、時間悪い")
-                return default_return_item
             target_price = t['latest_body_peak_price']  # targetはTurnのピーク値
             margin_border = 0.02
             if abs(target_price - peaks_class.latest_price) <= margin_border:
@@ -412,12 +403,9 @@ def cal_little_turn_at_trend_test(peaks_class):
             else:
                 # それ以外は基本的に通常通り、ＴａｒｇｅｔＰｒｉｃｅを使う（マージンを０にする）
                 margin = 0
-            # lcパターン１
             lc_price = r['latest_wick_peak_price']
             lc_range_temp = round(abs(target_price - lc_price), 3) + peaks_class.cal_move_ave(1)
             lc_range = gene.cal_at_least(0.03, lc_range_temp)  # lc_rangeに変換し最低値を確保
-            # lcパターン２（初期のLCはturnの3分の2まで。LcChangeで、3分の1に底上げ。）
-            lc_range = round(t['gap']/3*2, 3)
             print("参考 lc_price", lc_price, "lc_range:", round(abs(target_price - lc_price), 3), "targetPrice",
                   target_price)
             print("LCrange", lc_range, "latest_price", peaks_class.latest_price)
@@ -425,13 +413,10 @@ def cal_little_turn_at_trend_test(peaks_class):
             change_temp = gene.cal_at_least(0.04, temp)
             order = order_make_dir1_s(
                 peaks_class, comment, target_price, margin, 1,
-                peaks_class.cal_move_ave(3.5),
+                peaks_class.cal_move_ave(2),
                 lc_range,
-                [{"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.02,
-                 "lc_ensure_range": round(t['gap']/3*1, 3)},
-                 {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.02,
-                  "lc_ensure_range": 0.01}
-                 ],
+                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": change_temp + 0.01,
+                #  "lc_ensure_range": change_temp - 0.01},
                 1,
                 3)
             order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
@@ -518,9 +503,6 @@ def cal_little_turn_at_trend_test(peaks_class):
         if ((skip_exist or 8 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
                 0 < turn_strength <= 8 and 0 < rt_ratio <= 0.36):
             comment = "●●●強いやつ"
-            if peaks_class.time_hour == 4 or peaks_class.time_hour == 5:
-                # tk.line_send("●●●強いやつだが、時間悪い")
-                return default_return_item
             # target_price = peaks[0]['latest_body_peak_price']
             target_price = peaks_class.latest_price
             temp = abs(target_price - t['latest_wick_peak_price'])

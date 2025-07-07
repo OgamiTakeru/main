@@ -8,6 +8,8 @@ import gc
 import fCommonFunction as cf
 import sys
 import classPeaks as cpk
+import os
+import pandas as pd
 
 
 class order_information:
@@ -25,6 +27,9 @@ class order_information:
     latest_df_get_time = datetime.datetime.now().replace(microsecond=0) - timedelta(minutes=1)
     add_margin = 0.02  # CandleLcChangeで、余裕を見る分。初期は０だったが、マイナスを多くしても維持したい・・・！
 
+    # history
+    result_dic_arr = []
+
     # 連続して取らないように、最後に取得したタイミングを抑える（ただし、オーダー即取得の場合にデータが取れないと困るので、１分前を入れておく）
     # ↓直前の情報を取得しておく
     before_latest_plu = 0
@@ -32,6 +37,8 @@ class order_information:
     # ↓直前の情報の延長で、当面の情報を維持しておく
     history_plus_minus = [0]  # 空だと、過去のプラスマイナスを参照するときおかしなことになるので０を入れておく
     history_names = ["0"]  # 上の理由と同様に数字を入れておく
+
+    # 履歴ファイル
 
     def __init__(self, name, oa, is_live):
         self.name = name  #
@@ -77,10 +84,10 @@ class order_information:
         self.lose_max_plu = 0
 
         # ロスカット変更情報
-        self.lc_change_dic = {}
+        self.lc_change_dic_arr = []
         self.lc_change_from_candle_lc_price = 0
         self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行で加算される。０は未実行。１以上は執行済み。
-        self.lc_change_less_minus_done = False
+        self.lc_change_Fless_minus_done = False
         self.lc_change_candle_done = False
         self.lc_change_status = ""
         # 特殊　カウンターオーダー
@@ -131,7 +138,7 @@ class order_information:
         self.lose_max_plu = 0
 
         # ロスカット変更情報
-        self.lc_change_dic = {}  # 空を持っておくだけ
+        self.lc_change_dic_arr = []  # 空を持っておくだけ
         self.lc_change_from_candle_lc_price = 0
         self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行でTrueに変更される
         self.counter_order_peace = {}
@@ -273,7 +280,7 @@ class order_information:
 
         # (4)LC_Change情報を格納する
         if "lc_change" in plan:
-            self.lc_change_dic = plan['lc_change']  # 辞書を丸ごと
+            self.lc_change_dic_arr = plan['lc_change']  # 辞書を丸ごと
 
         # (6)ポジションがある場合、強制上書き（他のポジションの）を許可するかどうか
         if "over_write_block" in plan:
@@ -437,6 +444,37 @@ class order_information:
             self.send_line("■■■解消:", self.name, '\n', gene.now(), '\n',
                            res4, res5, res1, id_info, res2, res3, res6, res7, res8,
                            position_check_no_args()['name_list'])
+            # 履歴の書き込み
+            result_dic = {
+                "order_time": self.o_time,
+                "res": str(trade_latest['realizedPL']),
+                "take_time": self.t_time,
+                "take_price": str(trade_latest['price']),
+                "end_time": datetime.datetime.now(),
+                "end_price": str(trade_latest['averageClosePrice']),
+                "orderID": str(self.o_id),
+                "tradeID": str(self.t_id),
+                "name": self.name,
+                "name_only": self.name[:-5],
+                "units": str(units_for_view * direction),
+                "pl_per_units": str(trade_latest['PLu'])
+            }
+            order_information.result_dic_arr.append(result_dic)
+            # ファイルが利用できる場合、処理を行う
+            path = tk.folder_path + 'history.csv'
+            try:
+                if not os.path.exists(path):
+                    # ファイルが存在しない場合、新規作成
+                    df = pd.DataFrame(order_information.result_dic_arr)
+                    df.to_csv(path, index=False)
+                else:
+                    # ファイルが存在する場合、追記処理
+                    df = pd.DataFrame([result_dic])
+                    df.to_csv(path, mode='a', header=False, index=False)
+
+            except (OSError, PermissionError, IOError) as e:
+                print(f"ファイルにアクセスできませんでした: {e}")
+
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
             # res1 = "強制Close【Unit】" + str(trade_latest['currentUnits'])
@@ -878,7 +916,7 @@ class order_information:
         :return:         print(" ロスカ変更関数", self.lc_change_dic, self.t_pl_u,self.t_state)
         """
         # print("   LC＿Change実行関数", self.name, self.t_pl_u, self.t_time_past_sec, len(self.lc_change_dic), self.t_state, self.lc_change_from_candle_lc_price)
-        if len(self.lc_change_dic) == 0 or self.t_state != "OPEN":  # 足数×〇分足×秒
+        if len(self.lc_change_dic_arr) == 0 or self.t_state != "OPEN":  # 足数×〇分足×秒
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
             return 0
 
@@ -890,7 +928,7 @@ class order_information:
             return 0
 
         status_res = "   LCCHANGE_status:"
-        for i, item in enumerate(self.lc_change_dic):
+        for i, item in enumerate(self.lc_change_dic_arr):
             # コードの１行を短くするため、置きかておく
             lc_exe = item['lc_change_exe']
             lc_ensure_range = item['lc_ensure_range']
@@ -903,9 +941,20 @@ class order_information:
                 lc_change_till_sec = 100000  #
 
             # このループで実行しない場合（フラグオフの場合、DoneがTrueの場合^
-            if not lc_exe or 'done' in item or self.t_time_past_sec < lc_change_waiting_time_sec:  # or self.t_time_past_sec > lc_change_till_sec:
+            # if not lc_exe or 'done' in item or self.t_time_past_sec < lc_change_waiting_time_sec:
+            if not lc_exe:  # or self.t_time_past_sec > lc_change_till_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
-                status_res = status_res + gene.str_merge("[", i, "] Done,lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
+                status_res = status_res + gene.str_merge("[", i, "] 指定なし",  "lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
+                                           , "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range)
+                continue
+            elif 'done' in item:  # or self.t_time_past_sec > lc_change_till_sec:
+                # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
+                status_res = status_res + gene.str_merge("[", i, "] 済",  "lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
+                                           , "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range)
+                continue
+            elif self.t_time_past_sec < lc_change_waiting_time_sec:  # or self.t_time_past_sec > lc_change_till_sec:
+                # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
+                status_res = status_res + gene.str_merge("[", i, "] 時間未達",  "lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
                                            , "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range)
                 continue
             else:

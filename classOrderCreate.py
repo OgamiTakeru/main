@@ -246,7 +246,7 @@ class OrderCreateClass:
             {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 1.00, "lc_ensure_range": 0.95},
         ]
 
-    def add_lc_change_start_with_dic(self, dic):
+    def add_lc_change_start_with_dic(self, dic_arr):
         """
         lcChange = 3で選ばれるもの
         実際の運用をイメージ
@@ -269,12 +269,10 @@ class OrderCreateClass:
         first_trigger = self.move_ave * 2.2
         print("特殊LCChange")
 
-        base = [dic]
-
         add = [
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 1, "lc_ensure_range": 1},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.04, "lc_ensure_range": 0.010},
+            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.04, "lc_ensure_range": 0.010},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
@@ -285,7 +283,7 @@ class OrderCreateClass:
             {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.85},
             {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 1.00, "lc_ensure_range": 0.95},
         ]
-        self.finalized_order['lc_change'] = base + add
+        self.finalized_order['lc_change'] = dic_arr + add
 
     def add_lc_change_after_lc(self):
         """
@@ -536,7 +534,7 @@ class OrderCreateClass:
         # ref
         temp = order_base_info['ref']  # いったん保存
         del order_base_info["ref"]
-        order_base_info['red'] = temp
+        order_base_info['ref'] = temp
 
         # LCChange(これが最後尾にしたい）
         if "lc_change" in order_base_info:

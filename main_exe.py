@@ -77,6 +77,25 @@ def how_to_new_order_judge(inspection_result_dic):
     #                      new_exe_order['name'], exist_position['pl'], exist_position['direction'], new_exe_order['expected_direction'])
     #         order_plan = False
 
+    # (1)現在のポジションがプラスの時は、同じ方向の身入れる
+    if classes_info['position_exist']:
+        new_exe_order = inspection_result_dic['exe_orders'][0]
+        exist_position = classes_info['open_positions'][0]
+        # ◆既存のポジションがある場合、既存の物と新規のものの方向が同じかを確かめる
+        if classes_info['open_positions'][0]['pl'] > 0:
+            # ポジションがプラス域の場合、
+            if inspection_result_dic['max_priority_order'] == classes_info['max_priority_position']:
+                # 同方向のオーダーはOK
+                how_to_new_order_str = "add"
+            else:
+                # 方向が違うオーダーはNG
+                print(" 既存ポジションがプラス、かつ違う方向にオーダーを入れようとしているので、キャンセル")
+                tk.line_send("既存ポジションがプラス、かつ違う方向にオーダーを入れようとしているので、新規オーダーはキャンセル")
+                how_to_new_order_str = "cancel"
+        else:
+            # ポジションがマイナスの場合、現状特に何もしない
+            pass
+
     # （２）パターン2　フラッグ形状は重ねていくオーダーの場合最大の効果があるため、同方向の場合はガンガン入れていく。
     # ■■■既存オーダーが存在する場合、プライオリティ、現在のプラスマイナス、入れようとしている向きが同方向かを比較する
     if classes_info['order_exist']:
@@ -360,7 +379,7 @@ def exe_manage():
             else:
                 d5_df = d5_df['data']
             # ↓時間指定
-            jp_time = datetime.datetime(2024, 11, 11, 21, 55, 0)
+            jp_time = datetime.datetime(2025, 7, 7, 22, 30, 6)
             euro_time_datetime = jp_time - datetime.timedelta(hours=9)
             euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
             param = {"granularity": "M5", "count": gl_need_df_num, "to": euro_time_datetime_iso}

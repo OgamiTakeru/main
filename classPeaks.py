@@ -34,6 +34,9 @@ class PeaksClass:
     ave_move = 0  # ここ5足程度の動きの大きさ（髭を含む）
     ave_move_for_lc = 0  # ここ5足程度の動きの大きさ（髭を含む）を加味した、LCの提案価格
 
+    # 時間情報
+    time_hour = 0
+
     # samePriceList関係
     same_price_list = []
     same_price_list_till_break = []
@@ -114,7 +117,12 @@ class PeaksClass:
             PeaksClass.latest_peak_price = PeaksClass.peaks_original[0]['peak']
             print("直近価格", PeaksClass.latest_price)
             print("直近ピーク", PeaksClass.latest_peak_price)
-            # (3) 表示
+
+            # (3) 時間の取得
+            time_obj = pd.to_datetime(original_df.iloc[0]['time_jp'], format='%Y/%m/%d %H:%M:%S')
+            PeaksClass.time_hour = time_obj.hour
+
+            # (4) 表示
             s = "   "
             peaks_original = copy.deepcopy(PeaksClass.peaks_original)# 深いコピーを作成
             for d in peaks_original:# 指定キーを削除
