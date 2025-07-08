@@ -153,7 +153,7 @@ class OrderCreateClass:
             self.add_lc_change_defence()
         else:
             if isinstance(order_json['lc_change_type'], int):
-                print("処理A: int型です")
+                print("処理A: int型です", order_json['lc_change_type'])
                 # 指定されている場合は、指定のLC_Change処理へ
                 if order_json['lc_change_type'] == 1:
                     self.add_lc_change_defence()
@@ -234,7 +234,7 @@ class OrderCreateClass:
         self.finalized_order['lc_change'] = [
             # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 1, "lc_ensure_range": 1},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.04, "lc_ensure_range": 0.010},
+            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.04, "lc_ensure_range": 0.005},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
             {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
@@ -283,6 +283,8 @@ class OrderCreateClass:
             {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.85},
             {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 1.00, "lc_ensure_range": 0.95},
         ]
+        print("LCCHange", dic_arr)
+        print("lCCHANE", add)
         self.finalized_order['lc_change'] = dic_arr + add
 
     def add_lc_change_after_lc(self):
@@ -329,7 +331,7 @@ class OrderCreateClass:
         first_trigger = round(first_ensure + (self.move_ave * 0.5), 3)
 
         self.finalized_order['lc_change'] = [
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
+            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.025, "lc_ensure_range": -0.01},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.043, "lc_ensure_range": 0.018},
             # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
             {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.05, "lc_ensure_range": 0.025},

@@ -512,6 +512,20 @@ def cal_little_turn_at_trend_test(peaks_class):
                 1, 3)
             order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
             exe_orders.append(order)
+        elif ((skip_exist or 5 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
+              11 < turn_strength <= 100 and 0.10 < rt_ratio <= 0.30):
+            comment = "△Count2で抵抗値高い"
+            target_price = t['latest_body_peak_price']
+            margin = round(abs(t['gap']) / 4, 3)
+            order = order_make_dir0_s(
+                peaks_class, comment, target_price, 0, 1,
+                peaks_class.cal_move_ave(1.5),
+                peaks_class.cal_move_ave(1.0),
+                3,
+                1,
+                3)
+            order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+            exe_orders.append(order)
         else:
             return default_return_item
     elif r['count'] == 3:
@@ -524,12 +538,13 @@ def cal_little_turn_at_trend_test(peaks_class):
             # target_price = peaks[0]['latest_body_peak_price']
             target_price = peaks_class.latest_price
             temp = abs(target_price - t['latest_wick_peak_price'])
+            lc_range = round(t['gap'] / 3 * 2, 3)
             exe_orders.append(
                 order_make_dir1_s(
                     peaks_class, comment, target_price, peaks_class.cal_move_ave(0.55), -1,
-                    peaks_class.cal_move_ave(5),
-                    peaks_class.cal_move_ave(2.2),
-                    3,
+                    peaks_class.cal_move_ave(3),
+                    lc_range,  #peaks_class.cal_move_ave(2.2),
+                    3,  #3,
                     # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": temp * 1.1,
                     #  "lc_ensure_range": temp * 0.9},
                     1,
