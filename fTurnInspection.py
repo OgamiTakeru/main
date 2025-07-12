@@ -22,7 +22,7 @@ import classPosition
 import bisect
 
 
-def wrap_predict_turn_inspection(peaks_class):
+def wrap_little_turn_inspection(peaks_class):
     """
     クラスをたくさん用いがケース
     args[0]は必ずdf_rであることで、必須。
@@ -59,7 +59,7 @@ def cal_little_turn_at_trend(peaks_class):
     直近[0]がcount4の時、riverPeakにレジスタンスオーダーを入れる
     """
     # ■基本情報の取得
-    print("★★PREDICT　本番用")
+    print("★★TURN　本番用")
     take_position = False
     # ■返却値の設定
     default_return_item = {
@@ -127,6 +127,9 @@ def cal_little_turn_at_trend(peaks_class):
         print("NG リバー方向", r['direction'], "ボディー向き", latest_df['body'])
 
     # 結果表示まとめ
+    print("----")
+    print("river:", r)
+    print("turn:", t)
     print("R数", r['count'], "スキップ有:", skip_exist, "tCount", t['count'], "SKIP数", t_sk['skip_include_num'])
     print("ターン強度", turn_strength, "戻り率(通常)", rt_ratio)
     print("傾きのブレーキ有無:", brake_trend_exist, "TURN数", r['count'], "戻率(Skip有)", rt_ratio_sk)
@@ -134,35 +137,42 @@ def cal_little_turn_at_trend(peaks_class):
     # 本番用★★
     exe_orders = []
     if r['count'] == 2:
-        if ((skip_exist or 6 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
-                0 < turn_strength <= 8 and 0 < rt_ratio <= 0.16) and latest_same:
+        if ((skip_exist or 6 <= t['count'] < 100) and t_sk['skip_include_num'] < 3
+                and 0 < turn_strength <= 8 and 0 < rt_ratio <= 0.16):
             comment = "●●Count2のすぐBreak"
-            if 14 <= peaks_class.time_hour <= 16 or 8 <= peaks_class.time_hour <= 9:
-                tk.line_send("●●count2Breaksだが、時間悪い")
-                return default_return_item
-            target_price = t['latest_body_peak_price']  # targetはTurnのピーク値
-            margin_border = 0.02
-            if abs(target_price - peaks_class.latest_price) <= margin_border:
-                # ほとんど即時オーダーになってしまう場合、1.5pipのマージンを取る
-                print("即時オーダーになりそう")
-                margin = margin_border
+            line_price = t['latest_body_peak_price']  # 抵抗線になりうる価格（ターンのピーク価格）
+            current_price = peaks_class.latest_price  # 現在の価格
+
+            # ■ターゲットプライス判定
+            # 本来、「抵抗線を越える＝突破の可能性大」とするため、抵抗線価格をターゲットPriceにしたい。
+            # ただ、現在価格と近すぎると、瞬間的な越えの可能性も高くなるため、現在価格と抵抗線が近い場合は、調整する
+            # （特にターンが登り方向で、最新の足が陽線の場合は特に近くなる。ただ陰陽の区別はいったんしない）
+            min_margin_for_target = 0.02  # 最低でも3ピップスの余裕を見る
+            if abs(line_price-current_price) <= min_margin_for_target:
+                target_price = line_price + (min_margin_for_target * t['direction'])
             else:
-                # それ以外は基本的に通常通り、ＴａｒｇｅｔＰｒｉｃｅを使う（マージンを０にする）
-                margin = 0
-            lc_price = r['latest_wick_peak_price']
-            lc_range = gene.cal_at_least(0.03, round(abs(target_price - lc_price), 3))  # lc_rangeに変換し最低値を確保
-            print("参考 lc_price", lc_price, "lc_range:", round(abs(target_price - lc_price), 3), "targetPrice",
-                  target_price)
-            print("LCrange", lc_range, "latest_price", peaks_class.latest_price)
-            temp = round(abs(target_price - t['latest_wick_peak_price']), 3)
-            change_temp = gene.cal_at_least(0.04, temp)
+                target_price = line_price
+            print("TurnPrice:", line_price, "targetPrice:", target_price, "footAve", peaks_class.cal_move_ave(1))
+            # ■LC価格の算出
+            # パターン１(turnピークから、3分の2の価格まで。LcChangeで、3分の1に底上げ？）
+            temp_lc_range = round(t['gap']*0.25, 3)
+            lc_price1 = t['latest_body_peak_price'] - (temp_lc_range * t['direction'])
+            print("[LC1]tempLcRange:", temp_lc_range, "lcPrice", lc_price1, "lcRange", round(abs(target_price-lc_price1), 3))
+            # ■TP価格の算出
+            tp_range = t['gap']  # ターンのギャップ程度はいけるのでは？ (lcとの比率は、簡単に出せる）
+            # ■LCChangeの算出（基本的に行わない)
+            lc_change = 0
+            # lc_change = [
+            #     {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": change_temp + 0.01,
+            #      "lc_ensure_range": change_temp - 0.01}
+            # ]
+
+            # ■オーダーを発行
             order = order_make_dir1_s(
-                peaks_class, comment, target_price, margin, 1,
-                peaks_class.cal_move_ave(1.2),
-                peaks_class.cal_move_ave(1),
-                # [{"lc_change_exe": True, "time_after": 0, "lc_trigger_range": change_temp + 0.01,
-                #  "lc_ensure_range": change_temp - 0.01}],
-                1,
+                peaks_class, comment, target_price, 0, 1,
+                tp_range,
+                lc_price1,  # peaks_class.cal_move_ave(1),
+                0,
                 2,
                 3)
             order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
@@ -199,25 +209,75 @@ def cal_little_turn_at_trend(peaks_class):
             print("NoOrder 1")
             return default_return_item
     elif r['count'] == 3:
-        if ((skip_exist or 7 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
-                0 < turn_strength <= 8 and 0 < rt_ratio <= 0.36):
-            comment = "●●●強いやつ"
-            if peaks_class.time_hour == 4 or peaks_class.time_hour == 5:
-                tk.line_send("●●●強いやつだが、時間悪い")
-                return default_return_item
-            # target_price = peaks[0]['latest_body_peak_price']
-            target_price = peaks_class.latest_price
-            temp = round(abs(target_price - t['latest_wick_peak_price']), 3)
-            change_temp = gene.cal_at_least(0.04, temp)
-            exe_orders.append(
-                order_make_dir1_s(
-                    peaks_class, comment, target_price, peaks_class.cal_move_ave(0.55), -1,
-                    peaks_class.cal_move_ave(5),
-                    peaks_class.cal_move_ave(2.2),
-                    3,
-                    3,
-                    4)
-            )
+        if (skip_exist or 7 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and 0 < turn_strength <= 8:
+            if 0 < rt_ratio <= 0.15:
+                comment = "●●●強いやつ"
+                # if peaks_class.time_hour == 4 or peaks_class.time_hour == 5:
+                #     tk.line_send("●●●強いやつだが、時間悪い")
+                #     return default_return_item
+                # ■ターゲット価格＆マージンの設定
+                target_price = peaks_class.latest_price
+                margin = peaks_class.cal_move_ave(0.4)
+                m_dir = -1
+                # ■TPの設定
+                tp = peaks_class.cal_move_ave(5)
+                # ■LCの設定
+                # パターン１（シンプルに、平均足で指定するケース)
+                lc = peaks_class.cal_move_ave(2.2)
+                # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
+                lc_range = round(t['gap'] / 3 * 2, 3)
+                # ■LCChangeの設定
+                lc_change = 3
+                # lc_change = [
+                #     {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": t['gap'] * 0.1, "time_till": 1000},
+                #     {"exe": True, "time_after": 0, "trigger": f_ave * 0.8, "ensure": f_ave * 0.1, "time_till": 1000},
+                # ]
+
+                # ■■オーダーを作成＆発行
+                exe_orders.append(
+                    order_make_dir1_s(
+                        peaks_class, comment, target_price, margin, m_dir,
+                        tp,
+                        lc,
+                        lc_change,
+                        3,
+                        4)
+                )
+            elif 0 < rt_ratio <= 0.36:
+                comment = "●●●強いやつ"
+                # if peaks_class.time_hour == 4 or peaks_class.time_hour == 5:
+                #     tk.line_send("●●●強いやつだが、時間悪い")
+                #     return default_return_item
+                # ■ターゲット価格＆マージンの設定
+                target_price = peaks_class.latest_price
+                margin = peaks_class.cal_move_ave(0.4)
+                m_dir = -1
+                # ■TPの設定
+                tp = peaks_class.cal_move_ave(5)
+                # ■LCの設定
+                # パターン１（シンプルに、平均足で指定するケース)
+                lc = peaks_class.cal_move_ave(2.2)
+                # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
+                lc_range = round(t['gap'] / 3 * 2, 3)
+                # ■LCChangeの設定
+                lc_change = 3
+                # lc_change = [
+                #     {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": t['gap'] * 0.1, "time_till": 1000},
+                #     {"exe": True, "time_after": 0, "trigger": f_ave * 0.8, "ensure": f_ave * 0.1, "time_till": 1000},
+                # ]
+
+                # ■■オーダーを作成＆発行
+                exe_orders.append(
+                    order_make_dir1_s(
+                        peaks_class, comment, target_price, margin, m_dir,
+                        tp,
+                        lc,
+                        lc_change,
+                        3,
+                        4)
+                )
+            else:
+                print("NOオーダー　強そうだがrtRatioのみ不成立", rt_ratio)
         else:
             print("NoOrder 2")
 
@@ -250,7 +310,7 @@ def cal_little_turn_at_trend(peaks_class):
 
 
 # ↓　解析テスト用（引数がdf_r)のもので、Long用解析のInspectionClassを使う際はこちらが必要
-def wrap_predict_turn_inspection_test(df_r):
+def wrap_little_turn_inspection_test(df_r):
     """
     クラスをたくさん用いがケース
     args[0]は必ずdf_rであることで、必須。
@@ -397,161 +457,213 @@ def cal_little_turn_at_trend_test(peaks_class):
     #             uni_base_time)
     #     )
     if r['count'] == 2:
-        if ((skip_exist or 6 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
-                0 < turn_strength <= 8 and 0 < rt_ratio <= 0.16) and latest_same:
-            comment = "●●Count2のすぐBreak"
-            if 14 <= peaks_class.time_hour <= 16 or 8 <= peaks_class.time_hour <= 9:
-                # tk.line_send("●●count2Breaksだが、時間悪い")
-                return default_return_item
-            target_price = t['latest_body_peak_price']  # targetはTurnのピーク値
-            margin_border = 0.02
-            if abs(target_price - peaks_class.latest_price) <= margin_border:
-                # ほとんど即時オーダーになってしまう場合、1.5pipのマージンを取る
-                print("即時オーダーになりそう")
-                margin = margin_border
-            else:
-                # それ以外は基本的に通常通り、ＴａｒｇｅｔＰｒｉｃｅを使う（マージンを０にする）
-                margin = 0
-            # lcパターン１
-            lc_price = r['latest_wick_peak_price']
-            lc_range_temp = round(abs(target_price - lc_price), 3) + peaks_class.cal_move_ave(1)
-            lc_range = gene.cal_at_least(0.03, lc_range_temp)  # lc_rangeに変換し最低値を確保
-            # lcパターン２（初期のLCはturnの3分の2まで。LcChangeで、3分の1に底上げ。）
-            lc_range = round(t['gap']/3*2, 3)
-            print("参考 lc_price", lc_price, "lc_range:", round(abs(target_price - lc_price), 3), "targetPrice",
-                  target_price)
-            print("LCrange", lc_range, "latest_price", peaks_class.latest_price)
-            temp = round(abs(target_price - t['latest_wick_peak_price']), 3)
-            change_temp = gene.cal_at_least(0.04, temp)
-            order = order_make_dir1_s(
-                peaks_class, comment, target_price, margin, 1,
-                peaks_class.cal_move_ave(3.5),
-                lc_range,
-                [{"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.02,
-                 "lc_ensure_range": round(t['gap']/3*1, 3)},
-                 {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.02,
-                  "lc_ensure_range": 0.01}
-                 ],
-                1,
-                3)
-            order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
-            exe_orders.append(order)
-
-            comment = "〇〇【LC-TP同値】 Count2のすぐBreak"
-            order = order_make_dir1_s(
-                peaks_class, comment, target_price, margin, 1,
-                lc_range,
-                lc_range,  # lc⇒1.5が最強ではあった
-                0,
-                1, 3)
-            order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
-            exe_orders.append(order)
-
-        elif ((skip_exist or 6 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
+        if ((skip_exist or 6 <= t['count'] < 12) and t_sk['skip_include_num'] < 3 and
                 0 < turn_strength <= 8 and 0 < rt_ratio <= 0.16):
-            comment = "〇Count2のすぐBreak(same以外)"
-            target_price = t['latest_body_peak_price']  # targetはTurnのピーク値
-            margin_border = 0.02
-            if abs(target_price - peaks_class.latest_price) <= margin_border:
-                # ほとんど即時オーダーになってしまう場合、1.5pipのマージンを取る
-                print("即時オーダーになりそう")
-                margin = margin_border
+            comment = "●●Count2のすぐBreak"
+            line_price = t['latest_body_peak_price']  # 抵抗線になりうる価格（ターンのピーク価格）
+            current_price = peaks_class.latest_price  # 現在の価格
+
+            # ■ターゲットプライス判定
+            # 本来、「抵抗線を越える＝突破の可能性大」とするため、抵抗線価格をターゲットPriceにしたい。
+            # ただ、現在価格と近すぎると、瞬間的な越えの可能性も高くなるため、現在価格と抵抗線が近い場合は、調整する
+            # （特にターンが登り方向で、最新の足が陽線の場合は特に近くなる。ただ陰陽の区別はいったんしない）
+            min_margin_for_target = 0.02  # 最低でも3ピップスの余裕を見る
+            if abs(line_price-current_price) <= min_margin_for_target:
+                target_price = line_price + (min_margin_for_target * t['direction'])
             else:
-                # それ以外は基本的に通常通り、ＴａｒｇｅｔＰｒｉｃｅを使う（マージンを０にする）
-                margin = 0
-            lc_price = r['latest_wick_peak_price']
-            lc_range_temp = round(abs(target_price - lc_price), 3) + peaks_class.cal_move_ave(1)
-            lc_range = gene.cal_at_least(0.03, lc_range_temp)  # lc_rangeに変換し最低値を確保
-            print("参考 lc_price", lc_price, "lc_range:", round(abs(target_price - lc_price), 3), "targetPrice",
-                  target_price)
-            print("LCrange", lc_range, "latest_price", peaks_class.latest_price)
-            temp = round(abs(target_price - t['latest_wick_peak_price']), 3)
-            change_temp = gene.cal_at_least(0.04, temp)
+                target_price = line_price
+            print("TurnPrice:", line_price, "targetPrice:", target_price, "footAve", peaks_class.cal_move_ave(1))
+            # ■LC価格の算出
+            # パターン１(turnピークから、3分の2の価格まで。LcChangeで、3分の1に底上げ？）
+            temp_lc_range = round(t['gap']*0.25, 3)
+            lc_price1 = t['latest_body_peak_price'] - (temp_lc_range * t['direction'])
+            print("[LC1]tempLcRange:", temp_lc_range, "lcPrice", lc_price1, "lcRange", round(abs(target_price-lc_price1), 3))
+            # ■TP価格の算出
+            tp_range = t['gap']  # ターンのギャップ程度はいけるのでは？ (lcとの比率は、簡単に出せる）
+            # ■LCChangeの算出（基本的に行わない)
+            lc_change = 0
+            f_ave = peaks_class.cal_move_ave(1)  # 平均の足の幅（高さ）
+            lc_change = [
+                {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": t['gap'] * 0.1, "time_till": 1000},
+                {"exe": True, "time_after": 0, "trigger": f_ave * 0.8, "ensure": f_ave * 0.1, "time_till": 1000},
+            ]
+            # ■オーダーを発行
             order = order_make_dir1_s(
-                peaks_class, comment, target_price, margin, 1,
-                peaks_class.cal_move_ave(2),
-                lc_range,
-                # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": change_temp + 0.01,
-                #  "lc_ensure_range": change_temp - 0.01},
-                3,
-                1,
-                3)
-            order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
-            exe_orders.append(order)
-
-            comment = "〇(same)【LC-TP同値】 Count2のすぐBreak(same以外)"
-            order = order_make_dir1_s(
-                peaks_class, comment, target_price, margin, 1,
-                lc_range,
-                lc_range,
-                0,
-                1, 3)
-            order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
-            exe_orders.append(order)
-
-        elif ((skip_exist or 5 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
-              0 < turn_strength <= 8 and 0.30 < rt_ratio <= 0.50):
-            comment = "△Count2のすぐRange側"
-            target_price = peaks_class.latest_price
-            margin = round(abs(t['gap']) / 4, 3)
-            order = order_make_dir0_s(
-                peaks_class, comment, target_price, margin, -1,
-                peaks_class.cal_move_ave(1.2),
-                peaks_class.cal_move_ave(1.2),
-                1,
-                1, 3)
-            order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
-            exe_orders.append(order)
-
-            comment = "△【LC-TP同値】　Count2のすぐRange側"
-            order = order_make_dir0_s(
-                peaks_class, comment, target_price, margin, -1,
-                peaks_class.cal_move_ave(1.2),
-                peaks_class.cal_move_ave(1.2),
-                0,
-                1, 3)
-            order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
-            exe_orders.append(order)
-        elif ((skip_exist or 5 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
-              11 < turn_strength <= 100 and 0.10 < rt_ratio <= 0.30):
-            comment = "△Count2で抵抗値高い"
-            target_price = t['latest_body_peak_price']
-            margin = round(abs(t['gap']) / 4, 3)
-            order = order_make_dir0_s(
                 peaks_class, comment, target_price, 0, 1,
-                peaks_class.cal_move_ave(1.5),
-                peaks_class.cal_move_ave(1.0),
-                3,
-                1,
+                tp_range,
+                lc_price1,  # peaks_class.cal_move_ave(1),
+                0,
+                2,
                 3)
-            order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+            order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
             exe_orders.append(order)
+            # order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+            # exe_orders.append(order)
+            #
+            # comment = "〇〇【LC-TP同値】 Count2のすぐBreak"
+            # order = order_make_dir1_s(
+            #     peaks_class, comment, target_price, margin, 1,
+            #     lc_range,
+            #     lc_range,  # lc⇒1.5が最強ではあった
+            #     0,
+            #     1, 3)
+            # order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+            # exe_orders.append(order)
+
+        # elif ((skip_exist or 6 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
+        #         0 < turn_strength <= 8 and 0 < rt_ratio <= 0.16):
+        #     comment = "〇Count2のすぐBreak(same以外)"
+        #     target_price = t['latest_body_peak_price']  # targetはTurnのピーク値
+        #     margin_border = 0.02
+        #     if abs(target_price - peaks_class.latest_price) <= margin_border:
+        #         # ほとんど即時オーダーになってしまう場合、1.5pipのマージンを取る
+        #         print("即時オーダーになりそう")
+        #         margin = margin_border
+        #     else:
+        #         # それ以外は基本的に通常通り、ＴａｒｇｅｔＰｒｉｃｅを使う（マージンを０にする）
+        #         margin = 0
+        #     lc_price = r['latest_wick_peak_price']
+        #     lc_range_temp = round(abs(target_price - lc_price), 3) + peaks_class.cal_move_ave(1)
+        #     lc_range = gene.cal_at_least(0.03, lc_range_temp)  # lc_rangeに変換し最低値を確保
+        #     print("参考 lc_price", lc_price, "lc_range:", round(abs(target_price - lc_price), 3), "targetPrice",
+        #           target_price)
+        #     print("LCrange", lc_range, "latest_price", peaks_class.latest_price)
+        #     temp = round(abs(target_price - t['latest_wick_peak_price']), 3)
+        #     change_temp = gene.cal_at_least(0.04, temp)
+        #     order = order_make_dir1_s(
+        #         peaks_class, comment, target_price, margin, 1,
+        #         peaks_class.cal_move_ave(2),
+        #         lc_range,
+        #         # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": change_temp + 0.01,
+        #         #  "lc_ensure_range": change_temp - 0.01},
+        #         3,
+        #         1,
+        #         3)
+        #     order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+        #     exe_orders.append(order)
+        #
+        #     comment = "〇(same)【LC-TP同値】 Count2のすぐBreak(same以外)"
+        #     order = order_make_dir1_s(
+        #         peaks_class, comment, target_price, margin, 1,
+        #         lc_range,
+        #         lc_range,
+        #         0,
+        #         1, 3)
+        #     order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+        #     exe_orders.append(order)
+        #
+        # elif ((skip_exist or 5 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
+        #       0 < turn_strength <= 8 and 0.30 < rt_ratio <= 0.50):
+        #     comment = "△Count2のすぐRange側"
+        #     target_price = peaks_class.latest_price
+        #     margin = round(abs(t['gap']) / 4, 3)
+        #     order = order_make_dir0_s(
+        #         peaks_class, comment, target_price, margin, -1,
+        #         peaks_class.cal_move_ave(1.2),
+        #         peaks_class.cal_move_ave(1.2),
+        #         1,
+        #         1, 3)
+        #     order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+        #     exe_orders.append(order)
+        #
+        #     comment = "△【LC-TP同値】　Count2のすぐRange側"
+        #     order = order_make_dir0_s(
+        #         peaks_class, comment, target_price, margin, -1,
+        #         peaks_class.cal_move_ave(1.2),
+        #         peaks_class.cal_move_ave(1.2),
+        #         0,
+        #         1, 3)
+        #     order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+        #     exe_orders.append(order)
+        # elif ((skip_exist or 5 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
+        #       11 < turn_strength <= 100 and 0.10 < rt_ratio <= 0.30):
+        #     comment = "△Count2で抵抗値高い"
+        #     target_price = t['latest_body_peak_price']
+        #     margin = round(abs(t['gap']) / 4, 3)
+        #     order = order_make_dir0_s(
+        #         peaks_class, comment, target_price, 0, 1,
+        #         peaks_class.cal_move_ave(1.5),
+        #         peaks_class.cal_move_ave(1.0),
+        #         3,
+        #         1,
+        #         3)
+        #     order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+        #     exe_orders.append(order)
         else:
             return default_return_item
-    elif r['count'] == 3:
-        if ((skip_exist or 8 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
-                0 < turn_strength <= 8 and 0 < rt_ratio <= 0.36):
-            comment = "●●●強いやつ"
-            if peaks_class.time_hour == 4 or peaks_class.time_hour == 5:
-                # tk.line_send("●●●強いやつだが、時間悪い")
-                return default_return_item
-            # target_price = peaks[0]['latest_body_peak_price']
-            target_price = peaks_class.latest_price
-            temp = abs(target_price - t['latest_wick_peak_price'])
-            lc_range = round(t['gap'] / 3 * 2, 3)
-            exe_orders.append(
-                order_make_dir1_s(
-                    peaks_class, comment, target_price, peaks_class.cal_move_ave(0.55), -1,
-                    peaks_class.cal_move_ave(3),
-                    lc_range,  #peaks_class.cal_move_ave(2.2),
-                    3,  #3,
-                    # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": temp * 1.1,
-                    #  "lc_ensure_range": temp * 0.9},
-                    1,
-                    4)
-            )
-        else:
-            return default_return_item
+    # elif r['count'] == 3:
+    #     if (skip_exist or 7 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and 0 < turn_strength <= 8:
+    #         # if peaks_class.time_hour == 4 or peaks_class.time_hour == 5:
+    #         #     tk.line_send("●●●強い系だが、時間悪い")
+    #         #     return default_return_item
+    #         if 0 < rt_ratio <= 0.15:
+    #             comment = "●●●強いやつ(超弱戻り）"
+    #             # if peaks_class.time_hour == 4 or peaks_class.time_hour == 5:
+    #             #     tk.line_send("●●●強いやつだが、時間悪い")
+    #             #     return default_return_item
+    #             # ■ターゲット価格＆マージンの設定
+    #             target_price = peaks_class.latest_price
+    #             margin = peaks_class.cal_move_ave(0.1)
+    #             m_dir = 1
+    #             # ■TPの設定
+    #             tp = peaks_class.cal_move_ave(4)
+    #             # ■LCの設定
+    #             # パターン１（シンプルに、平均足で指定するケース)
+    #             lc = peaks_class.cal_move_ave(2.2)
+    #             # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
+    #             lc_range = round(t['gap'] / 3 * 2, 3)
+    #             # ■LCChangeの設定
+    #             lc_change = 3
+    #             # lc_change = [
+    #             #     {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": t['gap'] * 0.1, "time_till": 1000},
+    #             #     {"exe": True, "time_after": 0, "trigger": f_ave * 0.8, "ensure": f_ave * 0.1, "time_till": 1000},
+    #             # ]
+    #
+    #             # ■■オーダーを作成＆発行
+    #             exe_orders.append(
+    #                 order_make_dir1_s(
+    #                     peaks_class, comment, target_price, margin, m_dir,
+    #                     tp,
+    #                     lc_range,
+    #                     lc_change,
+    #                     1,
+    #                     4)
+    #             )
+    #         elif 0 < rt_ratio <= 0.36:
+    #             comment = "●●●強いやつ"
+    #
+    #             # ■ターゲット価格＆マージンの設定
+    #             target_price = peaks_class.latest_price
+    #             margin = peaks_class.cal_move_ave(0.4)
+    #             m_dir = -1
+    #             # ■TPの設定
+    #             tp = peaks_class.cal_move_ave(3)
+    #             # ■LCの設定
+    #             # パターン１（シンプルに、平均足で指定するケース)
+    #             lc = peaks_class.cal_move_ave(2.2)
+    #             # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
+    #             lc_range = round(t['gap'] / 3 * 2, 3)
+    #             # ■LCChangeの設定
+    #             lc_change = 1
+    #             # lc_change = [
+    #             #     {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": t['gap'] * 0.1, "time_till": 1000},
+    #             #     {"exe": True, "time_after": 0, "trigger": f_ave * 0.8, "ensure": f_ave * 0.1, "time_till": 1000},
+    #             # ]
+    #
+    #             # ■■オーダーを作成＆発行
+    #             exe_orders.append(
+    #                 order_make_dir1_s(
+    #                     peaks_class, comment, target_price, margin, m_dir,
+    #                     tp,
+    #                     lc_range,
+    #                     lc_change,
+    #                     1,
+    #                     4)
+    #             )
+    #         else:
+    #             return default_return_item
+    #     else:
+    #         return default_return_item
     else:
         return default_return_item
 

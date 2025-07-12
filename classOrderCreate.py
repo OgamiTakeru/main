@@ -58,7 +58,7 @@ class OrderCreateClass:
             "order_permission",　# プログラム用
             "priority",  # プログラム用
             "lc_change": [
-                 {"lc_change_exe": True, "time_after": 60, "lc_trigger_range": 0.05, "lc_ensure_range": 0.04},
+                 {"exe": True, "time_after": 60, "trigger": 0.05, "ensure": 0.04},
             ],  　# プログラム用
         }
 
@@ -206,7 +206,7 @@ class OrderCreateClass:
         ほぼ到達しない１円を入れておく
         """
         self.finalized_order['lc_change'] = [
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 1, "lc_ensure_range": 1},
+            {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
         ]
 
     def add_lc_change_offence(self):
@@ -232,18 +232,19 @@ class OrderCreateClass:
         first_trigger = self.move_ave * 2.2
 
         self.finalized_order['lc_change'] = [
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 1, "lc_ensure_range": 1},
-            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.04, "lc_ensure_range": 0.005},
-            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.40, "lc_ensure_range": 0.35},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.55},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.65},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.75},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.85},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 1.00, "lc_ensure_range": 0.95},
+            # {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
+            # {"exe": True, "time_after": 600, "trigger": 0.025, "ensure": 0.005},
+            {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": -0.02},
+            {"exe": True, "time_after": 600, "trigger": 0.06, "ensure": 0.01},
+            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
+            {"exe": True, "time_after": 600, "trigger": 0.08, "ensure": 0.02},
+            {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
+            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
         ]
 
     def add_lc_change_start_with_dic(self, dic_arr):
@@ -270,18 +271,18 @@ class OrderCreateClass:
         print("特殊LCChange")
 
         add = [
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 1, "lc_ensure_range": 1},
-            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.025, "lc_ensure_range": 0.005},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.04, "lc_ensure_range": 0.010},
-            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.40, "lc_ensure_range": 0.35},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.55},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.65},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.75},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.85},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 1.00, "lc_ensure_range": 0.95},
+            # {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
+            # {"exe": True, "time_after": 600, "trigger": 0.025, "ensure": 0.005},
+            # {"exe": True, "time_after": 0, "trigger": 0.04, "ensure": 0.010},
+            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
+            # {"exe": True, "time_after": 0, "trigger": 0.08, "ensure": 0.05},
+            {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
+            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
         ]
         print("LCCHange", dic_arr)
         print("lCCHANE", add)
@@ -295,23 +296,23 @@ class OrderCreateClass:
         """
         lc = self.finalized_order['lc_range']
         self.finalized_order['lc_change'] = [
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": round(lc * 1.1, 3), "lc_ensure_range": round(lc * 0.8, 3)},
-            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.018, "lc_ensure_range": -0.01},
-            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.043, "lc_ensure_range": 0.021},
-            {"lc_change_exe": True, "time_after": 1200, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
-            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.06},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.10, "lc_ensure_range": 0.084},
-            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.12, "lc_ensure_range": 0.10},
-            # # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.14, "lc_ensure_range": 0.12},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.25, "lc_ensure_range": 0.20},
-            # {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.35, "lc_ensure_range": 0.33},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.40, "lc_ensure_range": 0.38},
-            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.50, "lc_ensure_range": 0.43},
-            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.57},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.67},
-            # {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.77},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.87}
+            {"exe": True, "time_after": 0, "trigger": round(lc * 1.1, 3), "ensure": round(lc * 0.8, 3)},
+            {"exe": True, "time_after": 1200, "trigger": 0.018, "ensure": -0.01},
+            {"exe": True, "time_after": 1200, "trigger": 0.043, "ensure": 0.021},
+            {"exe": True, "time_after": 1200, "trigger": 0.08, "ensure": 0.06},
+            # # {"exe": True, "time_after": 0, "trigger": 0.08, "ensure": 0.06},
+            # {"exe": True, "time_after": 0, "trigger": 0.10, "ensure": 0.084},
+            # # {"exe": True, "time_after": 0, "trigger": 0.12, "ensure": 0.10},
+            # # {"exe": True, "time_after": 0, "trigger": 0.14, "ensure": 0.12},
+            {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
+            # {"exe": True, "time_after": 0, "trigger": 0.25, "ensure": 0.20},
+            # {"exe": True, "time_after": 0, "trigger": 0.35, "ensure": 0.33},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.40, "ensure": 0.38},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.50, "ensure": 0.43},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.57},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.67},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.77},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.87}
         ]
 
     def add_lc_change_defence(self):
@@ -331,18 +332,18 @@ class OrderCreateClass:
         first_trigger = round(first_ensure + (self.move_ave * 0.5), 3)
 
         self.finalized_order['lc_change'] = [
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.025, "lc_ensure_range": -0.01},
-            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.043, "lc_ensure_range": 0.018},
-            # {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": first_trigger, "lc_ensure_range": first_ensure},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.05, "lc_ensure_range": 0.025},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.08, "lc_ensure_range": 0.05},
-            {"lc_change_exe": True, "time_after": 0, "lc_trigger_range": 0.20, "lc_ensure_range": 0.15},
-            {"lc_change_exe": True, "time_after": 600, "lc_trigger_range": 0.40, "lc_ensure_range": 0.35},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.60, "lc_ensure_range": 0.55},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.70, "lc_ensure_range": 0.65},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.80, "lc_ensure_range": 0.75},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 0.90, "lc_ensure_range": 0.85},
-            {"lc_change_exe": True, "time_after": 2 * 5 * 60, "lc_trigger_range": 1.00, "lc_ensure_range": 0.95},
+            {"exe": True, "time_after": 0, "trigger": 0.025, "ensure": -0.01},
+            # {"exe": True, "time_after": 600, "trigger": 0.043, "ensure": 0.018},
+            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
+            {"exe": True, "time_after": 0, "trigger": 0.05, "ensure": 0.025},
+            {"exe": True, "time_after": 0, "trigger": 0.08, "ensure": 0.05},
+            {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
+            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
         ]
 
     def add_counter_order(self, finalized_counter_order):

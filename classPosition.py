@@ -884,34 +884,15 @@ class order_information:
                                self.t_time_past_sec)
                 self.lc_change_less_minus_done = True  # フラグの成立（変更済）
 
-            # # ボーダーラインを超えた場合
-            # if self.t_pl_u >= lc_trigger_range:
-            #     # print("　★変更確定")
-            #     print(" 変更対象", i, lc_ensure_range, lc_trigger_range, self.t_pl_u)
-            #     self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
-            #     # これで配列の中の辞書って変更できるっけ？？
-            #     item['done'] = True
-            #     new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan['ask_bid']), 3)
-            #     data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
-            #     res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
-            #     if res['error'] == -1:
-            #         self.send_line("    LC変更ミス＠lc_change")
-            #         return 0  # APIエラー時は終了
-            #     item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
-            #     # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-            #     self.send_line("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
-            #                  "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice", self.t_execution_price,
-            #                  "予定価格", self.plan['price'])
-            #     break
 
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
         ロスカット底上げを実施する。セルフとレールに近い
         lc_change_dicは配列で、lc_change_dicはPlanと同時にクラスに渡される。
-        lc_change_dic =[{"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.1}]
+        lc_change_dic =[{"exe": True, "trigger": 0.03, "ensure": 0.1}]
         なお、LCの変更が執行されると、"done":Trueが付与される
         実行後
-        [{"lc_change_exe": True, "lc_trigger_range": 0.03, "lc_ensure_range": 0.1” ,"done": False}]
+        [{"exe": True, "trigger": 0.03, "ensure": 0.1” ,"done": False}]
         上記の辞書が、配列で渡される場合、配列全てで確認していく。
         :return:         print(" ロスカ変更関数", self.lc_change_dic, self.t_pl_u,self.t_state)
         """
@@ -930,9 +911,9 @@ class order_information:
         status_res = "   LCCHANGE_status:"
         for i, item in enumerate(self.lc_change_dic_arr):
             # コードの１行を短くするため、置きかておく
-            lc_exe = item['lc_change_exe']
-            lc_ensure_range = item['lc_ensure_range']
-            lc_trigger_range = item['lc_trigger_range']
+            lc_exe = item['exe']
+            lc_ensure_range = item['ensure']
+            lc_trigger_range = item['trigger']
             lc_change_waiting_time_sec = item['time_after']
             if "time_till" in item:
                 # 指定の時間まで実行
@@ -952,10 +933,12 @@ class order_information:
                 status_res = status_res + gene.str_merge("[", i, "] 済",  "lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
                                            , "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range)
                 continue
-            elif self.t_time_past_sec < lc_change_waiting_time_sec:  # or self.t_time_past_sec > lc_change_till_sec:
+            elif lc_change_till_sec < self.t_time_past_sec < lc_change_waiting_time_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
-                status_res = status_res + gene.str_merge("[", i, "] 時間未達",  "lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
-                                           , "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range)
+                status_res = status_res + gene.str_merge("[", i, "] 時間未達",  "lc_exe:", lc_exe,
+                                                         "時間", lc_change_waiting_time_sec, "～", lc_change_till_sec,
+                                                         "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range,
+                                                         "対象時間", self.t_time_past_sec)
                 continue
             else:
                 status_res = status_res + gene.str_merge("[", i, "] 未,lc_exe:", lc_exe, lc_change_waiting_time_sec, ","

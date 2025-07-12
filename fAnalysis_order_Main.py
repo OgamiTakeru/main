@@ -45,7 +45,7 @@ def wrap_all_inspections(df_r):
     # peaksの算出
     peaks_class = cpk.PeaksClass(df_r)
 
-    turn_result = ti.wrap_predict_turn_inspection(peaks_class)  #
+    turn_result = ti.wrap_little_turn_inspection(peaks_class)  #
     if turn_result['take_position_flag']:
         flag_and_orders["take_position_flag"] = True
         flag_and_orders["exe_orders"] = turn_result['exe_orders']

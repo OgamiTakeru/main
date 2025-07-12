@@ -4,6 +4,7 @@ import datetime
 import fAnalysis_order_Main as im
 import classInspection as ci
 import fTurnInspection as pi
+import fPredictTurn as pred
 
 memo = "25 LONG"
 func = im.wrap_all_inspections
@@ -21,7 +22,8 @@ mode = 1  # 任意期間　または、　25年半年
 # mode = 4  # ループ
 
 if mode == 1:
-    intest = ci.Inspection(pi.wrap_predict_turn_inspection_test,
+    intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
+                            pi.wrap_little_turn_inspection_test,
                            True,
                            # datetime.datetime(2024, 10, 3, 9, 25, 0),  # いいマイナスデータ
                            #  datetime.datetime(2024, 10, 10, 9, 25, 0),  # いいマイナスデータ
@@ -33,8 +35,8 @@ if mode == 1:
                            datetime.datetime(2025, 7, 1, 14, 15, 6),
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5m.csv',
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5s.csv',
-                           5000,
-                           10,
+                           400,
+                           1,
                            " テスト" + memo,
                            True,  # グラフの描画あり
                            ""
@@ -44,7 +46,7 @@ elif mode == 2:
     i = 1
     res = ""
     for item in loop:
-        intest = ci.Inspection(pi.wrap_predict_turn_inspection_test,
+        intest = ci.Inspection(pi.wrap_little_turn_inspection_test,
                                False,
                                item,  # いいマイナスデータ
                                'C:/Users/taker/OneDrive/Desktop/oanda_logs/202503_m5_df.csv',

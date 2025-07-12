@@ -430,6 +430,8 @@ class Inspection:
                 positive_count=('pl', lambda x: (x > 0).sum()),
                 negative_count=('pl', lambda x: (x < 0).sum())
             ).reset_index()
+            # 並び替え
+            result = result.sort_values('name_only', ascending=True).reset_index(drop=True)
 
             # 文字列を生成
             output = "検証期間LONG\n"
@@ -801,15 +803,15 @@ def update_position_information(cur_class, cur_row, cur_row_index):
 
     # (3)LCチェンジを実行(通常）
     for i, lc_item in enumerate(cur_class.lc_change):
-        # print("    LC_Change:", lc_item['lc_trigger_range'], cur_class.unrealized_pl_low, cur_class.unrealized_pl_high)
+        # print("    LC_Change:", lc_item['trigger'], cur_class.unrealized_pl_low, cur_class.unrealized_pl_high)
         if 'done' in lc_item or cur_class.position_keeping_time_sec <= lc_item['time_after']:
             # print("   　　⇒OUT", cur_class.position_keeping_time_sec, lc_item['time_after'])
             # if 'done' in lc_item:
             # print("        ⇒OUT", lc_item['done'])
             continue
 
-        if cur_class.unrealized_pl_low < lc_item['lc_trigger_range'] < cur_class.unrealized_pl_high:
-            new_lc_range = lc_item['lc_ensure_range']  # マイナス値もありうるため注意
+        if cur_class.unrealized_pl_low < lc_item['trigger'] < cur_class.unrealized_pl_high:
+            new_lc_range = lc_item['ensure']  # マイナス値もありうるため注意
             if cur_class.direction == 1:
                 # 買い方向の場合
                 new_lc_price = cur_class.target_price + new_lc_range

@@ -4,13 +4,16 @@ import datetime
 import fAnalysis_order_Main as im
 import classInspection as ci
 import fTurnInspection as pi
+import fPredictTurn as pred
 
 
 memo = "大量22_23LONG"
 func = im.wrap_all_inspections
 # func = im.analysis_old_flag
 
-intest = ci.Inspection(pi.wrap_predict_turn_inspection_test,
+intest = ci.Inspection(
+                        # pred.wrap_predict_turn_inspection_test,
+                       pi.wrap_little_turn_inspection_test,
                        True,
                        datetime.datetime(2025, 5, 22, 15, 55, 0),
                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv',
@@ -18,7 +21,7 @@ intest = ci.Inspection(pi.wrap_predict_turn_inspection_test,
                        600,
                        1,
                        memo + "2のみ",
-                       False, # グラフの描画あり
+                       False,  # グラフの描画あり
                        "")
 
 # intest = ci.Inspection(pi.wrap_predict_turn_inspection_test,
