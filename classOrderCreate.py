@@ -111,7 +111,7 @@ class OrderCreateClass:
         # 現状、LCChangeのもとになる数字を取得するのに利用
         self.move_ave = 0  # 最初のLCChangeの値(一番最初は、平均変動を利用したい）
         self.peak1_target_gap = 0
-        print(order_json['ref'])
+        # print("classOrderCreate 114", order_json['ref'])
         if "ref" in order_json:
             # 参考となる数字がインプットされている場合
             if "move_ave" in order_json['ref']:
@@ -148,12 +148,13 @@ class OrderCreateClass:
 
         # LC_Changeを付与する 検証環境の都合で、必須。(finalizedに直接追加）
         # lc_changeは数字か辞書が入る。辞書の場合、lc_changeの先頭にそれが入る
+        # self.finalized_order['lc_change'] = [] # 初期化
         if "lc_change_type" not in order_json:
             # typeしていない場合はノーマルを追加
             self.add_lc_change_defence()
         else:
             if isinstance(order_json['lc_change_type'], int):
-                print("処理A: int型です", order_json['lc_change_type'])
+                # print("処理A: int型です", order_json['lc_change_type'])
                 # 指定されている場合は、指定のLC_Change処理へ
                 if order_json['lc_change_type'] == 1:
                     self.add_lc_change_defence()
@@ -166,24 +167,9 @@ class OrderCreateClass:
             else:
                 self.add_lc_change_start_with_dic(order_json['lc_change_type'])
 
-
         # 表示用
         self.finalized_order_without_lc_change = copy.deepcopy(self.finalized_order)
         self.finalized_order_without_lc_change.pop("lc_change", None)  # キーがなければ None を返す
-
-    def change_lc_change(self, type_no):
-        """
-        LC Changeを直接執行する
-        """
-        # 指定されている場合は、指定のLC_Change処理へ
-        if type_no == 1:
-            self.add_lc_change_defence()
-        elif type_no == 0:
-            self.add_lc_change_no_change()
-        elif type_no == 3:
-            self.add_lc_change_offence()
-        elif type_no == 4:
-            self.add_lc_change_after_lc()
 
     def get_now_mid_price(self):
         """
@@ -454,6 +440,17 @@ class OrderCreateClass:
                 order_base_info['target_price'] - (order_base_info['lc'] * order_base_info['expected_direction']), 3)
             order_base_info['lc_range'] = round(order_base_info['lc'], 3)
 
+        # ④alertの設定を行う（alertは数字か辞書が入る。数字かつ０の場合、辞書の場合、lc_changeの先頭にそれが入る
+        if "alert" in order_base_info and "range" in order_base_info['alert']:
+            # if isinstance(plan['alert']['range'], int)
+            temp_range = round(order_base_info['alert']['range'], 3)
+            temp_price = round(order_base_info['target_price'] - (
+                        order_base_info['alert']['range'] * order_base_info['expected_direction']), 3)
+            # 改めて入れなおしてしまう（別に上書きでもいいんだけど）
+            order_base_info['alert'] = {"range": temp_range, "alert_price": temp_price, "time": 0}
+        else:
+            order_base_info['alert'] = {"range": 0, "time": 0, "alert_price": 0}
+
         # 最終的にオーダーで必要な情報を付与する(項目名を整えるためにコピーするだけ）。LimitかStopかを算出
         order_base_info['direction'] = order_base_info['expected_direction']
         order_base_info['price'] = order_base_info['target_price']
@@ -461,7 +458,7 @@ class OrderCreateClass:
             'order_timeout_min'] if 'order_timeout_min' in order_base_info else 60
 
         order_base_info['trade_timeout_min'] = order_base_info[
-            'trade_timeout_min'] if 'trade_timeout_min' in order_base_info else 60
+            'trade_timeout_min'] if 'trade_timeout_min' in order_base_info else 150
         order_base_info['order_permission'] = order_base_info[
             'order_permission'] if 'order_permission' in order_base_info else True
         # 表示形式の問題で、、念のため（機能としては不要）
@@ -514,7 +511,11 @@ class OrderCreateClass:
         del order_base_info["order_permission"]
         order_base_info['order_permission'] = temp
 
-        # LC_RAGE
+        temp = order_base_info['alert']  # いったん保存
+        del order_base_info["alert"]
+        order_base_info['alert'] = temp
+
+        # LC_CHANGE
         temp = order_base_info['lc_range']  # いったん保存
         del order_base_info["lc_range"]
         order_base_info['lc_range'] = temp

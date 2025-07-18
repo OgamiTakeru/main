@@ -39,16 +39,18 @@ class order_information:
     history_names = ["0"]  # 上の理由と同様に数字を入れておく
 
     # 履歴ファイル
-
     def __init__(self, name, oa, is_live):
         self.name = name  #
         self.oa = oa  # クラス変数でもいいが、LiveとPracticeの混在ある？　引数でもらう
         self.is_live = is_live  # 本番環境か練習か（Boolean）
+        self.current_price = 0
         # self.reset()
         # 以下リセット対象群
         self.priority = 0  # このポジションのプライオリティ（登録されるプランのプライオリティが、既登録以上の物だったら入れ替え予定）
         self.life = False  # 有効かどうか（オーダー発行からポジションクローズまでがTrue）
         self.order_permission = True
+        self.waiting_order = False
+        self.order_register_time = 0
         self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_json = {}
@@ -94,18 +96,43 @@ class order_information:
         self.counter_order_peace = {}  # 全ての情報は受け取れないので、CounterOrderで追記する
         self.counter_order_done = False
 
+        # アラートライン設定
+        self.alert_watch_exe = False
+        self.alert_watch_done = False
+        self.alert_range = 0
+        self.alert_price = 0
+        self.alert_watching = False
+        self.plus_from_alert_price = 0
+        self.minus_from_alert_price = 0
+        self.beyond_alert_time = 0
+        self.beyond_alert_time_sec = 0
+        self.alert_wait_time_sec = 180
+        self.alert_line_send_done = False
+
+        # ポジション様子見用
+        self.overing = False
+        self.over_time = 0
+        self.keeping_second = 0
+        self.over_en_plus = 0
+        self.watching_position_time_border = 30
+        self.watching_position_price_gap_border = 0.05
+        self.watching_position_done_send_line = False
+        self.watching_for_position_done = False
+
         # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
         self.try_update_limit = 2
         self.try_update_num = 0
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
-        print("    OrderClassリセット")
+        print("    ●●●●OrderClassリセット●●●●")
         self.name = ""
         self.priority = 0  # このポジションのプライオリティ
         # self.is_live = True  # 本番環境か練習か（Boolean）　⇒する必要なし
         self.life = False
+        self.waiting_order = False
         self.plan = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
+        self.order_register_time = 0
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_id = 0
         self.o_time = 0
@@ -144,6 +171,28 @@ class order_information:
         self.counter_order_peace = {}
         self.counter_order_done = False
         self.lc_change_less_minus_done = False
+
+        # アラートライン設定
+        self.alert_watch_exe = False
+        self.alert_watch_done = False
+        self.alert_range = 0
+        self.alert_price = 0
+        self.alert_watching = False
+        self.plus_from_alert_price = 0
+        self.minus_from_alert_price = 0
+        self.beyond_alert_time = 0
+        self.beyond_alert_time_sec = 0
+        self.alert_wait_time_sec = 180
+        self.alert_line_send_done = False
+
+        # ポジション様子見用
+        self.overing = False
+        self.over_time = 0
+        self.over_en_plus = 0
+        self.watching_position_time_border = 30
+        self.watching_position_price_gap_border = 0.05
+        self.watching_position_done_send_line = False
+        self.watching_for_position_done = False
 
         # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
         self.try_update_limit = 2
@@ -221,6 +270,22 @@ class order_information:
             # else:
             #     print("★★★", args)
 
+    def get_current_price(self):
+        """
+        BidかAskをもとに求めるため、オーダーが入っていない状態では取得できない
+        """
+        temp_current_price = self.oa.NowPrice_exe("USD_JPY")
+        if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
+            print("API異常で現在価格が取得できず（ポジションクラス）")
+            return 0
+        else:
+            if self.plan['ask_bid'] == 1:
+                # 注文がBidの場合、現在価格もBidにする
+                self.current_price = temp_current_price['data']['bid']
+            else:
+                self.current_price = temp_current_price['data']['ask']
+        return self.current_price
+
     def order_plan_registration(self, plan):
         """
         【最重要】
@@ -243,6 +308,7 @@ class order_information:
         """
         self.reset()  # 一旦リセットする
         self.plan = plan  # 受け取ったプラン情報(そのままOrderできる状態が基本）
+        self.order_register_time = datetime.datetime.now()
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
         print("消したいやつ(classPosition225行目"
@@ -281,6 +347,14 @@ class order_information:
         # (4)LC_Change情報を格納する
         if "lc_change" in plan:
             self.lc_change_dic_arr = plan['lc_change']  # 辞書を丸ごと
+            print("LCチェンジ初期値の確認")
+            gene.print_arr(self.lc_change_dic_arr)
+            print(self.lc_change_dic_arr)
+            # おかしいのでテスト用
+            if 'time_done' in self.lc_change_dic_arr[0]:
+                tk.line_send("最初からLCChangeのDone時間が入っているNG classPosition.py ３３０行目付近")
+        else:
+            tk.line_send("lcLineミス classPosition.py ３３０行目付近")
 
         # (6)ポジションがある場合、強制上書き（他のポジションの）を許可するかどうか
         if "over_write_block" in plan:
@@ -293,6 +367,28 @@ class order_information:
         # (8)カウンタオーダーを設定する
         if "counter_order" in plan:
             self.counter_order_peace = plan['counter_order']
+
+        # (9)アラート関係
+        # {"alert_range":0, "alert_wait"}
+        if "alert" in plan and "range" in plan['alert']:
+            # if isinstance(plan['alert']['range'], int)
+            if plan['alert']['range'] == 0:
+                # 数字の場合は０のみ。
+                self.alert_watch_exe = False
+            else:
+                self.alert_watch_exe = True
+                self.alert_watching = False
+                self.alert_range = plan['alert']['range']
+                self.alert_price = plan['alert']['alert_price']
+                # self.alert_wait_time_sec = 180
+                # if self.plan['direction'] == 1:  # １の場合はドル買い（ASK）
+                #     self.alert_price = self.plan['price'] - self.alert_range
+                # else:
+                #     self.alert_price = self.plan['price'] + self.alert_range
+                # print("classPositionAlert確認")
+                # print(plan['alert']['range'], self.plan['direction'], self.alert_price, self.plan['price'], self.alert_range)
+        else:
+            self.alert_watch_exe = False
 
         # (9)オーダーのLCを調整する（テスト中。過去の結果によって調子を変える）
         # lc_tuning_message = self.lc_tuning_by_history()
@@ -309,9 +405,21 @@ class order_information:
             else:
                 order_res['order_result'] = "この処理はオーダー失敗の可能性大"
         else:
-            order_res = {"order_id": 0, 'order_result': 0}  # 返り値を揃えるため、強引だが辞書型を入れておく
+            self.life_set(True)  # ★重要　LIFEのONはここで二個目。
+            self.waiting_order = True
+            self.o_state = "Watching"
+            order_res = {"order_name": self.name + "【未発行】", "order_id": -1, "order_result":{
+                "price": self.plan['price'],
+                "direction": self.plan['expected_direction'],
+                "units": self.plan['units'],
+                "lc_price": self.plan['lc_price'],
+                "lc_range": self.plan['lc_range'],
+                "tp_price": self.plan['tp_price'],
+                "tp_range": self.plan['tp_range']
+                }}  # 返り値を揃えるため、強引だが辞書型を入れておく
 
         return {"order_name": self.name, "order_id": order_res['order_id'], "order_result": order_res['order_result']}
+
 
     def make_order(self):
         """
@@ -354,8 +462,10 @@ class order_information:
         if not self.life:
             print("  order既にないが、CloseOrder指示あり", self.name)
             return 0  # Lifeが既にない場合は、実行無し
-
         self.life_set(False)  # まずはクローズ状態にする　（エラー時の反復を防ぐため。ただし毎回保存される？？）
+        if self.o_state == "Watching":
+            return 0
+
         order_res_dic = self.oa.OrderDetails_exe(self.o_id)  # トレード情報の取得
         if order_res_dic['error'] == 1:
             print("    CloseOrderError@close_order")
@@ -628,8 +738,7 @@ class order_information:
         # print("detect_change関数")
         # print(order_latest)
         # print(trade_latest)
-        if (self.o_state == "PENDING" or self.o_state == "") and order_latest[
-            'state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
+        if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
                 self.send_line("    (取得)", self.name, trade_latest['price'])
                 #  取得時には、ローソクデータも取得しておく
@@ -744,6 +853,23 @@ class order_information:
         if not self.life:
             return 0  # LifeがFalse（＝オーダーが発行されていない状態）では実行しない
 
+        # [分岐]初期にオーダー確定しない場合は、life=Trueだがオーダー等がない。
+        if self.waiting_order:
+            self.watching_for_position()
+            return 0
+
+        # (0)現在価格の取得
+        temp_current_price = self.oa.NowPrice_exe("USD_JPY")
+        if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
+            print("API異常で現在価格が取得できず（ポジションクラス）")
+            return 0
+        else:
+            if self.plan['ask_bid'] == 1:
+                # 注文がBidの場合、現在価格もBidにする
+                self.current_price = temp_current_price['data']['bid']
+            else:
+                self.current_price = temp_current_price['data']['ask']
+
         # (0)オーダーの仲間がいるかを確認
         self.exist_alive_class = life_check_no_args()  # 一つでも生きているクラスがあればTrueが入る
 
@@ -850,40 +976,260 @@ class order_information:
             # LC_Changeが執行されている場合は、Candleも有効にする
             self.lc_change_from_candle()
 
-    def lc_change_less_minus(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
+        # アラート
+        if self.alert_watch_exe:
+            self.watching_for_alert()
+
+    def watching_for_position(self):
+        """
+        規定価格を●秒間越えていら、正式にオーダーが発行される仕組み.
+        一瞬だけひっかけるような動きでのロスを防止したい。特に、「順張りを目指す場合」
+        すでにPlanがorder_registorにて登録されている状態が必要
+        ★逆張りは向いていないかも・・？（タッチがうれしいから）
+        """
+        # print("   新機構のテスト", self.o_state)
+        if self.o_state != "Watching" or self.watching_for_position_done:  # 足数×〇分足×秒
+            # 実行しない条件は、既に実行済み　または、NotOpen
+            return 0
+        if (round(self.keeping_second, 0) % 15 == 0 and round(self.keeping_second, 0) !=0) or 1 <= round(self.keeping_second, 0) <= 2:
+            print(" ウォッチング内容", self.overing, self.over_time, self.over_en_plus, round(self.keeping_second, 0),
+                  "bordertime", self.watching_position_time_border)
+
+        delta = datetime.datetime.now() - self.order_register_time
+        gap_seconds = delta.total_seconds()
+        if gap_seconds > self.order_timeout_min * 60:
+            print("オーダー時間タイムアウト", self.order_register_time, "から", self.order_timeout_min ,"分経過")
+            self.close_order()
+            tk.line_send("ウォンチングのみのオーダーを解消", self.name)
+            return 0
+
+        # 現在価格等の更新
+        now_time = datetime.datetime.now()
+        dir = self.plan['expected_direction']
+        if dir == 1:
+            # 買いの場合　askプライス
+            now_price = self.oa.NowPrice_exe("USD_JPY")['data']['ask']
+        else:
+            # 売りの場合　bidプライス
+            now_price = self.oa.NowPrice_exe("USD_JPY")['data']['bid']
+
+        # 必要情報の取得
+        temp_price = self.plan['target_price']
+        border_time_sec = 180  # この時間以上、target_priceを越えている場合
+        max_range = 0.04  # 時間が未達でも、この分だけtemp_priceを超えていたら、取得に動く
+
+        # ■越えたかの判定
+        if not self.overing:
+            # 直前で越えていなかった場合⇒初回の越える判定
+            if dir == 1:
+                # 順張り（STOP)の場合、targetをカレンとが越えていたら取得
+                if self.plan['type'] == "STOP" and now_price > temp_price:
+                    self.overing = True
+                    self.over_time = now_time
+                    self.over_en_plus = now_price - temp_price
+                    print("買い方向の順張りで、越えている　⇒取得可能状態")
+                # 逆張りの場合、targetをカレントが下回ったばあい、取得
+                if self.plan['type'] == "LIMIT" and now_price < temp_price:
+                    self.overing = True
+                    self.over_time = now_time
+                    self.over_en_plus = temp_price - now_price
+                    print("買い方向の逆張りで、下回った　⇒取得可能状態")
+            else:
+                # 順張り（STOP)の場合、targetをカレントが下回ったら取得
+                if self.plan['type'] == "STOP" and now_price < temp_price:
+                    self.overing = True
+                    self.over_time = now_time
+                    self.over_en_plus = temp_price - now_price
+                    print("売り方向の順張りで、下回っている　⇒取得可能状態")
+                # 逆張りの場合、targetをカレントが上回ったら、取得
+                if self.plan['type'] == "LIMIT" and now_price > temp_price:
+                    self.overing = True
+                    self.over_time = now_time
+                    self.over_en_plus = now_price - temp_price
+                    print("売り方向の逆張りで、上回っている　⇒取得可能状態")
+        else:
+            # 越えている状態で情報の更新を進める
+            if dir == 1:
+                # 順張り（STOP)の場合、targetをカレンとが越えていたら取得
+                if self.plan['type'] == "STOP" and now_price < temp_price:
+                    self.overing = False
+                    self.over_time = 0
+                    print("買い方向の順張りで、下回っている　⇒解除")
+                # 逆張りの場合、targetをカレントが下回ったばあい、取得
+                if self.plan['type'] == "LIMIT" and now_price > temp_price:
+                    self.overing = False
+                    self.over_time = 0
+                    print("買い方向の逆張りで、上回った　⇒解除")
+            else:
+                # 順張り（STOP)の場合、targetをカレントが下回ったら取得
+                if self.plan['type'] == "STOP" and now_price > temp_price:
+                    self.overing = False
+                    self.over_time = 0
+                    print("売り方向の順張りで、上回っている　⇒解除")
+                # 逆張りの場合、targetをカレントが上回ったら、取得
+                if self.plan['type'] == "LIMIT" and now_price < temp_price:
+                    self.overing = False
+                    self.over_time = 0
+                    print("売り方向の逆張りで、下回っている　⇒解除")
+
+        # 改めてウォッチモードに入るかを確認
+        if not self.overing:
+            return 0
+
+        # ■ここからウォッチモードの処理
+        # ■経過時間（越えてからの経過時間)
+        delta = now_time - self.over_time
+        self.keeping_second = delta.total_seconds()
+
+        # ■判定
+        exe_position = False  # exeorderのほうが適した名前？
+        if self.keeping_second >= self.watching_position_time_border:
+            # 時間が長時間取得可能状態で過ぎている場合
+            exe_position = True
+        else:
+            # 時間的には過ぎていない場合
+            if self.over_en_plus >= self.watching_position_price_gap_border:
+                # 価格がそこそこオーバーしていたら、取得しに行く（でかい動き？）
+                exe_position = True
+
+        # ■状態通知用
+        if not self.watching_position_done_send_line:
+            tk.line_send("初回のポジションウォッチング状態:", self.name)
+            self.watching_position_done_send_line = True
+
+        if exe_position:
+            # オーダー発行
+            order_res = self.make_order()
+            self.waiting_order = False  # 超大事
+            self.watching_for_position_done = True
+            self.o_state = "PENDING"  # あらかじめ入れておく（オーダーと同時に入る可能性が高く、その場合、(取得)メールが来ないため）
+            line_send = "　"
+            if "order_result" in order_res:
+                o_trans = order_res['order_result']['json']['orderCreateTransaction']
+                line_send = line_send + "◆ Watchingオーダー発行【" + str(self.name) + "】,\n" + \
+                            "指定価格:【" + str(self.plan['price']) + "】" + \
+                            ", 数量:" + str(o_trans['units']) + \
+                            ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
+                            "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(self.plan['price'])),
+                          3)) + ")" + \
+                            ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
+                            "(" + str(
+                    round(abs(float(o_trans['stopLossOnFill']['price']) - float(self.plan['price'])),
+                          3)) + ")" + \
+                            ", OrderID:" + str(order_res['order_id']) + \
+                            ", Alert:" + str(self.alert_range) + \
+                            "(" + str(round(self.alert_price, 3)) + ")" + \
+                            ", 取得価格:" + str(
+                            order_res['order_result']['execution_price']) + ",\n"
+                tk.line_send(line_send)
+            else:
+                order_res['order_result'] = "この処理はオーダー失敗の可能性大"
+
+            return {"order_name": self.name, "order_id": order_res['order_id'],
+                    "order_result": order_res['order_result']}
+
+    def watching_for_alert(self):  # マイナス領域で、マイナスを縮める手段
         """
         ロスカットを狭い物から広いものに変更する（取得直後の直マイナスを減らしたい）
         特に、ブレイクと予想した物が、ひっかけですぐに戻るのを防止する
         """
-        # print("   LC＿Change実行関数", self.name, self.t_pl_u, self.t_time_past_sec, len(self.lc_change_dic), self.t_state, self.lc_change_from_candle_lc_price)
-        # print("    新ロスカットテスト", self.plan['type'], self.t_time_past_sec, self.t_pl_u, self.win_max_plu)
-        # print("    新ロスカットテスト", self.lc_change_less_minus_done, self.t_state)
-        if self.lc_change_less_minus_done or self.t_state != "OPEN":  # 足数×〇分足×秒
+        if self.t_state != "OPEN":  # 足数×〇分足×秒
             # 実行しない条件は、既に実行済み　または、NotOpen
             return 0
 
-        # 取得後短期間で、マイナス域にいて、なおかつプラスがほとんどない（ひっかけレベル）
-        # print("    新ロスカットテスト", self.plan['type'], self.t_time_past_sec, self.t_pl_u, self.win_max_plu)
-        if self.plan['type'] == "STOP":  # ひっかけに警戒するのは、順張り。すなわちSTOP。
-            # if self.t_time_past_sec <= 220 and self.t_pl_u <= 0.02 and self.win_max_plu <= 0.007:
-            if 60 < self.t_time_past_sec <= 220 and self.t_pl_u <= 0.02 and self.win_max_plu <= 0.016:
-                # ロスカットを縮小する動きをとる
-                lc_ensure_range = 0.036
-                new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan['ask_bid']), 3)
-                data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
-                res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
-                if res['error'] == -1:
-                    self.send_line("    LC変更ミス＠lc_change")
-                    return 0  # APIエラー時は終了
-                # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-                self.send_line("　(LC底上げ★即反対に行ったやつ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒",
-                               new_lc_price,
-                               "lc底上げ", lc_ensure_range, "Posiprice", self.t_execution_price,
-                               "予定価格", self.plan['price'], "[追加分]元々のRangeは", self.plan['lc_range'],
-                               "現在マイナスは", self.t_pl_u, "最大Plusは", self.win_max_plu, "所持時間",
-                               self.t_time_past_sec)
-                self.lc_change_less_minus_done = True  # フラグの成立（変更済）
+        if not self.alert_watch_exe or self.alert_watch_done:
+            # そもそも機能させないか、既に実行済みの場合は、実行しない
+            return 0
 
+        current_price = self.get_current_price()
+        if current_price == 0:
+            return 0
+
+        # ■現状の変数化
+        now_time = datetime.datetime.now()
+        direction = self.plan['direction']
+        # 初回、ウォッチモードに入るかどうか
+        # print("ウォッチモード判定１", current_price, self.alert_price, self.plan['direction'], self.alert_watching)
+        if not self.alert_watching:
+            # ウォッチがONではない時は、アラートの成立を確認する（マイナスがどれくらいになっているかの判定）
+            if direction == 1:  # １の場合はドル買い（ASK）
+                if current_price < self.alert_price:
+                    self.beyond_alert_time = now_time
+                    self.alert_watching = True
+                    # print("ウォッチモード判定(買い)", current_price, "<", self.alert_price)
+                    # self.send_line("アラートモード")
+            else:
+                if current_price > self.alert_price:
+                    self.beyond_alert_time = now_time
+                    self.alert_watching = True
+                    # print("ウォッチモード判定(売り)", current_price, ">", self.alert_price)
+                    # self.send_line("アラートモード")
+        else:
+            # ウォッチがONの場合、プラス域に浮上したら、一回ウォッチをクリアする
+            if direction == 1:  # １の場合はドル買い（ASK）
+                if current_price > self.alert_price:
+                    self.beyond_alert_time = 0
+                    self.alert_watching = False
+                    # print("ウォッチモード解除(買い)", current_price, ">", self.alert_price)
+            else:
+                if current_price < self.alert_price:
+                    self.beyond_alert_time = 0
+                    self.alert_watching = False
+                    # print("ウォッチモード解除(売り)", current_price, "<", self.alert_price)
+
+        # ウォッチモードに入るかどうかを、改めて。
+        if not self.alert_watching:
+            return 0
+
+        # ■■現状の更新　
+        # ■経過時間（越えてからの経過時間)
+        delta = now_time - self.beyond_alert_time
+        gap_seconds = delta.total_seconds()
+        # ■現在のアラートの越えている価格量を取得する(alert基準。alert_plがマイナスは、アラートよりマイナス域
+        if direction == 1:  # １の場合はドル買い（ASK）　　　　　、-1の場合売り(Bid)
+            alert_pl = current_price - self.alert_price  # マイナスの値で表現する順庵
+        else:
+            alert_pl = self.alert_price - current_price
+        # ■状態通知用
+        if not self.alert_line_send_done:
+            tk.line_send("初回のウォッチモード突入:", self.name, "ボーダー", round(self.alert_price, 3), "現在価格", current_price,
+                         "ポジション方向", direction, "越えPips", round(alert_pl, 4))
+            self.alert_line_send_done = True
+
+        # ■■更新判定
+        border = 0.01
+        change_exe = False
+        if gap_seconds >= self.alert_wait_time_sec:  # アラートOnになってから、180秒以上経過している状態
+            if alert_pl <= border:  # マイナスが1pip以上ある場合
+                # print("alertで終了したい状態（時間、マイナス域(alertPriceに対して）がNG)", gap_seconds, alert_pl)
+                change_exe = True
+            else:
+                pass
+                # print("alertの時間的には削除したいが、まだマイナスが少ない", gap_seconds, alert_pl)
+        else:
+            # print(" alert時間未達", round(gap_seconds, 0), "秒", round(alert_pl, 3), "規定", self.alert_wait_time_sec)
+            return 0
+
+        # ■■更新作業
+        if change_exe:
+            if direction == 1:  # １の場合はドル買い（ASK）　　　　　、-1の場合売り(Bid)
+                new_lc_price = current_price - 0.01
+            else:
+                new_lc_price = current_price + 0.01
+
+            data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+            res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+            if res['error'] == -1:
+                self.send_line("    LC変更ミス＠lc_change")
+                return 0  # APIエラー時は終了
+            # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
+            self.send_line("　(LC底上げ★アラート基準)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒",
+                           new_lc_price,
+                           "lc底上げ", new_lc_price, "Posiprice", self.t_execution_price,
+                           "予定価格", self.plan['price'], "[追加分]元々のRangeは", self.plan['lc_range'],
+                           "現在マイナスは", self.t_pl_u, "最大Plusは", self.win_max_plu, "所持時間",
+                           self.t_time_past_sec)
+            self.alert_watch_done =  True  # フラグの成立（変更済）
 
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
@@ -896,7 +1242,7 @@ class order_information:
         上記の辞書が、配列で渡される場合、配列全てで確認していく。
         :return:         print(" ロスカ変更関数", self.lc_change_dic, self.t_pl_u,self.t_state)
         """
-        # print("   LC＿Change実行関数", self.name, self.t_pl_u, self.t_time_past_sec, len(self.lc_change_dic), self.t_state, self.lc_change_from_candle_lc_price)
+        # print("   LC＿Change実行関数", self.name, self.t_pl_u, self.t_time_past_sec, len(self.lc_change_dic_arr), self.t_state, self.lc_change_from_candle_lc_price)
         if len(self.lc_change_dic_arr) == 0 or self.t_state != "OPEN":  # 足数×〇分足×秒
             # 指定がない場合、ポジションがない場合、ポジションの経過時間が短い場合は実行しない
             return 0
@@ -930,7 +1276,7 @@ class order_information:
                 continue
             elif 'done' in item:  # or self.t_time_past_sec > lc_change_till_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
-                status_res = status_res + gene.str_merge("[", i, "] 済",  "lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
+                status_res = status_res + gene.str_merge("[", i, "] 済", item['time_done'], "lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
                                            , "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range)
                 continue
             elif lc_change_till_sec < self.t_time_past_sec < lc_change_waiting_time_sec:
@@ -951,6 +1297,7 @@ class order_information:
                 self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
                 # これで配列の中の辞書って変更できるっけ？？
                 item['done'] = True
+                item['time_done'] = datetime.datetime.now()
                 new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan['ask_bid']), 3)
                 data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
                 res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
@@ -959,7 +1306,7 @@ class order_information:
                     return 0  # APIエラー時は終了
                 item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
                 # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-                self.send_line("　(LC底上げ)", self.name, self.t_pl_u, self.plan['lc_price'], "⇒", new_lc_price,
+                self.send_line("　(LC底上げ)", self.name, self.t_pl_u, round(self.plan['lc_price'], 3), "⇒", new_lc_price,
                                "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice",
                                self.t_execution_price,
                                "予定価格", self.plan['price'])
@@ -1017,17 +1364,7 @@ class order_information:
         else:
             # 5分（足が新規で完成するタイミングじゃない場合）
             return 0
-        #             print("LCChange用にDFを取得しました", self.latest_df_get_time)
-        #             print(self.latest_df)
-        #             print("1行のみ抽出")
-        #             print(self.latest_df.iloc)
-        #             print(" 置換対象のLC価格を持つ足データ", self.latest_df.iloc[-2]['time_jp'])
-        #
-        #     else:
-        #         print("データ取得無し　前回から時間がたっていない", self.latest_df_get_time, "経過秒", seconds_difference)
-        #         pass
-        # else:
-        #     print("データ取得無し　 時刻条件合わず",time_min,"分", time_sec,"秒")
+
 
         # 逆張り注文の際、self.latest_df.iloc[-2]['low']基準だとおかしいくなる。
         # peakを算出し、peaks[0]がカウント２以上ある場合のみ、self.latest_df.iloc[-2]['low']を参照するケースに変更(25/5/17)
@@ -1098,18 +1435,18 @@ class order_information:
         if len(order_information.history_plus_minus) == 1:
             # 過去の履歴が一つだけの場合
             latest_plu = order_information.history_plus_minus[-1]
-            print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", order_information.history_plus_minus[-1])
+            # print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", order_information.history_plus_minus[-1])
         else:
             # 過去の履歴が二つ以上の場合、直近の二つの合計で判断する
             latest_plu = order_information.history_plus_minus[-1] + order_information.history_plus_minus[-2]  # 変数化(短縮用)
-            print("  直近の勝敗pips", latest_plu, "詳細(直近)", order_information.history_plus_minus[-1],
-                  order_information.history_plus_minus[-2])
+            # print("  直近の勝敗pips", latest_plu, "詳細(直近)", order_information.history_plus_minus[-1],
+            #       order_information.history_plus_minus[-2])
         # 最大でも現実的な10pips程度のTPに収める
         # if abs(latest_plu) >= 0.01:
         #     latest_plu = 0.01
 
         # 値を調整する
-        print("tuning @ classPosition1043, ", latest_plu, "<=", tp_up_border_minus)
+        # print("tuning @ classPosition1283, ", latest_plu, "<=", tp_up_border_minus)
         if latest_plu == 0:
             print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
             # 通常環境の場合
@@ -1123,7 +1460,7 @@ class order_information:
                 # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
                 tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
                 lc_change_type = 4  # LCchangeの設定なし
-                tk.line_send("取り返し調整発生")
+                # tk.line_send("取り返し調整発生")
             else:
                 # 直近がプラスの場合プラスの場合、普通。
                 print("  ★前回プラスのため、通常TP設定")
@@ -1335,11 +1672,20 @@ def position_check_no_args():
     max_priority_position = 0
     max_position_time_sec = 0
     max_order_time_sec = 0
+    watching_list = []
     open_class_names = closed_class_names = pending_class_names = ""
     total_pl = 0
     for item in classes:
         if item.life:  #lifeがTrueの場合、ポジションかオーダーが存在
             # 各情報
+            if item.o_state == "Watching":
+                watching_list.append({"name": item.name,
+                                      "target": item.plan['price'],
+                                      "direction": item.plan['expected_direction'],
+                                      "order_time": gene.time_to_str(item.order_register_time),
+                                      "state": item.overing,
+                                      "keeping": round(item.keeping_second, 0),
+                                      })
             if item.t_state == "OPEN":
                 # ポジションがある場合、ポジションの情報を取得する
                 # プライオリティも最高値を取得
@@ -1384,6 +1730,9 @@ def position_check_no_args():
                 pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
             else:
                 # どうやらt_stateが入っていない状態（オーダーエラーや謎の状態）
+                if item.o_state == "Watching":
+                    # tk.line_send("ウォッチング中のオーダーあり　（５分毎処理）")
+                    continue
                 print(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=",
                       item.life, ",try_num", item.try_update_num)
                 # tk.line_send(" 謎の状態(分岐前）　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=", item.life, ",try_num", item.try_update_num)
@@ -1427,5 +1776,6 @@ def position_check_no_args():
         "max_position_time_sec": max_position_time_sec,
         "max_order_time_sec": max_order_time_sec,
         "total_pl": total_pl,
-        "name_list": name_list
+        "name_list": name_list,
+        "watching_list": watching_list
     }

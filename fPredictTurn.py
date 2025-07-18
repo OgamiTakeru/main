@@ -37,7 +37,7 @@ def wrap_predict_turn_inspection_test(df_r):
     }
 
     # predict2
-    predict_result2 = cal_little_turn_at_trend(peaks_class)
+    predict_result2 = cal_predict_turn_at_trend(peaks_class)
     if predict_result2['take_position_flag']:
         flag_and_orders["take_position_flag"] = True
         flag_and_orders["exe_orders"] = predict_result2['exe_orders']
@@ -65,7 +65,7 @@ def wrap_predict_turn_inspection(peaks_class):
     }
 
     # predict2
-    predict_result2 = cal_little_turn_at_trend(peaks_class)
+    predict_result2 = cal_predict_turn_at_trend(peaks_class)
     if predict_result2['take_position_flag']:
         flag_and_orders["take_position_flag"] = True
         flag_and_orders["exe_orders"] = predict_result2['exe_orders']
@@ -79,7 +79,7 @@ def wrap_predict_turn_inspection(peaks_class):
     return flag_and_orders
 
 
-def cal_little_turn_at_trend(peaks_class):
+def cal_predict_turn_at_trend(peaks_class):
     """
     args[0]は必ずpeaks_classであること。
     args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
@@ -90,7 +90,7 @@ def cal_little_turn_at_trend(peaks_class):
     （遠すぎる場合は考え物だが）
     """
     # ■基本情報の取得
-    print("★★PREDICT　本番用")
+    print("★★予測　解析　本番用")
     take_position = False
     # ■返却値の設定
     default_return_item = {
@@ -216,15 +216,18 @@ def cal_little_turn_at_trend(peaks_class):
         3)
     order['order_timeout_min'] = 45  # 45分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
     exe_orders.append(order)
-    print(order)
 
-    # 本番用ここまで★★
-    gene.print_arr(exe_orders)
-    return {
-        "take_position_flag": True,
-        "exe_orders": exe_orders,
-        "for_inspection_dic": {}
-    }
+    return default_return_item
+    # print("PredictOrder発行")
+    # print(order)
+    #
+    # # 本番用ここまで★★
+    # gene.print_arr(exe_orders)
+    # return {
+    #     "take_position_flag": True,
+    #     "exe_orders": exe_orders,
+    #     "for_inspection_dic": {}
+    # }
 
 
 def order_make_dir0_s(peaks_class, comment, target_num, margin, margin_dir, tp, lc, lc_change, uni_base_time, priority):

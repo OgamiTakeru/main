@@ -84,7 +84,7 @@ def how_to_new_order_judge(inspection_result_dic):
         # ◆既存のポジションがある場合、既存の物と新規のものの方向が同じかを確かめる
         if classes_info['open_positions'][0]['pl'] > 0:
             # ポジションがプラス域の場合、
-            if inspection_result_dic['max_priority_order'] == classes_info['max_priority_position']:
+            if inspection_result_dic['max_priority'] == classes_info['max_priority_position']:
                 # 同方向のオーダーはOK
                 how_to_new_order_str = "add"
             else:
@@ -122,6 +122,66 @@ def how_to_new_order_judge(inspection_result_dic):
         how_to_new_order_str = "cancel"
 
     return how_to_new_order_str
+
+def force_order():
+    price_dic = oa.NowPrice_exe("USD_JPY")
+    if price_dic['error'] == -1:  # APIエラーの場合はスキップ
+        print("API異常発生の可能性", gl_now)
+        return -1  # 終了
+    else:
+        price_dic = price_dic['data']
+    # 値たち
+    current_price = price_dic['mid']  # 念のために保存しておく（APIの回数減らすため）
+    dir = -1
+    lc_range = 0.1
+    tp_price = 0.15
+    # オーダー
+    order = {
+        'decision_time': '2025/07/11 23:30:00',
+        'direction': dir,
+        'lc_price': current_price - (lc_range * dir),
+        'target_price': current_price + 0.008,
+        'tp_price': current_price + (tp_price * dir),
+        'type': 'STOP',
+        'units': 10,
+        'name': '強制オーダーテスト',
+        'trade_timeout_min': 150,
+        'order_timeout_min': 5,
+        'tp_range': tp_price,
+        'tp': tp_price,
+        'price': current_price,
+        'target': current_price,
+        'priority': 3,
+        'position_margin': 0,
+        'order_permission': False,
+        'alert': {'range': 0.02, 'time': 0, "alert_price": current_price - (0.02 * dir)},
+        'lc_range': lc_range,
+        'lc': lc_range,
+        'expected_direction': dir,
+        'decision_price': 147.406,
+        'lc_change_type': 3,
+        'ref': {
+            'move_ave': 0.1,
+            'peak1_target_gap': 0.1},
+        'stop_or_limit': -1,
+        'for_inspection_dic': {},
+        'lc_change': [
+            {'exe': True, 'time_after': 0, 'trigger': 0.01, 'ensure': -0.02},
+            {'exe': True, 'time_after': 0, 'trigger': 0.015, 'ensure': 0.01},
+            {'exe': True, 'time_after': 0, 'trigger': 0.08, 'ensure': 0.02},
+            {'exe': True, 'time_after': 0, 'trigger': 0.2, 'ensure': 0.15},
+            {'exe': True, 'time_after': 600, 'trigger': 0.4, 'ensure': 0.35},
+            {'exe': True, 'time_after': 600, 'trigger': 0.6, 'ensure': 0.55},
+            {'exe': True, 'time_after': 600, 'trigger': 0.7, 'ensure': 0.65},
+            {'exe': True, 'time_after': 600, 'trigger': 0.8, 'ensure': 0.75},
+            {'exe': True, 'time_after': 600, 'trigger': 0.9, 'ensure': 0.85},
+            {'exe': True, 'time_after': 600, 'trigger': 1.0, 'ensure': 0.95}]
+    }
+    return {
+        "take_position_flag": True,
+        "exe_orders": [order],
+        "for_inspection_dic": {}
+    }
 
 
 def mode1_order_control(inspection_result_dic):
@@ -185,21 +245,43 @@ def mode1_order_control(inspection_result_dic):
                 if res_dic['order_id'] == 0:
                     print("オーダー失敗している（大量オーダー等）")
                     return 0
+                elif  res_dic['order_id'] == -1:
+                    # オーダーの予約時にLINEする
+                    print("オーダー通知")
+                    # print(res_dic)
+                    # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
+                    # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
+                    # print(res_dic['order_name'])
+                    # print(res_dic)
+                    line_send = line_send + "◆【" + str(res_dic['order_name']) + "】を即時ポジションなしで発行" + \
+                                "指定価格:【" + str(round(res_dic['order_result']['price'], 3)) + "】" + \
+                                ",DIR:" + str(res_dic['order_result']['direction']) + \
+                                ", 数量:" + str(res_dic['order_result']['units']) + \
+                                ", TP:" + str(round(res_dic['order_result']['tp_price'], 3)) + \
+                                "(" + str(round(res_dic['order_result']['tp_range'], 3)) + ")" + \
+                                ", LC:" + str(round(res_dic['order_result']['lc_price'], 3)) + \
+                                "(" + str(round(res_dic['order_result']['lc_range'], 3)) + ")" + \
+                                "[システム]classNo:" + str(class_index) + ",\n"
+                    break
                 else:
                     # オーダーの生成完了をLINE通知する
+                    print("オーダー通知")
                     print(res_dic)
                     # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
                     # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
                     print(res_dic['order_name'])
+                    o_trans = res_dic['order_result']['json']['orderCreateTransaction']  # 短縮のための変数化
                     line_send = line_send + "◆【" + str(res_dic['order_name']) + "】,\n" +\
                                 "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
-                                ", 数量:" + str(res_dic['order_result']['json']['orderCreateTransaction']['units']) + \
-                                ", TP:" + str(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) + \
-                                "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
-                                ", LC:" + str(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) + \
-                                "(" + str(round(abs(float(res_dic['order_result']['json']['orderCreateTransaction']['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
+                                ", 数量:" + str(o_trans['units']) + \
+                                ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
+                                "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
+                                ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
+                                "(" + str(round(abs(float(o_trans['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
                                 ", OrderID:" + str(res_dic['order_id']) + \
-                                ", 取得価格:" + str(res_dic['order_result']['execution_price']) + ") " + "[システム]classNo:" + str(class_index) + ",\n"
+                                ", Alert:" + str(inspection_result_dic['exe_orders'][order_n]['alert']['range']) + \
+                                "(" + str(round(inspection_result_dic['exe_orders'][order_n]['alert']['alert_price'], 3)) + ")" + \
+                                ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "[システム]classNo:" + str(class_index) + ",\n"
                                 # "\n"
                     break
 
@@ -277,6 +359,10 @@ def mode2():
             # have_position = classPosition.position_check(classes)
             have_position = classPosition.position_check_no_args()
             print("■■■Mode2(いずれかポジション有)", f.now(), "これは１分に１回表示")
+            # print(have_position)
+            if len(have_position['watching_list']) > 0:
+                print("ウォッチリスト")
+                gene.print_arr(have_position['watching_list'])
             print("     ", life_check_res['one_line_comment'])
             # if have_position['position_exist']:
                 # ポジションがある場合
@@ -395,6 +481,8 @@ def exe_manage():
             d5_df.to_csv(tk.folder_path + 'main_data5.csv', index=False, encoding="utf-8")  # 直近保存用
 
             mode1()
+            # 強制オーダー
+            mode1_order_control(force_order())
 
 
 

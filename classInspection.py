@@ -316,7 +316,8 @@ class Inspection:
                             # print(analysis_result['exe_orders'][i_order])
                             analysis_result['exe_orders'][i_order][
                                 'order_time'] = order_time  # order_time追加（本番marketだとない）
-                            gene.print_json(analysis_result)
+                            # print("星星星これ？")
+                            # gene.print_json(analysis_result)
                             self.gl_classes.append(Order(analysis_result['exe_orders'][i_order],
                                                     analysis_result[
                                                         'for_inspection_dic']))  # 【配列追加】インスタンス生成し、オーダーと検証用データを渡す。
@@ -425,18 +426,18 @@ class Inspection:
 
             # 名前ごとにも集計
             # nameごとに集約
-            result = result_df.groupby('name_only').agg(
+            result = result_df.groupby('name').agg(
                 total_pl=('pl', 'sum'),
                 positive_count=('pl', lambda x: (x > 0).sum()),
                 negative_count=('pl', lambda x: (x < 0).sum())
             ).reset_index()
             # 並び替え
-            result = result.sort_values('name_only', ascending=True).reset_index(drop=True)
+            result = result.sort_values('name', ascending=True).reset_index(drop=True)
 
             # 文字列を生成
             output = "検証期間LONG\n"
             for _, row in result.iterrows():
-                output += f"【名前】{row['name_only']}【計】:{round(row['total_pl'], 0)}({row['positive_count']}:{row['negative_count']})\n\n"
+                output += f"【名前】{row['name']}【計】:{round(row['total_pl'], 0)}({row['positive_count']}:{row['negative_count']})\n\n"
             print(output)
             tk.line_send(output, "検証期間LONG")
         return 1
@@ -547,6 +548,9 @@ class Inspection:
         self.gl_d5_df['time_jp'] = pd.to_datetime(self.gl_d5_df['time_jp'])
         self.result_df['order_time'] = pd.to_datetime(self.result_df['order_time'])  # 決心時間（少しずれるので見にくい？）
         self.result_df['take_time'] = pd.to_datetime(self.result_df['take_time'])  # 決心時間（少しずれるので見にくい？）
+
+        # 全部出ても見にくいので、最後のN業取得（データは取得したてのため、上が古いデータ、下が新しいデータとなっている）
+        # self.gl_d5_df = self.gl_d5_df.tail(400)
 
         # ローソク足チャート作成
         fig = go.Figure(data=[

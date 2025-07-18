@@ -54,8 +54,8 @@ def wrap_all_inspections(df_r):
         flag_and_orders['max_priority'] = max_priority
         flag_and_orders['for_inspection_dic'] = {}
 
-    print("　PREDICTテスト★★★")
-    turn_result = pi.wrap_predict_turn_inspection(peaks_class)  #
+    # print("　PREDICTテスト★★★")
+    # turn_result = pi.wrap_predict_turn_inspection(peaks_class)  #
 
     return flag_and_orders
 

@@ -101,13 +101,13 @@ class PeaksClass:
             PeaksClass.peaks_original_with_df = self.make_peaks_with_df(self.df_r)  # 一番感度のいいPeaksにDfがついたもの
             # たまに起きる謎のエラー対応
             if len(PeaksClass.peaks_original) <= 2:
-                print("おかしなことが起きている@peakclass")
+                print("おかしなことが起きている originalデータが少なすぎる @peakclass")
                 gene.print_arr(PeaksClass.peaks_original)
                 print(PeaksClass.df_r_original)
                 print("↑", len(PeaksClass.df_r_original))
                 print(original_df)
                 print("↑　originalDf")
-
+                print("おかしなこと対応ここま↑")
             PeaksClass.skipped_peaks = self.skip_peaks()  # スキップピークの算出
             PeaksClass.skipped_peaks_hard = self.skip_peaks_hard()
             self.recalculation_peak_strength_for_peaks()  # ピークストレングスの算出
@@ -781,7 +781,13 @@ class PeaksClass:
         # print(t6, "平均(Body)", sorted_df['body_abs'].mean())
 
         # ■ピーク5個の中で突発的できわめて大きな変動がある場合（雇用統計とか、、、）基本は戻る動きとみる？（それとも静観・・・？）
-        target_peak = PeaksClass.peaks_original[1]  # ビッグムーブ検査の対象となるのはひとつ前のピーク
+        if len(PeaksClass.peaks_original) == 1:
+            # 極まれに範囲外になる。
+            target_peak = PeaksClass.peaks_original[0]
+            print("特殊事態（Peaksが少なすぎる）")
+            gene.print_arr(PeaksClass.peaks_original)
+        else:
+            target_peak = PeaksClass.peaks_original[1]  # ビッグムーブ検査の対象となるのはひとつ前のピーク
         if PeaksClass.peaks_original[0]['count'] == 2:
             # 重複オーダーとなる可能性をここで防止するため、ビッグムーブの判定はLatestカウントが2の場合のみ
             if target_peak['gap'] >= self.fluctuation_gap and target_peak['count'] <= self.fluctuation_count:
