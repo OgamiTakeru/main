@@ -189,6 +189,7 @@ class order_information:
         self.overing = False
         self.over_time = 0
         self.over_en_plus = 0
+        self.keeping_second = 0
         self.watching_position_time_border = 30
         self.watching_position_price_gap_border = 0.05
         self.watching_position_done_send_line = False
@@ -991,8 +992,10 @@ class order_information:
         if self.o_state != "Watching" or self.watching_for_position_done:  # 足数×〇分足×秒
             # 実行しない条件は、既に実行済み　または、NotOpen
             return 0
-        if (round(self.keeping_second, 0) % 15 == 0 and round(self.keeping_second, 0) !=0) or 1 <= round(self.keeping_second, 0) <= 2:
-            print(" ウォッチング内容", self.overing, self.over_time, self.over_en_plus, round(self.keeping_second, 0),
+        if (round(self.keeping_second, 0) % 15 == 0 and round(self.keeping_second, 0) != 0) or 1 <= round(self.keeping_second, 0) <= 2:
+            print(" ウォッチング内容", self.overing, round(self.over_time, 1), "秒",
+                  round(self.over_en_plus,3), "円",
+                  round(self.keeping_second, 0),
                   "bordertime", self.watching_position_time_border)
 
         delta = datetime.datetime.now() - self.order_register_time

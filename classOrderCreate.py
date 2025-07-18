@@ -13,7 +13,7 @@ import fBlockInspection as fTurn
 
 
 class OrderCreateClass:
-    basic_unit = 10000
+    basic_unit = 1000
     # basic_unit = 25000
     oa = None
 
