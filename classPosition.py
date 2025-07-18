@@ -993,7 +993,7 @@ class order_information:
             # 実行しない条件は、既に実行済み　または、NotOpen
             return 0
         if (round(self.keeping_second, 0) % 15 == 0 and round(self.keeping_second, 0) != 0) or 1 <= round(self.keeping_second, 0) <= 2:
-            print(" ウォッチング内容", self.overing, round(self.over_time, 1), "秒",
+            print(" ウォッチング内容", self.overing, "発行時:", gene.time_to_str(self.over_time),
                   round(self.over_en_plus,3), "円",
                   round(self.keeping_second, 0),
                   "bordertime", self.watching_position_time_border)
