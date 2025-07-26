@@ -35,7 +35,7 @@ if mode == 1:
                            datetime.datetime(2025, 7, 1, 14, 15, 6),
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5m.csv',
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5s.csv',
-                           400,
+                           150,
                            1,
                            " テスト" + memo,
                            True,  # グラフの描画あり

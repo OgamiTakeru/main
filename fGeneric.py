@@ -108,7 +108,7 @@ def time_to_str(dt_time):
     2024-08-10 19:40:00の形式を、20240810194000にする
     """
     ans = dt_time.strftime("%Y%m%d%H%M%S")
-    print("時刻を文字に変換テスト")
+    # print("時刻を文字に変換テスト")
     return ans
 
 def str_to_time_hms(str_time):

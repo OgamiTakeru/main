@@ -439,6 +439,8 @@ class OrderCreateClass:
             order_base_info['lc_price'] = round(
                 order_base_info['target_price'] - (order_base_info['lc'] * order_base_info['expected_direction']), 3)
             order_base_info['lc_range'] = round(order_base_info['lc'], 3)
+        # ③-2  lc_priceは処理の中で、上書きされる可能性があるため、同一情報をoriginalとして保存しておく
+        order_base_info['lc_price_original'] = order_base_info['lc_price']
 
         # ④alertの設定を行う（alertは数字か辞書が入る。数字かつ０の場合、辞書の場合、lc_changeの先頭にそれが入る
         if "alert" in order_base_info and "range" in order_base_info['alert']:
@@ -535,6 +537,10 @@ class OrderCreateClass:
         temp = order_base_info['lc_change_type']  # いったん保存
         del order_base_info["lc_change_type"]
         order_base_info['lc_change_type'] = temp
+        # lc_price_original
+        temp = order_base_info['lc_price_original']  # いったん保存
+        del order_base_info["lc_price_original"]
+        order_base_info['lc_price_original'] = temp
         # ref
         temp = order_base_info['ref']  # いったん保存
         del order_base_info["ref"]

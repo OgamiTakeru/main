@@ -9,6 +9,7 @@ import pandas as pd
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as classOanda
 import classPosition as classPosition  # とりあえずの関数集
+import classOrderCreate as OCreate
 import fBlockInspection as t  # とりあえずの関数集
 import fGeneric as f
 import fPeakInspection as p
@@ -25,7 +26,6 @@ def how_to_new_order_judge(inspection_result_dic):
     新規のオーダーを、現在残存しているオーダーやポジションに上書きするかを判定する
     inspection_result_dicは、入れようとしている新規オーダーの情報
     """
-    how_to_new_order_str = True  # Trueで上書き（残存のオーダーを削除し、今回のオーダーを投入する。既存ポジションは放置）
     how_to_new_order_str = "add"  # 既存オーダーが新規同等でオーダー追加⇒add、既存オーダーが新規未満でクリア＆新規⇒replace、既存が新規以上⇒cancel
     classes_info = classPosition.position_check_no_args()  # 現在（既存）の情報を取得
 
@@ -82,38 +82,67 @@ def how_to_new_order_judge(inspection_result_dic):
         new_exe_order = inspection_result_dic['exe_orders'][0]
         exist_position = classes_info['open_positions'][0]
         # ◆既存のポジションがある場合、既存の物と新規のものの方向が同じかを確かめる
-        if classes_info['open_positions'][0]['pl'] > 0:
-            # ポジションがプラス域の場合、
-            if inspection_result_dic['max_priority'] == classes_info['max_priority_position']:
-                # 同方向のオーダーはOK
-                how_to_new_order_str = "add"
+        com = ""
+        # プライオリティが同等の場合
+        if inspection_result_dic['max_priority'] == classes_info['max_priority_position']:
+            # 同方向のオーダーはOK
+            if exist_position['direction'] != new_exe_order['expected_direction']:
+                # 新規オーダーと既存のポジションオーダー方向が異なる場合⇒新規優先
+                com = "新規オーダー優先度並。既存ポジと方向が異なるため、既存ポジを解消し新規を投入"
+                how_to_new_order_str = "replace"
             else:
-                # 方向が違うオーダーはNG
-                print(" 既存ポジションがプラス、かつ違う方向にオーダーを入れようとしているので、キャンセル")
-                tk.line_send("既存ポジションがプラス、かつ違う方向にオーダーを入れようとしているので、新規オーダーはキャンセル")
-                how_to_new_order_str = "cancel"
+                # 新規オーダーと既存ポジションのオーダー方向が同じな場合、プラス域であれば追加しちゃう
+                if classes_info['open_positions'][0]['pl'] > 0:
+                    # ポジションがプラス域の場合、
+                    how_to_new_order_str = "add"
+                    com = "新規オーダー優先度並。現在のポジションと新規のオーダーが同方向かつ現在プラスため、追加"
+                    print(com)
+                else:
+                    # ポジションがマイナス域の場合
+                    how_to_new_order_str = "replace"
+                    com = "新規オーダー優先度高並。現在のポジションと新規のオーダーが同方向かつ現在プラスため、既存キャンセル＆新規を投入。"
+                    print(com)
+        # 新規のオーダーが、既存のプライオリティより低い場合
+        elif inspection_result_dic['max_priority'] <= classes_info['max_priority_position']:
+            # 基本的にはキャンセル
+            how_to_new_order_str = "cancel"
+        # 新規のオーダーが、既存プライオリティより高い場合
         else:
-            # ポジションがマイナスの場合、現状特に何もしない
-            pass
+            if exist_position['direction'] != new_exe_order['expected_direction']:
+                # 新規オーダーと既存のポジションオーダー方向が異なる場合⇒新規優先
+                com = "新規オーダー優先度高。既存ポジと方向が異なるため、既存ポジを解消し新規を投入"
+                how_to_new_order_str = "replace"
+            else:
+                # 新規オーダーと既存ポジションのオーダー方向が同じな場合、プラス域であれば追加しちゃう
+                if classes_info['open_positions'][0]['pl'] > 0:
+                    # ポジションがプラス域の場合、
+                    how_to_new_order_str = "add"
+                    com = "新規オーダー優先度高。現在のポジションと新規のオーダーが同方向かつ現在プラスため、追加"
+                    print(com)
+                else:
+                    # ポジションがマイナス域の場合
+                    how_to_new_order_str = "replace"
+                    com = "新規オーダー優先度高。現在のポジションと新規のオーダーが同方向かつ現在プラスため、既存キャンセル＆新規を投入。"
+                    print(com)
 
     # （２）パターン2　フラッグ形状は重ねていくオーダーの場合最大の効果があるため、同方向の場合はガンガン入れていく。
     # ■■■既存オーダーが存在する場合、プライオリティ、現在のプラスマイナス、入れようとしている向きが同方向かを比較する
-    if classes_info['order_exist']:
-        # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
-        if classes_info['max_priority_order'] > inspection_result_dic['max_priority']:
-            # 既存オーダーが、新規よりも重要度が高いため、新規は断念する（同じだったら入れ替えたいため、＞＝ではなく＞）
-            tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority_order'], inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
-            how_to_new_order_str = "cancel"
-        elif classes_info['max_priority_order'] == inspection_result_dic['max_priority']:
-            # print(" 既存オーダーが、新規同等の重要度のため、取り消さず今回のオーダーを追加する")
-            print(" 既存オーダーが、新規同等の重要度のため、既存をキャンセルし、改めてオーダーしなおす")
-            # print(" 既存オーダーが、新規同等の重要度のため、既存を生かし今回はキャンセル")
-            # how_to_new_order_str = "cancel"
-            # how_to_new_order_str = "replace"
-            how_to_new_order_str = "add"
-        else:
-            print("既存オーダーが、新規より重要度が低いため、既存オーダーを削除し、新規オーダーを入れる")
-            how_to_new_order_str = "replace"
+    # if classes_info['order_exist']:
+    #     # オーダーが存在する場合、互い(新規と既存)のプライオリティ次第で注文を発行する。基本的には既存を取り消すが、例外的に既存が優先される。
+    #     if classes_info['max_priority_order'] > inspection_result_dic['max_priority']:
+    #         # 既存オーダーが、新規よりも重要度が高いため、新規は断念する（同じだったら入れ替えたいため、＞＝ではなく＞）
+    #         tk.line_send("新規オーダー見送り", classes_info['max_order_time_sec'], ",", classes_info['max_priority_order'], inspection_result_dic['max_priority'], inspection_result_dic['exe_orders'][0]['name'])
+    #         how_to_new_order_str = "cancel"
+    #     elif classes_info['max_priority_order'] == inspection_result_dic['max_priority']:
+    #         # print(" 既存オーダーが、新規同等の重要度のため、取り消さず今回のオーダーを追加する")
+    #         print(" 既存オーダーが、新規同等の重要度のため、既存をキャンセルし、改めてオーダーしなおす")
+    #         # print(" 既存オーダーが、新規同等の重要度のため、既存を生かし今回はキャンセル")
+    #         # how_to_new_order_str = "cancel"
+    #         # how_to_new_order_str = "replace"
+    #         how_to_new_order_str = "add"
+    #     else:
+    #         print("既存オーダーが、新規より重要度が低いため、既存オーダーを削除し、新規オーダーを入れる")
+    #         how_to_new_order_str = "replace"
 
     # [共通]既存のポジションが存在する場合　現在注文があるかを確認する
     # 特に気にせず入れるが、ポジション数が6個以上は入れないようにする（Classでもポカヨケ入るが、ここでも念のため）
@@ -122,6 +151,7 @@ def how_to_new_order_judge(inspection_result_dic):
         how_to_new_order_str = "cancel"
 
     return how_to_new_order_str
+
 
 def force_order():
     price_dic = oa.NowPrice_exe("USD_JPY")
@@ -140,20 +170,21 @@ def force_order():
         'decision_time': '2025/07/11 23:30:00',
         'direction': dir,
         'lc_price': current_price - (lc_range * dir),
-        'target_price': current_price + 0.008,
+        'target_price': current_price + (0.02 * dir * -1),
         'tp_price': current_price + (tp_price * dir),
-        'type': 'STOP',
-        'units': 10,
+        'type': 'LIMIT',
+        'units': 0.5,
         'name': '強制オーダーテスト',
         'trade_timeout_min': 150,
         'order_timeout_min': 5,
         'tp_range': tp_price,
         'tp': tp_price,
         'price': current_price,
-        'target': current_price,
+        'target': current_price + (0.01 * dir * -1),
         'priority': 3,
         'position_margin': 0,
         'order_permission': False,
+        'watching_price': current_price - 0.008,
         'alert': {'range': 0.02, 'time': 0, "alert_price": current_price - (0.02 * dir)},
         'lc_range': lc_range,
         'lc': lc_range,
@@ -177,9 +208,12 @@ def force_order():
             {'exe': True, 'time_after': 600, 'trigger': 0.9, 'ensure': 0.85},
             {'exe': True, 'time_after': 600, 'trigger': 1.0, 'ensure': 0.95}]
     }
+    order_class = OCreate.OrderCreateClass(order)  # オーダーファイナライズ
+    finalized_order = order_class.finalized_order
+    print("★★強制オーダー　現在価格", current_price, "ターゲット", order['target_price'], "方向", dir)
     return {
         "take_position_flag": True,
-        "exe_orders": [order],
+        "exe_orders": [finalized_order],
         "for_inspection_dic": {}
     }
 
@@ -413,9 +447,9 @@ def exe_manage():
 
         gl_now_price_mid = price_dic['mid']  # 念のために保存しておく（APIの回数減らすため）
         gl_now_spread = price_dic['spread']
-        if price_dic['spread'] > gl_arrow_spread:
-            # print("    ▲スプレッド異常", gl_now, price_dic['spread'])
-            return -1  # 強制終了
+        # if price_dic['spread'] > gl_arrow_spread:
+        #     # print("    ▲スプレッド異常", gl_now, price_dic['spread'])
+        #     return -1  # 強制終了
 
         # ■直近の検討データの取得　　　メモ：data_format = '%Y/%m/%d %H:%M:%S'
         # 直近の実行したローソク取得からの経過時間を取得する（秒単位で２連続の取得を行わないようにするためマージン）
@@ -483,7 +517,6 @@ def exe_manage():
             mode1()
             # 強制オーダー
             mode1_order_control(force_order())
-
 
 
 def exe_loop(interval, fun, wait=True):

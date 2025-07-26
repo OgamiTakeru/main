@@ -23,6 +23,7 @@ class Order:
         self.position_status = "PENDING"  # pending, open ,closed, cancelled
         self.name = order_dic['name']
         self.target_price = order_dic['target_price']
+
         self.tp_price = order_dic['tp_price']
         self.lc_price = order_dic['lc_price']
         self.lc_price_original = order_dic['lc_price_original']
@@ -51,6 +52,23 @@ class Order:
         self.priority = order_dic['priority']
 
         self.for_inspection_dic = for_inspection_dic
+
+        # watching系
+        if "watching_price" in order_dic:
+            # 指定有
+            if order_dic['watching_price'] == 0:
+                self.watch_for_order_exe = False
+            else:
+                self.watch_for_order_exe = True  # 待機
+        else:
+            # 指定なし
+            self.watch_for_order_exe = False
+        # self.watch_for_order_exe = False
+        self.watch_for_order_trigger_on = False
+        self.watch_for_order_keeping_time = 0
+        self.watch_for_order_border_time = 30
+        self.watch_for_order_border_range = 0
+        self.watching_price = order_dic['watching_price']
 
         self.comment = ""  # クラスごとに残すコメント（決済がLCChangeの場合LCとなるので、ClChangeとしたい、とか）
 
@@ -256,6 +274,7 @@ class Inspection:
             dt = str_to_time(row_s5['time_jp'])  # 時間に変換
             # if dt.minute % 5 == 0 and dt.second == 0:  # 各5分0秒で解析を実行する
             if pd.notna(row_s5['time_y']):  # 毎5の倍数分で解析を実行する
+                # ■■５分ごとの実行分
                 analysis_df = find_analysis_dataframe(self.gl_d5_df_r, row_s5['time_jp'])  # 解析用の5分足データを取得する
                 if len(analysis_df) < self.gl_need_to_analysis:
                     # 解析できない行数しかない場合、実施しない（5秒足の飛びや、取得範囲の関係で発生）
@@ -264,14 +283,6 @@ class Inspection:
                           len(self.gl_inspection_base_df), "中")
                     continue  # returnではなく、次のループへ
                 else:
-                    # ★★★ 解析を呼び出す★★★★★
-                    # ★★★ 解析を呼び出す★★★★★
-                    # ★★★ 解析を呼び出す★★★★★
-                    # ★★★ 解析を呼び出す★★★★★
-                    # ★★★ 解析を呼び出す★★★★★
-                    # ★★★ 解析を呼び出す★★★★★
-                    # ★★★ 解析を呼び出す★★★★★
-                    # ★★★ 解析を呼び出す★★★★★
                     # ★★★ 解析を呼び出す★★★★★
                     # ★★★ 解析を呼び出す★★★★★
                     print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/",
@@ -284,8 +295,8 @@ class Inspection:
                     else:
                         analysis_result = self.target_func(analysis_df)  # 検証専用コード
 
-                    for order in analysis_result["exe_orders"]:  # original_lc_priceの追加
-                        order["lc_price_original"] = order["lc_price"]
+                    # for order in analysis_result["exe_orders"]:  # original_lc_priceの追加
+                    #     order["lc_price_original"] = order["lc_price"]
                     # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
                     if not analysis_result['take_position_flag']:
                         # オーダー判定なしの場合、次のループへ（5秒後）
@@ -300,11 +311,9 @@ class Inspection:
                         order_time = row_s5['time_jp']
                         for i_order in range(len(analysis_result['exe_orders'])):
                             # print(analysis_result['exe_orders'][i_order])
-                            analysis_result['exe_orders'][i_order][
-                                'order_time'] = order_time  # order_time追加（本番marketだとない）
+                            analysis_result['exe_orders'][i_order]['order_time'] = order_time  # order_time追加（本番marketだとない）
                             self.gl_classes.append(Order(analysis_result['exe_orders'][i_order],
-                                                    analysis_result[
-                                                        'for_inspection_dic']))  # インスタンス生成＋配列追加(is_life=True)
+                                                    analysis_result['for_inspection_dic']))  # インスタンス生成＋配列追加(is_life=True)
                             # 結果表示用の情報を作成
                             self.gl_order_list.append(
                                 {"order_time": order_time, "name": analysis_result['exe_orders'][i_order]['name']})
@@ -328,7 +337,11 @@ class Inspection:
                                  "price": analysis_result['exe_orders'][i_order]['target_price'],
                                  "name": analysis_result['exe_orders'][i_order]['name']
                                  })
+            else:
+                # ５の倍数分以外の処理（特になし）
+                pass
 
+            # 以下全ての５秒で実施するもの
             # 【実質的な検証処理】各クラスを巡回し取得、解消　を5秒単位で実行する
             for i, each_c in enumerate(self.gl_classes):
                 # すでに実行済の場合は実行しない
@@ -410,6 +423,8 @@ class Inspection:
             # LINEを送る
             inspection_day_gap_sec = gene.cal_str_time_gap(self.gl_actual_start_time, self.gl_actual_end_time)
             inspection_day_gap = inspection_day_gap_sec['gap_abs'] // (24 * 60 * 60)
+            if inspection_day_gap == 0:
+                inspection_day_gap = 1
             tk.line_send("test fin 【結果】", round(self.gl_total, 0), ",\n"
                          , "【検証期間】", self.gl_actual_start_time, "-", self.gl_actual_end_time, "(", inspection_day_gap, "日)", "\n"
                          , "【Unit平均】", round(absolute_mean, 0), ",\n"
@@ -717,32 +732,62 @@ def find_analysis_dataframe(df, time_jp):
     return df[df.index <= idx[0]]
 
 
-def update_order_information_and_take_position(cur_class, cur_row, cur_row_index):
+def update_order_information_and_take_position(cur_order_class, cur_5s_row, cur_row_index):
     """
     オーダーが約定するかを確認する関数
     引数は対象のクラス(CurrentClass)と、検証対象のデータ行(CurrentRow)と、そのデータ行のインデックス
     """
     # スプレッドを考慮した、アジャスターを用意(買いの場合は、買い価格で開始する（0.004 = スプレッド÷2)。売りの場合はその逆）
-    adjuster = 0.004 if cur_class.direction == 1 else -0.004
+    adjuster = 0.004 if cur_order_class.direction == 1 else -0.004
 
-    # (1)オーダーの時間を求め、時間切れ判定も実施する
-    order_keeping_time_sec = cal_str_time_gap(cur_row['time_jp'], cur_class.order_time)['gap']
-    cur_class.order_keeping_time_sec = order_keeping_time_sec  # クラスの内容を更新（オーダー取得までの経過時間として使える。ポジション後は更新しないため）
-    if order_keeping_time_sec >= cur_class.order_timeout_sec:
-        print("   ■タイムアウトです", cur_class.name, cur_row['time_jp'])
-        # クラス内容の更新
-        cur_class.is_live = False  # Lifeをクローズ
-    else:
-        # (2)タイムアウトでなければ、取得判定を実施する　（同一行で取得⇒ロスカの可能性はここでは考えない）
-        target_price = cur_class.target_price
-        if cur_row['low'] + adjuster <= target_price < cur_row["high"] + adjuster:
-            print("　　■取得しました", cur_class.name, cur_row['time_jp'], cur_row['low'], cur_row['high'], target_price)
+    # watching系
+    # cur_order_class.watch_for_order_exe = False
+    # cur_order_class.watch_for_order_trigger_on = False
+    # cur_order_class.watch_for_order_keeping_time = 0
+    # cur_order_class.watch_for_order_border_time = 30
+    # cur_order_class.watch_for_order_border_range = 0
+
+    if cur_order_class.watch_for_order_exe:
+        #　ウォッチが有効の場合(書き直す必要あり
+        order_keeping_time_sec = cal_str_time_gap(cur_5s_row['time_jp'], cur_order_class.order_time)['gap']
+        cur_order_class.order_keeping_time_sec = order_keeping_time_sec  # クラスの内容を更新（オーダー取得までの経過時間として使える。ポジション後は更新しないため）
+        if order_keeping_time_sec >= cur_order_class.order_timeout_sec:
+            print("   ■タイムアウトです", cur_order_class.name, cur_5s_row['time_jp'])
             # クラス内容の更新
-            cur_class.position_time = cur_row['time_jp']
-            cur_class.position_is_live = True
+            cur_order_class.is_live = False  # Lifeをクローズ
         else:
-            # print(" 取得まち", cur_row['time_jp'], cur_class.name, target_price, cur_row['low'] + adjuster, cur_row["high"] + adjuster)
-            pass
+            # (2)タイムアウトでなければ、取得判定を実施する　（同一行で取得⇒ロスカの可能性はここでは考えない）
+            target_price = cur_order_class.target_price
+            if cur_5s_row['low'] + adjuster <= target_price < cur_5s_row["high"] + adjuster:
+                print("　　■取得しました", cur_order_class.name, cur_5s_row['time_jp'], cur_5s_row['low'], cur_5s_row['high'], target_price)
+                # クラス内容の更新
+                cur_order_class.position_time = cur_5s_row['time_jp']
+                cur_order_class.position_is_live = True
+            else:
+                # print(" 取得まち", cur_row['time_jp'], cur_class.name, target_price, cur_row['low'] + adjuster, cur_row["high"] + adjuster)
+                pass
+        # 現状を確認する
+        # 越えているかを確認する
+    else:
+        # ウォッチが有効でない場合（従来通りの即オーダー同等）
+        # (1)オーダーの時間を求め、時間切れ判定も実施する
+        order_keeping_time_sec = cal_str_time_gap(cur_5s_row['time_jp'], cur_order_class.order_time)['gap']
+        cur_order_class.order_keeping_time_sec = order_keeping_time_sec  # クラスの内容を更新（オーダー取得までの経過時間として使える。ポジション後は更新しないため）
+        if order_keeping_time_sec >= cur_order_class.order_timeout_sec:
+            print("   ■タイムアウトです", cur_order_class.name, cur_5s_row['time_jp'])
+            # クラス内容の更新
+            cur_order_class.is_live = False  # Lifeをクローズ
+        else:
+            # (2)タイムアウトでなければ、取得判定を実施する　（同一行で取得⇒ロスカの可能性はここでは考えない）
+            target_price = cur_order_class.target_price
+            if cur_5s_row['low'] + adjuster <= target_price < cur_5s_row["high"] + adjuster:
+                print("　　■取得しました", cur_order_class.name, cur_5s_row['time_jp'], cur_5s_row['low'], cur_5s_row['high'], target_price)
+                # クラス内容の更新
+                cur_order_class.position_time = cur_5s_row['time_jp']
+                cur_order_class.position_is_live = True
+            else:
+                # print(" 取得まち", cur_row['time_jp'], cur_class.name, target_price, cur_row['low'] + adjuster, cur_row["high"] + adjuster)
+                pass
 
 
 def update_position_information(cur_class, cur_row, cur_row_index):

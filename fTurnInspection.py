@@ -22,6 +22,7 @@ import classPosition
 import fPredictTurn as pi
 import bisect
 
+
 class TuneAnalysisInformation:
     def __init__(self, peaks_class, older_no, older_peak, later_peak, name):
         self.name = name
@@ -37,11 +38,11 @@ class TuneAnalysisInformation:
 
         # 表示
         print("----TurnAnalysisPrint", self.name)
-        print("later:", later_peak['latest_time_jp'])
-        print("older:", older_peak['latest_time_jp'])
-        print("laterCount", later_peak['count'], "olderCount", older_peak['count'])
-        print("olderスキップ有:", self.skip_exist_at_older, "olderSKIP数", self.skip_num_at_older)
-        print("olderターン強度", self.turn_strength_at_older, "戻り率(通常)", self.lo_ratio)
+        print("  later:", later_peak['latest_time_jp'])
+        print("  older:", older_peak['latest_time_jp'])
+        print("  laterCount", later_peak['count'], "olderCount", older_peak['count'])
+        print("  olderスキップ有:", self.skip_exist_at_older, "olderSKIP数", self.skip_num_at_older)
+        print("  olderターン強度", self.turn_strength_at_older, "戻り率(通常)", self.lo_ratio)
         print("↑")
 
     def single_peak_additional_information(self, peak_no):
@@ -174,7 +175,7 @@ def cal_little_turn_at_trend(peaks_class):
     f = peaks[2]
     # (2)-1 RiverとTurnの解析（初動）
     rt = TuneAnalysisInformation(peaks_class, 1, peaks[1], peaks[0], "rt")  # peak情報源生成
-    # (2)-2FlopとTurnの解析（初動）
+    # (2)-2 FlopとTurn3個の解析（初動）
     t_df = peaks_class.peaks_original_with_df[1]['data'].head(3)  # Turn(1)のDFを取得する
     if len(t_df) < 3:
         print("ターンが短すぎるため、フロップまでの解析は不可？")
@@ -182,7 +183,9 @@ def cal_little_turn_at_trend(peaks_class):
         t3_df = t_df.head(3)  # 3行以上の場合も、３行のみで判断
         t3_peak = peaks_class.make_peak(t3_df)  # 3行でpeakを生成
         print("ターンの最初3個を取得", t3_df.iloc[-1]['open'], "⇒", t3_df.iloc[0]['close'], "GAP", t3_peak['gap'])
-        t3f = TuneAnalysisInformation(peaks_class, 2, peaks[2], t3_peak, "tf")  # peak情報源生成
+        t3f = TuneAnalysisInformation(peaks_class, 2, peaks[2], t3_peak, "t3f")  # peak情報源生成
+    # (2)-3 FlopとTurnフルの解析（初動）
+    tf = TuneAnalysisInformation(peaks_class, 2, peaks[2], peaks[1], "tf")  # peak情報源生成
 
     # ■分岐
     exe_orders = []
@@ -194,8 +197,8 @@ def cal_little_turn_at_trend(peaks_class):
         else:
             if ((t3f.skip_exist_at_older or 7 <= f['count'] < 100) and t3f.skip_num_at_older< 3 and
                     0 < t3f.turn_strength_at_older <= 8):
-                if 0 < t3f.lo_ratio <= 0.36:
-                    comment = "●●●強いやつ"
+                if 0 < t3f.lo_ratio <= 0.36 and 0 < tf.lo_ratio < 0.4:
+                    comment = "●●●強いやつ watch対象"
                     # ■ターゲット価格＆マージンの設定
                     # target_price = peaks_class.latest_price
                     target_price = f['latest_body_peak_price']
@@ -205,7 +208,7 @@ def cal_little_turn_at_trend(peaks_class):
                     tp = peaks_class.cal_move_ave(5)
                     # ■LCの設定
                     # パターン１（シンプルに、平均足で指定するケース)
-                    lc = peaks_class.cal_move_ave(2.2)
+                    lc = peaks_class.cal_move_ave(1)
                     # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
                     lc_range = round(t['gap'] / 3 * 2, 3)
                     # ■LCChangeの設定
@@ -283,12 +286,14 @@ def cal_little_turn_at_trend(peaks_class):
                 lc_price1,  # peaks_class.cal_move_ave(1),
                 lc_change,
                 2,
-                3,
+                2,
                 alert)
+            order['watching_price'] = 0
             order['order_timeout_min'] = 10  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
             exe_orders.append(order)
-        elif ((rt.skip_exist_at_older or 3 <= t['count'] < 100) and rt.skip_num_at_older < 3 and
-              0 < rt.turn_strength_at_older <= 8 and 0.18 < rt.lo_ratio <= 2):
+        elif ((rt.skip_exist_at_older or 3 <= t['count'] < 6) and rt.skip_num_at_older < 3
+                and 0 < rt.turn_strength_at_older <= 8 and 0.18 < rt.lo_ratio <= 2):
+            # ターンが長くなく、そこそこr2で戻りがある場合、
             comment = "△Count2のすぐRange側"
             target_price = peaks_class.latest_price
             margin = round(abs(t['gap']) / 5, 3)
@@ -298,12 +303,13 @@ def cal_little_turn_at_trend(peaks_class):
                 peaks_class.cal_move_ave(1.2),
                 1,
                 1,
-                3,
+                2,
                 peaks_class.cal_move_ave(0.7))
             order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+            order['watching_price'] = 0
             exe_orders.append(order)
-        elif ((rt.skip_exist_at_older or 5 <= t['count'] < 100) and rt.skip_num_at_older < 3 and
-              11 < rt.turn_strength_at_older <= 100 and 0.10 < rt.lo_ratio <= 0.30):
+        elif ((rt.skip_exist_at_older or 5 <= t['count'] < 100) and rt.skip_num_at_older < 3
+                and 11 < rt.turn_strength_at_older <= 100 and 0.10 < rt.lo_ratio <= 0.30):
             comment = "△Count2で抵抗値高い"
             target_price = t['latest_body_peak_price']
             margin = round(abs(t['gap']) / 4, 3)
@@ -316,6 +322,7 @@ def cal_little_turn_at_trend(peaks_class):
                 3,
                 peaks_class.cal_move_ave(0.7))
             order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+            order['watching_price'] = 0
             exe_orders.append(order)
         else:
             print("NoOrder 1")
@@ -324,19 +331,19 @@ def cal_little_turn_at_trend(peaks_class):
     elif r['count'] == 3:
         if (rt.skip_exist_at_older or 7 <= t['count'] < 100) and rt.skip_num_at_older < 3 and 0 < rt.turn_strength_at_older <= 8:
             if 0 < rt.lo_ratio <= 0.36:
-                comment = "●●●強いやつ(旧式）"
+                comment = "●●●強いやつ(旧式）　watch対象"
                 # if peaks_class.time_hour == 4 or peaks_class.time_hour == 5:
                 #     tk.line_send("●●●強いやつだが、時間悪い")
                 #     return default_return_item
                 # ■ターゲット価格＆マージンの設定
                 target_price = peaks_class.latest_price
-                margin = peaks_class.cal_move_ave(0.4)
+                margin = peaks_class.cal_move_ave(0.1)
                 m_dir = -1
                 # ■TPの設定
                 tp = peaks_class.cal_move_ave(5)
                 # ■LCの設定
                 # パターン１（シンプルに、平均足で指定するケース)
-                lc = peaks_class.cal_move_ave(2.2)
+                lc = peaks_class.cal_move_ave(1.5)
                 # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
                 lc_range = round(t['gap'] / 3 * 2, 3)
                 # ■LCChangeの設定
@@ -347,22 +354,70 @@ def cal_little_turn_at_trend(peaks_class):
                 # ]
 
                 # ■■オーダーを作成＆発行
-                exe_orders.append(
-                    order_make_dir1_s(
+                order = order_make_dir1_s(
                         peaks_class, comment, target_price, margin, m_dir,
                         tp,
                         lc,
                         lc_change,
-                        3,
+                        3.5,
                         4,
                         lc * 0.7)
-                )
+                exe_orders.append(order)
             else:
-                print("戻り値異なる", r['count'])
+                print("戻りratio異なる", r['count'])
                 return default_return_item
         else:
-            print("条件アウト", r['count'])
             return default_return_item
+            print("強引に順張りを行う", r['count'])
+            # 3より大きい場合、riverと３個目の足の向きが同じなら、伸びる方向に取る
+            # ■Rの方向を検証
+            r_data = peaks_class.peaks_original_with_df[0]['data']  # rのデータを取得
+            latest_data = r_data.head(1).iloc[0]
+            latest_2nd_data = r_data.head(2).iloc[-1]
+            # print("body確認" ,latest_data['body'])
+            # print(" 前から二つ目", latest_2nd_data)
+            # ■判定１
+            range_jd = False
+            if r['direction'] == 1 and latest_data['body'] >= 0 and latest_2nd_data['body'] >= 0:
+                print("Rが上向き、かつ、足の最後が陽線")
+                range_jd = True
+            elif r['direction'] == -1 and latest_data['body'] <= 0 and latest_2nd_data['body'] <= 0:
+                print("Rが下向き、かつ、足の最後が陽線")
+                range_jd = True
+            else:
+                print("Rの向きと、足の最後の方向が異なる", r['direction'], round(latest_data['body'], 3))
+                range_jd = False
+                return default_return_item
+
+            if range_jd:
+                # print("seme")
+                comment = "攻めの２カウント時のオーダー"
+                # ■ターゲットプライス判定
+                target_price = r['latest_body_peak_price']
+                margin = 0.01
+                # ■LC価格の算出
+                # r['dir']が上向きの場合、ひとつ前の足の一番低い方（直近とそのひとつ前の足は同方向である前提）
+                if r['direction'] == 1:
+                    lc_price = latest_2nd_data['low']
+                    lc_price = latest_data['low']
+                else:
+                    lc_price = latest_2nd_data['high']
+                    lc_price = latest_data['high']
+                # ■TP価格の算出
+                tp_range = peaks_class.cal_move_ave(1)
+                # ■LCChangeの算出（基本的に行わない)
+                lc_change = 0  # LCChangeを行わない場合は数字の０を入れる
+                order = order_make_dir0_s(
+                    peaks_class, comment, target_price, margin, 1,
+                    tp_range,
+                    lc_price,
+                    1,
+                    1,
+                    3,
+                    peaks_class.cal_move_ave(0))
+                order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+                order['watching_price'] = 0
+                exe_orders.append(order)
     else:
         print("rCountが不適切", r['count'])
         return default_return_item
@@ -471,7 +526,7 @@ def cal_little_turn_at_trend_test(peaks_class):
                     tp = peaks_class.cal_move_ave(5)
                     # ■LCの設定
                     # パターン１（シンプルに、平均足で指定するケース)
-                    lc = peaks_class.cal_move_ave(2.2)
+                    lc = peaks_class.cal_move_ave(1)
                     # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
                     lc_range = round(t['gap'] / 3 * 2, 3)
                     # ■LCChangeの設定
@@ -587,9 +642,10 @@ def cal_little_turn_at_trend_test(peaks_class):
             print("NoOrder 1")
             return default_return_item
     elif r['count'] == 3:
-        if (rt.skip_exist_at_older or 7 <= t['count'] < 100) and rt.skip_num_at_older < 3 and 0 < rt.turn_strength_at_older <= 8:
+        if ((rt.skip_exist_at_older or 7 <= t['count'] < 100) and rt.skip_num_at_older < 3
+                and 0 < rt.turn_strength_at_older <= 8):
             if 0 < rt.lo_ratio <= 0.36:
-                comment = "●●●強いやつ(旧式）"
+                comment = "●●●強いやつ(旧式）　watch対象"
                 # if peaks_class.time_hour == 4 or peaks_class.time_hour == 5:
                 #     tk.line_send("●●●強いやつだが、時間悪い")
                 #     return default_return_item
@@ -612,22 +668,70 @@ def cal_little_turn_at_trend_test(peaks_class):
                 # ]
 
                 # ■■オーダーを作成＆発行
-                exe_orders.append(
-                    order_make_dir1_s(
-                        peaks_class, comment, target_price, margin, m_dir,
-                        tp,
-                        lc,
-                        lc_change,
-                        3,
-                        4,
-                        lc * 0.7)
-                )
+                order = order_make_dir1_s(
+                    peaks_class, comment, target_price, margin, m_dir,
+                    tp,
+                    lc,
+                    lc_change,
+                    3,
+                    4,
+                    lc * 0.7)
+                order['watching_price'] = 0
+                exe_orders.append(order)
             else:
                 print("戻り値異なる", r['count'])
                 return default_return_item
         else:
-            print("条件アウト", r['count'])
-            return default_return_item
+            print("強引に順張りを行う", r['count'])
+            # 3より大きい場合、riverと３個目の足の向きが同じなら、伸びる方向に取る
+            # ■Rの方向を検証
+            r_data = peaks_class.peaks_original_with_df[0]['data']  # rのデータを取得
+            latest_data = r_data.head(1).iloc[0]
+            latest_2nd_data = r_data.head(2).iloc[-1]
+            # print("body確認" ,latest_data['body'])
+            # print(" 前から二つ目", latest_2nd_data)
+            # ■判定１
+            range_jd = False
+            if r['direction'] == 1 and latest_data['body'] >= 0 and latest_2nd_data['body'] >= 0:
+                print("Rが上向き、かつ、足の最後が陽線")
+                range_jd = True
+            elif r['direction'] == -1 and latest_data['body'] <= 0 and latest_2nd_data['body'] <= 0:
+                print("Rが下向き、かつ、足の最後が陽線")
+                range_jd = True
+            else:
+                print("Rの向きと、足の最後の方向が異なる", r['direction'], round(latest_data['body'], 3))
+                range_jd = False
+                return default_return_item
+
+            if range_jd:
+                # print("seme")
+                comment = "攻めの２カウント時のオーダー"
+                # ■ターゲットプライス判定
+                target_price = r['latest_body_peak_price']
+                margin = 0.01
+                # ■LC価格の算出
+                # r['dir']が上向きの場合、ひとつ前の足の一番低い方（直近とそのひとつ前の足は同方向である前提）
+                if r['direction'] == 1:
+                    lc_price = latest_2nd_data['low']
+                    lc_price = latest_data['low']
+                else:
+                    lc_price = latest_2nd_data['high']
+                    lc_price = latest_data['high']
+                # ■TP価格の算出
+                tp_range = peaks_class.cal_move_ave(1)
+                # ■LCChangeの算出（基本的に行わない)
+                lc_change = 0  # LCChangeを行わない場合は数字の０を入れる
+                order = order_make_dir0_s(
+                    peaks_class, comment, target_price, margin, 1,
+                    tp_range,
+                    lc_price,
+                    1,
+                    1,
+                    3,
+                    peaks_class.cal_move_ave(0))
+                order['order_timeout_min'] = 5  # 5分でオーダー消去（すぐに越えてない場合はもうNGとみなす。最大10分か？）
+                order['watching_price'] = 0
+                exe_orders.append(order)
     else:
         print("rCountが不適切", r['count'])
         return default_return_item
@@ -641,368 +745,6 @@ def cal_little_turn_at_trend_test(peaks_class):
         "exe_orders": exe_orders,
         "for_inspection_dic": {}
     }
-
-
-# ↓ループテスト用（paramsを使うような解析はこちら）
-# def wrap_predict_turn_inspection_looptest(df_r, params):
-#     """
-#     クラスをたくさん用いがケース
-#     args[0]は必ずdf_rであることで、必須。
-#     args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
-#     """
-#     # peaksの算出
-#     peaks_class = cpk.PeaksClass(df_r)
-#     #
-#     flag_and_orders = {
-#         "take_position_flag": False,
-#         "exe_orders": [],  # 本番用（本番運用では必須）
-#     }
-#
-#     # predict 初期
-#     # predict_result = cal_predict_turn(peaks_class)  #
-#     # if predict_result['take_position_flag']:
-#     #     flag_and_orders["take_position_flag"] = True
-#     #     flag_and_orders["exe_orders"] = predict_result['exe_orders']
-#     #     # 代表プライオリティの追加
-#     #     max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
-#     #     flag_and_orders['max_priority'] = max_priority
-#     #     flag_and_orders['for_inspection_dic'] = {}
-#     #
-#     #     return flag_and_orders
-#
-#     # predict2
-#     predict_result2 = cal_little_turn_at_trend_looptest(peaks_class, params)
-#     if predict_result2['take_position_flag']:
-#         flag_and_orders["take_position_flag"] = True
-#         flag_and_orders["exe_orders"] = predict_result2['exe_orders']
-#         # 代表プライオリティの追加
-#         max_priority = max(flag_and_orders["exe_orders"], key=lambda x: x['priority'])['priority']
-#         flag_and_orders['max_priority'] = max_priority
-#         flag_and_orders['for_inspection_dic'] = {}
-#
-#         return flag_and_orders
-#
-#     return flag_and_orders
-#
-#
-# def cal_little_turn_at_trend_looptest(peaks_class, params):
-#     """
-#     args[0]は必ずpeaks_classであること。
-#     args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
-#
-#     直近[0]がcount4の時、riverPeakにレジスタンスオーダーを入れる
-#     """
-#     # ■基本情報の取得
-#     print("★★PREDICT　TURN2222")
-#     take_position = False
-#     # ■返却値の設定
-#     default_return_item = {
-#         "take_position_flag": take_position,
-#         "for_inspection_dic": {}
-#     }
-#     s = "    "
-#
-#     # ■Peaks等、大事な変数の設定
-#     # ターゲットになるピークを選択
-#     target_num = 1  # 以下のループで「自分以外」を定義するため、変数に入れておく(同一方向の配列に対して）
-#     peaks = peaks_class.peaks_original_marked_hard_skip
-#     # peaks = peaks_class.skipped_peaks
-#     target_peak = peaks[target_num]
-#     # print("ターゲットになるピーク:", target_peak['peak'], target_peak)
-#
-#     # ■実行除外
-#     # latestのカウントが既定の物かを確認
-#     if peaks[0]['count'] == 3:  # and peaks[1]['count'] >= 3:  # [0]countは２では微妙（２はBreakのケースが多く見える）ので３．
-#         print("　カウント数は合格", peaks[0]['count'], "が4以上が対象")
-#     else:
-#         print("  山を形成するカウント不足", peaks[0]['count'], "が4以上が対象")
-#         return default_return_item
-#     # 対象のPeakのサイズを確認（小さすぎる場合、除外）
-#     if peaks[1]['gap'] < 0.04:
-#         print("対象が小さい", peaks[1]['gap'])
-#         return default_return_item
-#
-#     # ■判定に必要な数字の算出
-#     # 1 強度の判定
-#     peaks_class.make_same_price_list(target_num, False)  # クラス内でSamePriceListを実行
-#     print("同一価格リスト（抵抗線強度検討用）")
-#     gene.print_arr(peaks_class.same_price_list)
-#     total_strength_of_1 = sum(d["item"]["peak_strength"] for d in peaks_class.same_price_list)
-#     print("samePriceListの強度の合計値;", total_strength_of_1)
-#     #    10以上だと強い⇒抵抗OrderのLCを小さくとる（越えた場合大きく越えそう）
-#     #    なんなら、その場合はBreakOrderも出してみたい。
-#
-#     # 直近がスキップがあったかを確認したい
-#     if peaks_class.cal_target_times_skip_num(peaks_class.skipped_peaks_hard, peaks[1]['latest_time_jp']) >= 1:
-#         is_latest_skip_hard = True
-#         print(" SKIPあり hard")
-#     else:
-#         if peaks[1]['count'] >= 8:
-#             is_latest_skip_hard = True
-#             print(" SKIPあり hard")
-#         else:
-#             is_latest_skip_hard = False
-#             print(" SKIP無し hard")
-#
-#     if peaks_class.cal_target_times_skip_num(peaks_class.skipped_peaks, peaks[1]['latest_time_jp']) >= 1:
-#         is_latest_skip = True
-#         print(" SKIPあり hard")
-#     else:
-#         is_latest_skip = False
-#         print(" SKIP無し hard")
-#
-#     # 直近が越えているかどうか
-#     if peaks[0]['direction'] == 1:
-#         # 直近が登りの場合
-#         if peaks[0]['latest_body_peak_price'] <= peaks[2]['latest_body_peak_price']:
-#             print(" [0]が[2]を下に越えている,[0]:", peaks[0]['latest_body_peak_price'], "[1]:",
-#                   peaks[2]['latest_body_peak_price'])
-#             is_over = True
-#         else:
-#             is_over = False
-#     else:
-#         if peaks[0]['latest_body_peak_price'] <= peaks[2]['latest_body_peak_price']:
-#             print(" [0]が[2]を上に越えている,[0]:", peaks[0]['latest_body_peak_price'], "[1]:",
-#                   peaks[2]['latest_body_peak_price'])
-#             is_over = True
-#         else:
-#             is_over = False
-#
-#     # 越えていない場合の、[0]と[1]の比率
-#     return_ratio_0_1 = peaks[0]['gap'] / peaks[1]['gap']
-#     print(" 戻り率", return_ratio_0_1)
-#
-#     # 本番用★★
-#     # if total_strength_of_1 <= 8 and not is_over:
-#     #     print("strength<8、[2]越えてない、直近スキップ不問")  # > の向きが越える
-#     #     comment = "strength<8、[2]越えてない、直近スキップなし"  # Peak[0]のほうが適切化も？？
-#     #     target_price = peaks[0]['latest_body_peak_price']
-#     #     exe_orders = [order_make_dir1_s(peaks_class, comment, target_price,
-#     #                                     peaks_class.cal_move_ave(1), -1,
-#     #                                     peaks_class.cal_move_ave(3),
-#     #                                     peaks_class.cal_move_ave(1),
-#     #                                     3)]
-#     # elif total_strength_of_1 <= 8 and is_over and not is_latest_skip_hard:
-#     #     print("strength<8、[2]越え、直近スキップ不問（事実上あり）")  # > の向きが越える
-#     #     comment = "strength<8、[2]越え、直近スキップ不問（事実上あり）"  # Peak[0]のほうが適切化も？？
-#     #     target_price = peaks[0]['latest_body_peak_price']
-#     #     exe_orders = [order_make_dir0_s(peaks_class, comment, target_price,
-#     #                                     peaks_class.cal_move_ave(1), 1,
-#     #                                     peaks_class.cal_move_ave(3),
-#     #                                     peaks_class.cal_move_ave(1),
-#     #                                     3)]
-#     #                                         # peaks_class.cal_move_ave(1), -1,
-#     #                                         # peaks_class.cal_move_ave(3),
-#     #                                         # peaks_class.cal_move_ave(1),
-#     #                                         # 3)]
-#     # elif total_strength_of_1 >= 10 and not is_over:
-#     #     print("strength>=10、[2]越えなし、直近スキップ不問")
-#     #     comment = "strength>=10、[2]越えなし、直近スキップ不問"  # Peak[0]のほうが適切化も？？
-#     #     target_price = peaks[0]['latest_body_peak_price']
-#     #     exe_orders = [order_make_dir1_s(peaks_class, comment, target_price,
-#     #                                     peaks_class.cal_move_ave(1), 1,
-#     #                                     peaks_class.cal_move_ave(3),
-#     #                                     peaks_class.cal_move_ave(1),
-#     #                                     3)]
-#     # else:
-#     #     return default_return_item
-#     # 本番用ここまで★★
-#
-#     # ■判
-#     position = True
-#     if params['min_resi_stg'] <= total_strength_of_1 <= params['max_resi_stg']:
-#         position = True
-#     else:
-#         return default_return_item
-#
-#     if return_ratio_0_1 <= params['rat']:
-#         position = True
-#     else:
-#         return default_return_item
-#
-#     if params['over_filter'] == 1:
-#         # overFilterOnの場合、overしている場合はNG
-#         if is_over:
-#             return default_return_item
-#         else:
-#             position = True
-#     elif params['over_filter'] == -1:
-#         # overFilterOnの場合、overしている
-#         if is_over:
-#             position = True
-#         else:
-#             return default_return_item
-#     else:
-#         # FilterがOffの場合、全部通過
-#         position = True
-#
-#     # SKipフィルター
-#     if params['skip_filter'] == 0:
-#         position = True
-#     elif params['skip_filter'] == 1:
-#         # フィルターモードが１の場合、スキップが無いもののみが対象
-#         if is_latest_skip_hard:
-#             # skip_filterが有効の場合、スキップがある場合はNG
-#             return default_return_item
-#         else:
-#             position = True
-#     elif params['skip_filter'] == -1:
-#         # フィルターモードがー１の場合、スキップが有る物のみ対象
-#         # フィルターモードが１の場合、スキップが無いもののみが対象
-#         if is_latest_skip_hard:
-#             # skip_filterが有効の場合、スキップがある場合はNG
-#             position = True
-#         else:
-#             return default_return_item
-#     else:
-#         return default_return_item
-#
-#     # skip_filterがTrueの場合、is_latest_skip_hardがTrueのものは除外（Falseのみ通過）
-#     # Falseの場合は、今のところ全部通
-#     if params['pat'] == 1:
-#         target_price = peaks[0]['latest_body_peak_price']
-#         exe_orders = [order_make_dir1_s(peaks_class, params['c'], target_price,
-#                                         peaks_class.cal_move_ave(params['margin']), 1,
-#                                         peaks_class.cal_move_ave(params['tp']),
-#                                         peaks_class.cal_move_ave(params['lc']),
-#                                         params['lc_change'],
-#                                         1)]
-#     elif params['pat'] == 2:
-#         target_price = peaks[0]['latest_body_peak_price']
-#         exe_orders = [order_make_dir1_s(peaks_class, params['c'], target_price,
-#                                         peaks_class.cal_move_ave(params['margin']), -1,
-#                                         peaks_class.cal_move_ave(params['tp']),
-#                                         peaks_class.cal_move_ave(params['lc']),
-#                                         params['lc_change'],
-#                                         1)]
-#     elif params['pat'] == 3:
-#         target_price = peaks[0]['latest_body_peak_price']
-#         exe_orders = [order_make_dir0_s(peaks_class, params['c'], target_price,
-#                                         peaks_class.cal_move_ave(params['margin']), 1,
-#                                         peaks_class.cal_move_ave(params['tp']),
-#                                         peaks_class.cal_move_ave(params['lc']),
-#                                         params['lc_change'],
-#                                         1)]
-#     # elif params['pat'] == 4:
-#     else:
-#         target_price = peaks[0]['latest_body_peak_price']
-#         exe_orders = [order_make_dir0_s(peaks_class, params['c'], target_price,
-#                                         peaks_class.cal_move_ave(params['margin']), -1,
-#                                         peaks_class.cal_move_ave(params['tp']),
-#                                         peaks_class.cal_move_ave(params['lc']),
-#                                         params['lc_change'],
-#                                         1)]
-#
-#     # if total_strength_of_1 > 8:  #最初は　>=10 と　>8
-#     #     # 抵抗がかなり強い場合 (元々
-#     #     return default_return_item
-#
-#     # if not is_over and not is_latest_skip_hard:
-#     #     print("越えてない、かつ、直近スキップなし")  # > の向きが越える
-#     #     comment = "越えている場合"  # Peak[0]のほうが適切化も？？
-#     #     target_price = peaks[0]['latest_body_peak_price']
-#     #     exe_orders = [order_make_dir0_s(peaks_class, comment, target_price,
-#     #                                     # peaks_class.cal_move_ave(1), 1,
-#     #                                     # peaks_class.cal_move_ave(3),
-#     #                                     # peaks_class.cal_move_ave(1),
-#     #                                     # 3)]
-#     #                                     peaks_class.cal_move_ave(1), -1,
-#     #                                     peaks_class.cal_move_ave(3),
-#     #                                     peaks_class.cal_move_ave(1),
-#     #                                     3)]
-#     #     # return default_return_item
-#     # else:
-#     #     return default_return_item
-#
-#     # if is_over and not is_latest_skip_hard:
-#     #     print("越えてる、かつ、直近スキップなし")  # > の向きが越える
-#     #     comment = "越えている場合"  # Peak[0]のほうが適切化も？？
-#     #     target_price = peaks[0]['latest_body_peak_price']
-#     #     exe_orders = [order_make_dir0_s(peaks_class, comment, target_price,
-#     #                                     peaks_class.cal_move_ave(1), 1,
-#     #                                     peaks_class.cal_move_ave(3),
-#     #                                     peaks_class.cal_move_ave(1),
-#     #                                     3)]
-#     #                                     # peaks_class.cal_move_ave(1), -1,
-#     #                                     # peaks_class.cal_move_ave(3),
-#     #                                     # peaks_class.cal_move_ave(1),
-#     #                                     # 3)]  # 3=offence 1=difence
-#     # # #     # return default_return_item
-#     # else:
-#     #     return default_return_item
-#
-#     # if is_over:# and is_latest_skip_hard:
-#     #     print("越えてる、かつ、直近スキップなし")  # > の向きが越える
-#     #     comment = "越えている場合"  # Peak[0]のほうが適切化も？？
-#     #     target_price = peaks[0]['latest_body_peak_price']
-#     #     exe_orders = [order_make_dir0_s(peaks_class, comment, target_price,
-#     #                                     peaks_class.cal_move_ave(1), 1,
-#     #                                     peaks_class.cal_move_ave(3),
-#     #                                     peaks_class.cal_move_ave(1),
-#     #                                     3)]
-#     # #                                     peaks_class.cal_move_ave(1), -1,
-#     # #                                     peaks_class.cal_move_ave(3),
-#     # #                                     peaks_class.cal_move_ave(1),
-#     # #                                     3)]
-#     # # #     # return default_return_item
-#     # else:
-#     #     return default_return_item
-#
-#     # if not is_over:
-#     #     print("越ない場合(スキップ不問）")  # > の向きが越える
-#     #     comment = "越ない場合場合(スキップ不問)"  # Peak[0]のほうが適切化も？？
-#     #     target_price = peaks[0]['latest_body_peak_price']
-#     #     exe_orders = [order_make_dir1_s(peaks_class, comment, target_price,
-#     #                                     # peaks_class.cal_move_ave(1), 1,
-#     #                                     # peaks_class.cal_move_ave(3),
-#     #                                     # peaks_class.cal_move_ave(1),
-#     #                                     # 3)]
-#     #                                     peaks_class.cal_move_ave(1), -1,
-#     #                                     peaks_class.cal_move_ave(3),
-#     #                                     peaks_class.cal_move_ave(1),
-#     #                                     3)]
-#     #     # return default_return_item
-#     # else:
-#     #     return default_return_item
-#
-#     # if is_over:
-#     #     print("越ある場合(スキップ不問）")  # > の向きが越える
-#     #     comment = "越ある場合場合(スキップ不問)"  # Peak[0]のほうが適切化も？？
-#     #     target_price = peaks[0]['latest_body_peak_price']
-#     #     exe_orders = [order_make_dir0_s(peaks_class, comment, target_price,
-#     #                                     peaks_class.cal_move_ave(1), 1,
-#     #                                     peaks_class.cal_move_ave(3),
-#     #                                     peaks_class.cal_move_ave(1),
-#     #                                     3)]
-#     #                                     # peaks_class.cal_move_ave(1), -1,
-#     #                                     # peaks_class.cal_move_ave(3),
-#     #                                     # peaks_class.cal_move_ave(1),
-#     #                                     # 3)]
-#     #     # return default_return_item
-#     # else:
-#     #     return default_return_item
-#
-#     # if is_over and not is_latest_skip_hard:
-#     #     print("越えてる、かつ、直近スキップなし")  # > の向きが越える
-#     #     comment = "越えている場合"  # Peak[0]のほうが適切化も？？
-#     #     target_price = peaks[0]['latest_body_peak_price']
-#     #     exe_orders = [order_make_dir1_s(peaks_class, comment, target_price,
-#     #                                     peaks_class.cal_move_ave(1), 1,
-#     #                                     peaks_class.cal_move_ave(3),
-#     #                                     peaks_class.cal_move_ave(1),
-#     #                                     3)]
-#     #                                     # peaks_class.cal_move_ave(1), -1,
-#     #                                     # peaks_class.cal_move_ave(3),
-#     #                                     # peaks_class.cal_move_ave(1),
-#     #                                     # 3)]
-#     # #     # return default_return_item
-#     # else:
-#     #     return default_return_item
-#     return {
-#         "take_position_flag": True,
-#         "exe_orders": exe_orders,
-#         "for_inspection_dic": {}
-#     }
 
 
 def order_make_dir0_s(peaks_class, comment, target_num, margin, margin_dir, tp, lc, lc_change, uni_base_time, priority, alert):
@@ -1072,10 +814,10 @@ def order_make_dir0_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         "decision_price": peaks_class.df_r_original.iloc[1]['close'],
         "order_timeout_min": 20,
         "lc_change_type": lc_change,
-        "alert": {"range": alert, "time": 0},
+        "alert": {"range": 0, "time": 0},
         "units": units,
         "name": comment,
-        "order_permission":False,
+        "watching_price": target,
         "ref": {"move_ave": peaks_class.cal_move_ave(1),
                 "peak1_target_gap": abs(peaks[1]['latest_body_peak_price'] - target)
                 }
@@ -1163,8 +905,8 @@ def order_make_dir1_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         "lc_change_type": lc_change,
         "units": units,
         "name": comment,
-        "order_permission": False,
-        "alert": {"range": alert, "time": 0},
+        "watching_price": target,
+        "alert": {"range": 0, "time": 0},
         "ref": {"move_ave": peaks_class.cal_move_ave(1),
                 "peak1_target_gap": abs(peaks[1]['latest_body_peak_price'] - target)
                 }

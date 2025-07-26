@@ -110,14 +110,19 @@ class order_information:
         self.alert_line_send_done = False
 
         # ポジション様子見用
-        self.overing = False
-        self.over_time = 0
-        self.keeping_second = 0
-        self.over_en_plus = 0
-        self.watching_position_time_border = 30
-        self.watching_position_price_gap_border = 0.05
+        self.step1_filled = False
+        self.step1_filled_time = 0
+        self.step1_keeping_second = 0
+        self.step1_filled_over_price = 0
+        self.watching_out_time_border = 60  # startから、この時間経過でwatch終了＆Order終了（order終了優先）
+        self.step1_keeping_time_border = 30
+        self.step1_price_gap_border = 0.05
         self.watching_position_done_send_line = False
         self.watching_for_position_done = False
+        self.step2_filled = False
+        self.step2_keeping_second = 0
+        self.step2_filled_time = 0
+        self.watching_start_time_limit = 0
 
         # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
         self.try_update_limit = 2
@@ -155,7 +160,7 @@ class order_information:
         self.already_offset_notice = False  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
         # 経過時間管理
         self.order_timeout_min = 45  # 分単位で指定
-        self.trade_timeout_min = 50
+        self.trade_timeout_min = 45
         self.over_write_block = False
         # 勝ち負け情報更新用
         self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
@@ -186,14 +191,19 @@ class order_information:
         self.alert_line_send_done = False
 
         # ポジション様子見用
-        self.overing = False
-        self.over_time = 0
-        self.over_en_plus = 0
-        self.keeping_second = 0
-        self.watching_position_time_border = 30
-        self.watching_position_price_gap_border = 0.05
+        self.step1_filled = False
+        self.step1_filled_time = 0
+        self.step1_keeping_second = 0
+        self.step1_filled_over_price = 0
+        self.watching_out_time_border = 60  # startから、この時間経過でwatch終了＆Order終了（order終了優先）
+        self.step1_keeping_time_border = 30
+        self.step1_price_gap_border = 0.05
         self.watching_position_done_send_line = False
         self.watching_for_position_done = False
+        self.step2_filled = False
+        self.step2_keeping_second = 0
+        self.step2_filled_time = 0
+        self.watching_start_time_limit = 0
 
         # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
         self.try_update_limit = 2
@@ -312,6 +322,7 @@ class order_information:
         self.order_register_time = datetime.datetime.now()
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
+        print(plan)
         print("消したいやつ(classPosition225行目"
               , "ClassPosition算出LC", round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
               , "元LC", plan['lc_price']
@@ -331,19 +342,19 @@ class order_information:
             self.order_timeout_min = plan['order_timeout_min']
         self.name = plan['name']  #  + "(" + str(self.priority) + ")"  # 名前を入れる(クラス内の変更）
         # (2)各フラグを指定しておく
-        self.order_permission = plan['order_permission']  # 即時のオーダー判断に利用する
-        # (3-1) 付加情報１　各便利情報を格納しておく(直接Orderで使わない）
-        # print("消したいやつ(classPosition225行目"
-        #       , "ClassPosition算出LC", round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
-        #       , "元LC", plan['lc_price']
-        #       , "classPosition算出TP", round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
-        #       , "元TP", plan['tp_price']
-        #       , "新DateNow", datetime.datetime.now()
-        #       , "元DateNow", self.plan['time']
-        #       )
-        # self.plan['lc_price'] = round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
-        # self.plan['tp_price'] = round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
-        # self.plan['time'] = datetime.datetime.now()
+        # オーダ―パーミッションは、plan内でwatchingPrice指定なし、または０指定でパーミッションはTrue(即時取得）。
+        # オーダーパーミッションの直接の指定は、無視される
+        if "watching_price" in plan:
+            # 指定有
+            if plan['watching_price'] == 0:
+                self.order_permission = True  # 即時
+            else:
+                self.order_permission = False  # 待機
+        else:
+            # 指定なし
+            self.order_permission = True
+        print(" オーダーパーミッション確認用", self.order_permission)
+        # self.order_permission = plan['order_permission']  # 即時のオーダー判断に利用する
 
         # (4)LC_Change情報を格納する
         if "lc_change" in plan:
@@ -400,12 +411,14 @@ class order_information:
 
         # (Final)オーダーを発行する
         if self.order_permission:
+            # 即時オーダー発行
             order_res = self.make_order()
             if "order_result" in order_res:
                 pass
             else:
                 order_res['order_result'] = "この処理はオーダー失敗の可能性大"
         else:
+            # オーダーをいったん待機し、ウォッチを行う
             self.life_set(True)  # ★重要　LIFEのONはここで二個目。
             self.waiting_order = True
             self.o_state = "Watching"
@@ -420,7 +433,6 @@ class order_information:
                 }}  # 返り値を揃えるため、強引だが辞書型を入れておく
 
         return {"order_name": self.name, "order_id": order_res['order_id'], "order_result": order_res['order_result']}
-
 
     def make_order(self):
         """
@@ -556,6 +568,8 @@ class order_information:
                            res4, res5, res1, id_info, res2, res3, res6, res7, res8,
                            position_check_no_args()['name_list'])
             # 履歴の書き込み
+            print("書き込みエラー確認用")
+            print(self.plan)
             result_dic = {
                 "order_time": self.o_time,
                 "res": str(trade_latest['realizedPL']),
@@ -568,7 +582,13 @@ class order_information:
                 "name": self.name,
                 "name_only": self.name[:-5],
                 "units": str(units_for_view * direction),
-                "pl_per_units": str(trade_latest['PLu'])
+                "pl_per_units": str(trade_latest['PLu']),  # 以下追加
+                "lc_price_plan": self.plan['lc_price'],
+                "lc_price_original_plan": self.plan['lc_price_original'],
+                "plus_minus": 1 if float(trade_latest['realizedPL']) > 0 else -1,
+                "max_plus": str(self.win_max_plu),
+                "max_minus": str(self.lose_max_plu),
+                "position_keep_time": str(trade_latest['time_past'])
             }
             order_information.result_dic_arr.append(result_dic)
             # ファイルが利用できる場合、処理を行う
@@ -981,6 +1001,40 @@ class order_information:
         if self.alert_watch_exe:
             self.watching_for_alert()
 
+    def watching_for_position_make_order(self):
+        """
+        watching for position から呼ばれる、オーダー発行関数
+        """
+        # オーダー発行
+        order_res = self.make_order()
+        self.waiting_order = False  # 超大事
+        self.watching_for_position_done = True
+        self.o_state = "PENDING"  # あらかじめ入れておく（オーダーと同時に入る可能性が高く、その場合、(取得)メールが来ないため）
+        line_send = "　"
+        if "order_result" in order_res:
+            o_trans = order_res['order_result']['json']['orderCreateTransaction']
+            line_send = line_send + "◆ Watchingオーダー発行【" + str(self.name) + "】,\n" + \
+                        "指定価格:【" + str(self.plan['price']) + "】" + \
+                        ", 数量:" + str(o_trans['units']) + \
+                        ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
+                        "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(self.plan['price'])),
+                                        3)) + ")" + \
+                        ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
+                        "(" + str(
+                round(abs(float(o_trans['stopLossOnFill']['price']) - float(self.plan['price'])),
+                      3)) + ")" + \
+                        ", OrderID:" + str(order_res['order_id']) + \
+                        ", Alert:" + str(self.alert_range) + \
+                        "(" + str(round(self.alert_price, 3)) + ")" + \
+                        ", 取得価格:" + str(
+                order_res['order_result']['execution_price']) + ",\n"
+            tk.line_send(line_send)
+        else:
+            order_res['order_result'] = "この処理はオーダー失敗の可能性大"
+
+        return {"order_name": self.name, "order_id": order_res['order_id'],
+                "order_result": order_res['order_result']}
+
     def watching_for_position(self):
         """
         規定価格を●秒間越えていら、正式にオーダーが発行される仕組み.
@@ -992,144 +1046,306 @@ class order_information:
         if self.o_state != "Watching" or self.watching_for_position_done:  # 足数×〇分足×秒
             # 実行しない条件は、既に実行済み　または、NotOpen
             return 0
-        if (round(self.keeping_second, 0) % 15 == 0 and round(self.keeping_second, 0) != 0) or 1 <= round(self.keeping_second, 0) <= 2:
-            print(" ウォッチング内容", self.overing, "発行時:", gene.time_to_str(self.over_time),
-                  round(self.over_en_plus,3), "円",
-                  round(self.keeping_second, 0),
-                  "bordertime", self.watching_position_time_border)
 
-        delta = datetime.datetime.now() - self.order_register_time
-        gap_seconds = delta.total_seconds()
-        if gap_seconds > self.order_timeout_min * 60:
-            print("オーダー時間タイムアウト", self.order_register_time, "から", self.order_timeout_min ,"分経過")
-            self.close_order()
-            tk.line_send("ウォンチングのみのオーダーを解消", self.name)
-            return 0
-
-        # 現在価格等の更新
+        # ■【共通処理】現在価格等の更新
         now_time = datetime.datetime.now()
-        dir = self.plan['expected_direction']
-        if dir == 1:
+        o_dir = self.plan['expected_direction']
+        if o_dir == 1:
             # 買いの場合　askプライス
             now_price = self.oa.NowPrice_exe("USD_JPY")['data']['ask']
         else:
             # 売りの場合　bidプライス
             now_price = self.oa.NowPrice_exe("USD_JPY")['data']['bid']
-
         # 必要情報の取得
         temp_price = self.plan['target_price']
-        border_time_sec = 180  # この時間以上、target_priceを越えている場合
-        max_range = 0.04  # 時間が未達でも、この分だけtemp_priceを超えていたら、取得に動く
 
-        # ■越えたかの判定
-        if not self.overing:
-            # 直前で越えていなかった場合⇒初回の越える判定
-            if dir == 1:
-                # 順張り（STOP)の場合、targetをカレンとが越えていたら取得
-                if self.plan['type'] == "STOP" and now_price > temp_price:
-                    self.overing = True
-                    self.over_time = now_time
-                    self.over_en_plus = now_price - temp_price
+        # ■■順張りの場合(越えれば越えるほどいいといえる）
+        if self.plan['type'] == "STOP":
+            if (round(self.step1_keeping_second, 0) % 15 == 0 and round(self.step1_keeping_second, 0) != 0) or 1 <= round(self.step1_keeping_second, 0) <= 2:
+                print(" ウォッチング内容（STOP）", self.step1_filled, "発行時:", gene.time_to_str(self.step1_filled_time),
+                      round(self.step1_filled_over_price, 3), "円",
+                      round(self.step1_keeping_second, 0),
+                      "bordertime", self.step1_keeping_time_border,
+                      "ウォッチ開始時間(0は無効中）", self.step1_filled_time)
+
+            # ■タイムアウトの計算
+            # ⓪経過時間の算出
+            delta = datetime.datetime.now() - self.order_register_time
+            gap_seconds_from_order_regist = delta.total_seconds()  # オーダー登録時からの経過時間を算出
+            if isinstance(self.step1_filled_time, int):
+                # self.watching_start_timeがint(ようするに０）の場合は、ウォッチ状態ではない
+                gap_seconds_from_start_watching = 0
+            else:
+                # intではない場合⇒ようするに時刻の場合
+                delta = datetime.datetime.now() - self.step1_filled_time
+                gap_seconds_from_start_watching = delta.total_seconds()  # ウォッチ開始からの経過時間を算出
+            # ①終了処置
+            if gap_seconds_from_order_regist > self.order_timeout_min * 60:
+                # オーダーの時間がタイムアウトしている場合
+                if gap_seconds_from_start_watching > self.watching_out_time_border or gap_seconds_from_start_watching == 0:
+                    # ウォッチの時間も経過している場合
+                    print("オーダー/ウォッチタイムアウト(またはgap_seconds_from_start_watchingが０でウォッチ状態ではない)",
+                          self.order_register_time, "から", self.order_timeout_min ,"分経過,", gap_seconds_from_start_watching)
+                    self.close_order()
+                    tk.line_send("ウォンチングのみのオーダーを解消", self.name)
+                    return 0
+                else:
+                    # ウォッチの時間は時間内、または０ではなないため、このまま継続
+                    pass
+
+            # ■基準を越えたかの判定（STOPオーダーとLIMITオーダーで異なる）
+            if not self.step1_filled:
+                # トリガーの判定
+                # 順張りの場合、瞬間的な越えを防ぎたい。少しの間越え続けている場合は、早めに順張り入れたい(下は変更予定）
+                if o_dir == 1 and now_price > temp_price:
+                    self.step1_filled = True
+                    self.step1_filled_time = now_time
+                    self.step1_filled_over_price = now_price - temp_price
                     print("買い方向の順張りで、越えている　⇒取得可能状態")
-                # 逆張りの場合、targetをカレントが下回ったばあい、取得
-                if self.plan['type'] == "LIMIT" and now_price < temp_price:
-                    self.overing = True
-                    self.over_time = now_time
-                    self.over_en_plus = temp_price - now_price
-                    print("買い方向の逆張りで、下回った　⇒取得可能状態")
-            else:
-                # 順張り（STOP)の場合、targetをカレントが下回ったら取得
-                if self.plan['type'] == "STOP" and now_price < temp_price:
-                    self.overing = True
-                    self.over_time = now_time
-                    self.over_en_plus = temp_price - now_price
+                if o_dir == -1 and now_price < temp_price:
+                    self.step1_filled = True
+                    self.step1_filled_time = now_time
+                    self.step1_filled_over_price = temp_price - now_price
                     print("売り方向の順張りで、下回っている　⇒取得可能状態")
-                # 逆張りの場合、targetをカレントが上回ったら、取得
-                if self.plan['type'] == "LIMIT" and now_price > temp_price:
-                    self.overing = True
-                    self.over_time = now_time
-                    self.over_en_plus = now_price - temp_price
-                    print("売り方向の逆張りで、上回っている　⇒取得可能状態")
-        else:
-            # 越えている状態で情報の更新を進める
-            if dir == 1:
-                # 順張り（STOP)の場合、targetをカレンとが越えていたら取得
-                if self.plan['type'] == "STOP" and now_price < temp_price:
-                    self.overing = False
-                    self.over_time = 0
+            else:
+                # 越えている状態で情報の更新を進める
+                if o_dir == 1 and now_price < temp_price:
+                    self.step1_filled = False
+                    self.step1_filled_time = now_time
+                    self.step1_filled_over_price = 0
                     print("買い方向の順張りで、下回っている　⇒解除")
-                # 逆張りの場合、targetをカレントが下回ったばあい、取得
-                if self.plan['type'] == "LIMIT" and now_price > temp_price:
-                    self.overing = False
-                    self.over_time = 0
-                    print("買い方向の逆張りで、上回った　⇒解除")
-            else:
-                # 順張り（STOP)の場合、targetをカレントが下回ったら取得
-                if self.plan['type'] == "STOP" and now_price > temp_price:
-                    self.overing = False
-                    self.over_time = 0
+                if o_dir == -1 and now_price > temp_price:
+                    self.step1_filled = False
+                    self.step1_filled_time = now_time
+                    self.step1_filled_over_price = 0
                     print("売り方向の順張りで、上回っている　⇒解除")
-                # 逆張りの場合、targetをカレントが上回ったら、取得
-                if self.plan['type'] == "LIMIT" and now_price < temp_price:
-                    self.overing = False
-                    self.over_time = 0
-                    print("売り方向の逆張りで、下回っている　⇒解除")
 
-        # 改めてウォッチモードに入るかを確認
-        if not self.overing:
-            return 0
+            # ■改めてウォッチモードに入るかを確認
+            if not self.step1_filled:
+                return 0
 
-        # ■ここからウォッチモードの処理
-        # ■経過時間（越えてからの経過時間)
-        delta = now_time - self.over_time
-        self.keeping_second = delta.total_seconds()
+            # ■ここからウォッチモードの処理
+            # ■経過時間（越えてからの経過時間)
+            delta = now_time - self.step1_filled_time
+            self.step1_keeping_second = delta.total_seconds()
 
-        # ■判定
-        exe_position = False  # exeorderのほうが適した名前？
-        if self.keeping_second >= self.watching_position_time_border:
-            # 時間が長時間取得可能状態で過ぎている場合
-            exe_position = True
-        else:
-            # 時間的には過ぎていない場合
-            if self.over_en_plus >= self.watching_position_price_gap_border:
-                # 価格がそこそこオーバーしていたら、取得しに行く（でかい動き？）
-                exe_position = True
-
-        # ■状態通知用
-        if not self.watching_position_done_send_line:
-            tk.line_send("初回のポジションウォッチング状態:", self.name)
-            self.watching_position_done_send_line = True
-
-        if exe_position:
-            # オーダー発行
-            order_res = self.make_order()
-            self.waiting_order = False  # 超大事
-            self.watching_for_position_done = True
-            self.o_state = "PENDING"  # あらかじめ入れておく（オーダーと同時に入る可能性が高く、その場合、(取得)メールが来ないため）
-            line_send = "　"
-            if "order_result" in order_res:
-                o_trans = order_res['order_result']['json']['orderCreateTransaction']
-                line_send = line_send + "◆ Watchingオーダー発行【" + str(self.name) + "】,\n" + \
-                            "指定価格:【" + str(self.plan['price']) + "】" + \
-                            ", 数量:" + str(o_trans['units']) + \
-                            ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
-                            "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(self.plan['price'])),
-                          3)) + ")" + \
-                            ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
-                            "(" + str(
-                    round(abs(float(o_trans['stopLossOnFill']['price']) - float(self.plan['price'])),
-                          3)) + ")" + \
-                            ", OrderID:" + str(order_res['order_id']) + \
-                            ", Alert:" + str(self.alert_range) + \
-                            "(" + str(round(self.alert_price, 3)) + ")" + \
-                            ", 取得価格:" + str(
-                            order_res['order_result']['execution_price']) + ",\n"
-                tk.line_send(line_send)
+            # ■判定
+            exe_order = False  # exeorderのほうが適した名前？
+            # 越えている状態で情報の更新を進める
+            # 順張りの場合、瞬間的な越えを防ぎたい。少しの間越え続けている場合は、早めに順張り入れたい(下は変更予定）
+            # ■時間（価格越具合）判定
+            if self.step1_keeping_second >= self.step1_keeping_time_border:
+                # 時間が長時間取得可能状態で過ぎている場合
+                exe_order = True
             else:
-                order_res['order_result'] = "この処理はオーダー失敗の可能性大"
+                # 時間的には過ぎていない場合
+                if self.step1_filled_over_price >= self.step1_price_gap_border:
+                    # 価格がそこそこオーバーしていたら、取得しに行く（でかい動き？）
+                    exe_order = True
+            # ■状態通知用
+            if not self.watching_position_done_send_line:
+                tk.line_send("初回のポジションウォッチング状態(STOP):", self.name)
+                self.watching_position_done_send_line = True
+            # ■実行
+            if exe_order:
+                self.step1_filled = False  # これ、ここで初期化する必要あり？
+                self.watching_for_position_make_order()
 
-            return {"order_name": self.name, "order_id": order_res['order_id'],
-                    "order_result": order_res['order_result']}
+        # ■■逆張りの場合(越えれば越えるほどよくない）
+        elif self.plan['type'] == "LIMIT":
+            # ■表示用
+            if (round(self.step1_keeping_second, 0) % 15 == 0 and round(self.step1_keeping_second, 0) != 0) or 1 <= round(
+                    self.step1_keeping_second, 0) <= 2:
+                print_flag = True
+            else:
+                print_flag = False
+
+            if print_flag:
+                print("    ウォッチング内容（LIMIT）", self.step1_filled, "発行時:",
+                      gene.time_to_str(self.step1_filled_time),
+                      round(self.step1_filled_over_price, 3), "円",
+                      round(self.step1_keeping_second, 0),
+                      "bordertime", self.step1_keeping_time_border,
+                      "ウォッチ開始時間(0は無効中）", self.step1_filled_time)
+
+            # ■タイムアウトの計算
+            # ⓪経過時間の算出
+            delta = datetime.datetime.now() - self.order_register_time
+            gap_seconds_from_order_regist = delta.total_seconds()  # オーダー登録時からの経過時間を算出
+            # ウォッチ状態かを確認する（ウォッチ状態の場合、ウォッチ開始からの時間を算出）
+            if isinstance(self.step1_filled_time, int):
+                # self.watching_start_timeがint(ようするに０）の場合は、ウォッチ状態ではない
+                gap_seconds_from_start_watching = 0
+            else:
+                # intではない場合⇒ようするに時刻の場合
+                delta = datetime.datetime.now() - self.step1_filled_time
+                gap_seconds_from_start_watching = delta.total_seconds()  # ウォッチ開始からの経過時間を算出
+            # ①終了処置
+            if gap_seconds_from_order_regist > self.order_timeout_min * 60:
+                # オーダーの時間がタイムアウトしている場合
+                if gap_seconds_from_start_watching > self.watching_out_time_border or gap_seconds_from_start_watching == 0:
+                    # ウォッチの時間も経過している場合
+                    print(
+                        "オーダー/ウォッチタイムアウト(またはgap_seconds_from_start_watchingが０でウォッチ状態ではない)",
+                        self.order_register_time, "から", self.order_timeout_min, "分経過,",
+                        gap_seconds_from_start_watching)
+                    self.close_order()
+                    tk.line_send("ウォンチングのみのオーダーを解消", self.name)
+                    return 0
+                else:
+                    # ウォッチの時間は時間内、または０ではなないため、このまま継続
+                    pass
+
+            # 方向性：逆張りの場合、突破し続ける状況を防ぎたい。一瞬突破して、元戻り続ける場合は、早めに取りたい
+            # ■STEP1を満たしたかの確認（最初に指定ラインを通過したかどうか）
+            if self.step2_filled:
+                # step1はstep2が成立していない場合のみ実施
+                pass
+            else:
+                # STEP1の判定処理
+                if self.step1_filled:
+                    # step1が成立した状態（越えている時間を算出する）
+                    delta = now_time - self.step1_filled_time
+                    self.step1_keeping_second = delta.total_seconds()
+
+                    # step2への以降があるかを検討（５秒間連続で逆方向伸び状態を維持したのち、LIMIT方向に戻った場合）
+                    if self.step1_keeping_second >= 10:
+                        # 10秒以上Step1を維持している状態（step2への移行トリガーを探る）
+                        if (o_dir == 1 and now_price > temp_price) or (o_dir == -1 and now_price < temp_price):
+                            self.step2_filled = True  # step2はここでしかTrueにならない
+                            self.step2_filled_time = now_time
+                            print("  STEP2初回成立　（一度越えて、戻ってきている状態）", now_time, "step1継続時間", self.step1_keeping_second)
+                        else:
+                            # これが深い場合、長い場合等は　色々オーダー価格かえたりしたいねぇ。
+                            print("  STEP1の条件は達成　STEP2のトリガー待機中 これが深い場合、今まで負けてたやつ", self.step1_keeping_second)
+                    else:
+                        # step1を10秒以上経過していないため、STEP2以降の確認せず、経過待ち。
+                        print("  STEP1 時間経過待ち", now_time, self.step1_keeping_second)
+                        if (o_dir == 1 and now_price > temp_price) or (o_dir == -1 and now_price < temp_price):
+                            self.step1_filled = False
+                            print("  　　価格が下回ったため、微妙（もう一度ステップ１の成立からやり直し）")
+
+                else:
+                    # 初回（step1不成立状態で、成立状態に移行したかを判定する）
+                    if o_dir == 1 and now_price < temp_price:
+                        self.step1_filled = True
+                        self.step1_filled_time = now_time
+                        self.step1_filled_over_price = temp_price - now_price
+                        print("　STEP1初回成立　買い方向の逆張りで、初めて下回った　⇒逆方向伸び状態", now_time)
+                        # tk.line_send("LIMIT step1達成（買い逆）", self.name)
+                    if o_dir == -1 and now_price > temp_price:
+                        self.step1_filled = True
+                        self.step1_filled_time = now_time
+                        self.step1_filled_over_price = now_price - temp_price
+                        print("　STEP1初回成立　売り方向の逆張りで、初めて上回っている　⇒逆方向伸び状態", now_time)
+                        # tk.line_send("LIMIT　step1達成（売り逆）", self.name)
+
+            # ■Step2(一度ボーダーをオーダーと逆方向に越えた後、オーダーしたい方向に戻ってきている)の状況を確認
+            order_exe = False
+            if self.step2_filled:
+                # step2が成立している場合、Step2を越えている時間を計測。オーダーに移行する。
+                # 状況確認（経過時間）
+                delta = now_time - self.step2_filled_time
+                self.step2_keeping_second = delta.total_seconds()
+                # 状況確認（ボーダーを越価格。152円時点で、150でLimit買い入れた場合、149⇒151となり、150買いを発行するかどうか）
+                if o_dir == 1:
+                    gap_price = now_price - temp_price  # +値でオーダー可。マイナスでstep1状態に逆戻り
+                else:
+                    gap_price = temp_price - now_price  # +値でオーダー可。マイナスでstep1状態に逆戻り
+
+                # 判定
+                print("  ステップ２状況", self.step2_keeping_second, now_price, gap_price, now_time)
+                if self.step2_keeping_second >= 20:
+                    # step2の状態を10秒以上経過している(step2の条件はクリア）
+                    if gap_price >= 0:
+                        # step2の状態を10秒以上経過、かつ、価格も満足している場合オーダーを発行する（逆に発行遅いくらい・・・？）
+                        order_exe = True  # オーダーexeはここでしかTrueにならない。
+                        print(" オーダー執行可能に", self.step1_filled, self.step1_keeping_second, self.step2_filled,
+                              self.step2_keeping_second, gap_price, now_time)
+                    else:
+                        # step1からやり直してほしい(最後の最後で価格が下回ってしまたような状態)
+                        print("  最後の最後で価格が下回った", self.step1_filled, self.step1_keeping_second, self.step2_filled,
+                              self.step2_keeping_second, gap_price)
+                        self.step1_filled = False
+                        self.step2_filled = False
+                        return 0
+                else:
+                    # step2の状態が10秒以下の場合（待ち）
+                    if gap_price < 0:
+                        # 価格を満たさなくなった場合、Step1からやり直し
+                        print("  Step2の時間を満たす前に解除（STEP１へ）", self.step2_keeping_second, now_price, gap_price, now_time)
+                        self.step1_filled = False
+                        self.step2_filled = False
+                        return 0
+            #
+            #
+            # else:
+            #     # step2が成立していない場合、何もしない
+            #     pass
+            #
+            #     #     # self.keeping_second_limitは、規定越えの後、逆方向（理想方向）に進み始めて何秒か、を意味する
+            #     #     #　１０秒逆に突破した後、初めて理想方向に進んだ時間を取得
+            #     #     if self.step2_filled:
+            #     #         # このフラグがOnでないと、時刻が入っていない
+            #     #         delta = now_time - self.watching_start_time_limit
+            #     #         self.step2_keeping_second = delta.total_seconds()
+            #     #     else:
+            #     #         # 初回、self.beyond_watching_trigger_limitがオフの状態で、条件を満たす（＝初回）
+            #     #         if (o_dir == 1 and now_price > temp_price) or (o_dir == -1 and now_price < temp_price):
+            #     #             print("初回　逆方向１０秒後、理想方向に生き始めた")
+            #     #             delta = now_time - self.watching_start_time_limit
+            #     #             self.step2_keeping_second = delta.total_seconds()
+            #     #             self.step2_filled = True
+            #     #         else:
+            #     #             self.step2_keeping_second = 0
+            #     #
+            #     #     # 実判定処理
+            #     #     if o_dir == 1:
+            #     #         if now_price > temp_price:
+            #     #             if self.step2_keeping_second >= 10:
+            #     #                 # 10秒以上、いい状態をキープしている場合
+            #     #                 self.step2_filled = True
+            #     #                 self.watching_start_time_limit = now_time
+            #     #                 self.step1_filled_over_price = 0
+            #     #             else:
+            #     #                 # いい状態の１０秒経過待ち
+            #     #                 if print_flag:
+            #     #                     print("買い方向の逆張りで、下回った後に、上回った　⇒いい状態(１０秒待ち)",
+            #     #                           self.step2_filled, self.step2_keeping_second)
+            #     #         else:
+            #     #             if print_flag:
+            #     #                 print("買い方向の逆張りで、下回った後、その状態を維持（突破し続けているためNG）")
+            #     #     if o_dir == -1:
+            #     #         if now_price < temp_price:
+            #     #             if self.step2_keeping_second >= 10:
+            #     #                 # 10秒以上、いい状態をキープしている場合
+            #     #                 self.step2_filled = True
+            #     #                 self.watching_start_time_limit = now_time
+            #     #                 self.step1_filled_over_price = 0
+            #     #             else:
+            #     #                 if print_flag:
+            #     #                     print("売り方向の逆張りで、上回った後に、下回っている　⇒いい状態(10秒待ち)",
+            #     #                           self.step2_filled, self.step2_keeping_second)
+            #     #         else:
+            #     #             if print_flag:
+            #     #                 print("売り方向の逆張りで、上回った後に、その状態を維持（突破し続けているためNG）")
+            #     # else:
+            #     #     print("逆方向への伸びが一瞬すぎる（また越えるのでは？なので待機）", self.step1_keeping_second, self.step1_filled)
+
+            # ■改めてウォッチモードに入るかを確認
+            # Falseの場合は当然不可。さらに、Trueであっても５秒異常経過していない場合は、不可
+            # LIMITオーダー発行
+            if order_exe:
+                pass
+            else:
+                return 0
+
+            # ■LIMIT用オーダー発行処理
+            print(" LIMITオーダー　ウォッチ状態完了", self.step1_keeping_second, )
+            self.step1_filled = False  # これ、ここで初期化する必要あり？
+            self.step2_filled = False  # これ、ここで初期化する必要あり？
+            self.watching_for_position_make_order()
+
 
     def watching_for_alert(self):  # マイナス領域で、マイナスを縮める手段
         """
@@ -1195,7 +1411,7 @@ class order_information:
             alert_pl = self.alert_price - current_price
         # ■状態通知用
         if not self.alert_line_send_done:
-            tk.line_send("初回のウォッチモード突入:", self.name, "ボーダー", round(self.alert_price, 3), "現在価格", current_price,
+            tk.line_send("初回のウアラートォッチモード突入:", self.name, "ボーダー", round(self.alert_price, 3), "現在価格", current_price,
                          "ポジション方向", direction, "越えPips", round(alert_pl, 4))
             self.alert_line_send_done = True
 
@@ -1312,7 +1528,7 @@ class order_information:
                 self.send_line("　(LC底上げ)", self.name, self.t_pl_u, round(self.plan['lc_price'], 3), "⇒", new_lc_price,
                                "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice",
                                self.t_execution_price,
-                               "予定価格", self.plan['price'])
+                               "予定価格", round(self.plan['price'], 3))
                 break
         self.lc_change_status = status_res
 
@@ -1686,8 +1902,8 @@ def position_check_no_args():
                                       "target": item.plan['price'],
                                       "direction": item.plan['expected_direction'],
                                       "order_time": gene.time_to_str(item.order_register_time),
-                                      "state": item.overing,
-                                      "keeping": round(item.keeping_second, 0),
+                                      "state": item.step1_filled,
+                                      "keeping": round(item.step1_keeping_second, 0),
                                       })
             if item.t_state == "OPEN":
                 # ポジションがある場合、ポジションの情報を取得する
