@@ -1223,7 +1223,7 @@ class order_information:
                         print("  STEP1 時間経過待ち", now_time, self.step1_keeping_second)
                         if (o_dir == 1 and now_price > temp_price) or (o_dir == -1 and now_price < temp_price):
                             self.step1_filled = False
-                            print("  　　価格が下回ったため、微妙（もう一度ステップ１の成立からやり直し）")
+                            print("  　　STEP1中。価格が下回ったため、微妙（もう一度ステップ１の成立からやり直し）")
 
                 else:
                     # 初回（step1不成立状態で、成立状態に移行したかを判定する）
@@ -1260,11 +1260,11 @@ class order_information:
                     if gap_price >= 0:
                         # step2の状態を10秒以上経過、かつ、価格も満足している場合オーダーを発行する（逆に発行遅いくらい・・・？）
                         order_exe = True  # オーダーexeはここでしかTrueにならない。
-                        print(" オーダー執行可能に", self.step1_filled, self.step1_keeping_second, self.step2_filled,
+                        print(" STEP２　オーダー執行可能に", self.step1_filled, self.step1_keeping_second, self.step2_filled,
                               self.step2_keeping_second, gap_price, now_time)
                     else:
                         # step1からやり直してほしい(最後の最後で価格が下回ってしまたような状態)
-                        print("  最後の最後で価格が下回った", self.step1_filled, self.step1_keeping_second, self.step2_filled,
+                        print("  STEP2　最後の最後で価格が下回った", self.step1_filled, self.step1_keeping_second, self.step2_filled,
                               self.step2_keeping_second, gap_price)
                         self.step1_filled = False
                         self.step2_filled = False

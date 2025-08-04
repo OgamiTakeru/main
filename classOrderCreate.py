@@ -262,6 +262,7 @@ class OrderCreateClass:
             # {"exe": True, "time_after": 0, "trigger": 0.04, "ensure": 0.010},
             # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
             # {"exe": True, "time_after": 0, "trigger": 0.08, "ensure": 0.05},
+            {"exe": True, "time_after": 0, "trigger": 0.15, "ensure": 0.1},
             {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
             {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
             {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
@@ -270,8 +271,8 @@ class OrderCreateClass:
             {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
             {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
         ]
-        print("LCCHange", dic_arr)
-        print("lCCHANE", add)
+        print("   渡されたLcChange", dic_arr)
+        print("　　最終的なLcChange", add)
         self.finalized_order['lc_change'] = dic_arr + add
 
     def add_lc_change_after_lc(self):
@@ -461,6 +462,7 @@ class OrderCreateClass:
 
         order_base_info['trade_timeout_min'] = order_base_info[
             'trade_timeout_min'] if 'trade_timeout_min' in order_base_info else 150
+        # オーダー即時取得許可は、していなければTrue
         order_base_info['order_permission'] = order_base_info[
             'order_permission'] if 'order_permission' in order_base_info else True
         # 表示形式の問題で、、念のため（機能としては不要）

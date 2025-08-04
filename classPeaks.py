@@ -892,8 +892,8 @@ class PeaksClass:
         # target_num = 2
         target_peak = peaks[target_num]
         target_price = target_peak['latest_body_peak_price']
-        print("実行時引数 SKIP：", skip, " TargetNum:", target_num)
-        print("ターゲットになるピーク@cp:", target_peak)
+        print("   実行時引数 SKIP：", skip, " TargetNum:", target_num)
+        print("   ターゲットになるピーク@cp:", target_peak)
 
         # ■■閾値の情報
         # Margin情報

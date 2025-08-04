@@ -305,7 +305,7 @@ def mode1_order_control(inspection_result_dic):
                     # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
                     print(res_dic['order_name'])
                     o_trans = res_dic['order_result']['json']['orderCreateTransaction']  # 短縮のための変数化
-                    line_send = line_send + "◆【" + str(res_dic['order_name']) + "】,\n" +\
+                    line_send = line_send + "【" + str(res_dic['order_name']) + "】,\n" +\
                                 "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
                                 ", 数量:" + str(o_trans['units']) + \
                                 ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
@@ -320,7 +320,7 @@ def mode1_order_control(inspection_result_dic):
                     break
 
     # 注文結果を送信する（複数のオーダーでも一つにまとめて送信する）
-    tk.line_send("★オーダー発行", gl_trade_num, "回目: ", " 　　　", line_send,
+    tk.line_send("★★★オーダー発行", gl_trade_num, "回目: ", " 　　　", line_send,
                  ", 現在価格:", str(gl_now_price_mid), "スプレッド", str(gl_now_spread),
                  "直前の結果:", classPosition.order_information.before_latest_plu, ",開始時間", gl_start_time_str)
 
