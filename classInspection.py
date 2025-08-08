@@ -374,7 +374,7 @@ class Inspection:
         result_df['name_only'] = result_df['name'].apply(
             lambda x: x[:-5] if isinstance(x, str) and len(x) > 5 else x)  # 時間削除
         # 平均値等
-        result_df['group'] = (result_df['pl_per_units'] // 0.01) * 0.01
+        result_df['group_pl_per_units'] = (result_df['pl_per_units'] // 0.01) * 0.01
         absolute_mean = result_df['units'].abs().mean()
         # name列を@で分割
         name_parts = result_df['name_only'].str.split('@', expand=True)
@@ -452,7 +452,8 @@ class Inspection:
             # 文字列を生成
             output = "検証期間LONG\n"
             for _, row in result.iterrows():
-                output += f"【名前】{row['name']}【計】:{round(row['total_pl'], 0)}({row['positive_count']}:{row['negative_count']})\n\n"
+                output += (f"【名前】{row['name']}【計】:{round(row['total_pl'], 0)}({row['positive_count']}:{row['negative_count']})"
+                           f"{round((row['positive_count'] / (row['positive_count'] + row['negative_count'])) * 100, 1)}\n\n")
             print(output)
             tk.line_send(output, "検証期間LONG")
         return 1

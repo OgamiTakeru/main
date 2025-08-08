@@ -464,6 +464,7 @@ def exe_manage():
             d5_df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": gl_need_df_num}, 1)  # 時間昇順(直近が最後尾）
             if d5_df['error'] == -1:
                 print("error Candle")
+                tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 d5_df = d5_df['data']
@@ -516,7 +517,7 @@ def exe_manage():
 
             mode1()
             # 強制オーダー
-            mode1_order_control(force_order())
+            # mode1_order_control(force_order())
 
 
 def exe_loop(interval, fun, wait=True):

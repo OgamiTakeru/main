@@ -24,7 +24,8 @@ mode = 1  # 任意期間　または、　25年半年
 if mode == 1:
     intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
                             pi.wrap_little_turn_inspection_test,
-                           True,
+                    # True,
+                            False,
                            # datetime.datetime(2024, 10, 3, 9, 25, 0),  # いいマイナスデータ
                            #  datetime.datetime(2024, 10, 10, 9, 25, 0),  # いいマイナスデータ
                            #  datetime.datetime(2023, 9, 10, 23, 40, 6),  # 謎の飛びデータ
@@ -32,10 +33,10 @@ if mode == 1:
                            #  datetime.datetime(2023, 3, 6, 23, 40, 6),  # 注目！いいマイナスデータ
                            #  datetime.datetime(2022, 2, 6, 23, 40, 6),  # いいマイナスデータ
                            # datetime.datetime(2022, 2, 21, 23, 40, 6),  # いいマイナスデータ
-                           datetime.datetime(2025, 7, 1, 14, 15, 6),
+                           datetime.datetime(2025, 8, 6, 14, 15, 6),
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5m.csv',
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5s.csv',
-                           500,
+                           700,
                            1,
                            " テスト" + memo,
                            True,  # グラフの描画あり

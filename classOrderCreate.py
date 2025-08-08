@@ -13,7 +13,7 @@ import fBlockInspection as fTurn
 
 
 class OrderCreateClass:
-    basic_unit = 1000
+    basic_unit = 10000
     # basic_unit = 25000
     oa = None
 
@@ -322,7 +322,7 @@ class OrderCreateClass:
             {"exe": True, "time_after": 0, "trigger": 0.025, "ensure": -0.01},
             # {"exe": True, "time_after": 600, "trigger": 0.043, "ensure": 0.018},
             # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
-            {"exe": True, "time_after": 0, "trigger": 0.05, "ensure": 0.025},
+            {"exe": True, "time_after": 0, "trigger": 0.05, "ensure": 0.052},
             {"exe": True, "time_after": 0, "trigger": 0.08, "ensure": 0.05},
             {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
             {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},

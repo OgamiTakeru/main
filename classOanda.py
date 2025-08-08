@@ -66,6 +66,7 @@ class Oanda:
         self.print_words = ""  # 表示用。。
         self.print_words_bef = ""  # 表示用。。
         self.error_input_tp = 0.05  # マージン等がおかしい場合、この値を利用する（ドル用の場合0.05)
+        self.already_error_send1 = False  # エラーを一回だけスマホに送信したい場合
 
     def print_i(self, *msg):
         # 関数は可変複数のコンマ区切りの引数を受け付ける
@@ -110,7 +111,7 @@ class Oanda:
             return {"data": res_dic, "error": 0}
 
         except Exception as e:
-            e_info = error_method("価格情報取得", start_time, e)  # 表示もそっちのメソッドで
+            e_info = self.error_method("価格情報取得", start_time, e)  # 表示もそっちのメソッドで
             return e_info
 
     # (2)キャンドルデータを取得(5000行以内/指定複雑)
@@ -146,7 +147,7 @@ class Oanda:
             # 返却
             return {"data": data_df, "error": 0}
         except Exception as e:
-            e_info = error_method("価格情報取得[単]", start_time, e)
+            e_info = self.error_method("価格情報取得[単]", start_time, e)
             return e_info
 
     # (3)キャンドルデータを取得(5000行以上/現在から/指定簡単（現在USD固定）)
@@ -203,7 +204,7 @@ class Oanda:
             return {"error": 0, "data": data_df}
 
         except Exception as e:
-            e_info = error_method("ローソク取得", start_time, e)
+            e_info = self.error_method("ローソク取得", start_time, e)
             return e_info
 
     # (5)オーダーの発行を実施
@@ -484,7 +485,7 @@ class Oanda:
 
         except Exception as e:
             print("★★★OrderCreateAPIエラー")
-            e_info = error_method("オーダー", start_time, e)
+            e_info = self.error_method("オーダー", start_time, e)
             return e_info
 
     # (6)オーダーのキャンセル
@@ -503,7 +504,7 @@ class Oanda:
         except Exception as e:  # エラー文短め
             print("OrderCansel_APIerror", order_id)
             print(e)
-            e_info = error_method("OrderCancel_APIerror" + str(order_id), start_time, e)
+            e_info = self.error_method("OrderCancel_APIerror" + str(order_id), start_time, e)
             return e_info
 
     # (7)オーダーを全てキャンセル
@@ -582,7 +583,7 @@ class Oanda:
             return {"data": res_json, "error": 0}
         except Exception as e:
             # print(e)
-            e_info = error_method("OrderDetail" + str(order_id), start_time, e)
+            e_info = self.error_method("OrderDetail" + str(order_id), start_time, e)
             return {"data": e_info, "error": 1}
 
     # (9)指定のオーダーのステータス（オーダーとトレードの詳細）を取得
@@ -747,7 +748,7 @@ class Oanda:
                 res_df['past_time_sec'] = res_df.apply(lambda x: cal_past_time(x), axis=1)  # 経過時刻の算出
                 return {"data": res_df, "error": 0}
         except Exception as e:
-            e_info = error_method("OrdersPending", start_time, e)
+            e_info = self.error_method("OrdersPending", start_time, e)
             return e_info
 
     # (11)オーダーの一覧（新規トレード待ちのみ）を取得
@@ -784,7 +785,7 @@ class Oanda:
                 return {"data": res_df, "error": 0}
 
         except Exception as e:
-            e_info = error_method("OrdersPending", start_time, e)
+            e_info = self.error_method("OrdersPending", start_time, e)
             return e_info
 
     # (12)トレードの一覧を取得　OpenTrades_exe
@@ -814,7 +815,7 @@ class Oanda:
                                                     res_df['currentUnits'].astype('float'), 3)
                 return {"data": res_df, "error": 0}
         except Exception as e:
-            e_info = error_method("OpenTrades", start_time, e)
+            e_info = self.error_method("OpenTrades", start_time, e)
             return e_info
 
     # (13)指定のトレードの詳細
@@ -839,7 +840,7 @@ class Oanda:
             return {"data": res_json, "error": 0}  # 単品が対象なので、Jsonで返した方がよい（DataFrameで返すと、単品なのに行の指定が必要）
         except Exception as e:
             print(trade_id)
-            e_info = error_method("TradeDetails" + str(trade_id), start_time, e)
+            e_info = self.error_method("TradeDetails" + str(trade_id), start_time, e)
             return {"data": e_info, "error": 1}
 
     # (14)指定のトレードの変更
@@ -869,7 +870,7 @@ class Oanda:
             res_json = eval(json.dumps(self.api.request(ep), indent=2))
             return {"data": res_json, "error": 0}
         except Exception as e:
-            e_info = error_method("TradeCRCDO", start_time, e)
+            e_info = self.error_method("TradeCRCDO", start_time, e)
             return e_info
 
     # (15)指定のトレードの決済
@@ -887,7 +888,7 @@ class Oanda:
             res_df = func_make_dic(res_json)  # 必要項目の抜出
             return {"data_json": res_json, "data": res_df, "error": 0}
         except Exception as e:
-            e_info = error_method("TradeClose", start_time, e)
+            e_info = self.error_method("TradeClose", start_time, e)
             return e_info
 
     # (16)トレードを全て決済
@@ -1106,6 +1107,33 @@ class Oanda:
         print("トランザクションデータ取得完了")
         return for_ans
 
+    # (extra) エラー送信用
+    def error_method(self, name, start_time, e):
+        print("   ¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥")
+        now_time = datetime.datetime.now().replace(microsecond=0)
+        past_sec = (now_time - start_time).seconds
+
+        print("　★API_Error【", name, "】", now_time, past_sec)
+        # print(e)
+        # エラーの種類によって表示やLINE送信を行う。
+        if "OrderDetail" in name and not self.already_error_send1:
+            self.already_error_send1 = True  # 一度きりの送信
+            tk.line_send("おかしなオーダーdetailエラー発生⇒", e)
+
+
+        if past_sec > 10:
+            print("   時間切れエラー？")
+        elif name == "オーダー" or name == "TradeClose":
+            tk.line_send("オーダーエラー")
+        else:
+            pass
+            # tk.line_send("エラー")
+        # if type(e) == 'oandapyV20.exceptions.V20Error':
+        #     e
+
+        return {"error": -1, "method": name,
+                "past_sec": past_sec, "now_time": now_time, "error_code": e}
+
 
 
 
@@ -1114,26 +1142,7 @@ class Oanda:
 # # 関連する関数
 ############################################################
 
-def error_method(name, start_time, e):
-    print("   ¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥")
-    now_time = datetime.datetime.now().replace(microsecond=0)
-    past_sec = (now_time - start_time).seconds
 
-    print("　★API_Error【", name, "】", now_time, past_sec)
-    # print(e)
-    # エラーの種類によって表示やLINE送信を行う。
-    if past_sec > 10:
-        print("   時間切れエラー？")
-    elif name == "オーダー" or name == "TradeClose":
-        tk.line_send("オーダーエラー")
-    else:
-        pass
-        # tk.line_send("エラー")
-    # if type(e) == 'oandapyV20.exceptions.V20Error':
-    #     e
-
-    return {"error": -1, "method": name,
-            "past_sec": past_sec, "now_time": now_time, "error_code": e}
 
 
 # 細々した関数たち

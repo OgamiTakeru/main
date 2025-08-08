@@ -84,6 +84,9 @@ class PeaksClass:
         # 抵抗線関係の値　cal_big_mountain関数
         self.arrowed_gap = 0.05  # 抵抗線を探す時、ずれていてもいい許容値
 
+        # 超レンジ判定
+        self.hyper_range = False
+
         # ■実処理
         if original_df.equals(PeaksClass.df_r_original):
             # print("         [既にPeaksに変換済みのデータフレーム]")
@@ -101,13 +104,14 @@ class PeaksClass:
             PeaksClass.peaks_original_with_df = self.make_peaks_with_df(self.df_r)  # 一番感度のいいPeaksにDfがついたもの
             # たまに起きる謎のエラー対応
             if len(PeaksClass.peaks_original) <= 2:
-                print("おかしなことが起きている originalデータが少なすぎる @peakclass")
+                tk.line_send("データがうまくとれていない。", len(original_df), "行のみ")
+                print("おかしなことが起きている originalデータが少なすぎる @peakclass　全", len(original_df), "行のみ")
                 gene.print_arr(PeaksClass.peaks_original)
                 print(PeaksClass.df_r_original)
                 print("↑", len(PeaksClass.df_r_original))
                 print(original_df)
                 print("↑　originalDf")
-                print("おかしなこと対応ここま↑")
+                print("おかしなことの表示")
             PeaksClass.skipped_peaks = self.skip_peaks()  # スキップピークの算出
             PeaksClass.skipped_peaks_hard = self.skip_peaks_hard()
             self.recalculation_peak_strength_for_peaks()  # ピークストレングスの算出
@@ -121,6 +125,9 @@ class PeaksClass:
             # (3) 時間の取得
             time_obj = pd.to_datetime(original_df.iloc[0]['time_jp'], format='%Y/%m/%d %H:%M:%S')
             PeaksClass.time_hour = time_obj.hour
+
+            # (4)追加の機能（直近の数個が承服しすぎているかどうかの確認）
+            self.check_range_of_range(self.df_r)
 
             # (4) 表示
             s = "   "
@@ -492,6 +499,50 @@ class PeaksClass:
 
 
         return peaks
+
+    def check_range_of_range(self, df_r):
+        """
+        与えられたデータの直近数個が、「きわめてレンジ」といえるか。
+        ほとんど動きがないような状態。
+        直近数個の中で、最大の物(8pips以内）を探し、その中に70％以上入っている足の割合が多い
+        """
+        target = 4  # 直近4個分
+        df = df_r[0:target].copy()  # 同方向が続いてる範囲のデータを取得する
+
+        max_gap_row = df.loc[df['body_abs'].idxmax()]
+        max_gap_value = df['body_abs'].max()
+        upper = max_gap_row['inner_high']
+        lower = max_gap_row['inner_low']
+        if max_gap_value >= 0.07:  # 一つの足の幅が７pip以上の場合は動き大き目のため、除外
+            is_mini_range = False
+        else:
+            # 各行の区間長
+            df['range_len'] = (df['inner_low'] - df['inner_high']).abs()
+
+            # 各行の重なり開始と終了
+            overlap_start = df[['inner_low', 'inner_high']].min(axis=1).clip(lower, upper)
+            overlap_end = df[['inner_low', 'inner_high']].max(axis=1).clip(lower, upper)
+
+            # 重なり長さ（負にならないよう0でクリップ）
+            df['overlap_len'] = (overlap_end - overlap_start).clip(lower=0)
+
+            # はみ出し長さと割合
+            df['exceed_len'] = df['range_len'] - df['overlap_len']
+            df['exceed_ratio_with_self'] = df['exceed_len'] / df['range_len']
+            df['exceed_ratio_with_max'] = df['exceed_len'] / max_gap_value
+
+            # 割合（％なら×100）
+            df['overlap_ratio_with_self'] = df['overlap_len'] / df['range_len']
+            df['overlap_ratio_with_max'] = df['overlap_len'] / max_gap_value
+
+            print("超レンジ可の判定用")
+            print("最大Body", max_gap_row['time_jp'])
+            print(df[['time_jp', 'overlap_ratio_with_max',
+                      'exceed_ratio_with_max']])
+            is_mini_range = ((df['exceed_ratio_with_max'] <= 0.24) & (df['overlap_ratio_with_max'] >= 0.4)).all()
+
+        print("〇超レンジ判定⇒", is_mini_range)
+        self.hyper_range = is_mini_range
 
     def recalculation_peak_strength_for_peaks(self):
         """
