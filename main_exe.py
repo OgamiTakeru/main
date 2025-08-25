@@ -253,7 +253,8 @@ def mode1_order_control(inspection_result_dic):
     print("  新規オーダー数", len(inspection_result_dic['exe_orders']))
     # テスト表示用（クラス上書きがうまくいくかの確認用。現在のクラスの状態を表示しておく）
     for class_index, each_class in enumerate(classes):
-        print("     ", each_class.life, each_class.name, each_class.o_time, each_class.o_state, each_class.t_state)
+        print("     ", each_class.life, each_class.name, each_class.o_time, each_class.o_state, each_class.t_state,
+              each_class.first_lc_change_time, each_class.lc_change_dic_arr)
     # 新オーダーをひとつづつ読み込む
     for order_n in range(len(inspection_result_dic['exe_orders'])):  # ここ（正規実行）では「配列」でOrder情報を受け取る（testでは辞書単品で受け取る）　
         # クラスにオーダーを登録し、オーダー発行する（この際、life=Falseを探し、リセット＆上書きしていく）

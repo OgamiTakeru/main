@@ -125,11 +125,16 @@ class order_information:
         self.watching_start_time_limit = 0
 
         # lc_Changeがおかしいので確認用
-        self.first_lc_change = True
+        self.no_lc_change = True
+        self.first_lc_change_time = 0
 
         # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
         self.try_update_limit = 2
         self.try_update_num = 0
+
+        # エラー対応用
+        self.update_information_error_o_id = 0
+        self.update_information_error_o_id_num = 0
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
@@ -209,11 +214,16 @@ class order_information:
         self.watching_start_time_limit = 0
 
         # lc_Changeがおかしいので確認用
-        self.first_lc_change = True
+        self.no_lc_change = True
+        self.first_lc_change_time = 0
 
         # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
         self.try_update_limit = 2
         self.try_update_num = 0
+
+        # エラー対応用
+        self.update_information_error_o_id = 0
+        self.update_information_error_o_id_num = 0
 
     def print_info(self):
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
@@ -906,15 +916,32 @@ class order_information:
         order_ans = self.oa.OrderDetails_exe(self.o_id)  # ■■API
         if 'error' in order_ans:
             if order_ans['error'] == 1:
-                print("OrderErrorのためリターン０（@classPosition898）")
-                return 0
+                # print("OrderErrorのためリターン０（@classPosition898）ID:", self.o_id)
+                # エラー対応
+                if self.update_information_error_o_id_num >= 3 and self.o_id == self.update_information_error_o_id:
+                    # 3回以上、同じIDでエラーが発生している場合、キャンセル
+                    tk.line_send("オーダーDetailエラー(繰り返し)⇒Orderクローズ", self.o_id)
+                    self.close_order()
+                    self.update_information_error_o_id_num = 0
+                    self.update_information_error_o_id = 0
+                    return 0
+                else:
+                    print("OrderErrorのためリターン０（@classPosition898）ID:", self.o_id, type(self.update_information_error_o_id))
+                    self.update_information_error_o_id_num = self.update_information_error_o_id_num + 1
+                    if self.o_id == 0:
+                        print("o_idがIでおかしい")
+                    else:
+                        self.update_information_error_o_id = self.o_id
+                    print("とりあえずreturn0　classposition 935行目くらい")
+                    return 0
+        self.update_information_error_o_id_num = 0
         order_latest = order_ans['data']['order']  # jsonを取得
         self.o_json = order_latest  # Json自体も格納
         # print("現在の状態　オーダー", self.name, self.o_id)
         # print("現在の状態　オー", self.name, self.o_json)
 
         if order_latest['state'] == "FILLED":
-            #　オーダーが約定済みの場合
+            #  オーダーが約定済みの場合
             if "tradeOpenedID" in order_latest:
                 # ポジションが存在している場合
                 # 他のオーダーを完全にクローズさせた場合
@@ -1067,7 +1094,13 @@ class order_information:
         # 必要情報の取得
         temp_price = self.plan['target_price']
 
-        # ■■順張りの場合(越えれば越えるほどいいといえる）
+        # ■■順張りの場合
+        # 目的：「一瞬だけエントリーポイントを越えて、すぐ下がる」を防ぎたい。
+        # 方法：　エントリーポイントを10秒間越えている、あるいは、越えてるPipsが大きい場合に、オーダーを発行する。
+        # ポイント：
+        #  オーダー発行時、順張り基準を既に越えている場合がある。⇒これはそのままでオーダー＆即ポジになる？
+        #   越えているPipsが大きい場合、LCをエントリーポイントにするのもあり、、か？
+        #   勢いがない場合、越えている状態で、逆張りに切り替えてオーダーを発行するのもあり・・？（逃げ越しすぎ？）
         if self.plan['type'] == "STOP":
             if (round(self.step1_keeping_second, 0) % 15 == 0 and round(self.step1_keeping_second, 0) != 0) or 1 <= round(self.step1_keeping_second, 0) <= 2:
                 pass
@@ -1483,7 +1516,7 @@ class order_information:
         if self.lc_change_candle_done:  # 既にキャンドルLCChangeに行った場合は、執行しない
             return 0
 
-        status_res = "   LCCHANGE_status:"
+        status_res = "   LCCHANGE_status" + self.name + ": "
         for i, item in enumerate(self.lc_change_dic_arr):
             # コードの１行を短くするため、置きかておく
             lc_exe = item['exe']
@@ -1508,10 +1541,21 @@ class order_information:
                 status_res = status_res + gene.str_merge("[", i, "] 済", item['time_done'], "lc_exe:", lc_exe, lc_change_waiting_time_sec, ","
                                            , "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range)
                 # lc_Changeがおかしいので確認用(初回のLCChange確認なのに、0番目（最初が０とは限らないけど、、）に済がある場合はおかしい
-                if i == 0 and self.first_lc_change:
-                    tk.line_send("LC_CHANGEがうまく発動しない可能性あり", i, "過去実行時間", item['time_done'])
+                diff_seconds = datetime.datetime.now() - item['time_done']
+                seconds = diff_seconds.total_seconds()
+                # 2時間 = 7200 秒以上離れているか判定
+                if seconds >= 2 * 60 * 60 and self.no_lc_change:
+                    tk.line_send("LC_CHANGEがうまく発動しない可能性あり[", i, "]過去実行時間,", item['time_done'], self.name,
+                                 self.first_lc_change_time, self.no_lc_change, "1519行目cPosi")
                     gene.print_arr(self.lc_change_dic_arr)
-                self.first_lc_change = False
+                    self.no_lc_change = False  # 念のため
+                else:
+                    print("  LCChangeおかしい問題の確認用(おかしくない）　最初のLC時刻", self.first_lc_change_time, i)
+
+                if i == 0 and self.no_lc_change:
+                    tk.line_send("LC_CHANGEがうまく発動しない可能性あり", i, "過去実行時間,", item['time_done'])
+                    gene.print_arr(self.lc_change_dic_arr)
+                    self.no_lc_change = False  # 念のため
                 continue
             elif lc_change_till_sec < self.t_time_past_sec < lc_change_waiting_time_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
@@ -1527,6 +1571,8 @@ class order_information:
             # ボーダーラインを超えた場合
             if self.t_pl_u >= lc_trigger_range:
                 # print("　★変更確定")
+                self.no_lc_change = False
+                self.first_lc_change_time = datetime.datetime.now()
                 print(" 変更対象", i, lc_ensure_range, lc_trigger_range, self.t_pl_u)
                 self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
                 # これで配列の中の辞書って変更できるっけ？？

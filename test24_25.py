@@ -33,7 +33,8 @@ if mode == 1:
                            #  datetime.datetime(2023, 3, 6, 23, 40, 6),  # 注目！いいマイナスデータ
                            #  datetime.datetime(2022, 2, 6, 23, 40, 6),  # いいマイナスデータ
                            # datetime.datetime(2022, 2, 21, 23, 40, 6),  # いいマイナスデータ
-                           datetime.datetime(2025, 8, 6, 14, 15, 6),
+                           # datetime.datetime(2025, 8, 8, 23, 0, 6),  # 勝てるとき(700行）
+                            datetime.datetime(2025, 7, 25, 23, 0, 6),
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5m.csv',
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5s.csv',
                            700,

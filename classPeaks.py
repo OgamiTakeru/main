@@ -2,6 +2,7 @@ import datetime
 from datetime import datetime
 from datetime import timedelta
 import pandas as pd
+from collections import defaultdict
 
 import classOanda
 import tokens as tk
@@ -19,18 +20,18 @@ class PeaksClass:
     # 基本となるデータフレーム
     df_r_original = None  # 直近の時刻が[0]となるデータフレーム。API取得のデータとは逆順
     # ピーク情報
-    peaks_original = []
-    peaks_original_with_df = []  # 要素にdataとdataremainを持つ。SKipは結合させたりでめんどいのでやらない。
-    skipped_peaks = []
-    skipped_peaks_hard = []
+    peaks_original = []  # 計算されたピークで、一番ベーシックなもの（DataFrameがない）
+    peaks_original_with_df = []  # 要素にdataとdataFrameを持つ。SKipは結合させたりでめんどいのでやらない。
+    skipped_peaks = []  # 計算された、スキップありのピーク
+    skipped_peaks_hard = []  # 計算された、強いスキップありのピーク
     peaks_original_marked_skip = []  # 使ってない？？
     peaks_original_marked_hard_skip = []  # 使ってない？？　peaksとしてはオリジナル同様だが、スキップピークに、フラグが付いている物
     latest_resistance_line = {}  # Nullか、情報が入っているかのどちらか（Null＝抵抗線ではない）
-    peak_strength = 0
     latest_price = 0  # 現在価格（場合よっては最新価格）
     latest_peak_price = 0  # 直近のピーク
     # 動きの数値化された情報
-    is_big_move = False
+    is_big_move_peak = False
+    is_big_move_candle = False
     ave_move = 0  # ここ5足程度の動きの大きさ（髭を含む）
     ave_move_for_lc = 0  # ここ5足程度の動きの大きさ（髭を含む）を加味した、LCの提案価格
 
@@ -73,7 +74,7 @@ class PeaksClass:
         self.peak_strength_border_second = 0.07  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
 
         # SkipPeaksの際の基準(SkipPeaks関数）
-        self.skip_gap_border = 0.3 # 0.045  # この値以下のGapをもつPeakは、問答無用でスキップ処理される
+        self.skip_gap_border = 0.3  # 0.045  # この値以下のGapをもつPeakは、問答無用でスキップ処理される
         self.skip_gap_border_second = 0.3 #  0.05  # この値以下のGapを持つPeakは、重なり（ラップ）状況でスキップされる
 
         # 急変動(fluctuation)を検知する基準の設定　cal_move_size関数
@@ -127,7 +128,7 @@ class PeaksClass:
             PeaksClass.time_hour = time_obj.hour
 
             # (4)追加の機能（直近の数個が承服しすぎているかどうかの確認）
-            self.check_range_of_range(self.df_r)
+            self.check_very_narrow_range(self.df_r)
 
             # (4) 表示
             s = "   "
@@ -166,6 +167,10 @@ class PeaksClass:
             # print(s, "<hard SKIPのフラグのみ")
             # gene.print_arr(PeaksClass.peaks_original_marked_hard_skip[:15])
 
+            #  (重要)
+
+            #  (1)大きなレンジをターンストレングスで判断する場合
+            self.peak_strength_sort()
 
             # (2)move_sizeの算出
             self.cal_move_size()
@@ -500,7 +505,7 @@ class PeaksClass:
 
         return peaks
 
-    def check_range_of_range(self, df_r):
+    def check_very_narrow_range(self, df_r):
         """
         与えられたデータの直近数個が、「きわめてレンジ」といえるか。
         ほとんど動きがないような状態。
@@ -588,6 +593,27 @@ class PeaksClass:
             print("direction == 1 のデータが見つかりませんでした")
             gene.print_arr(peaks)
             # tk.line_send(" Minに対する　peak_strength （classPeaks 404行目） のエラー発生（1が見つからなかった）")
+
+    def peak_strength_sort(self):
+        """
+        ピークの強さでソートして、長い目で見て強いピークを検討する。
+        （ターンピークに注目することが多いが、全体から見てどのくらいなのか、を判定したい）
+        """
+        # direction別にまとめる
+        peaks_by_dir = defaultdict(list)
+        for peak in PeaksClass.peaks_original:
+            peaks_by_dir[peak["direction"]].append(peak)
+
+        # directionごとに peak_strength 降順でソート
+        sorted_peaks_by_dir = {
+            d: sorted(lst, key=lambda x: x["peak_strength"], reverse=True)
+            for d, lst in peaks_by_dir.items()
+        }
+        print("!!classPeaks 608行目")
+        print("-1側")
+        gene.print_arr(sorted_peaks_by_dir[-1])
+        print("1側")
+        gene.print_arr(sorted_peaks_by_dir[1])
 
     def skip_peaks(self):
         """
@@ -843,10 +869,10 @@ class PeaksClass:
             # 重複オーダーとなる可能性をここで防止するため、ビッグムーブの判定はLatestカウントが2の場合のみ
             if target_peak['gap'] >= self.fluctuation_gap and target_peak['count'] <= self.fluctuation_count:
                 # 変動が大きく、カウントは3まで（だらだらと長く進んでいる変動は突発的なビッグムーブではない）
-                PeaksClass.is_big_move = True
+                PeaksClass.is_big_move_peak = True
                 # tk.line_send("ビッグムーブ観測　cal_move_size関数@classPeaks")
             else:
-                PeaksClass.is_big_move = False
+                PeaksClass.is_big_move_peak = False
 
         # ■ピークの直近5個分の平均値等を求める
         filtered_peaks = PeaksClass.peaks_original[:5]
@@ -864,6 +890,15 @@ class PeaksClass:
         # print(t6, "変動幅検証関数　ここまで")
         # print(t6, "最大ギャップ", max_gap)
         # print(t6, other_max_gap_items)
+
+        # ■足の長さが急変動があるかを確認
+        filtered_df = PeaksClass.df_r_original[:5]  # 直近4時間の場合、12×4 48
+        sorted_df = filtered_df.sort_values(by='body_abs', ascending=False)
+        max_body = sorted_df["body_abs"].max()
+        if max_body >= 0.1:
+            self.is_big_move_candle = True
+        else:
+            self.is_big_move_candle = False
 
     def cal_move_ave(self, times):
         """
@@ -1068,6 +1103,7 @@ class PeaksClass:
         # print("Break2までの同一価格 @cp")
         # f.print_arr(PeaksClass.same_price_list_till_break2)
 
+
 def judge_peak_is_belong_peak_group(peaks, target_peak):
     """
     与えられたピークが、与えられたpeaksの中で最大（または最小）といえるかをＢｏｏｌｅａｎで返却する
@@ -1092,6 +1128,7 @@ def judge_peak_is_belong_peak_group(peaks, target_peak):
             print("最小群ではない")
 
     return ans
+
 
 def check_large_body_in_peak(block_ans):
     """
@@ -1149,6 +1186,7 @@ def check_large_body_in_peak(block_ans):
         "highest": sorted_df_by_body_size['high'].max(),
         "lowest": sorted_df_by_body_size['low'].min()
     }
+
 
 def peaks_information(peaks):
     """

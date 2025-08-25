@@ -154,7 +154,7 @@ class OrderCreateClass:
             self.add_lc_change_defence()
         else:
             if isinstance(order_json['lc_change_type'], int):
-                # print("処理A: int型です", order_json['lc_change_type'])
+                print("処理A: int型です", order_json['lc_change_type'])
                 # 指定されている場合は、指定のLC_Change処理へ
                 if order_json['lc_change_type'] == 1:
                     self.add_lc_change_defence()
@@ -220,7 +220,7 @@ class OrderCreateClass:
         self.finalized_order['lc_change'] = [
             # {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
             # {"exe": True, "time_after": 600, "trigger": 0.025, "ensure": 0.005},
-            {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": -0.02},
+            {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": 0.004},  # -0.02が強い
             {"exe": True, "time_after": 600, "trigger": 0.06, "ensure": 0.01},
             # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
             {"exe": True, "time_after": 600, "trigger": 0.08, "ensure": 0.02},
@@ -319,7 +319,7 @@ class OrderCreateClass:
         first_trigger = round(first_ensure + (self.move_ave * 0.5), 3)
 
         self.finalized_order['lc_change'] = [
-            {"exe": True, "time_after": 0, "trigger": 0.025, "ensure": -0.01},
+            {"exe": True, "time_after": 0, "trigger": 0.025, "ensure": 0.004},
             # {"exe": True, "time_after": 600, "trigger": 0.043, "ensure": 0.018},
             # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
             {"exe": True, "time_after": 0, "trigger": 0.05, "ensure": 0.052},
