@@ -1,7 +1,7 @@
 import datetime
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
-import fAnalysis_order_Main as im
+import fAnalysis_order_Main as am
 
 
 # グローバルでの宣言
@@ -13,11 +13,11 @@ gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
             str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + "_" + str(gl_now.second).zfill(2)
 
 # 解析パート
-def analysis_part(df_r, target_func):
-    ans = target_func(df_r)
+def analysis_part(df_r):
+    analysis_result_instance = am.wrap_all_analisys(df_r, oa)
 
 
-def main(target_func):
+def main():
     """
     メイン関数　全てここからスタートする。ここではデータを取得する
     通常の解析と、ループの解析で利用する。
@@ -69,7 +69,7 @@ def main(target_func):
     # （2）【解析パートを一回のみ実施する場合】　直近N行で検証パートのテストのみを行う場合はここでTrue
     print("Do Only Inspection　↓解析パート用データ↓")
     print(df_r.head(2))
-    analysis_part(df_r[:analysis_part_low], target_func)  # 取得したデータ（直近上位順）をそのまま渡す。検証に必要なのは現在200行
+    analysis_part(df_r[:analysis_part_low])  # 取得したデータ（直近上位順）をそのまま渡す。検証に必要なのは現在200行
 
 
 gl_gr = "M5"  # 取得する足の単位
@@ -92,9 +92,9 @@ gl_target_time = datetime.datetime(2025, 6, 6, 18, 30, 6)  # 検証時間 (以�
 gl_target_time = datetime.datetime(2024, 10, 2, 0, 5, 6)  #SKIPテスト
 gl_target_time = datetime.datetime(2022, 2, 3, 16, 55, 6)
 gl_target_time = datetime.datetime(2025, 7, 17, 10, 20, 6)
-gl_target_time = datetime.datetime(2025, 8, 18, 11, 10, 6)
+gl_target_time = datetime.datetime(2025, 8, 27, 20, 35, 6)
 # gl_target_time = datetime.datetime(2025, 6, 25, 14, 45, 6)
 # gl_target_time = datetime.datetime(2025, 6, 17, 21, 30, 6)
 
 # Mainスタート
-main(im.wrap_all_inspections)  # 本番環境
+main()  # 本番環境

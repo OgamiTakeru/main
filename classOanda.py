@@ -523,7 +523,6 @@ class Oanda:
             return open_df_dic
         else:
             open_df = open_df_dic['data']
-            print("OpeDF", open_df)
             for index, row in open_df.iterrows():
                 # たまに変わるため注意。23年１月現在、利確ロスカ注文はtype = STOP_LOSS TAKE_PROFIT
                 # 新規ポジション取得は、逆張りの場合、MARKET_IF_TOUCHED

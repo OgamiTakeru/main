@@ -1,14 +1,11 @@
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
-import classOanda as classOanda
 import datetime
-import fAnalysis_order_Main as im
+import fAnalysis_order_Main as am
 import classInspection as ci
-import fTurnInspection as pi
-import fPredictTurn as pred
+import fTurnInspection as ti
+
 
 memo = "25 LONG"
-func = im.wrap_all_inspections
-# func = im.analysis_old_flag
 
 loop = [
     datetime.datetime(2024, 10, 3, 9, 25, 0),  # いいマイナスデータ
@@ -23,8 +20,8 @@ mode = 1  # 任意期間　または、　25年半年
 
 if mode == 1:
     intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
-                            pi.wrap_little_turn_inspection_test,
-                    # True,
+                            ti.turn_analisys,  # インスタンス化前のクラスを渡す
+                            # True,
                             False,
                            # datetime.datetime(2024, 10, 3, 9, 25, 0),  # いいマイナスデータ
                            #  datetime.datetime(2024, 10, 10, 9, 25, 0),  # いいマイナスデータ
@@ -37,7 +34,7 @@ if mode == 1:
                             datetime.datetime(2025, 7, 25, 23, 0, 6),
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5m.csv',
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5s.csv',
-                           700,
+                           400,
                            1,
                            " テスト" + memo,
                            True,  # グラフの描画あり

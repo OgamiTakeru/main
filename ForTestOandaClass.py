@@ -1,32 +1,7 @@
-import threading  # 定時実行用
-import time
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as classOanda
-import classPosition as classPosition
-import fGeneric as gene
 import datetime
-import fCommonFunction as cm
-import fAnalysis_order_Main as im
-import math
-from decimal import Decimal, ROUND_DOWN
-import glob
-import os
-import gc
-import threading  # 定時実行用
-import time
-import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
-import classOanda as classOanda
-import classPosition as classPosition
-import fGeneric as gene
-import datetime
-import fCommonFunction as cm
-import fAnalysis_order_Main as im
-import math
-from decimal import Decimal, ROUND_DOWN
-import glob
-import os
-import gc
-import oandapyV20.endpoints.transactions as trans
+
 
 # ■■■本文開始
 # モードの設定と使うOandaモードの設定(oaの定義）

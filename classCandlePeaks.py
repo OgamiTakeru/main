@@ -3,17 +3,11 @@ from datetime import datetime
 from datetime import timedelta
 import pandas as pd
 from collections import defaultdict
-
-import classOanda
 import tokens as tk
 import fGeneric as gene
-import gc
-import fCommonFunction as cf
-import sys
 import fGeneric as f
 import copy
-import fBlockInspection as fTurn
-import classOrderCreate as OCreate
+
 
 
 class PeaksClass:
@@ -171,9 +165,6 @@ class PeaksClass:
 
             #  (1)大きなレンジをターンストレングスで判断する場合
             self.peak_strength_sort()
-
-            # (2)move_sizeの算出
-            self.cal_move_size()
 
             # (3)samePriceの算出
             # self.make_same_price_list(1, False)  # スタンダードな引数で出しておく
@@ -609,11 +600,11 @@ class PeaksClass:
             d: sorted(lst, key=lambda x: x["peak_strength"], reverse=True)
             for d, lst in peaks_by_dir.items()
         }
-        print("!!classPeaks 608行目")
-        print("-1側")
-        gene.print_arr(sorted_peaks_by_dir[-1])
-        print("1側")
-        gene.print_arr(sorted_peaks_by_dir[1])
+        # print("!!classPeaks 608行目")
+        # print("-1側")
+        # gene.print_arr(sorted_peaks_by_dir[-1])
+        # print("1側")
+        # gene.print_arr(sorted_peaks_by_dir[1])
 
     def skip_peaks(self):
         """
@@ -836,80 +827,6 @@ class PeaksClass:
 
         return peaks
 
-    def cal_move_size(self):
-        # ■データフレームの状態で、サイズ感を色々求める
-        filtered_df = PeaksClass.df_r_original[:65]  # 直近4時間の場合、12×4 48
-        sorted_df = filtered_df.sort_values(by='body_abs', ascending=False)
-        max_high = sorted_df["inner_high"].max()
-        min_low = sorted_df['inner_low'].min()
-        self.recent_fluctuation_range = round(max_high - min_low, 3)
-        self.ave_move = filtered_df.head(5)["highlow"].mean()
-        self.ave_move_for_lc = self.ave_move * 1.6
-        print("   ＜稼働範囲サマリ＞")
-        print("    検出範囲", filtered_df.iloc[0]["time_jp"], "-", filtered_df.iloc[-1]['time_jp'])
-        print("    最大値、最小値", max_high, min_low, "差分")
-        print("    平均キャンドル長", filtered_df.head(5)["highlow"].mean())
-        print("    提唱LC幅", self.ave_move_for_lc)
-        # print(t6, "最大足(最高-最低),", sorted_df.iloc[0]['time_jp'], sorted_df.iloc[0]['highlow'])
-        # print(t6, "最小足(最高-最低),", sorted_df.iloc[-1]['time_jp'], sorted_df.iloc[-1]['highlow'])
-        # print(t6, "平均(最高-最低)", sorted_df['highlow'].mean())
-        # print(t6, "最大足(Body),", sorted_df.iloc[0]['time_jp'], sorted_df.iloc[0]['body_abs'])
-        # print(t6, "最小足(Body),", sorted_df.iloc[-1]['time_jp'], sorted_df.iloc[-1]['body_abs'])
-        # print(t6, "平均(Body)", sorted_df['body_abs'].mean())
-
-        # ■ピーク5個の中で突発的できわめて大きな変動がある場合（雇用統計とか、、、）基本は戻る動きとみる？（それとも静観・・・？）
-        if len(PeaksClass.peaks_original) == 1:
-            # 極まれに範囲外になる。
-            target_peak = PeaksClass.peaks_original[0]
-            print("特殊事態（Peaksが少なすぎる）")
-            gene.print_arr(PeaksClass.peaks_original)
-        else:
-            target_peak = PeaksClass.peaks_original[1]  # ビッグムーブ検査の対象となるのはひとつ前のピーク
-        if PeaksClass.peaks_original[0]['count'] == 2:
-            # 重複オーダーとなる可能性をここで防止するため、ビッグムーブの判定はLatestカウントが2の場合のみ
-            if target_peak['gap'] >= self.fluctuation_gap and target_peak['count'] <= self.fluctuation_count:
-                # 変動が大きく、カウントは3まで（だらだらと長く進んでいる変動は突発的なビッグムーブではない）
-                PeaksClass.is_big_move_peak = True
-                # tk.line_send("ビッグムーブ観測　cal_move_size関数@classPeaks")
-            else:
-                PeaksClass.is_big_move_peak = False
-
-        # ■ピークの直近5個分の平均値等を求める
-        filtered_peaks = PeaksClass.peaks_original[:5]
-        peaks_ave = sum(item["gap"] for item in filtered_peaks) / len(filtered_peaks)
-        # 最大値と最小値
-        max_index, max_peak = max(enumerate(filtered_peaks[:]), key=lambda x: x[1]["peak"])
-        min_index, min_peak = min(enumerate(filtered_peaks[:]), key=lambda x: x[1]["peak"])
-        # 最大変動と最小変動
-        max_gap_index, max_gap = max(enumerate(filtered_peaks[:]), key=lambda x: x[1]["gap"])
-        min_gap_index, min_gap = min(enumerate(filtered_peaks[:]), key=lambda x: x[1]["gap"])
-        other_max_gap_items = [item for item in filtered_peaks[:] if item != max_gap]
-        # print(t6, "検出範囲ピーク",)
-        # gene.print_arr(filtered_peaks, 6)
-        # print(t6, peaks_ave)
-        # print(t6, "変動幅検証関数　ここまで")
-        # print(t6, "最大ギャップ", max_gap)
-        # print(t6, other_max_gap_items)
-
-        # ■足の長さが急変動があるかを確認
-        filtered_df = PeaksClass.df_r_original[:5]  # 直近4時間の場合、12×4 48
-        sorted_df = filtered_df.sort_values(by='body_abs', ascending=False)
-        max_body = sorted_df["body_abs"].max()
-        if max_body >= 0.1:
-            self.is_big_move_candle = True
-        else:
-            self.is_big_move_candle = False
-
-    def cal_move_ave(self, times):
-        """
-        直近の動き幅のtimes倍の数値を返却する(直接LC Rangeに利用することを想定）
-        """
-        # ■データフレームの状態で、サイズ感を色々求める
-        filtered_df = PeaksClass.df_r_original[:65]  # 直近4時間の場合、12×4 48
-        self.ave_move = filtered_df.head(9)["highlow"].mean()
-        self.ave_move_for_lc = self.ave_move * times
-        return self.ave_move_for_lc
-
     def cal_target_times_skip_num(self, peaks, target_time):
         """
         データフレームのJP形式の日付が渡され、そのピークがスキップを含むかを返却
@@ -978,8 +895,8 @@ class PeaksClass:
         # target_num = 2
         target_peak = peaks[target_num]
         target_price = target_peak['latest_body_peak_price']
-        print("   実行時引数 SKIP：", skip, " TargetNum:", target_num)
-        print("   ターゲットになるピーク@cp:", target_peak)
+        # print("   実行時引数 SKIP：", skip, " TargetNum:", target_num)
+        # print("   ターゲットになるピーク@cp:", target_peak)
 
         # ■■閾値の情報
         # Margin情報

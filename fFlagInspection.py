@@ -13,7 +13,7 @@ import fMoveSizeInspection as ms
 import fCommonFunction as cf
 import fMoveSizeInspection as ms
 import fPeakInspection as pi
-import classPeaks as cpk
+import classCandleAnalysis as cpk
 
 
 def make_same_price_list_from_target_price(target_price, target_dir, peaks_all, same_price_range, is_recall):

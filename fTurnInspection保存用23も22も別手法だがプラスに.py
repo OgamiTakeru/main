@@ -14,7 +14,7 @@ import fMoveSizeInspection as ms
 import fCommonFunction as cf
 import fMoveSizeInspection as ms
 import fPeakInspection as pi
-import classPeaks as cpk
+import classCandleAnalysis as cpk
 from datetime import datetime, timedelta
 from datetime import datetime
 import classOrderCreate as OCreate

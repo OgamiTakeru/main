@@ -5,11 +5,12 @@ import classOanda
 import tokens as tk
 import fGeneric as gene
 import gc
-import fCommonFunction as cf
 import sys
-import classPeaks as cpk
+import classCandleAnalysis as cpk
 import os
 import pandas as pd
+
+# from test_loop import get_instances_of_class
 
 
 class order_information:
@@ -38,11 +39,26 @@ class order_information:
     history_plus_minus = [0]  # 空だと、過去のプラスマイナスを参照するときおかしなことになるので０を入れておく
     history_names = ["0"]  # 上の理由と同様に数字を入れておく
 
-    # 履歴ファイル
-    def __init__(self, name, oa, is_live):
-        self.name = name  #
-        self.oa = oa  # クラス変数でもいいが、LiveとPracticeの混在ある？　引数でもらう
+    def select_oa(self, oa_mode):
+        print("★★★★SelectMode", oa_mode)
+        self.oa_mode = oa_mode
+        if self.is_live:
+            if self.oa_mode == 1:
+                # 通常アカウント
+                self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)
+            else:
+                # 両建て用アカウント
+                self.oa = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
+        else:
+            # デモ口座
+            self.oa = classOanda.Oanda(tk.accountID, tk.access_token, tk.environment)
+
+    def __init__(self, name, is_live):
+        self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)  # 仮の値
+        self.oa_mode = 1  # アカウント選択（１が通常、２が両建てアカウント） 初期値は１
         self.is_live = is_live  # 本番環境か練習か（Boolean）
+        self.select_oa(self.oa_mode)  # 重要！　id_noとis_liveを基に、oaクラスを選択する
+        self.name = name  #
         self.current_price = 0
         # self.reset()
         # 以下リセット対象群
@@ -140,6 +156,7 @@ class order_information:
         # 情報の完全リセット（テンプレートに戻す）
         print("    ●●●●OrderClassリセット●●●●")
         self.name = ""
+        self.oa_mode = 0  # アカウント選択（１が通常、２が両建てアカウント）
         self.priority = 0  # このポジションのプライオリティ
         # self.is_live = True  # 本番環境か練習か（Boolean）　⇒する必要なし
         self.life = False
@@ -336,19 +353,21 @@ class order_information:
         self.reset()  # 一旦リセットする
         self.plan = plan  # 受け取ったプラン情報(そのままOrderできる状態が基本）
         self.order_register_time = datetime.datetime.now()
+        # 重要！！！！！環境の選択
+        self.select_oa(plan['oa_mode'])
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
-        print(plan)
-        print("消したいやつ(classPosition225行目"
-              , "ClassPosition算出LC", round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
-              , "元LC", plan['lc_price']
-              , "classPosition算出TP", round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
-              , "元TP", plan['tp_price']
-              , "新DateNow", datetime.datetime.now()
-              # , "元DateNow", self.plan['time']
-              , "新price", plan['target_price']
-              , "元price", plan['price']
-              )
+        # print(plan)
+        # print("消したいやつ(classPosition225行目"
+        #       , "ClassPosition算出LC", round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
+        #       , "元LC", plan['lc_price']
+        #       , "classPosition算出TP", round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
+        #       , "元TP", plan['tp_price']
+        #       , "新DateNow", datetime.datetime.now()
+        #       # , "元DateNow", self.plan['time']
+        #       , "新price", plan['target_price']
+        #       , "元price", plan['price']
+        #       )
         # self.plan['price'] = plan['target_price']  # ターゲットプライス（注文価格）は、oandaClassではprice
         if 'priority' in plan:
             self.priority = plan['priority']  # プラオリティを登録する
@@ -375,9 +394,9 @@ class order_information:
         # (4)LC_Change情報を格納する
         if "lc_change" in plan:
             self.lc_change_dic_arr = plan['lc_change']  # 辞書を丸ごと
-            print("LCチェンジ初期値の確認")
-            gene.print_arr(self.lc_change_dic_arr)
-            print(self.lc_change_dic_arr)
+            # print("LCチェンジ初期値の確認")
+            # gene.print_arr(self.lc_change_dic_arr)
+            # print(self.lc_change_dic_arr)
             # おかしいのでテスト用
             if 'time_done' in self.lc_change_dic_arr[0]:
                 tk.line_send("最初からLCChangeのDone時間が入っているNG classPosition.py ３３０行目付近")
@@ -655,45 +674,6 @@ class order_information:
                 "result_yen": str(order_information.total_yen),
                 "name": self.name
             })
-        # カウンターオーダーの実行(いったんポジションを全てクローズした後）
-        self.counter_order_exe()
-
-    def counter_order_exe(self):
-        # カウンターのオーダーを入れる。AfterCloseFunctionから呼ばれる
-        # このクラスを再利用するため、LifeをTrueに戻すことを忘れずに
-        if len(self.counter_order_peace) != 0 and not self.counter_order_done and 1 <= self.lc_change_num <= 2:
-            # if len(self.counter_order_peace) != 0 and not self.counter_order_done and 0 <= self.lc_change_num:
-            # カウンタオーダーがあり、カウンターオーダーが未執行で、なおかつ、LCChangeが執行されている場合（プラス確定の場合）
-            # lcChangeが執行されていない場合は、だいぶ負けているため、自動的なカウンターは入れてはいけない、
-            self.life_set(True)
-            self.counter_order_done = True
-            print("カウンター用オーダー")
-            # 現在価格を取得する（ただし、今後のBidAskによって微妙に変えたい）
-
-            if self.counter_order_peace['expected_direction'] == 1:
-                # 買いの場合
-                now_price = self.oa.NowPrice_exe("USD_JPY")['data']['ask']
-            else:
-                # 売りの場合
-                now_price = self.oa.NowPrice_exe("USD_JPY")['data']['bid']
-
-            # 書き換え確認用
-            # print(" 書き換え前")
-            # gene.print_json(self.counter_order_peace)
-            # print(" 書き換え後")
-            self.counter_order_peace['target'] = now_price + (0.01 * self.counter_order_peace['expected_direction'])
-            self.counter_order_peace = cf.order_finalize(self.counter_order_peace)
-            # gene.print_json(self.counter_order_peace)
-
-            # オーダー発行
-            self.order_plan_registration(self.counter_order_peace)
-            # order_base(target_price, df_r.iloc[0]['time_jp'])
-            print("カウンターオーダー実施。決済価格", self.t_json['averageClosePrice']
-                  , "現時刻(dfFOrmat)", gene.now_df_format(), self.life, self.counter_order_done)
-            self.send_line("カウンターオーダー実施。決済価格", self.t_json['averageClosePrice']
-                           , "現時刻(dfFOrmat)", gene.now_df_format(), " 現在価格", self.oa.NowPrice_exe("USD_JPY")
-                           , self.life, self.counter_order_done, "lcDoneNum:", self.lc_change_num)
-            sys.exit(0)
 
     def close_trade(self, units):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -906,9 +886,6 @@ class order_information:
                 self.current_price = temp_current_price['data']['bid']
             else:
                 self.current_price = temp_current_price['data']['ask']
-
-        # (0)オーダーの仲間がいるかを確認
-        self.exist_alive_class = life_check_no_args()  # 一つでも生きているクラスがあればTrueが入る
 
         # (1) OrderDetail,TradeDetailの取得（orderId,tradeIdの確保）
         # print("     不具合原因追及用　classPosition 898行目")
@@ -1752,186 +1729,6 @@ class order_information:
                 "tuned_tp_range": tp_range,
                 "tuned_lc_change_type": lc_change_type}
 
-    # def tuning_by_history_resi(self):
-    #     """
-    #     検討中
-    #     呼びもとで過去１回分の結果を参照し、それが大きなLCだった場合は、この関数を呼ぶ。
-    #     この関数は、リスクをとってそのLCと同額をTPとする。
-    #     """
-    #
-    #     tp_up_border_minus = -0.045  # これ以上のマイナスの場合、取り返しに行く。
-    #     # 過去の履歴を確認する
-    #     if len(order_information.history_plus_minus) == 1:
-    #         # 過去の履歴が一つだけの場合
-    #         latest_plu = order_information.history_plus_minus[-1]
-    #         print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", order_information.history_plus_minus[-1])
-    #     else:
-    #         # 過去の履歴が二つ以上の場合、直近の二つの合計で判断する
-    #         latest_plu = order_information.history_plus_minus[-1] + order_information.history_plus_minus[-2]  # 変数化(短縮用)
-    #         print("  直近の勝敗pips", latest_plu, "詳細(直近)", order_information.history_plus_minus[-1],
-    #               order_information.history_plus_minus[-2])
-    #     # 最大でも現実的な10pips程度のTPに収める
-    #     if abs(latest_plu) >= 0.01:
-    #         latest_plu = 0.01
-    #
-    #     # 値を調整する
-    #     if latest_plu == 0:
-    #         print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
-    #         # 通常環境の場合
-    #         tp_range = 0.5
-    #         lc_change_type = 1
-    #     else:
-    #         if latest_plu <= tp_up_border_minus:
-    #             print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）", latest_plu * 0.8)
-    #             # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
-    #             tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
-    #             lc_change_type = 3  # LCchangeの設定なし
-    #             tk.line_send("取り返し調整発生")
-    #         else:
-    #             # 直近がプラスの場合プラスの場合、普通。
-    #             print("  ★前回プラスのため、通常TP設定")
-    #             tp_range = 0.5
-    #             lc_change_type = 1  # LCchangeの設定なし
-    #
-    #     return {"tuned_tp_range": tp_range, "tuned_lc_change_type": lc_change_type}
-    #
-
-
-def error_end(info):
-    print("  ★■★APIエラー発生")
-    # print(" ")
-    # sys.exit()  # 強制終了
-
-
-def all_update_information(*args):
-    """
-    全ての情報を更新する
-    :return:
-    """
-    classes = args[0]
-    for item in classes:
-        if item.life:
-            # print("個別", item.life)
-            item.update_information()
-
-
-def reset_all_position(classes):
-    """
-    全てのオーダー、ポジションをリセットして、更新する
-    :return:
-    """
-    print("  RESET ALL POSITIONS")
-    oa = classes[0].oa  # とりあえずクラスの一つから。オアンダのクラスを取っておく
-    oa.OrderCancel_All_exe()  # 露払い(classesに依存せず、オアンダクラスで全部を消す）
-    oa.TradeAllClose_exe()  # 露払い(classesに依存せず、オアンダクラスで全部を消す）
-    all_update_information(classes)  # 関数呼び出し（アップデート）
-
-
-def life_check(classes):
-    """
-    オーダーが生きているかを確認する。一つでも生きていればＴｒｕｅを返す
-    :return:
-    """
-
-    life = []
-    unlife = []
-    for item in classes:
-        if item.life:
-            life.append(item)
-        else:
-            unlife.append(item)
-    # 結果を集約する
-    if len(life) == 0:
-        ans = False  # 一つもLifeがOnでない。
-    else:
-        ans = True  # 一つでもLifeがある場合はＴｒｕｅ
-        # print(" 残っているLIFE", life)
-
-    return ans
-
-
-def life_check_no_args():
-    """
-    オーダーが生きているかを確認する。一つでも生きていればＴｒｕｅを返す
-    :return:
-    """
-    classes = get_instances_of_class()
-    life = []
-    unlife = []
-    comment = ""
-    for item in classes:
-        if item.life:
-            life.append(item)
-            if item.t_state == "OPEN":
-                # print(item.name, "comment", comment, "lcStatus", item.lc_change_status)
-                comment = comment + "," + item.lc_change_status
-        else:
-            unlife.append(item)
-    # 結果を集約する
-    if len(life) == 0:
-        ans = False  # 一つもLifeがOnでない。
-    else:
-        ans = True  # 一つでもLifeがある場合はＴｒｕｅ
-        # print(" 残っているLIFE", life)
-
-    return {"life_exist": ans, "one_line_comment": comment}
-
-
-def close_opposite_order(classes):
-    # 現在のポジションの方向を確認（基本的に同方向のポジションしかない前提）
-    position_direction = 0
-    position_count = 0
-    lives = 0  # オーダーとポジションの合計（＝ライフの合計）
-    for item in classes:
-        # print("  item_info", item.name, item.life)
-        if item.t_state == "OPEN":
-            position_count += 1
-            position_direction = item.plan['direction']
-        if item.life:
-            lives += 1
-    # 逆方向のオーダーを解除する
-    for item in classes:
-        if lives > 1:  # ライフオンが１以上（自分以外のオーダー等がある）
-            # print(" ★CloseTarget", item.name, item.plan)
-            if len(item.plan) != 0:  # 空のItemも存在している
-                if item.plan['expected_direction'] != position_direction:
-                    item.close_order()
-                    # print("  CloseOppsite実行")
-    # print("   CloseOppsit", position_direction, position_count, lives)
-
-
-def position_info(classes):
-    """
-    lIFEがある物を探してくる
-    :param classes:
-    :return:
-    """
-    ans = ""
-    count = 0
-    for item in classes:
-        if "W" in item.name:  # Wと未遂は除外
-            pass
-        else:
-            if item.life:
-                # 文章生成
-                temp = "@:" + item.name + "," + item.t_state + ",pl:" + str(round(float(item.t_unrealize_pl), 2)) + "円,"
-                temp = temp + str(item.t_pl_u) + " PLu," + "ID:" + str(item.t_id) + " "
-                temp = temp + str(item.t_time_past_sec) + "秒経過"
-                if count == 0:  # 初回のみ
-                    pass
-                else:
-                    temp = "\n" + temp  # 二個目以降を次の行とするために、改行を入れる
-                ans = ans + temp
-    return ans
-
-
-# 特定のクラスのインスタンス一覧を取得する関数(現在メモリ上にあるクラスのインスタンスのリストを返す）
-def get_instances_of_class():
-    """
-    引数は無し。
-    """
-    return [obj for obj in gc.get_objects() if isinstance(obj, order_information)]
-
 
 def position_check_no_args():
     """
@@ -1943,7 +1740,7 @@ def position_check_no_args():
     :return:
     """
     # 存在するOrderInformationのクラスのインスタンス達を検索する
-    classes = get_instances_of_class()
+    classes = [obj for obj in gc.get_objects() if isinstance(obj, order_information)]
 
     # 実処理
     open_positions = []
@@ -1986,7 +1783,7 @@ def position_check_no_args():
                 # トータルの含み損益を表示する
                 total_pl = total_pl + float(item.t_unrealize_pl)
                 # オーダー時間リストを作る（表示用）
-                open_class_names = open_class_names + "," + gene.delYearDay(item.o_time)
+                open_class_names = open_class_names + "," + gene.delYearDay(item.o_time) + "(oa" + str(item.oa_mode) + ")"
                 # print("  ポジション状態", item.t_id, ",PL:", total_pl)
             elif item.o_state == "PENDING":
                 # オーダーのみ（取得俟ちの場合）取得まち用の配列に入れておく
@@ -2007,7 +1804,7 @@ def position_check_no_args():
                 if item.o_time_past_sec > max_order_time_sec:
                     max_order_time_sec = item.o_time_past_sec  # 何分間オーダー待ちか
                 # オーダー時間リストを作成する（表示用）
-                pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time)
+                pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time) + "(oa" + str(item.oa_mode) + ")"
             else:
                 # どうやらt_stateが入っていない状態（オーダーエラーや謎の状態）
                 if item.o_state == "Watching":
@@ -2059,3 +1856,186 @@ def position_check_no_args():
         "name_list": name_list,
         "watching_list": watching_list
     }
+
+    # def tuning_by_history_resi(self):
+    #     """
+    #     検討中
+    #     呼びもとで過去１回分の結果を参照し、それが大きなLCだった場合は、この関数を呼ぶ。
+    #     この関数は、リスクをとってそのLCと同額をTPとする。
+    #     """
+    #
+    #     tp_up_border_minus = -0.045  # これ以上のマイナスの場合、取り返しに行く。
+    #     # 過去の履歴を確認する
+    #     if len(order_information.history_plus_minus) == 1:
+    #         # 過去の履歴が一つだけの場合
+    #         latest_plu = order_information.history_plus_minus[-1]
+    #         print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", order_information.history_plus_minus[-1])
+    #     else:
+    #         # 過去の履歴が二つ以上の場合、直近の二つの合計で判断する
+    #         latest_plu = order_information.history_plus_minus[-1] + order_information.history_plus_minus[-2]  # 変数化(短縮用)
+    #         print("  直近の勝敗pips", latest_plu, "詳細(直近)", order_information.history_plus_minus[-1],
+    #               order_information.history_plus_minus[-2])
+    #     # 最大でも現実的な10pips程度のTPに収める
+    #     if abs(latest_plu) >= 0.01:
+    #         latest_plu = 0.01
+    #
+    #     # 値を調整する
+    #     if latest_plu == 0:
+    #         print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
+    #         # 通常環境の場合
+    #         tp_range = 0.5
+    #         lc_change_type = 1
+    #     else:
+    #         if latest_plu <= tp_up_border_minus:
+    #             print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）", latest_plu * 0.8)
+    #             # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
+    #             tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
+    #             lc_change_type = 3  # LCchangeの設定なし
+    #             tk.line_send("取り返し調整発生")
+    #         else:
+    #             # 直近がプラスの場合プラスの場合、普通。
+    #             print("  ★前回プラスのため、通常TP設定")
+    #             tp_range = 0.5
+    #             lc_change_type = 1  # LCchangeの設定なし
+    #
+    #     return {"tuned_tp_range": tp_range, "tuned_lc_change_type": lc_change_type}
+    #
+
+
+# def error_end(info):
+#     print("  ★■★APIエラー発生")
+#     # print(" ")
+#     # sys.exit()  # 強制終了
+#
+#
+# def all_update_information(*args):
+#     """
+#     全ての情報を更新する
+#     :return:
+#     """
+#     classes = args[0]
+#     for item in classes:
+#         if item.life:
+#             # print("個別", item.life)
+#             item.update_information()
+#
+#
+# def reset_all_position(classes):
+#     """
+#     全てのオーダー、ポジションをリセットして、更新する
+#     :return:
+#     """
+#     print("  RESET ALL POSITIONS")
+#     oa = classes[0].oa  # とりあえずクラスの一つから。オアンダのクラスを取っておく
+#     oa.OrderCancel_All_exe()  # 露払い(classesに依存せず、オアンダクラスで全部を消す）
+#     oa.TradeAllClose_exe()  # 露払い(classesに依存せず、オアンダクラスで全部を消す）
+#     all_update_information(classes)  # 関数呼び出し（アップデート）
+#
+#
+# def life_check(classes):
+#     """
+#     オーダーが生きているかを確認する。一つでも生きていればＴｒｕｅを返す
+#     :return:
+#     """
+#
+#     life = []
+#     unlife = []
+#     for item in classes:
+#         if item.life:
+#             life.append(item)
+#         else:
+#             unlife.append(item)
+#     # 結果を集約する
+#     if len(life) == 0:
+#         ans = False  # 一つもLifeがOnでない。
+#     else:
+#         ans = True  # 一つでもLifeがある場合はＴｒｕｅ
+#         # print(" 残っているLIFE", life)
+#
+#     return ans
+#
+#
+# def life_check_no_args():
+#     """
+#     オーダーが生きているかを確認する。一つでも生きていればＴｒｕｅを返す
+#     :return:
+#     """
+#     classes = get_instances_of_class()
+#     life = []
+#     unlife = []
+#     comment = ""
+#     for item in classes:
+#         if item.life:
+#             life.append(item)
+#             if item.t_state == "OPEN":
+#                 # print(item.name, "comment", comment, "lcStatus", item.lc_change_status)
+#                 comment = comment + "," + item.lc_change_status
+#         else:
+#             unlife.append(item)
+#     # 結果を集約する
+#     if len(life) == 0:
+#         ans = False  # 一つもLifeがOnでない。
+#     else:
+#         ans = True  # 一つでもLifeがある場合はＴｒｕｅ
+#         # print(" 残っているLIFE", life)
+#
+#     return {"life_exist": ans, "one_line_comment": comment}
+#
+#
+# def close_opposite_order(classes):
+#     # 現在のポジションの方向を確認（基本的に同方向のポジションしかない前提）
+#     position_direction = 0
+#     position_count = 0
+#     lives = 0  # オーダーとポジションの合計（＝ライフの合計）
+#     for item in classes:
+#         # print("  item_info", item.name, item.life)
+#         if item.t_state == "OPEN":
+#             position_count += 1
+#             position_direction = item.plan['direction']
+#         if item.life:
+#             lives += 1
+#     # 逆方向のオーダーを解除する
+#     for item in classes:
+#         if lives > 1:  # ライフオンが１以上（自分以外のオーダー等がある）
+#             # print(" ★CloseTarget", item.name, item.plan)
+#             if len(item.plan) != 0:  # 空のItemも存在している
+#                 if item.plan['expected_direction'] != position_direction:
+#                     item.close_order()
+#                     # print("  CloseOppsite実行")
+#     # print("   CloseOppsit", position_direction, position_count, lives)
+#
+#
+# def position_info(classes):
+#     """
+#     lIFEがある物を探してくる
+#     :param classes:
+#     :return:
+#     """
+#     ans = ""
+#     count = 0
+#     for item in classes:
+#         if "W" in item.name:  # Wと未遂は除外
+#             pass
+#         else:
+#             if item.life:
+#                 # 文章生成
+#                 temp = "@:" + item.name + "," + item.t_state + ",pl:" + str(round(float(item.t_unrealize_pl), 2)) + "円,"
+#                 temp = temp + str(item.t_pl_u) + " PLu," + "ID:" + str(item.t_id) + " "
+#                 temp = temp + str(item.t_time_past_sec) + "秒経過"
+#                 if count == 0:  # 初回のみ
+#                     pass
+#                 else:
+#                     temp = "\n" + temp  # 二個目以降を次の行とするために、改行を入れる
+#                 ans = ans + temp
+#     return ans
+#
+#
+# # 特定のクラスのインスタンス一覧を取得する関数(現在メモリ上にあるクラスのインスタンスのリストを返す）
+# def get_instances_of_class():
+#     """
+#     引数は無し。
+#     """
+#     return [obj for obj in gc.get_objects() if isinstance(obj, order_information)]
+#
+#
+

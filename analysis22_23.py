@@ -1,22 +1,6 @@
-import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
-import classOanda as classOanda
-import datetime
 import fAnalysis_order_Main as im
-import classInspection as ci
-import fTurnInspection as pi
-import datetime
-from datetime import datetime
-from datetime import timedelta
 import pandas as pd
 
-import classOanda
-import tokens as tk
-import fGeneric as gene
-import gc
-import fCommonFunction as cf
-import sys
-import fGeneric as f
-import copy
 
 
 memo = "大量22_23LONG"

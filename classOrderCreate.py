@@ -1,15 +1,5 @@
-import datetime
-from datetime import timedelta
-
-import classOanda
-import tokens as tk
 import fGeneric as gene
-import gc
-import fCommonFunction as cf
-import sys
-import fGeneric as f
 import copy
-import fBlockInspection as fTurn
 
 
 class OrderCreateClass:
@@ -89,13 +79,6 @@ class OrderCreateClass:
         self.finalized_order = {}  # 最終的にAPIに渡される部分
         self.finalized_order_without_lc_change = {}
 
-        if OrderCreateClass.oa is None:
-            # print("OrderCreateClassで新規Oaクラスの生成を実施（初回のみのはず）")
-            OrderCreateClass.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラス変数の必要あり？
-        else:
-            pass
-            # print(" 既にオーダークラスは一度生成済み（参照するため、逆にメモリ大丈夫か・・・？）")
-
         # 情報に不足がないかの確認
         print("targetなし。その場合、targetPriceが必要です。") if "target" not in order_json else None
         print("typeがありません") if "type" not in order_json else None
@@ -133,6 +116,12 @@ class OrderCreateClass:
         else:
             # print("Unit指定がないため、Unitsを基本のものを入れておく")
             self.order_base["units"] = self.basic_unit
+
+        # 環境を選択する（通常環境か、両建て環境か）
+        if "oa_mode" in order_json:
+            pass
+        else:
+            self.order_base['oa_mode'] = 1  # 何も書かれていない場合は通常環境に入れる
 
         # 情報を取得する（場合によって）
         if "decision_price" not in order_json or self.order_base["decision_price"] == "Now":
@@ -349,6 +338,12 @@ class OrderCreateClass:
             print("　　　　エラー（項目不足)", 'expected_direction' in order_base_info,
                   'decision_price' in order_base_info, 'decision_time' in order_base_info)
             return -1  # エラー
+
+        # 環境を選択する（通常環境か、両建て環境か）
+        if "oa_mode" in order_base_info:
+            pass
+        else:
+            self.order_base['oa_mode'] = 1  # 何も書かれていない場合は通常環境に入れる
 
         # 0 注文方式を指定する
         if not ('stop_or_limit' in order_base_info) and not ("type" in order_base_info):
@@ -576,17 +571,4 @@ def cal_lc_price_from_line_and_margin(line_price, margin, expected_direction):
     else:
         ans = line_price + margin
     return ans
-
-
-def cal_tp_price_from_line_and_margin(line_price, margin, expected_direction):
-    """
-    価格、マージン、購入方向を受け取り、
-    cal_lcの逆（TPバージョン）をする
-    """
-    if expected_direction == 1:
-        ans = line_price + margin
-    else:
-        ans = line_price - margin
-    return ans
-
 

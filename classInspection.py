@@ -94,8 +94,11 @@ class Inspection:
             そこから何個分（時系列的に前まで）とるかを、m5_countとloopでしていする（5000×２回分のような）
             なおm5_countは5000が最大値
         """
+        # グローバルでの宣言
+        self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
-        self.target_func = target_func
+        self.target_class = target_func
+
         self.gl_classes = []
         self.gl_exist_data = is_exist_data
         self.gl_jp_time = target_to_time  # TOの時刻
@@ -119,8 +122,7 @@ class Inspection:
         gl_classes = []
         pd.set_option('display.max_columns', None)
 
-        # グローバルでの宣言
-        self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
+
         # データ取得用
         self.gl_need_to_analysis = 60  # 調査に必要な行数
         self.gl_d5_df = pd.DataFrame()
@@ -291,9 +293,17 @@ class Inspection:
                     # analysis_result = self.target_func(analysis_df)  # 検証専用コード
                     # print("TARAMS確認", self.params)
                     if self.params:
-                        analysis_result = self.target_func(analysis_df, self.params)  # 検証専用コード
+                        analysis_result = self.target_class(analysis_df, self.params)  # 検証専用コード
                     else:
-                        analysis_result = self.target_func(analysis_df)  # 検証専用コード
+                        target_class_instance = self.target_class(analysis_df, self.oa)  # インスタンス
+                        analysis_result = {
+                            "take_position_flag": target_class_instance.take_position_flag,
+                            "exe_orders": target_class_instance.exe_orders,
+                            "for_inspection_dic": {}
+                        }
+                        print("テスト用")
+                        print(target_class_instance.exe_orders)
+                        # analysis_result = self.target_class(analysis_df)  # 検証専用コード
 
                     # for order in analysis_result["exe_orders"]:  # original_lc_priceの追加
                     #     order["lc_price_original"] = order["lc_price"]
