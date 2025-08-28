@@ -285,7 +285,7 @@ class turn_analisys:
             is_extendable_line = False
 
         # ■分岐
-        print(" ●判定パラメーター一覧●")
+        print(" ●判定パラメーター一覧●  rCOunt:", r['count'])
         print("  RT情報 比率:", self.rt.lo_ratio)
         print("  TF情報 比率:", self.tf.lo_ratio)
         print("  T情報 SKIP有無:", self.rt.skip_exist_at_older, ",Skip数:", self.rt.skip_num_at_older, "t-Count:", t['count'])
@@ -311,8 +311,8 @@ class turn_analisys:
                 margin,  # margin
                 r['direction'],  # direction
                 "STOP",  # STOP=順張り　LIMIT＝逆張り
-                tp_range,  # TP hedgedはレンジ指定
-                lc_range,  # LC hedgedはレンジ指定
+                1,  # TP hedgedはレンジ指定
+                1,  # LC hedgedはレンジ指定
                 0,  # lcChange
                 self.units_str,  # uni
                 3,  # priority
@@ -508,84 +508,116 @@ class turn_analisys:
             # ■オーダーを登録
             self.orders_add_this_class_and_flag_on(orders)
 
+            # ■■turn方向（Break）の場合
+            # ■■[B] リバーの戻りが、ターンに比べて小さい（当初からのルールと近しい場合）
+            if self.rt.lo_ratio <= 0.3:
+                # ■■■■
+                if self.tf.lo_ratio <= 0.26:
+                    comment = "2B_強いトレンド"
+                    # ■■■■
+                elif 0.26 <= self.tf.lo_ratio <= 0.45:
+                    comment = "3B_ペナント型"
+                    # ●TARGET
+                elif 0.7 <= self.tf.lo_ratio <= 1.3:
+                    comment = "4B_レンジの強turnダブルトップ(r小)"
+                # ■■■■
+                elif self.tf.lo_ratio > 1.45 and self.rt.lo_ratio >= 0.195 and self.rt.skip_num_at_older < 4:
+                    comment = "◎◎5B_ジグザグトレンド(r短)"
+            # ■■[B] リバーの戻りが、ターンの半分前後
+            elif 0.3 <= self.rt.lo_ratio <= 0.55:
+                # ■■■■
+                if self.tf.lo_ratio > 1.45 and self.rt.skip_num_at_older < 10:
+                    comment = "◎◎5B_ジグザグトレンド(r中)"
+            # ■■[D] リバーの戻りがターンと同等のサイズ
+            elif 0.8 <= self.rt.lo_ratio <= 1.1:
+                # ■■■■
+                if self.tf.lo_ratio <= 0.45:
+                    comment = "3D_強いトレンド(r大)"
+                # ■■■■
+                elif 0.7 <= self.tf.lo_ratio <= 1.3:
+                    comment = "4D_レンジの強turnダブルトップ"
+                # ■■■■
+                elif self.tf.lo_ratio > 1.5 and self.rt.skip_num_at_older < 4:
+                    comment = "◎◎5B_ジグザグトレンド(r同等)"
+            # ■■[F] リバーが大きいとき
+            elif self.rt.lo_ratio > 1.2:
+                # ■■■■
+                if self.tf.lo_ratio <= 0.45:
+                    comment = "3F_強いジグザグトレンド"
+                # ■■■■
+                elif 0.7 <= self.tf.lo_ratio <= 1.3:
+                    comment = "4F_トレンド開始点"
+                # ■■■■
+                elif self.tf.lo_ratio > 1.3:
+                    comment = "5F_検討中"
+
         elif r['count'] == 3:
-            pass
-            # if (rt.skip_exist_at_older or 7 <= t['count'] < 100) and rt.skip_num_at_older < 3 and 0 < rt.turn_strength_at_older <= 8:
-            #     if 0 < rt.lo_ratio <= 0.36:
-            #         if 0.8 <= fp.lo_ratio <= 1.1 and tf.lo_ratio <= 0.75:
-            #             # フラッグ形状なりたて⇒突破しない方向
-            #             comment = "●●●強いやつ(旧式） フラッグ版　watch対象"
-            #             # ■ターゲット価格＆マージンの設定
-            #             target_price = peaks_class.latest_price
-            #             margin = peaks_class.cal_move_ave(0.15)  # 最強バージョン(回数は少ない＆現実は微妙）
-            #             m_dir = 1
-            #             # ■TPの設定
-            #             tp = latest_flop_resistance_gap
-            #             # ■LCの設定
-            #             # パターン１（シンプルに、平均足で指定するケース)
-            #             lc = peaks_class.cal_move_ave(0.8)
-            #             # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
-            #             lc_range = round(t['gap'] / 3 * 2, 3)
-            #             # ■LCChangeの設定
-            #             lc_change = 3
-            #
-            #             # ■■オーダーを作成＆発行
-            #             order = order_make_dir0_s(
-            #                     peaks_class, comment, target_price, margin, m_dir,
-            #                     tp,
-            #                     tp,
-            #                     lc_change,
-            #                     units_str,
-            #                     4,
-            #                     lc * 0.7, 1)
-            #             exe_orders.append(order)
-            #         else:
-            #             comment = "●●●強いやつ(旧式）　watch対象"
-            #             # ■ターゲット価格＆マージンの設定
-            #             target_price = peaks_class.latest_price
-            #             margin = peaks_class.cal_move_ave(0.15)  # 最強バージョン(回数は少ない＆現実は微妙）
-            #             m_dir = -1
-            #             # ■TPの設定
-            #             tp = peaks_class.cal_move_ave(5)
-            #             # ■LCの設定
-            #             # パターン１（シンプルに、平均足で指定するケース)
-            #             lc = peaks_class.cal_move_ave(0.8)
-            #             # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
-            #             lc_range = round(t['gap'] / 3 * 2, 3)
-            #             # ■LCChangeの設定
-            #             lc_change = 3
-            #
-            #             # ■■オーダーを作成＆発行
-            #             # order = order_make_dir1_s(
-            #             #         peaks_class, comment, target_price, margin, m_dir,
-            #             #         tp,
-            #             #         lc,
-            #             #         lc_change,
-            #             #         units_str,
-            #             #         4,
-            #             #         lc * 0.7, 1)
-            #             # exe_orders.append(order)
-            #             order = order_make(
-            #                 peaks_class,  # peakClass
-            #                 comment,  # nameとなるcomment
-            #                 current_price,  # currentPrice
-            #                 target_price,  # targetPrice
-            #                 margin,  # margin
-            #                 t['direction'],  # direction
-            #                 "LIMIT",
-            #                 tp,
-            #                 tp,
-            #                 lc_change,  # lcChange
-            #                 units_str,  # unit
-            #                 4,  # priority
-            #                 1,  # watching(0=off,1=On(watch基準はtarget(margin混み))
-            #             )
-            #             exe_orders.extend(order)
-            #     else:
-            #         print("戻りratio異なる", r['count'])
-            #         return default_return_item
-            # else:
-            #     return default_return_item
+            if ((self.rt.skip_exist_at_older or 7 <= t['count'] < 100) and self.rt.skip_num_at_older < 3 and
+                    0 < self.rt.turn_strength_at_older <= 8):
+                if 0 < self.rt.lo_ratio <= 0.36:
+                    if 0.8 <= self.fp.lo_ratio <= 1.1 and self.tf.lo_ratio <= 0.75:
+                        # フラッグ形成の開始地点　⇒　すぐに取得し、すこしだけr方向に行く（そのあとはｔ方向に行くのか・・？）
+                        comment = "●●●強いやつ(旧式） フラッグ版　watch対象" + name_t
+                        # ■ターゲット価格＆マージンの設定
+                        target_price = self.peaks_class.latest_price
+                        margin = self.ca.cal_move_ave(0.15)  # 最強バージョン(回数は少ない＆現実は微妙）
+                        # ■TPの設定
+                        tp = self.ca.cal_move_ave(1.5)
+                        # ■LCの設定
+                        # パターン１（シンプルに、平均足で指定するケース)
+                        lc = self.ca.cal_move_ave(0.8)
+                        # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
+                        lc_range = round(t['gap'] / 3 * 2, 3)
+                        # ■LCChangeの設定
+                        lc_change = 3
+
+                        # ■■オーダーを作成＆発行
+                        orders = self.order_make_hedged(
+                            comment,  # nameとなるcomment
+                            target_price,  # targetPrice
+                            margin,  # margin
+                            r['direction'],  # direction
+                            "STOP",  # STOP=順張り　LIMIT＝逆張り
+                            tp,  # TP hedgedはレンジ指定
+                            lc_range,  # LC hedgedはレンジ指定
+                            lc_change,  # lcChange
+                            self.units_str,  # uni
+                            4,  # priority
+                            0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                        )
+                        # ■オーダーを登録
+                        self.orders_add_this_class_and_flag_on(orders)
+                    else:
+                        comment = "●●●強いやつ(旧式）　watch対象" + name_t
+                        # ■TPの設定
+                        tp = self.ca.cal_move_ave(5)
+                        # ■LCの設定
+                        # パターン１（シンプルに、平均足で指定するケース)
+                        lc = self.ca.cal_move_ave(0.8)
+                        # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
+                        lc_range = round(t['gap'] / 3 * 2, 3)
+                        # ■LCChangeの設定
+                        lc_change = 3
+                        # ■■オーダーを作成＆発行
+                        orders = self.order_make_hedged(
+                            comment,  # nameとなるcomment
+                            self.peaks_class.latest_price,  # targetPrice
+                            self.ca.cal_move_ave(1),  # margin
+                            t['direction'],  # direction
+                            "LIMIT",  # STOP=順張り　LIMIT＝逆張り
+                            tp,  # TP hedgedはレンジ指定
+                            lc_range,  # LC hedgedはレンジ指定
+                            lc_change,  # lcChange
+                            self.units_str,  # uni
+                            4,  # priority
+                            0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                        )
+                        # ■オーダーを登録
+                        self.orders_add_this_class_and_flag_on(orders)
+                else:
+                    print("戻りratio異なる", r['count'])
+            else:
+                pass
         else:
             print("rCountが不適切", r['count'])
 

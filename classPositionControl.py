@@ -31,7 +31,7 @@ class position_control:
         self.print_classes_and_count()
 
     def print_classes_and_count(self):
-        self.count_true = sum(1 for d in self.classes if isinstance(d, dict) and d.get("life"))
+        self.count_true = sum(1 for d in self.classes if hasattr(d, "life") and d.life)
         i = 0
         print(" 現在のクラスの状況(True:", self.count_true, ")")
         for item in self.classes:
@@ -42,7 +42,6 @@ class position_control:
         """
         優先度に応じて、既存のオーダー優先か、新規オーダー優先かを決める
         """
-
 
     def order_add(self, order_dic_list):
         """
@@ -66,6 +65,7 @@ class position_control:
 
 
         # 現在のクラスの状況の確認
+        print("現在のクラスの状況を確認 (classPositionControl)")
         self.print_classes_and_count()
         if self.count_true >= 10:
             # 10個以上オーダーがある場合はオーダーしない。
@@ -77,6 +77,7 @@ class position_control:
             return 0
         elif self.count_true >= 1:
             tk.line_send("暫定的に生きてるものがあるときはオーダーしない")
+            return 0
 
         # クラスに余りがある場合、その中で添え字が一番若いオーダーに上書き、または、追加をする
         line_send = ""
@@ -285,8 +286,8 @@ class position_control:
     def reset_all_position(self):
         print("  RESET ALL POSITIONS")
         # mainのオアンダクラスのオーダーを削除（API）
-        self.oa.OrderCancel_All_exe()
-        self.oa.TradeAllClose_exe()
+        # self.oa.OrderCancel_All_exe()
+        # self.oa.TradeAllClose_exe()
         # 両建て用のオアンダクラスのオーダーの削除（API）
         self.oa2.OrderCancel_All_exe()
         self.oa2.TradeAllClose_exe()

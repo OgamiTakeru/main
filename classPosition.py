@@ -54,8 +54,8 @@ class order_information:
             self.oa = classOanda.Oanda(tk.accountID, tk.access_token, tk.environment)
 
     def __init__(self, name, is_live):
-        self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)  # 仮の値
-        self.oa_mode = 1  # アカウント選択（１が通常、２が両建てアカウント） 初期値は１
+        self.oa = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)  # 仮の値
+        self.oa_mode = 2  # アカウント選択（１が通常、２が両建てアカウント） 初期値は１
         self.is_live = is_live  # 本番環境か練習か（Boolean）
         self.select_oa(self.oa_mode)  # 重要！　id_noとis_liveを基に、oaクラスを選択する
         self.name = name  #

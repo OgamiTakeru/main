@@ -143,7 +143,7 @@ class OrderCreateClass:
             self.add_lc_change_defence()
         else:
             if isinstance(order_json['lc_change_type'], int):
-                print("処理A: int型です", order_json['lc_change_type'])
+                # print("処理A: int型です", order_json['lc_change_type'])
                 # 指定されている場合は、指定のLC_Change処理へ
                 if order_json['lc_change_type'] == 1:
                     self.add_lc_change_defence()
@@ -356,7 +356,7 @@ class OrderCreateClass:
                     order_base_info['stop_or_limit'] = -1
                 elif order_base_info['type'] == "MARKET":
                     print(
-                        "    Marketが指定されてます。targetは価格が必要です。Rangeを指定すると['stop_or_limit']がないエラーになる")
+                        "    Marketが指定されてます。targetは価格が必要です。Rangeを指定すると['stop_or_limit']がないエラーになる可能性がある")
                     pass
             elif 'stop_or_limit' in order_base_info:
                 order_base_info['type'] = "STOP" if order_base_info['stop_or_limit'] == 1 else "LIMIT"
