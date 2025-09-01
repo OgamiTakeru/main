@@ -68,7 +68,7 @@ class order_information:
         self.waiting_order = False
         self.order_register_time = 0
         self.plan_json = {}
-        self.plan_for_API_json = {}
+        self.for_api_json = {}
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_json = {}
         self.o_id = 0
@@ -159,7 +159,7 @@ class order_information:
         self.life = False
         self.waiting_order = False
         self.plan_json = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
-        self.plan_for_API_json = {}
+        self.for_api_json = {}
         self.order_register_time = 0
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_id = 0
@@ -309,21 +309,21 @@ class order_information:
             # else:
             #     print("★★★", args)
 
-    def get_current_price(self):
-        """
-        BidかAskをもとに求めるため、オーダーが入っていない状態では取得できない
-        """
-        temp_current_price = self.oa.NowPrice_exe("USD_JPY")
-        if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
-            print("API異常で現在価格が取得できず（ポジションクラス）")
-            return 0
-        else:
-            if self.plan_json['direction'] == 1:
-                # 注文がBidの場合、現在価格もBidにする
-                self.current_price = temp_current_price['data']['bid']
-            else:
-                self.current_price = temp_current_price['data']['ask']
-        return self.current_price
+    # def get_current_price(self):
+    #     """
+    #     BidかAskをもとに求めるため、オーダーが入っていない状態では取得できない
+    #     """
+    #     temp_current_price = self.oa.NowPrice_exe("USD_JPY")
+    #     if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
+    #         print("API異常で現在価格が取得できず（ポジションクラス）")
+    #         return 0
+    #     else:
+    #         if self.plan_json['direction'] == 1:
+    #             # 注文がBidの場合、現在価格もBidにする
+    #             self.current_price = temp_current_price['data']['bid']
+    #         else:
+    #             self.current_price = temp_current_price['data']['ask']
+    #     return self.current_price
 
     def order_plan_registration(self, plan):
         """
@@ -350,7 +350,7 @@ class order_information:
         self.order_register_time = datetime.datetime.now()
         # Jsonをそのまま入れるもの
         self.plan_json = plan  # 受け取ったプラン情報(そのままOrderできる状態が基本）
-        self.plan_for_API_json = plan['for_api_json']
+        self.for_api_json = plan['for_api_json']
         self.select_oa(plan['oa_mode'])
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
@@ -441,7 +441,7 @@ class order_information:
         :return:
         """
         # オーダー発行処理★
-        order_ans_dic = self.oa.OrderCreate_dic_exe(self.plan_json)  # Plan情報からオーダー発行しローカル変数に結果を格納する
+        order_ans_dic = self.oa.OrderCreate_dic_exe(self.for_api_json)
         order_ans = order_ans_dic['data']  # エラーはあんまりないから、いいわ。
         if order_ans['cancel']:  # キャンセルされている場合は、リセットする
             self.send_line(" 　Order不成立（今後ループの可能性）", self.name, order_ans['order_id'])
@@ -554,8 +554,8 @@ class order_information:
                            res4, res5, res1, id_info, res2, res3, res6, res7, res8,
                            position_check_no_args()['name_list'])
             # 履歴の書き込み
-            print("書き込みエラー確認用")
-            print(self.plan_json)
+            # print("書き込みエラー確認用")
+            # print(self.plan_json)
             result_dic = {
                 "order_time": self.o_time,
                 "res": str(trade_latest['realizedPL']),
@@ -960,9 +960,9 @@ class order_information:
             # LC_Changeが執行されている場合は、Candleも有効にする
             self.lc_change_from_candle()
 
-        # アラート
-        if self.alert_watch_exe:
-            self.watching_for_alert()
+        # # アラート
+        # if self.alert_watch_exe:
+        #     self.watching_for_alert()
 
     def watching_for_position_make_order(self):
         """
@@ -1318,108 +1318,108 @@ class order_information:
             self.step2_filled = False  # これ、ここで初期化する必要あり？
             self.watching_for_position_make_order()
 
-    def watching_for_alert(self):  # マイナス領域で、マイナスを縮める手段
-        """
-        ロスカットを狭い物から広いものに変更する（取得直後の直マイナスを減らしたい）
-        特に、ブレイクと予想した物が、ひっかけですぐに戻るのを防止する
-        """
-        if self.t_state != "OPEN":  # 足数×〇分足×秒
-            # 実行しない条件は、既に実行済み　または、NotOpen
-            return 0
-
-        if not self.alert_watch_exe or self.alert_watch_done:
-            # そもそも機能させないか、既に実行済みの場合は、実行しない
-            return 0
-
-        current_price = self.get_current_price()
-        if current_price == 0:
-            return 0
-
-        # ■現状の変数化
-        now_time = datetime.datetime.now()
-        direction = self.plan_json['direction']
-        # 初回、ウォッチモードに入るかどうか
-        # print("ウォッチモード判定１", current_price, self.alert_price, self.plan['direction'], self.alert_watching)
-        if not self.alert_watching:
-            # ウォッチがONではない時は、アラートの成立を確認する（マイナスがどれくらいになっているかの判定）
-            if direction == 1:  # １の場合はドル買い（ASK）
-                if current_price < self.alert_price:
-                    self.beyond_alert_time = now_time
-                    self.alert_watching = True
-                    # print("ウォッチモード判定(買い)", current_price, "<", self.alert_price)
-                    # self.send_line("アラートモード")
-            else:
-                if current_price > self.alert_price:
-                    self.beyond_alert_time = now_time
-                    self.alert_watching = True
-                    # print("ウォッチモード判定(売り)", current_price, ">", self.alert_price)
-                    # self.send_line("アラートモード")
-        else:
-            # ウォッチがONの場合、プラス域に浮上したら、一回ウォッチをクリアする
-            if direction == 1:  # １の場合はドル買い（ASK）
-                if current_price > self.alert_price:
-                    self.beyond_alert_time = 0
-                    self.alert_watching = False
-                    # print("ウォッチモード解除(買い)", current_price, ">", self.alert_price)
-            else:
-                if current_price < self.alert_price:
-                    self.beyond_alert_time = 0
-                    self.alert_watching = False
-                    # print("ウォッチモード解除(売り)", current_price, "<", self.alert_price)
-
-        # ウォッチモードに入るかどうかを、改めて。
-        if not self.alert_watching:
-            return 0
-
-        # ■■現状の更新　
-        # ■経過時間（越えてからの経過時間)
-        delta = now_time - self.beyond_alert_time
-        gap_seconds = delta.total_seconds()
-        # ■現在のアラートの越えている価格量を取得する(alert基準。alert_plがマイナスは、アラートよりマイナス域
-        if direction == 1:  # １の場合はドル買い（ASK）　　　　　、-1の場合売り(Bid)
-            alert_pl = current_price - self.alert_price  # マイナスの値で表現する順庵
-        else:
-            alert_pl = self.alert_price - current_price
-        # ■状態通知用
-        if not self.alert_line_send_done:
-            tk.line_send("初回のウアラートォッチモード突入:", self.name, "ボーダー", round(self.alert_price, 3), "現在価格", current_price,
-                         "ポジション方向", direction, "越えPips", round(alert_pl, 4))
-            self.alert_line_send_done = True
-
-        # ■■更新判定
-        border = 0.01
-        change_exe = False
-        if gap_seconds >= self.alert_wait_time_sec:  # アラートOnになってから、180秒以上経過している状態
-            if alert_pl <= border:  # マイナスが1pip以上ある場合
-                # print("alertで終了したい状態（時間、マイナス域(alertPriceに対して）がNG)", gap_seconds, alert_pl)
-                change_exe = True
-            else:
-                pass
-                # print("alertの時間的には削除したいが、まだマイナスが少ない", gap_seconds, alert_pl)
-        else:
-            # print(" alert時間未達", round(gap_seconds, 0), "秒", round(alert_pl, 3), "規定", self.alert_wait_time_sec)
-            return 0
-
-        # ■■更新作業
-        if change_exe:
-            if direction == 1:  # １の場合はドル買い（ASK）　　　　　、-1の場合売り(Bid)
-                new_lc_price = current_price - 0.01
-            else:
-                new_lc_price = current_price + 0.01
-
-            data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
-            res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
-            if res['error'] == -1:
-                self.send_line("    LC変更ミス＠lc_change")
-                return 0  # APIエラー時は終了
-            # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-            self.send_line("　(LC底上げ★アラート基準)", self.name, self.t_pl_u, self.plan_json['lc_price'], "⇒",
-                           new_lc_price,
-                           "lc底上げ", new_lc_price, "Posiprice", self.t_execution_price,
-                           "予定価格", self.plan_json['price'], "[追加分]元々のRangeは", self.plan_json['lc_range'],
-                           "現在マイナスは", self.t_pl_u, "最大Plusは", self.win_max_plu, "所持時間",
-                           self.t_time_past_sec)
-            self.alert_watch_done =  True  # フラグの成立（変更済）
+    # def watching_for_alert(self):  # マイナス領域で、マイナスを縮める手段
+    #     """
+    #     ロスカットを狭い物から広いものに変更する（取得直後の直マイナスを減らしたい）
+    #     特に、ブレイクと予想した物が、ひっかけですぐに戻るのを防止する
+    #     """
+    #     if self.t_state != "OPEN":  # 足数×〇分足×秒
+    #         # 実行しない条件は、既に実行済み　または、NotOpen
+    #         return 0
+    #
+    #     if not self.alert_watch_exe or self.alert_watch_done:
+    #         # そもそも機能させないか、既に実行済みの場合は、実行しない
+    #         return 0
+    #
+    #     current_price = self.get_current_price()
+    #     if current_price == 0:
+    #         return 0
+    #
+    #     # ■現状の変数化
+    #     now_time = datetime.datetime.now()
+    #     direction = self.plan_json['direction']
+    #     # 初回、ウォッチモードに入るかどうか
+    #     # print("ウォッチモード判定１", current_price, self.alert_price, self.plan['direction'], self.alert_watching)
+    #     if not self.alert_watching:
+    #         # ウォッチがONではない時は、アラートの成立を確認する（マイナスがどれくらいになっているかの判定）
+    #         if direction == 1:  # １の場合はドル買い（ASK）
+    #             if current_price < self.alert_price:
+    #                 self.beyond_alert_time = now_time
+    #                 self.alert_watching = True
+    #                 # print("ウォッチモード判定(買い)", current_price, "<", self.alert_price)
+    #                 # self.send_line("アラートモード")
+    #         else:
+    #             if current_price > self.alert_price:
+    #                 self.beyond_alert_time = now_time
+    #                 self.alert_watching = True
+    #                 # print("ウォッチモード判定(売り)", current_price, ">", self.alert_price)
+    #                 # self.send_line("アラートモード")
+    #     else:
+    #         # ウォッチがONの場合、プラス域に浮上したら、一回ウォッチをクリアする
+    #         if direction == 1:  # １の場合はドル買い（ASK）
+    #             if current_price > self.alert_price:
+    #                 self.beyond_alert_time = 0
+    #                 self.alert_watching = False
+    #                 # print("ウォッチモード解除(買い)", current_price, ">", self.alert_price)
+    #         else:
+    #             if current_price < self.alert_price:
+    #                 self.beyond_alert_time = 0
+    #                 self.alert_watching = False
+    #                 # print("ウォッチモード解除(売り)", current_price, "<", self.alert_price)
+    #
+    #     # ウォッチモードに入るかどうかを、改めて。
+    #     if not self.alert_watching:
+    #         return 0
+    #
+    #     # ■■現状の更新　
+    #     # ■経過時間（越えてからの経過時間)
+    #     delta = now_time - self.beyond_alert_time
+    #     gap_seconds = delta.total_seconds()
+    #     # ■現在のアラートの越えている価格量を取得する(alert基準。alert_plがマイナスは、アラートよりマイナス域
+    #     if direction == 1:  # １の場合はドル買い（ASK）　　　　　、-1の場合売り(Bid)
+    #         alert_pl = current_price - self.alert_price  # マイナスの値で表現する順庵
+    #     else:
+    #         alert_pl = self.alert_price - current_price
+    #     # ■状態通知用
+    #     if not self.alert_line_send_done:
+    #         tk.line_send("初回のウアラートォッチモード突入:", self.name, "ボーダー", round(self.alert_price, 3), "現在価格", current_price,
+    #                      "ポジション方向", direction, "越えPips", round(alert_pl, 4))
+    #         self.alert_line_send_done = True
+    #
+    #     # ■■更新判定
+    #     border = 0.01
+    #     change_exe = False
+    #     if gap_seconds >= self.alert_wait_time_sec:  # アラートOnになってから、180秒以上経過している状態
+    #         if alert_pl <= border:  # マイナスが1pip以上ある場合
+    #             # print("alertで終了したい状態（時間、マイナス域(alertPriceに対して）がNG)", gap_seconds, alert_pl)
+    #             change_exe = True
+    #         else:
+    #             pass
+    #             # print("alertの時間的には削除したいが、まだマイナスが少ない", gap_seconds, alert_pl)
+    #     else:
+    #         # print(" alert時間未達", round(gap_seconds, 0), "秒", round(alert_pl, 3), "規定", self.alert_wait_time_sec)
+    #         return 0
+    #
+    #     # ■■更新作業
+    #     if change_exe:
+    #         if direction == 1:  # １の場合はドル買い（ASK）　　　　　、-1の場合売り(Bid)
+    #             new_lc_price = current_price - 0.01
+    #         else:
+    #             new_lc_price = current_price + 0.01
+    #
+    #         data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+    #         res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+    #         if res['error'] == -1:
+    #             self.send_line("    LC変更ミス＠lc_change")
+    #             return 0  # APIエラー時は終了
+    #         # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
+    #         self.send_line("　(LC底上げ★アラート基準)", self.name, self.t_pl_u, self.plan_json['lc_price'], "⇒",
+    #                        new_lc_price,
+    #                        "lc底上げ", new_lc_price, "Posiprice", self.t_execution_price,
+    #                        "予定価格", self.plan_json['price'], "[追加分]元々のRangeは", self.plan_json['lc_range'],
+    #                        "現在マイナスは", self.t_pl_u, "最大Plusは", self.win_max_plu, "所持時間",
+    #                        self.t_time_past_sec)
+    #         self.alert_watch_done =  True  # フラグの成立（変更済）
 
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """

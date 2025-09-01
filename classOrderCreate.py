@@ -32,7 +32,7 @@ class Order:
         # ■■
         # OandaAPI用のにはこのJsonを送信することでオーダーを発行可能
         self.data = {}
-        self.exe_orders = {}
+        self.exe_order = {}
         # オーダーを管理するための情報群（デフォルト値付）
         self.oa_mode = 2
         self.target = 0  # 正の値で記載。margin または　target_priceが渡される（引数のコピー）
@@ -43,7 +43,7 @@ class Order:
         self.units = 0
         self.units_adj = 0.1
         self.decision_time = 0  # 決心時の時間
-        self.current_price = 0 # 現在価格（＝決心価格。現在価格はAPIで取得しない⇒大規模トライでもこのクラスを使うため）
+        self.current_price = 0  # 現在価格（＝決心価格。現在価格はAPIで取得しない⇒大規模トライでもこのクラスを使うため）
         self.priority = 0
         self.tp_price = 0
         self.tp_range = 0  # 正の値で記載
@@ -56,10 +56,10 @@ class Order:
         self.lc_change = {}
 
         # ■■処理
-        self.check_order_json()
-        self.order_finalize_new()
-        self.lc_change_control()  #
-        self.make_json_from_instance()
+        self.check_order_json()  # 渡された引数に、必要項目の抜けがある場合、ここで表示
+        self.order_finalize_new()  # 管理に必要な情報を、計算で補完する。
+        self.lc_change_control()  # lc_changeを付与する。
+        self.make_json_from_instance()  # オーダー可能な情報を生成する。
 
     def make_json_from_instance(self):
         """
@@ -89,7 +89,7 @@ class Order:
                 }
             }
         # ■ポジション管理用含めた情報
-        self.exe_orders = {
+        self.exe_order = {
             "decision_time": self.decision_time,
             "units": self.units,
             "direction": self.direction,
@@ -107,11 +107,11 @@ class Order:
             "priority": self.priority,
             "watching_price": 0,
             "lc_price_original": self.lc_price,
-            "api_data": self.data,  # 発注API用
+            "for_api_json": self.data,  # 発注API用(classPositionにはexe_orderしか渡さないため、その中に入れておく）
             "lc_change": self.lc_change
         }
-        print("最終系")
-        gene.print_json(self.exe_orders)
+        # print("最終系")
+        # gene.print_json(self.exe_order)
 
     def check_order_json(self):
         """
@@ -189,7 +189,7 @@ class Order:
         if "units" in order_json:
             if order_json['units'] <= 100:
                 # 100以下の数字は倍率とみなす
-                print("   UNITが倍数として処理されています")
+                # print("   UNITが倍数として処理されています")
                 self.units = self.basic_unit * order_json['units']
                 self.units_adj = order_json['units']
             else:

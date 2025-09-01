@@ -43,15 +43,17 @@ class position_control:
         優先度に応じて、既存のオーダー優先か、新規オーダー優先かを決める
         """
 
-    def order_add(self, order_dic_list):
+    def order_class_add(self, order_classes):
         """
         調査結果を受け取り、他のオーダーを比較し、オーダーを追加するかを判定する
         """
         # ■オーダーのプライオリティの関係
         # 渡されたオーダーの中で、最大のプライオリティのものと、そのプライオリティを算出
         # max_dict = max(order_dic_list, key=lambda d: d["priority"], default=None)
-        max_dict = max(order_dic_list, key=lambda d: d.get("priority", float("-inf")))
-        order_max_priority = max_dict['priority']
+        # max_dict = max(order_dic_list, key=lambda d: d.get("priority", float("-inf")))
+        # order_max_priority = max_dict['priority']
+        max_instance = max(order_classes, key=lambda x: x.exe_order["priority"])
+        order_max_priority = max_instance.exe_order['priority']
 
         # 現在のクラスで、生きている物のみ抽出
         alive_classes = [c for c in self.classes if hasattr(c, "life") and c.life]
@@ -76,20 +78,21 @@ class position_control:
             # 10個以上オーダーがある場合はオーダーしない。
             print("★★既に10個以上オーダーがあるため、オーダー発行しない")
             return 0
-        elif self.count_true + len(order_dic_list) >= 13:
+        elif self.count_true + len(order_classes) >= 13:
             # 新規のオーダー合わせて13個以上になる場合もオーダーしない（新規オーダーがエラーで複数個出てる可能性のため）
-            print("★★既存の物＋新規の合わせて13個以上になるため、オーダー発行しない(新規オーダー数:", len(order_dic_list))
+            print("★★既存の物＋新規の合わせて13個以上になるため、オーダー発行しない(新規オーダー数:", len(order_classes))
             return 0
 
         # クラスに余りがある場合、その中で添え字が一番若いオーダーに上書き、または、追加をする
         line_send = ""
-        for order_i, a_order in enumerate(order_dic_list):
-            for class_index, each_class in enumerate(self.classes):
-                if each_class.life:
+        for order_i, a_order in enumerate(order_classes):
+            for class_index, each_exist_class in enumerate(self.classes):
+                if each_exist_class.life:
                     # Trueの所には上書きしない
                     continue
+
                 # Falseのとこで実行する
-                res_dic = each_class.order_plan_registration(a_order)
+                res_dic = each_exist_class.order_plan_registration(a_order.exe_order)
                 if res_dic['order_id'] == 0:
                     print("オーダー失敗している（大量オーダー等）")
                     line_send = line_send + "オーダー失敗(" + str(order_i) + ")" + "\n"
@@ -126,8 +129,6 @@ class position_control:
                                     ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
                                     "(" + str(round(abs(float(o_trans['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
                                     ", OrderID:" + str(res_dic['order_id']) + \
-                                    ", Alert:" + str(a_order['alert']['range']) + \
-                                    "(" + str(round(a_order['alert']['alert_price'], 3)) + ")" + \
                                     ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "[システム]classNo:" + str(class_index) + ",\n"
                                     # "\n"
                         break

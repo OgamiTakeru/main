@@ -48,8 +48,8 @@ class main():
 
         # ■■■処理の開始
         # ■ポジションクラスの生成
-        self.positions_class = classPositionControl.position_control(True)  # ポジションリストの用意
-        self.positions_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
+        self.positions_control_class = classPositionControl.position_control(True)  # ポジションリストの用意
+        self.positions_control_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
 
     def exe_loop(self, interval, wait=True):
         """
@@ -93,63 +93,24 @@ class main():
         lc_range = 0.015
         tp_price = 0.01
         # オーダー
-        order = {
-            'oa_mode': 1,
-            'decision_time': '2025/07/11 23:30:00',
-            'direction': dir,
-            'lc_price': current_price - (lc_range * dir),
-            'target_price': current_price + (0.02 * dir * -1),
-            'tp_price': current_price + (tp_price * dir),
-            'type': 'LIMIT',
-            'units': 0.1,
-            'name': '強制オーダーテスト',
-            'trade_timeout_min': 150,
-            'order_timeout_min': 5,
-            'tp_range': tp_price,
-            'tp': tp_price,
-            'price': current_price,
-            'target': current_price + (0.01 * dir * -1),
-            'priority': 3,
-            'position_margin': 0,
-            'order_permission': False,
-            'watching_price': 0,
-            'alert': {'range': 0.02, 'time': 0, "alert_price": current_price - (0.02 * dir)},
-            'lc_range': lc_range,
-            'lc': lc_range,
-            'expected_direction': dir,
-            'decision_price': 147.406,
-            'lc_change_type': 3,
-            'ref': {
-                'move_ave': 0.1,
-                'peak1_target_gap': 0.1},
-            'stop_or_limit': -1,
-            'for_inspection_dic': {},
-            'lc_change': [
-                {'exe': True, 'time_after': 0, 'trigger': 0.01, 'ensure': -0.02},
-                {'exe': True, 'time_after': 0, 'trigger': 0.015, 'ensure': 0.01}]
-        }
-        order_class = OCreate.OrderCreateClass(order)  # オーダーファイナライズ
-        finalized_order = order_class.finalized_order
-        print("★★強制オーダー　現在価格", current_price, "ターゲット", order['target_price'], "方向", dir)
-
-        # 二個目（別環境向け）
-        deep_copied = copy.deepcopy(finalized_order)
-        deep_copied['oa_mode'] = 2
-        deep_copied['name'] = '強制オーダーテスト2'
-        deep_copied['tp'] = 0.03
-        deep_copied['lc'] = 0.02
-        order_class = OCreate.OrderCreateClass(deep_copied)  # オーダーファイナライズ
-        finalized_order2 = order_class.finalized_order
-
-        # 念のためオーダー生成
-        temp_res = {
-            "take_position_flag": True,
-            "exe_orders": [finalized_order, finalized_order2],
-            "for_inspection_dic": {}
-        }
+        order_class = OCreate.Order({
+            "name": "強制オーダーテスト",
+            "current_price": current_price,
+            "target": 0.02,
+            "direction": 1,
+            "type": "STOP",
+            "tp": 0.01,
+            "lc": 0.01,
+            "lc_change": 0,
+            "units": 0.1,
+            "priority": 1,
+            "decision_time": '2025/07/11 23:30:00',
+        })
 
         # ■オーダーの発行
-        exe_res = self.positions_class.order_add(temp_res['exe_orders'])
+        print("tesu")
+        print(order_class.exe_order)
+        exe_res = self.positions_control_class.order_class_add([order_class])
         if exe_res == 0:
             tk.line_send(" オーダー発行失敗　main 368")
         else:
@@ -196,7 +157,7 @@ class main():
             # 初回は、manageで取得したデータで実行する
             pass
         else:
-            self.positions_class.all_update_information()  # positionの更新
+            self.positions_control_class.all_update_information()  # positionの更新
             self.get_df_data()  # データの取得
 
         # ■調査実行
@@ -207,7 +168,7 @@ class main():
             pass
         else:
             # オーダーを登録＆発行する
-            exe_res = self.positions_class.order_add(analysis_result_instance.exe_orders)
+            exe_res = self.positions_control_class.order_class_add(analysis_result_instance.exe_order_classes)
             if exe_res == 0:
                 tk.line_send(" オーダー発行失敗　main 368")
             else:
@@ -221,13 +182,13 @@ class main():
         self.latest_exe_time = datetime.datetime.now().replace(microsecond=0)  # 最終実行時刻を取得しておく
 
     def mode2(self):
-        self.positions_class.all_update_information()  # positionの更新
-        life_check_res = self.positions_class.life_check()
+        self.positions_control_class.all_update_information()  # positionの更新
+        life_check_res = self.positions_control_class.life_check()
         if life_check_res['life_exist']:
             # オーダー以上がある場合。表示用（１分に１回表示させたい）
             temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
             if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒～２秒の間)
-                have_position = self.positions_class.position_check()
+                have_position = self.positions_control_class.position_check()
                 print("■■■Mode2(いずれかポジション有)", f.now(), "これは１分に１回表示")
                 if len(have_position['watching_list']) > 0:
                     print("ウォッチリスト")
@@ -258,7 +219,7 @@ class main():
         # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
         if 6 <= self.time_hour <= 7:
             if self.midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
-                self.positions_class.reset_all_position()
+                self.positions_control_class.reset_all_position()
                 tk.line_send("■深夜のポジション・オーダー解消を実施")
                 self.midnight_close_flag = 1  # 実施済みフラグを立てる
             return 0
@@ -295,36 +256,36 @@ class main():
             print("■■■初回", self.exe_mode)  # 表示用（実行時）
             tk.line_send("start")
 
-            # ①成り行きの実行の場合
-            d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
-                                                    {"granularity": "M5", "count": self.need_df_num},
-                                                    1)  # 時間昇順
-            if d5_df_res['error'] == -1:
-                print("初回実行時、error Candle First")
-                return -1
-            else:
-                d5_df_latest_bottom = d5_df_res['data']
-
-            # ②時間を指定する場合
-            jp_time = datetime.datetime(2025, 9, 1, 8, 5, 6)
-            euro_time_datetime = jp_time - datetime.timedelta(hours=9)
-            euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-            param = {"granularity": "M5", "count": 100, "to": euro_time_datetime_iso}
-            d5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)
-            if d5_df_res['error'] == -1:
-                print("初回実行時、error Candle First")
-                return -1
-            else:
-                d5_df_latest_bottom = d5_df_res['data']
-
-            # ①②共通
-            print(d5_df_latest_bottom.head(5))
-            self.d5_df = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
-            self.mode1()
+            # # ①成り行きの実行の場合
+            # d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+            #                                         {"granularity": "M5", "count": self.need_df_num},
+            #                                         1)  # 時間昇順
+            # if d5_df_res['error'] == -1:
+            #     print("初回実行時、error Candle First")
+            #     return -1
+            # else:
+            #     d5_df_latest_bottom = d5_df_res['data']
+            #
+            # # ②時間を指定する場合
+            # jp_time = datetime.datetime(2025, 9, 1, 8, 5, 6)
+            # euro_time_datetime = jp_time - datetime.timedelta(hours=9)
+            # euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
+            # param = {"granularity": "M5", "count": 100, "to": euro_time_datetime_iso}
+            # d5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)
+            # if d5_df_res['error'] == -1:
+            #     print("初回実行時、error Candle First")
+            #     return -1
+            # else:
+            #     d5_df_latest_bottom = d5_df_res['data']
+            #
+            # # ①②共通
+            # print(d5_df_latest_bottom.head(5))
+            # self.d5_df = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+            # self.mode1()
 
             # 強制オーダーを入れる場合は、以下コメントイン
-            # self.force_order()
-            # self.positions_class.print_classes_and_count()
+            self.force_order()
+            self.positions_control_class.print_classes_and_count()
 
             # 初回実行の終了フラグ
             self.first_exe = False

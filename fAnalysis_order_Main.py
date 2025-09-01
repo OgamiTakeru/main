@@ -11,23 +11,19 @@ class wrap_all_analisys():
 
         # 結果を格納するための変数（大事）
         self.take_position_flag = False
-        self.exe_orders = []
-        # self.flag_and_orders = {
-        #     "take_position_flag": False,
-        #     "exe_orders": [],  # 本番用（本番運用では必須）
-        # }
+        self.exe_order_classes = []
 
         # 実行
         self.wrap_all_inspections()
 
-    def orders_add_this_class_and_flag_on(self, orders):
+    def orders_add_this_class_and_flag_on2(self, order_classes):
         """
 
         """
         # self.flag_and_orders['take_position_flag'] = True
         # self.flag_and_orders['exe_orders'] = orders
         self.take_position_flag = True
-        self.exe_orders.extend(orders)
+        self.exe_order_classes.extend(order_classes)
 
     def wrap_all_inspections(self):
         """
@@ -40,4 +36,8 @@ class wrap_all_analisys():
         turn_analysis_instance = ti.turn_analisys(self.ca, self.oa)
         # turn_result = ti.wrap_little_turn_inspection(peaks_class)  #
         if turn_analysis_instance.take_position_flag:
-            self.orders_add_this_class_and_flag_on(turn_analysis_instance.exe_orders)
+            # self.orders_add_this_class_and_flag_on(turn_analysis_instance.exe_orders)
+            self.orders_add_this_class_and_flag_on2(turn_analysis_instance.exe_order_classes)
+        print("wrap")
+        for i in range(len(self.exe_order_classes)):
+            print(self.exe_order_classes[i].exe_order)

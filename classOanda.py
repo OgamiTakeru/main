@@ -208,141 +208,46 @@ class Oanda:
             return e_info
 
     # (5)オーダーの発行を実施
-    def OrderCreate_dic_exe(self, plan):
+    def OrderCreate_dic_exe(self, for_api_json):
         """
-        オーダーを発行する。以下の形式でInfo（辞書形式）を受け付ける。
-        :param plan{
-            units: 購入するユニット数。大体1万とか。必ずプラスの値で受け取る（ポジションの方向はask_bidで判別する）
-            ask_bid: 1の場合買い(Ask)、-1の場合売り(Bid) 引数時は['direction']になってしまっている。
-            price: 130.150のような小数点三桁で指定。（メモ：APIで渡す際は小数点３桁のStr型である必要がある。本関数内で自動変換）
-                    成り行き注文であっても、LCやTPを設定する上では必要
-            tp_range: Option.利確の幅を、0.01（1pips)単位で指定。0.06　のように指定する。指定しない場合０を渡す。負の値は正の値に変換
-                      方向を持って渡される場合もあるが、一旦絶対値を取ってから計算する（＝渡される際の方向は不問）
-            lc_range: Option.ロスカの幅を、0.01(1pips)単位で指定。 0.06　のように指定する（負号を付ける必要はない）。指定しない場合０。　
-            　　　　　　方向を持って渡される場合もあるが、一旦絶対値を取ってから計算する（＝渡される際の方向は不問）
-                tp_price: Option　Ⅿｍ。利確に関して、tp_rangeかどちらかが必要。両方ある場合、tp_priceを採用
-            lc_price: Option  価格を直接指定する場合。ロスカに関して、lc_rangeかどちらかが必要。両方ある場合、lc_priceを採用。
-            type: 下記参照（ここでは数字ではなく文字で指定する）
-            tr_range: トレール幅を指定。0.01単位で指定。OANDAの仕様上0.05以上必須。指定しない場合は０を渡す
-            remark: 今は使っていないが、引数としては残してある。何かしら文字列をテキトーに渡す。
-        :return: 上記の情報をまとめてDic形式で返却。オーダーミス発生(オーダー入らず)した場合は、辞書内cancelがTrueとなる。
+                self.data = {  # オーダーのテンプレート！（一応書いておく）
+                "order": {
+                    "instrument": self.instrument,
+                    "units": str(self.units * self.direction),
+                    "type": self.ls_type,  # "STOP(逆指)" or "LIMIT" or "MARKET"
+                    "positionFill": "DEFAULT",
+                    "price": str(round(self.target_price, self.u)),  # 小数点3桁の文字列（それ以外はエラーとなる）
+                    "takeProfitOnFill": {
+                        "timeInForce": "GTC",
+                        "price": str(round(self.tp_price, self.u))  # 小数点3桁の文字列（それ以外はエラーとなる）
+                    },
+                    "stopLossOnFill": {
+                        "timeInForce": "GTC",
+                        "price": str(round(self.lc_price, self.u))  # 小数点3桁の文字列（それ以外はエラーとなる）
+                    },
+                    # "trailingStopLossOnFill": {
+                    #     "timeInForce": "GTC",
+                    #     "distance": "0"  # 5pips以上,かつ,小数点3桁の文字列
+                    # }
+                }
+            }
         ■オーダー種類について
           STOP:指値。順張り（現価格より高い値段で買い、現価格より低い値段で売りの指値）、また、ロスカット
           LIMIT:指値。逆張り（現価格より低い値段で買い、現価格より高い値段で売りの指値）、また、利確
           MARKET:成り行き。この場合、priceは設定しても無視される（ただし引数としてはテキトーな数字を入れる必要あり）。
         """
         start_time = datetime.datetime.now().replace(microsecond=0)  # エラー頻発の為、ログ
+        # print(" 最終オーダー@classOanda 241")
+        # print(for_api_json)
+        # ★★実行
         try:
-
-            # 初期値を入れておく
-            plan['ask_bid'] = plan['direction']  # その場しのぎ。。
-
-            data = {  # オーダーのテンプレート！（一応書いておく）
-                "order": {
-                    "instrument": "USD_JPY",
-                    "units": "10",
-                    "type": "",  # "STOP(逆指)" or "LIMIT"
-                    "positionFill": "DEFAULT",
-                    "price": "999",  # 指値の時のみ、後で上書きされる。成り行きの時は影響しない為、初期値でテキトーな値を入れておく。
-                }
-            }
-            # UNITとTYPEの設定
-            data['order']['units'] = str(int(abs(plan['units'])) * plan['ask_bid'])  # 必須　units数 askはマイナス、bidはプラス値
-            data['order']['type'] = plan['type']  # 必須
-
-            # PRICEの設定① 現在価格の取得(MARKET注文で利用するため）
-            price_dic = self.NowPrice_exe("USD_JPY")  # 現在価格の取得用APIを叩く
-            if price_dic['error'] == -1:  # APIエラーの場合はスキップ
-                print("　　API異常発生の可能性　現在価格取得　CreateOrderClass")
-                return -1  # 終了
-            else:
-                if plan['ask_bid'] == 1:
-                    price_now = price_dic['data']['ask']  # 現在価格を取得(買い）
-                elif plan['ask_bid'] == -1:
-                    price_now = price_dic['data']['bid']  # 現在価格を取得(売り）
-                else:
-                    price_now = price_dic['data']['mid']  # 現在価格を取得(MID)あんまりない想定
-            # PRICEの設定②　 plan['price']の設定
-            if plan['type'] == "MARKET":  # 成り行き注文時は、現在価格を取得する⇒注文には不要だが、LCやTPを計算するうえで必要。
-                plan['price'] = price_now  # info内は計算に使うためSTRせず。
-                # data['order']['price'] = price_now  # MARKET時は設定不要
-            else:  # 成り行き注文以外(指値注文)
-                data['order']['price'] = str(round(plan['price'], 3))  # 指値の場合は必須
-
-            # 利確の設定
-            # 利確レンジの記入がある場合。
-            if 'tp_range' in plan and plan['tp_range'] != 0:
-                # 利確設定ありの場合
-                tp_range = abs(plan['tp_range'])  # 正負がついていることがあるため、解除しておく(ask_bidで判別が正確)
-                data['order']['takeProfitOnFill'] = {}
-                data['order']['takeProfitOnFill']['price'] = str(round(plan['price'] +
-                                                                       (tp_range * plan['ask_bid']), 3))  # 利確
-                data['order']['takeProfitOnFill']['timeInForce'] = "GTC"
-            # 利確価格が指定されている場合。
-            if 'tp_price' in plan and plan['tp_price'] != 0:
-                # 共通部の格納
-                data['order']['takeProfitOnFill'] = {}
-                data['order']['takeProfitOnFill']['timeInForce'] = "GTC"
-                # 範囲が適正かを確認し、修正な場合修正する
-                if plan['ask_bid'] == 1 and plan['tp_price'] < plan['price']:
-                    # 買い方向なのに、利確がターゲット価格より低い場合。（めんどいからテキトーに設定しちゃう）
-                    print("不適正　利確")
-                    data['order']['takeProfitOnFill']['price'] = str(
-                        round(plan['price'] + (self.error_input_tp * plan['ask_bid']), 3))  # 利確
-                elif plan['ask_bid'] == -1 and plan['tp_price'] > plan['price']:
-                    # 売り方向なのに、利確がターゲット価格より高い場合。（めんどいからテキトーに設定しちゃう）
-                    print("不適正　利確")
-                    data['order']['takeProfitOnFill']['price'] = str(
-                        round(plan['price'] + (self.error_input_tp * plan['ask_bid']), 3))  # 利確
-                else:
-                    # print("適正　利確")
-                    data['order']['takeProfitOnFill']['price'] = str(round(plan['tp_price'], 3))  # 利確
-
-            # ロスカの設定
-            # ロスカ幅の記入がある場合
-            if 'lc_range' in plan and plan['lc_range'] != 0:
-                # ロスカ設定ありの場合
-                lc_range = abs(plan['lc_range'])
-                data['order']['stopLossOnFill'] = {}
-                data['order']['stopLossOnFill']['price'] = str(round(plan['price'] -
-                                                                     (lc_range * plan['ask_bid']), 3))  # ロスカット
-                data['order']['stopLossOnFill']['timeInForce'] = "GTC"
-            # ロスカ価格が指定されている場合。
-            if 'lc_price' in plan and plan['lc_price'] != 0:
-                # 共通部の格納
-                data['order']['stopLossOnFill'] = {}
-                data['order']['stopLossOnFill']['timeInForce'] = "GTC"
-                # 範囲が適正かを確認し、修正な場合修正する
-                if plan['ask_bid'] == 1 and plan['lc_price'] > plan['price']:
-                    # 買い方向なのに、利確がターゲット価格より高い場合。（めんどいからテキトーに設定しちゃう）
-                    print(" 不適正　ロスカ")
-                    data['order']['stopLossOnFill']['price'] = str(
-                        round(plan['price'] - (self.error_input_tp * plan['ask_bid']), 3))  # 利確
-                elif plan['ask_bid'] == -1 and plan['lc_price'] < plan['price']:
-                    # 売り方向なのに、利確がターゲット価格より低い場合。（めんどいからテキトーに設定しちゃう）
-                    print(" 不適正　ロスカ")
-                    data['order']['stopLossOnFill']['price'] = str(
-                        round(plan['price'] - (self.error_input_tp * plan['ask_bid']), 3))  # 利確
-                else:
-                    # print("適正　ロスカ")
-                    data['order']['stopLossOnFill']['price'] = str(round(plan['lc_price'], 3))  # 利確
-
-            # トレールの設定
-            if 'tr_range' in plan:
-                if plan['tr_range'] != 0:
-                    # トレールストップロス設定ありの場合
-                    data['order']['trailingStopLossOnFill'] = {}
-                    data['order']['trailingStopLossOnFill']['distance'] = str(round(plan['tr_range'], 3))  # ロスカット
-                    data['order']['trailingStopLossOnFill']['timeInForce'] = "GTC"
-
-            # print(" 最終オーダー@classOanda")
-            # print(data['order'])
-            # ★★実行
-            ep = OrderCreate(accountID=self.accountID, data=data)  #
+            ep = OrderCreate(accountID=self.accountID, data=for_api_json)  #
             res_json = eval(json.dumps(self.api.request(ep), indent=2))
+            # print("oandaClass246")
+            # print(res_json)
             if 'orderCancelTransaction' in res_json:
                 print("   ■■■OrderCANCELあり(エラーによるorderReject)")
-                print(res_json)
+                # print(res_json)
                 canceled = True
                 order_id = 0
                 order_time = 0
@@ -362,9 +267,9 @@ class Oanda:
                 # print("   ★Order発行完了", order_id, order_time, execution_price)
 
             # オーダー情報履歴をまとめておく
-            order_info = {"price": str(round(plan['price'], 3)),
+            order_info = {"price": for_api_json['order']['price'],
                           "execution_price": str(execution_price),  # 約定価格
-                          "type": plan['type'],
+                          "type": for_api_json['order']['type'],
                           "cancel": canceled,
                           "order_id": order_id,
                           "order_time": order_time,
