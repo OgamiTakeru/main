@@ -112,7 +112,7 @@ class turn_analisys:
             "oa_mode": 2,
             "target": entry_price,
             "type": ls_type,  # "STOP",
-            "expected_direction": direction,
+            "direction": direction,
             "tp": tp,
             "lc": lc,
             'priority': 3,
@@ -153,7 +153,7 @@ class turn_analisys:
             "oa_mode": 2,
             "target": entry_price,
             "type": "MARKET",  # op_ls_type,
-            "expected_direction": direction * -1,
+            "direction": direction * -1,
             "tp": tp * 1.5,
             "lc": lc * 1.5,
             'priority': 3,
@@ -222,7 +222,7 @@ class turn_analisys:
             # targetはプラスで取得しにくい方向に。
             "target": entry_price,
             "type": ls_type,  # "STOP",
-            "expected_direction": direction,
+            "direction": direction,
             "tp": tp,
             "lc": lc,
             'priority': 3,
@@ -474,7 +474,19 @@ class turn_analisys:
                     self.orders_add_this_class_and_flag_on(orders)
                     # # test
                     gene.print_json(orders[0])
-                    OCreate.Order(orders[0])
+                    OCreate.Order({
+                        "name": comment,
+                        "current_price": self.peaks_class.latest_price,
+                        "target": 0,
+                        "direction": t['direction'],
+                        "ls_type": "LIMIT",
+                        "tp": self.ca.cal_move_ave(5),
+                        "lc": 2,
+                        "lc_change": 1,
+                        "units": self.units_str,
+                        "priority": 4,
+                        "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                    })
                     print("オーダー新クラステストここまで")
 
                     # ■■オーダーを作成＆発行

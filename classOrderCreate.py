@@ -16,28 +16,23 @@ class Order:
         self.order_json_original = order_json  # オーダー用json
         self.order_json = self.order_json_original
 
+        # ■■
+        # 色々なオーダーに必要になる初期値
+        self.instrument = "USD_JPY"
+        self.base_oa_mode = 2  # デフォルトの口座は2(両建て用）
+        self.basic_unit = 10000
+        self.trade_timeout_min_base = 240
+        self.order_timeout_min_base = 15
+        self.lc_change_base = 3  # ベースは０（LCchangeなし）
+        # 判定に利用する、初期値
+        self.u = 3  # round時の有効桁数
+        self.dependence_price_or_range_criteria = 80  # ドル円の場合、80以上は価格とみなし、それ以下はrangeとみなす
+        self.dependence_tp_lc_margin = 0.01  # targetとTP/LCとの間が極端に狭いときはウォーニングを出す（すぐ決済になってしまうため）
+
+        # ■■
         # OandaAPI用のにはこのJsonを送信することでオーダーを発行可能
-        self.data = {  # オーダーのテンプレート！（一応書いておく）
-                "order": {
-                    "instrument": "USD_JPY",
-                    "units": "10",
-                    "type": "",  # "STOP(逆指)" or "LIMIT" or "MARKET"
-                    "positionFill": "DEFAULT",
-                    "price": "999",  # 小数点3桁の文字列（それ以外はエラーとなる）
-                    "takeProfitOnFill": {
-                        "timeInForce": "GTC",
-                        "price": "0"  # 小数点3桁の文字列（それ以外はエラーとなる）
-                    },
-                    "stopLossOnFill": {
-                        "timeInForce": "GTC",
-                        "price": "0"  # 小数点3桁の文字列（それ以外はエラーとなる）
-                    },
-                    "trailingStopLossOnFill": {
-                        "timeInForce": "GTC",
-                        "distance": "0"  # 5pips以上でないと、エラー
-                    }
-                }
-            }
+        self.data = {}
+        self.exe_orders = {}
         # オーダーを管理するための情報群（デフォルト値付）
         self.oa_mode = 2
         self.target = 0  # 正の値で記載。margin または　target_priceが渡される（引数のコピー）
@@ -58,35 +53,47 @@ class Order:
         self.trade_timeout_min = 0
         self.order_timeout_min = 0
         self.order_permission = True
-
-        # 色々なオーダーに必要になる初期値
-        self.instrument = "USD_JPY"
-        self.base_oa_mode = 2  # デフォルトの口座は2(両建て用）
-        self.basic_unit = 10000
-        self.trade_timeout_min_base = 240
-        self.order_timeout_min_base = 15
-        self.lc_change_base = 0  # ベースは０（LCchangeなし）
-
-        # 判定に利用する、初期値
-        self.u = 3  # round時の有効桁数
-        self.dependence_price_or_range_criteria = 80  # ドル円の場合、80以上は価格とみなし、それ以下はrangeとみなす
-        self.dependence_tp_lc_margin = 0.01  # targetとTP/LCとの間が極端に狭いときはウォーニングを出す（すぐ決済になってしまうため）
+        self.lc_change = {}
 
         # ■■処理
         self.check_order_json()
         self.order_finalize_new()
-        self.json_from_instance()
+        self.lc_change_control()  #
+        self.make_json_from_instance()
 
-    def json_from_instance(self):
+    def make_json_from_instance(self):
         """
         インスタンス変数を、オーダー用の辞書（Json）形式に変換する
         本来は実施していなかったが、明示的に辞書に変換する記述を追加し、何を渡しているかわかりやすくする
         """
-        exe_order = {
+        # ■API送信用（一番大事な奴）
+        self.data = {  # オーダーのテンプレート！（一応書いておく）
+                "order": {
+                    "instrument": self.instrument,
+                    "units": str(self.units * self.direction),
+                    "type": self.ls_type,  # "STOP(逆指)" or "LIMIT" or "MARKET"
+                    "positionFill": "DEFAULT",
+                    "price": str(round(self.target_price, self.u)),  # 小数点3桁の文字列（それ以外はエラーとなる）
+                    "takeProfitOnFill": {
+                        "timeInForce": "GTC",
+                        "price": str(round(self.tp_price, self.u))  # 小数点3桁の文字列（それ以外はエラーとなる）
+                    },
+                    "stopLossOnFill": {
+                        "timeInForce": "GTC",
+                        "price": str(round(self.lc_price, self.u))  # 小数点3桁の文字列（それ以外はエラーとなる）
+                    },
+                    # "trailingStopLossOnFill": {
+                    #     "timeInForce": "GTC",
+                    #     "distance": "0"  # 5pips以上,かつ,小数点3桁の文字列
+                    # }
+                }
+            }
+        # ■ポジション管理用含めた情報
+        self.exe_orders = {
             "decision_time": self.decision_time,
             "units": self.units,
             "direction": self.direction,
-            "target_price": self.target_price,
+            "target_price": round(self.target_price, 3),
             "lc_price": self.lc_price,
             "lc_range": self.lc_range,
             "tp_price": self.tp_price,
@@ -99,30 +106,12 @@ class Order:
             "order_permission": self.order_permission,
             "priority": self.priority,
             "watching_price": 0,
+            "lc_price_original": self.lc_price,
+            "api_data": self.data,  # 発注API用
+            "lc_change": self.lc_change
         }
-        self.data = {  # オーダーのテンプレート！（一応書いておく）
-                "order": {
-                    "instrument": self.instrument,
-                    "units": str(self.units * self.direction),
-                    "type": self.ls_type,  # "STOP(逆指)" or "LIMIT" or "MARKET"
-                    "positionFill": "DEFAULT",
-                    "price": str(self.target_price),  # 小数点3桁の文字列（それ以外はエラーとなる）
-                    "takeProfitOnFill": {
-                        "timeInForce": "GTC",
-                        "price": str(self.tp_price)  # 小数点3桁の文字列（それ以外はエラーとなる）
-                    },
-                    "stopLossOnFill": {
-                        "timeInForce": "GTC",
-                        "price": str(self.lc_price)  # 小数点3桁の文字列（それ以外はエラーとなる）
-                    },
-                    # "trailingStopLossOnFill": {
-                    #     "timeInForce": "GTC",
-                    #     "distance": "0"  # 5pips以上,かつ,小数点3桁の文字列
-                    # }
-                }
-            }
-        print("create124")
-        gene.print_json(exe_order)
+        print("最終系")
+        gene.print_json(self.exe_orders)
 
     def check_order_json(self):
         """
@@ -182,7 +171,6 @@ class Order:
         各値をチェックし、読み替える。　必要に応じてデフォルト値を入れる
         """
         order_json = self.order_json
-        order_json['current_price'] = order_json['decision_price']   #test用
 
         # 環境を選択する（通常環境か、両建て環境か）
         if "oa_mode" in order_json:
@@ -201,6 +189,7 @@ class Order:
         if "units" in order_json:
             if order_json['units'] <= 100:
                 # 100以下の数字は倍率とみなす
+                print("   UNITが倍数として処理されています")
                 self.units = self.basic_unit * order_json['units']
                 self.units_adj = order_json['units']
             else:
@@ -308,11 +297,124 @@ class Order:
             # if isinstance(plan['alert']['range'], int)
             temp_range = round(order_json['alert']['range'], 3)
             temp_price = round(order_json['target_price'] - (
-                        order_json['alert']['range'] * order_json['expected_direction']), 3)
+                        order_json['alert']['range'] * order_json['direction']), 3)
             # 改めて入れなおしてしまう（別に上書きでもいいんだけど）
             order_json['alert'] = {"range": temp_range, "alert_price": temp_price, "time": 0}
         else:
             order_json['alert'] = {"range": 0, "time": 0, "alert_price": 0}
+
+        # ref(無いと、検証の時にエラーになる)
+        if "ref" in order_json:
+            pass
+        else:
+            order_json['ref'] = {"move_ave": 0, "peak1_target_gap": 0}
+
+    def lc_change_control(self):
+        order_json = self.order_json
+        # LC_Changeを付与する 検証環境の都合で、必須。(finalizedに直接追加）
+        # lc_changeは数字か辞書が入る。辞書の場合、lc_changeの先頭にそれが入る
+        # self.finalized_order['lc_change'] = [] # 初期化
+        if "lc_change_type" not in order_json:
+            # typeしていない場合はノーマルを追加
+            self.add_lc_change_defence()
+        else:
+            if isinstance(order_json['lc_change_type'], int):
+                # print("処理A: int型です", order_json['lc_change_type'])
+                # 指定されている場合は、指定のLC_Change処理へ
+                if order_json['lc_change_type'] == 1:
+                    self.add_lc_change_defence()
+                elif order_json['lc_change_type'] == 0:
+                    self.add_lc_change_no_change()
+                elif order_json['lc_change_type'] == 3:
+                    self.add_lc_change_offence()
+            else:
+                self.add_lc_change_start_with_dic(order_json['lc_change_type'])
+
+    def add_lc_change_no_change(self):
+        """
+        lcChange = 0で選ばれるもの
+        形式的に入れたもの（形式的に入れないとエラーになるので）
+        ほぼ到達しない１円を入れておく
+        """
+        self.lc_change = [
+            {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
+        ]
+
+    def add_lc_change_offence(self):
+        """
+        lcChange = 3で選ばれるもの
+        実際の運用をイメージ
+        ・最初の30分はlc_1.3程度をトリガーにしてLC分を確実に回収できるように
+        　（一度20pips位上がった後に、LCまで戻っており、悔しかった。上がるのは大体直前
+        ・30分以降は、ローソク形状の効果が切れたとみなし、プラスにいる場合はとにかく利確に向けた動きをする
+        """
+        self.lc_change = [
+            # {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
+            # {"exe": True, "time_after": 600, "trigger": 0.025, "ensure": 0.005},
+            {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": 0.004},  # -0.02が強い
+            {"exe": True, "time_after": 600, "trigger": 0.06, "ensure": 0.01},
+            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
+            {"exe": True, "time_after": 600, "trigger": 0.08, "ensure": 0.02},
+            {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
+            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
+        ]
+
+    def add_lc_change_start_with_dic(self, dic_arr):
+        """
+        lcChange = 3で選ばれるもの
+        実際の運用をイメージ
+        ・最初の30分はlc_1.3程度をトリガーにしてLC分を確実に回収できるように
+        　（一度20pips位上がった後に、LCまで戻っており、悔しかった。上がるのは大体直前
+        ・30分以降は、ローソク形状の効果が切れたとみなし、プラスにいる場合はとにかく利確に向けた動きをする
+        """
+        print("特殊LCChange")
+
+        add = [
+            # {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
+            # {"exe": True, "time_after": 600, "trigger": 0.025, "ensure": 0.005},
+            # {"exe": True, "time_after": 0, "trigger": 0.04, "ensure": 0.010},
+            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
+            # {"exe": True, "time_after": 0, "trigger": 0.08, "ensure": 0.05},
+            {"exe": True, "time_after": 0, "trigger": 0.15, "ensure": 0.1},
+            {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
+            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
+        ]
+        print("   渡されたLcChange", dic_arr)
+        print("　　最終的なLcChange", add)
+        self.lc_change = dic_arr + add
+
+    def add_lc_change_defence(self):
+        """
+        lcChange = 1で選ばれるもの
+        負ける可能性は高くなる可能性高い。
+        少しプラスになったらLCの幅を減らしていく手法
+        """
+        min10 = 60 * 10
+        self.lc_change = [
+            {"exe": True, "time_after": min10, "trigger": 0.025, "ensure": 0.01},
+            # {"exe": True, "time_after": 600, "trigger": 0.043, "ensure": 0.018},
+            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
+            {"exe": True, "time_after": min10, "trigger": 0.05, "ensure": 0.052},
+            {"exe": True, "time_after": min10, "trigger": 0.08, "ensure": 0.05},
+            {"exe": True, "time_after": min10, "trigger": 0.20, "ensure": 0.15},
+            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
+        ]
+
 
 class OrderCreateClass:
     """
@@ -325,7 +427,7 @@ class OrderCreateClass:
         "target": 0.00,  # 価格(80以上の値) or Range で正の値。Rangeの場合、decision_priceを基準にPrice(APIに必須）に換算される。
         "type": "STOP",  # 文字列。計算時は数字のほうが楽なため、stop_or_limit変数で数字に置き換えたものも算出（finalize関数)
         "units": OrderCreateClass.basic_unit,
-        "expected_direction": 1,
+        "direction": 1,
         "tp": 0.9,  # 80以上の値は価格とみなし、それ以外ならRange(target価格+tpRange。正の値）とする
         "lc": 0.03,  # 80以上の値は価格とみなし、それ以外ならRange(target価格+lcRange。正の値）とする
         'priority': 0,
@@ -340,7 +442,7 @@ class OrderCreateClass:
         "units": 1000, #【Order必須】
         "stop_or_limit": stop_or_limit,  # 計算に便利な数字形式で１か-1で表現（1=STOP）。☆
         "type": "STOP" or "LIMIT",  # 【Order必須】 ☆　　(☆はどちらか一つあれば、この関数で両方を算出）
-        "expected_direction":  # プログラム用
+        "direction":  # プログラム用
         "decision_time":  # プログラム用
         "decision_price":  # プログラム用
         "position_margin":  # プログラム用
@@ -417,7 +519,7 @@ class OrderCreateClass:
         # 情報に不足がないかの確認
         print("targetなし。その場合、targetPriceが必要です。") if "target" not in self.order_base else None
         print("typeがありません") if "type" not in self.order_base else None
-        print("expected_directionがありません") if "expected_direction" not in self.order_base else None
+        print("directionがありません") if "direction" not in self.order_base else None
         print("lcがありません") if "lc" not in self.order_base else None
         print("tpがありません") if "tp" not in self.order_base else None
         print("decision_timeがありません") if "decision_time" not in self.order_base else None
@@ -605,8 +707,8 @@ class OrderCreateClass:
         order_base_info = self.order_base
 
         # ⓪必須項目がない場合、エラーとする
-        if not ('expected_direction' in order_base_info) or not ('decision_price' in order_base_info):
-            print("　　　　エラー（項目不足)", 'expected_direction' in order_base_info,
+        if not ('direction' in order_base_info) or not ('decision_price' in order_base_info):
+            print("　　　　エラー（項目不足)", 'direction' in order_base_info,
                   'decision_price' in order_base_info, 'decision_time' in order_base_info)
             return -1  # エラー
 
@@ -650,7 +752,7 @@ class OrderCreateClass:
                 order_base_info['target'] = abs(order_base_info['target'])
             order_base_info['position_margin'] = round(order_base_info['target'], 3)
             order_base_info['target_price'] = order_base_info['decision_price'] + \
-                                              (order_base_info['target'] * order_base_info['expected_direction'] *
+                                              (order_base_info['target'] * order_base_info['direction'] *
                                                order_base_info[
                                                    'stop_or_limit'])
             # print("    t★arget Margin指定", order_base['target'], abs(order_base['decision_price']), order_base['target_price'])
@@ -670,7 +772,7 @@ class OrderCreateClass:
                 print("  ★★TP価格とTarget価格が同値となったため、調整あり(0.02)")
                 order_base_info['tp_range'] = self.dependence_tp_lc_margin
                 order_base_info['tp_price'] = round(order_base_info['target_price'] + (
-                        order_base_info['tp_range'] * order_base_info['expected_direction']), 3)
+                        order_base_info['tp_range'] * order_base_info['direction']), 3)
             else:
                 # 調整なしでOK
                 order_base_info['tp_price'] = round(order_base_info['tp'], 3)
@@ -679,7 +781,7 @@ class OrderCreateClass:
             # print("    TP　Range指定")
             # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
             order_base_info['tp_price'] = round(
-                order_base_info['target_price'] + (order_base_info['tp'] * order_base_info['expected_direction']), 3)
+                order_base_info['target_price'] + (order_base_info['tp'] * order_base_info['direction']), 3)
             order_base_info['tp_range'] = round(order_base_info['tp'], 3)
 
         # ③ LC_priceとLC_rangeを求める
@@ -695,7 +797,7 @@ class OrderCreateClass:
                 print("  ★★LC価格とTarget価格が同値となったため、調整あり(0.02)")
                 order_base_info['lc_range'] = self.dependence_tp_lc_margin
                 order_base_info['lc_price'] = round(order_base_info['target_price'] - (
-                        order_base_info['lc_range'] * order_base_info['expected_direction']), 3)
+                        order_base_info['lc_range'] * order_base_info['direction']), 3)
             else:
                 # 調整なしでOK
                 order_base_info['lc_price'] = round(order_base_info['lc'], 3)
@@ -704,7 +806,7 @@ class OrderCreateClass:
             # print("    LC RANGE指定")
             # 80未満の数字は、Range値だと認識。Rangeの設定と、Priceの算出と設定を実施
             order_base_info['lc_price'] = round(
-                order_base_info['target_price'] - (order_base_info['lc'] * order_base_info['expected_direction']), 3)
+                order_base_info['target_price'] - (order_base_info['lc'] * order_base_info['direction']), 3)
             order_base_info['lc_range'] = round(order_base_info['lc'], 3)
         # ③-2  lc_priceは処理の中で、上書きされる可能性があるため、同一情報をoriginalとして保存しておく
         order_base_info['lc_price_original'] = order_base_info['lc_price']
@@ -714,14 +816,14 @@ class OrderCreateClass:
             # if isinstance(plan['alert']['range'], int)
             temp_range = round(order_base_info['alert']['range'], 3)
             temp_price = round(order_base_info['target_price'] - (
-                        order_base_info['alert']['range'] * order_base_info['expected_direction']), 3)
+                        order_base_info['alert']['range'] * order_base_info['direction']), 3)
             # 改めて入れなおしてしまう（別に上書きでもいいんだけど）
             order_base_info['alert'] = {"range": temp_range, "alert_price": temp_price, "time": 0}
         else:
             order_base_info['alert'] = {"range": 0, "time": 0, "alert_price": 0}
 
         # 最終的にオーダーで必要な情報を付与する(項目名を整えるためにコピーするだけ）。LimitかStopかを算出
-        order_base_info['direction'] = order_base_info['expected_direction']
+        order_base_info['direction'] = order_base_info['direction']
         order_base_info['price'] = order_base_info['target_price']
         order_base_info['order_timeout_min'] = order_base_info[
             'order_timeout_min'] if 'order_timeout_min' in order_base_info else 60
@@ -739,6 +841,8 @@ class OrderCreateClass:
 
         # 名前の最後尾に時刻（決心時刻）を付与して、名前で時刻がわかるようにする
         order_base_info['name'] = order_base_info['name'] + "_" + str(gene.delYearDay(order_base_info['decision_time']))
+
+        order_base_info['for_api_json'] = {}
 
         # ■コマンドラインで見にくいので、表示の順番を変えたい、、、（書き方雑だけど）
         temp = order_base_info['name']  # いったん保存
@@ -794,9 +898,9 @@ class OrderCreateClass:
         del order_base_info["lc"]
         order_base_info['lc'] = temp
         # 方向
-        temp = order_base_info['expected_direction']  # いったん保存
-        del order_base_info["expected_direction"]
-        order_base_info['expected_direction'] = temp
+        temp = order_base_info['direction']  # いったん保存
+        del order_base_info["direction"]
+        order_base_info['direction'] = temp
         # decisionPrice
         temp = order_base_info['decision_price']  # いったん保存
         del order_base_info["decision_price"]
@@ -826,20 +930,4 @@ class OrderCreateClass:
             order_base_info['stop_or_limit'] = temp
 
         return order_base_info
-
-
-def cal_lc_price_from_line_and_margin(line_price, margin, expected_direction):
-    """
-    価格、マージン、購入方向を受け取り、
-    line_priceを基準に、マージン分だけ余裕をとった（マージンを正の値にした場合、含み損が大きくなる方向）LC価格を算出する
-    付与が、148, 0.06 , -1　の場合、
-    148 + 0.06 = 148.06がLC値になる
-    """
-    # print(line_price)
-    # print(margin)
-    if expected_direction == 1:
-        ans = line_price - margin
-    else:
-        ans = line_price + margin
-    return ans
 

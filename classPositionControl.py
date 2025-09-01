@@ -183,8 +183,8 @@ class position_control:
                 # 各情報
                 if item.o_state == "Watching":
                     watching_list.append({"name": item.name,
-                                          "target": item.plan['price'],
-                                          "direction": item.plan['expected_direction'],
+                                          "target": item.plan_json['price'],
+                                          "direction": item.plan_json['expected_direction'],
                                           "order_time": gene.time_to_str(item.order_register_time),
                                           "state": item.step1_filled,
                                           "keeping": round(item.step1_keeping_second, 0),
@@ -201,7 +201,7 @@ class position_control:
                         "o_state": item.o_state,
                         "t_state": item.t_state,
                         "pl": item.t_pl_u,
-                        "direction": item.plan['direction']
+                        "direction": item.plan_json['direction']
                     })
                     # ポジションの所有時間（ポジションがある中で最大）も取得しておく
                     if item.t_time_past_sec > max_position_time_sec:
@@ -224,7 +224,7 @@ class position_control:
                         "o_state": item.o_state,
                         "t_state": item.t_state,
                         "pl": item.t_pl_u,
-                        "direction": item.plan['direction']
+                        "direction": item.plan_json['direction']
                     })
                     # ポジションの所有時間（ポジションがある中で最大）も取得しておく
                     if item.o_time_past_sec > max_order_time_sec:
