@@ -47,24 +47,29 @@ class position_control:
         """
         調査結果を受け取り、他のオーダーを比較し、オーダーを追加するかを判定する
         """
-        # how_to_new_order_str = "add"
-        # if how_to_new_order_str == "cancel":
-        #     # 新規を入れない場合（既存のオーダーが、新規オーダーよりも優先度が高い場合）
-        #     print("新規登録をキャンセル（既存オーダーと兼ね合いが取れないため）", how_to_new_order_str)
-        #     return 0
-        # elif how_to_new_order_str == "add":
-        #     # 新規を追加する場合（既存のオーダーが、新規オーダーと同等のため、既存を消さずに追加）
-        #     print("新規を既存オーダーに追加へ", how_to_new_order_str)
-        # else:
-        #     # 既存オーダー＆ポジションをクリアし、新規を追加（既存のオーダーが、新規よりも優先度が低い場合）
-        #     self.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
-        #     print("既存のオーダーをキャンセルし、新規登録へ", how_to_new_order_str)
-        #     tk.line_send("既存オーダーをキャンセルし、新規オーダーを入れます")
+        # ■オーダーのプライオリティの関係
+        # 渡されたオーダーの中で、最大のプライオリティのものと、そのプライオリティを算出
+        # max_dict = max(order_dic_list, key=lambda d: d["priority"], default=None)
+        max_dict = max(order_dic_list, key=lambda d: d.get("priority", float("-inf")))
+        order_max_priority = max_dict['priority']
 
-        # 暫定的に、既存のポジションがある場合、オーダーを発行しないことにする
+        # 現在のクラスで、生きている物のみ抽出
+        alive_classes = [c for c in self.classes if hasattr(c, "life") and c.life]
+        if len(alive_classes) == 0:
+            print(" プログラム上既存のオーダーは存在しないため、オーダー発行へ")
+            pass
+        else:
+            # 生きているインスタンスの最高値と、指定のプライオリティより高いものを算出
+            max_instance = max(alive_classes, key=lambda c: getattr(c, "priority", float("-inf")))
+            over_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority > order_max_priority]
+            same_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority == order_max_priority]
 
+            if len(same_n_classes) >= 1:
+                # 新規と同レベルのオーダーが既に存在する場合、新規はスキップする（既存の物は消去しない）
+                tk.line_send("同レベルのオーダーがあるため、追加オーダーせず")
+                return 0
 
-        # 現在のクラスの状況の確認
+        # ■現在のクラスの状況の確認
         print("現在のクラスの状況を確認 (classPositionControl)")
         self.print_classes_and_count()
         if self.count_true >= 10:
@@ -74,9 +79,6 @@ class position_control:
         elif self.count_true + len(order_dic_list) >= 13:
             # 新規のオーダー合わせて13個以上になる場合もオーダーしない（新規オーダーがエラーで複数個出てる可能性のため）
             print("★★既存の物＋新規の合わせて13個以上になるため、オーダー発行しない(新規オーダー数:", len(order_dic_list))
-            return 0
-        elif self.count_true >= 1:
-            tk.line_send("暫定的に生きてるものがあるときはオーダーしない")
             return 0
 
         # クラスに余りがある場合、その中で添え字が一番若いオーダーに上書き、または、追加をする

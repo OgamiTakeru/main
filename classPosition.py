@@ -357,18 +357,6 @@ class order_information:
         self.select_oa(plan['oa_mode'])
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
-        # print(plan)
-        # print("消したいやつ(classPosition225行目"
-        #       , "ClassPosition算出LC", round(plan['target_price'] - (abs(plan['lc_range']) * plan['direction']), 3)
-        #       , "元LC", plan['lc_price']
-        #       , "classPosition算出TP", round(plan['target_price'] + (abs(plan['tp_range']) * plan['direction']), 3)
-        #       , "元TP", plan['tp_price']
-        #       , "新DateNow", datetime.datetime.now()
-        #       # , "元DateNow", self.plan['time']
-        #       , "新price", plan['target_price']
-        #       , "元price", plan['price']
-        #       )
-        # self.plan['price'] = plan['target_price']  # ターゲットプライス（注文価格）は、oandaClassではprice
         if 'priority' in plan:
             self.priority = plan['priority']  # プラオリティを登録する
         if 'trade_timeout_min' in plan:  # していない場合は初期値50分
@@ -394,9 +382,6 @@ class order_information:
         # (4)LC_Change情報を格納する
         if "lc_change" in plan:
             self.lc_change_dic_arr = plan['lc_change']  # 辞書を丸ごと
-            # print("LCチェンジ初期値の確認")
-            # gene.print_arr(self.lc_change_dic_arr)
-            # print(self.lc_change_dic_arr)
             # おかしいのでテスト用
             if 'time_done' in self.lc_change_dic_arr[0]:
                 tk.line_send("最初からLCChangeのDone時間が入っているNG classPosition.py ３３０行目付近")
@@ -437,13 +422,6 @@ class order_information:
         else:
             self.alert_watch_exe = False
 
-        # (9)オーダーのLCを調整する（テスト中。過去の結果によって調子を変える）
-        # lc_tuning_message = self.lc_tuning_by_history()
-        # if lc_tuning_message:
-        #     tk.line_send("過去のオーダーの勝敗履歴@classPosition, ", lc_tuning_message)
-        # else:
-        #     print("からです", lc_tuning_message)
-
         # (Final)オーダーを発行する
         if self.order_permission:
             # 即時オーダー発行
@@ -474,22 +452,7 @@ class order_information:
         planを元にオーダーを発行する。この時初めてLifeがTrueになる
         :return:
         """
-        # 異常な数のオーダーを防御する
-        # (1)　ポジション数の確認
-        position_num_dic = self.oa.TradeAllCount_exe()
-        position_num = position_num_dic['data']  # 現在のオーダー数を取得
-        if position_num >= 10:
-            # エラー等で大量のオーダーが入るのを防ぐ(６個以上のオーダーは防ぐ）
-            self.send_line(" 【注】大量ポジションがある可能性", position_num_dic)
-            return {"order_name": "error", "order_id": 0}
-        # (2)オーダー数の確認
-        order_num = self.oa.OrderCount_All_exe()
-        if order_num >= 10:
-            # エラー等で大量のオーダーが入るのを防ぐ
-            self.send_line(" 【注】大量オーダーがある可能性", order_num)
-            return {"order_name": "error", "order_id": 0}
-
-        # (3)オーダー発行処理★
+        # オーダー発行処理★
         order_ans_dic = self.oa.OrderCreate_dic_exe(self.plan)  # Plan情報からオーダー発行しローカル変数に結果を格納する
         order_ans = order_ans_dic['data']  # エラーはあんまりないから、いいわ。
         if order_ans['cancel']:  # キャンセルされている場合は、リセットする

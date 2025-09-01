@@ -192,8 +192,12 @@ class main():
         print("■■■■■■5分ごと調査■■■■", self.now, self.past_time_from_latest_mode1_exe)  # 表示用（実行時）
 
         # ■処理
-        self.positions_class.all_update_information()  # positionの更新
-        self.get_df_data()  # データの取得
+        if self.first_exe:
+            # 初回は、manageで取得したデータで実行する
+            pass
+        else:
+            self.positions_class.all_update_information()  # positionの更新
+            self.get_df_data()  # データの取得
 
         # ■調査実行
         analysis_result_instance = am.wrap_all_analisys(self.d5_df, self.base_oa)
@@ -242,9 +246,15 @@ class main():
             return 0
         elif self.now.weekday() == 5:
             if self.time_hour >= 4:
-                if self.time_hour ==4 and self.time_min == 0 and self.time_sec <=8:
-                    print("■土曜の朝4時で終了（ポジションは開放しない・・？）(4時０分８秒まで表示)")
+                if self.time_hour ==4 and self.time_min == 0 and self.time_sec <=2:
+                    print("■土曜の朝4時で終了（ポジションは開放しない・・？）(4時０分2秒まで表示)")
                 return 0
+        elif self.now.weekday() == 1:
+            if self.time_hour <= 7:
+                if self.time_min == 0 and self.time_sec <=1:
+                    print("■月曜になった深夜～朝までは実行無し", self.time_hour)
+                return 0
+
         # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
         if 6 <= self.time_hour <= 7:
             if self.midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
@@ -283,6 +293,7 @@ class main():
         else:
             # ■　初回だけ実行と同時に行う特殊処理
             print("■■■初回", self.exe_mode)  # 表示用（実行時）
+            tk.line_send("start")
 
             # ①成り行きの実行の場合
             d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
@@ -295,11 +306,16 @@ class main():
                 d5_df_latest_bottom = d5_df_res['data']
 
             # ②時間を指定する場合
-            # jp_time = datetime.datetime(2025, 7, 7, 22, 30, 6)
-            # euro_time_datetime = jp_time - datetime.timedelta(hours=9)
-            # euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-            # param = {"granularity": "M5", "count": gl_need_df_num, "to": euro_time_datetime_iso}
-            # d5_df_latest_bottom = oa.InstrumentsCandles_exe("USD_JPY", param)
+            jp_time = datetime.datetime(2025, 9, 1, 8, 5, 6)
+            euro_time_datetime = jp_time - datetime.timedelta(hours=9)
+            euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
+            param = {"granularity": "M5", "count": 100, "to": euro_time_datetime_iso}
+            d5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)
+            if d5_df_res['error'] == -1:
+                print("初回実行時、error Candle First")
+                return -1
+            else:
+                d5_df_latest_bottom = d5_df_res['data']
 
             # ①②共通
             print(d5_df_latest_bottom.head(5))
@@ -307,8 +323,8 @@ class main():
             self.mode1()
 
             # 強制オーダーを入れる場合は、以下コメントイン
-            self.force_order()
-            self.positions_class.print_classes_and_count()
+            # self.force_order()
+            # self.positions_class.print_classes_and_count()
 
             # 初回実行の終了フラグ
             self.first_exe = False

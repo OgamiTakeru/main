@@ -181,7 +181,7 @@ class turn_analisys:
         また、逆向きのオーダーも生成しておく。
         """
         # ■変数のミスをチェック
-        if ls_type == "LIMIT" or ls_type == "STOP":
+        if ls_type == "LIMIT" or ls_type == "STOP" or "MARKET":
             pass
         else:
             print("type指定がミスってるよ:", ls_type)
@@ -229,6 +229,7 @@ class turn_analisys:
             "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
             "decision_price": self.peaks_class.df_r_original.iloc[1]['close'],
             "order_timeout_min": 20,
+            "trade_timeout_min": 240,
             "lc_change_type": lc_change,
             "units": self.units_str,
             "name": name,
@@ -251,7 +252,7 @@ class turn_analisys:
         # self.flag_and_orders['exe_orders'] = orders
         self.take_position_flag = True
         self.exe_orders.extend(orders)
-        print("発行したオーダー↓")
+        print("発行したオーダー↓　(turn255)")
         gene.print_arr(orders)
 
     def cal_little_turn_at_trend(self):
@@ -276,6 +277,11 @@ class turn_analisys:
         r = peaks[0]
         t = peaks[1]
         f = peaks[2]
+        # テスト専用のコード
+        name_t = (("@" + str(self.rt.lo_ratio) + "@" +
+                   str(self.rt.turn_strength_at_older)) + "@" + str(self.tf.lo_ratio) + "@" +
+                  str(self.rt.skip_num_at_older) + "@" +
+                  str(t['count']) + "@" + str(t['gap']))
 
         # (4)よく使う条件分岐を、簡略化しておく
         # ■一部共通の分岐条件を生成しておく
@@ -296,137 +302,199 @@ class turn_analisys:
         # オーダーテスト用
         # ■■Latestのピークが伸びる方向（基本形）
         exe_orders = []
+        comment = "None"
         if r['count'] == 2 and t['count'] >= 4:
-            # ■■Latestのピークが伸びる方向（基本形）
-            comment = "ターン発生時(理想)"
-            target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
-            margin = 0.01  # 基本的に即時級。スプレッド分程度
-            tp_range = self.ca.cal_move_ave(1.5)
-            lc_price = t['latest_wick_peak_price']
-            lc_range = abs(lc_price - self.current_price)
-            # ■■オーダーを作成
-            orders = self.order_make_hedged(
-                comment,  # nameとなるcomment
-                target_price,  # targetPrice
-                margin,  # margin
-                r['direction'],  # direction
-                "STOP",  # STOP=順張り　LIMIT＝逆張り
-                1,  # TP hedgedはレンジ指定
-                1,  # LC hedgedはレンジ指定
-                0,  # lcChange
-                self.units_str,  # uni
-                3,  # priority
-                0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
-            )
-            # ■オーダーを登録
-            self.orders_add_this_class_and_flag_on(orders)
 
-            # ■■turn方向（Break）の場合
+            # ●判定セクション
+            pattern = 0  # 1はトレンド（ｒ方向）、2はレンジ（ｔ方向）
             # ■■[B] リバーの戻りが、ターンに比べて小さい（当初からのルールと近しい場合）
             if self.rt.lo_ratio <= 0.3:
                 # ■■■■
                 if self.tf.lo_ratio <= 0.26:
                     comment = "2B_強いトレンド"
-                    # ■■■■
+                    pattern = 1
                 elif 0.26 <= self.tf.lo_ratio <= 0.45:
                     comment = "3B_ペナント型"
-                    # ●TARGET
+                    pattern = 2
                 elif 0.7 <= self.tf.lo_ratio <= 1.3:
                     comment = "4B_レンジの強turnダブルトップ(r小)"
-                # ■■■■
+                    pattern = 2
                 elif self.tf.lo_ratio > 1.45 and self.rt.lo_ratio >= 0.195 and self.rt.skip_num_at_older < 4:
                     comment = "◎◎5B_ジグザグトレンド(r短)"
+                    pattern = 1
             # ■■[B] リバーの戻りが、ターンの半分前後
             elif 0.3 <= self.rt.lo_ratio <= 0.55:
                 # ■■■■
                 if self.tf.lo_ratio > 1.45 and self.rt.skip_num_at_older < 10:
                     comment = "◎◎5B_ジグザグトレンド(r中)"
+                    pattern = 1
             # ■■[D] リバーの戻りがターンと同等のサイズ
             elif 0.8 <= self.rt.lo_ratio <= 1.1:
                 # ■■■■
                 if self.tf.lo_ratio <= 0.45:
                     comment = "3D_強いトレンド(r大)"
+                    pattern = 1
                 # ■■■■
                 elif 0.7 <= self.tf.lo_ratio <= 1.3:
                     comment = "4D_レンジの強turnダブルトップ"
+                    pattern = 2
                 # ■■■■
                 elif self.tf.lo_ratio > 1.5 and self.rt.skip_num_at_older < 4:
                     comment = "◎◎5B_ジグザグトレンド(r同等)"
+                    pattern = 2
             # ■■[F] リバーが大きいとき
             elif self.rt.lo_ratio > 1.2:
                 # ■■■■
                 if self.tf.lo_ratio <= 0.45:
                     comment = "3F_強いジグザグトレンド"
+                    pattern = 1
                 # ■■■■
                 elif 0.7 <= self.tf.lo_ratio <= 1.3:
                     comment = "4F_トレンド開始点"
+                    pattern = 1
                 # ■■■■
                 elif self.tf.lo_ratio > 1.3:
                     comment = "5F_検討中"
+                    pattern = 2
+
+            # ●オーダーセクション
+            if pattern == 0:
+                print("オーダーなし", comment)
+                return 0
+            else:
+                # ■オーダーがある場合
+                # ■■突破方向
+                if pattern == 1:
+                    # ●本命オーダー
+                    target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
+                    margin = 0.01  # 基本的に即時級。スプレッド分程度
+                    tp_range = self.ca.cal_move_ave(1.5)
+                    lc_price = t['latest_wick_peak_price']
+                    lc_range = abs(lc_price - self.current_price)
+                    orders_r = self.order_make(
+                        comment,  # nameとなるcomment
+                        target_price,  # targetPrice
+                        margin,  # margin
+                        r['direction'],  # direction
+                        "MARKET",  # STOP=順張り　LIMIT＝逆張り
+                        self.ca.cal_move_ave(5),  # TP hedgedはレンジ指定
+                        1,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        3,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    self.orders_add_this_class_and_flag_on(orders_r)
+
+                    # ●ヘッジオーダー
+                    target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
+                    margin = self.ca.cal_move_ave(1.5)  # 基本的に即時級。スプレッド分程度
+                    tp_range = self.ca.cal_move_ave(1.5)
+                    lc_price = t['latest_wick_peak_price']
+                    lc_range = abs(lc_price - self.current_price)
+                    orders_r = self.order_make(
+                        comment + "HEDGE",  # nameとなるcomment
+                        target_price,  # targetPrice
+                        margin,  # margin
+                        t['direction'],  # direction
+                        "STOP",  # STOP=順張り　LIMIT＝逆張り
+                        1,  # TP hedgedはレンジ指定
+                        1,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        3,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    self.orders_add_this_class_and_flag_on(orders_r)
+
+                # ■■レンジ方向
+                elif pattern == 2:
+                    # ●本命オーダー
+                    target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
+                    margin = 0.01  # 基本的に即時級。スプレッド分程度
+                    tp_range = self.ca.cal_move_ave(1.5)
+                    lc_price = t['latest_wick_peak_price']
+                    lc_range = abs(lc_price - self.current_price)
+                    orders_r = self.order_make(
+                        comment,  # nameとなるcomment
+                        target_price,  # targetPrice
+                        margin,  # margin
+                        t['direction'],  # direction
+                        "MARKET",  # STOP=順張り　LIMIT＝逆張り
+                        self.ca.cal_move_ave(1.5),  # TP hedgedはレンジ指定
+                        1,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        3,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    self.orders_add_this_class_and_flag_on(orders_r)
+
+                    # ●ヘッジオーダー
+                    target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
+                    margin = 0.025  # 基本的に即時級。スプレッド分程度
+                    tp_range = self.ca.cal_move_ave(1.5)
+                    lc_price = t['latest_wick_peak_price']
+                    lc_range = abs(lc_price - self.current_price)
+                    orders_r = self.order_make(
+                        comment + "HEDGE",  # nameとなるcomment
+                        target_price,  # targetPrice
+                        margin,  # margin
+                        r['direction'],  # direction
+                        "STOP",  # STOP=順張り　LIMIT＝逆張り
+                        1,  # TP hedgedはレンジ指定
+                        1,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        3,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    self.orders_add_this_class_and_flag_on(orders_r)
 
         elif r['count'] == 3:
             if ((self.rt.skip_exist_at_older or 7 <= t['count'] < 100) and self.rt.skip_num_at_older < 3 and
                     0 < self.rt.turn_strength_at_older <= 8):
                 if 0 < self.rt.lo_ratio <= 0.36:
-                    if 0.8 <= self.fp.lo_ratio <= 1.1 and self.tf.lo_ratio <= 0.75:
-                        # フラッグ形成の開始地点　⇒　すぐに取得し、すこしだけr方向に行く（そのあとはｔ方向に行くのか・・？）
-                        comment = "●●●強いやつ(旧式） フラッグ版　watch対象"
-                        # ■ターゲット価格＆マージンの設定
-                        target_price = self.peaks_class.latest_price
-                        margin = self.ca.cal_move_ave(0.15)  # 最強バージョン(回数は少ない＆現実は微妙）
-                        # ■TPの設定
-                        tp = self.ca.cal_move_ave(1.5)
-                        # ■LCの設定
-                        # パターン１（シンプルに、平均足で指定するケース)
-                        lc = self.ca.cal_move_ave(0.8)
-                        # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
-                        lc_range = round(t['gap'] / 3 * 2, 3)
-                        # ■LCChangeの設定
-                        lc_change = 3
+                    # ■■オーダーを作成＆発行
+                    comment = "●●●強いやつ(旧式"
+                    orders = self.order_make(
+                        comment,  # nameとなるcomment
+                        self.peaks_class.latest_price,  # targetPrice
+                        self.ca.cal_move_ave(1),  # margin
+                        t['direction'],  # direction
+                        "LIMIT",  # STOP=順張り　LIMIT＝逆張り
+                        self.ca.cal_move_ave(5),  # TP hedgedはレンジ指定
+                        2,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        4,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    # ■オーダーを登録
+                    self.orders_add_this_class_and_flag_on(orders)
+                    # # test
+                    gene.print_json(orders[0])
+                    OCreate.Order(orders[0])
+                    print("オーダー新クラステストここまで")
 
-                        # ■■オーダーを作成＆発行
-                        orders = self.order_make_hedged(
-                            comment,  # nameとなるcomment
-                            target_price,  # targetPrice
-                            margin,  # margin
-                            r['direction'],  # direction
-                            "STOP",  # STOP=順張り　LIMIT＝逆張り
-                            tp,  # TP hedgedはレンジ指定
-                            lc_range,  # LC hedgedはレンジ指定
-                            lc_change,  # lcChange
-                            self.units_str,  # uni
-                            4,  # priority
-                            0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
-                        )
-                        # ■オーダーを登録
-                        self.orders_add_this_class_and_flag_on(orders)
-                    else:
-                        comment = "●●●強いやつ(旧式）　watch対象"
-                        # ■TPの設定
-                        tp = self.ca.cal_move_ave(5)
-                        # ■LCの設定
-                        # パターン１（シンプルに、平均足で指定するケース)
-                        lc = self.ca.cal_move_ave(0.8)
-                        # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
-                        lc_range = round(t['gap'] / 3 * 2, 3)
-                        # ■LCChangeの設定
-                        lc_change = 3
-                        # ■■オーダーを作成＆発行
-                        orders = self.order_make_hedged(
-                            comment,  # nameとなるcomment
-                            self.peaks_class.latest_price,  # targetPrice
-                            self.ca.cal_move_ave(1),  # margin
-                            t['direction'],  # direction
-                            "LIMIT",  # STOP=順張り　LIMIT＝逆張り
-                            tp,  # TP hedgedはレンジ指定
-                            lc_range,  # LC hedgedはレンジ指定
-                            lc_change,  # lcChange
-                            self.units_str,  # uni
-                            4,  # priority
-                            0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
-                        )
-                        # ■オーダーを登録
-                        self.orders_add_this_class_and_flag_on(orders)
+                    # ■■オーダーを作成＆発行
+                    comment = "●●●強いやつ(旧式）逆"
+                    orders = self.order_make(
+                        comment,  # nameとなるcomment
+                        self.peaks_class.latest_price,  # targetPrice
+                        self.ca.cal_move_ave(0.1),  # margin
+                        r['direction'],  # direction
+                        "STOP",  # STOP=順張り　LIMIT＝逆張り
+                        self.ca.cal_move_ave(1),  # TP hedgedはレンジ指定
+                        2,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        4,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    # ■オーダーを登録
+                    self.orders_add_this_class_and_flag_on(orders)
+
                 else:
                     print("戻りratio異なる", r['count'])
             else:
@@ -457,6 +525,12 @@ class turn_analisys:
         t = peaks[1]
         f = peaks[2]
 
+        # テスト専用のコード
+        name_t = (("@" + str(self.rt.lo_ratio) + "@" +
+                   str(self.rt.turn_strength_at_older)) + "@" + str(self.tf.lo_ratio) + "@" +
+                  str(self.rt.skip_num_at_older) + "@" +
+                  str(t['count']) + "@" + str(t['gap']))
+
         # (4)よく使う条件分岐を、簡略化しておく
         # ■一部共通の分岐条件を生成しておく
         if self.rt.skip_num_at_older < 3 and 0 < self.rt.turn_strength_at_older <= 8:
@@ -474,153 +548,206 @@ class turn_analisys:
         print("  超レンジ状態", self.peaks_class.hyper_range)
         print("  ビッグキャンドル有無", self.peaks_class.is_big_move_candle)
 
-        # テスト専用のコード
-        name_t = (("@" + str(self.rt.lo_ratio) + "@" +
-                   str(self.rt.turn_strength_at_older)) + "@" + str(self.tf.lo_ratio) + "@" +
-                  str(self.rt.skip_num_at_older) + "@" +
-                  str(t['count']) + "@" + str(t['gap']))
+
 
         # オーダーテスト用
         # ■■Latestのピークが伸びる方向（基本形）
         exe_orders = []
+        comment = "None"
         if r['count'] == 2 and t['count'] >= 4:
-            # ■■Latestのピークが伸びる方向（基本形）
-            comment = "ターン発生時(理想)" + name_t
-            target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
-            margin = 0.01  # 基本的に即時級。スプレッド分程度
-            tp_range = self.ca.cal_move_ave(1.5)
-            lc_price = t['latest_wick_peak_price']
-            lc_range = abs(lc_price - self.current_price)
-            # ■■オーダーを作成
-            orders = self.order_make_hedged(
-                comment,  # nameとなるcomment
-                target_price,  # targetPrice
-                margin,  # margin
-                r['direction'],  # direction
-                "STOP",  # STOP=順張り　LIMIT＝逆張り
-                tp_range,  # TP hedgedはレンジ指定
-                lc_range,  # LC hedgedはレンジ指定
-                0,  # lcChange
-                self.units_str,  # uni
-                3,  # priority
-                0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
-            )
-            # ■オーダーを登録
-            self.orders_add_this_class_and_flag_on(orders)
 
-            # ■■turn方向（Break）の場合
+            # ●判定セクション
+            pattern = 0  # 1はトレンド（ｒ方向）、2はレンジ（ｔ方向）
             # ■■[B] リバーの戻りが、ターンに比べて小さい（当初からのルールと近しい場合）
             if self.rt.lo_ratio <= 0.3:
                 # ■■■■
                 if self.tf.lo_ratio <= 0.26:
                     comment = "2B_強いトレンド"
-                    # ■■■■
+                    pattern = 1
                 elif 0.26 <= self.tf.lo_ratio <= 0.45:
                     comment = "3B_ペナント型"
-                    # ●TARGET
+                    pattern = 2
                 elif 0.7 <= self.tf.lo_ratio <= 1.3:
                     comment = "4B_レンジの強turnダブルトップ(r小)"
-                # ■■■■
+                    pattern = 2
                 elif self.tf.lo_ratio > 1.45 and self.rt.lo_ratio >= 0.195 and self.rt.skip_num_at_older < 4:
                     comment = "◎◎5B_ジグザグトレンド(r短)"
+                    pattern = 1
             # ■■[B] リバーの戻りが、ターンの半分前後
             elif 0.3 <= self.rt.lo_ratio <= 0.55:
                 # ■■■■
                 if self.tf.lo_ratio > 1.45 and self.rt.skip_num_at_older < 10:
                     comment = "◎◎5B_ジグザグトレンド(r中)"
+                    pattern = 1
             # ■■[D] リバーの戻りがターンと同等のサイズ
             elif 0.8 <= self.rt.lo_ratio <= 1.1:
                 # ■■■■
                 if self.tf.lo_ratio <= 0.45:
                     comment = "3D_強いトレンド(r大)"
+                    pattern = 1
                 # ■■■■
                 elif 0.7 <= self.tf.lo_ratio <= 1.3:
                     comment = "4D_レンジの強turnダブルトップ"
+                    pattern = 2
                 # ■■■■
                 elif self.tf.lo_ratio > 1.5 and self.rt.skip_num_at_older < 4:
                     comment = "◎◎5B_ジグザグトレンド(r同等)"
+                    pattern = 2
             # ■■[F] リバーが大きいとき
             elif self.rt.lo_ratio > 1.2:
                 # ■■■■
                 if self.tf.lo_ratio <= 0.45:
                     comment = "3F_強いジグザグトレンド"
+                    pattern = 1
                 # ■■■■
                 elif 0.7 <= self.tf.lo_ratio <= 1.3:
                     comment = "4F_トレンド開始点"
+                    pattern = 1
                 # ■■■■
                 elif self.tf.lo_ratio > 1.3:
                     comment = "5F_検討中"
+                    pattern = 2
+
+            # ●オーダーセクション
+            if pattern == 0:
+                print("オーダーなし", comment)
+                return 0
+            else:
+                # ■オーダーがある場合
+                # ■■突破方向
+                if pattern == 1:
+                    # ●本命オーダー
+                    target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
+                    margin = 0.01  # 基本的に即時級。スプレッド分程度
+                    tp_range = self.ca.cal_move_ave(1.5)
+                    lc_price = t['latest_wick_peak_price']
+                    lc_range = abs(lc_price - self.current_price)
+                    orders_r = self.order_make_hedged(
+                        comment,  # nameとなるcomment
+                        target_price,  # targetPrice
+                        margin,  # margin
+                        r['direction'],  # direction
+                        "MARKET",  # STOP=順張り　LIMIT＝逆張り
+                        self.ca.cal_move_ave(5),  # TP hedgedはレンジ指定
+                        1,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        3,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    self.orders_add_this_class_and_flag_on(orders_r)
+
+                    # ●ヘッジオーダー
+                    target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
+                    margin = self.ca.cal_move_ave(1.5)  # 基本的に即時級。スプレッド分程度
+                    tp_range = self.ca.cal_move_ave(1.5)
+                    lc_price = t['latest_wick_peak_price']
+                    lc_range = abs(lc_price - self.current_price)
+                    orders_r = self.order_make_hedged(
+                        comment + "HEDGE",  # nameとなるcomment
+                        target_price,  # targetPrice
+                        margin,  # margin
+                        t['direction'],  # direction
+                        "STOP",  # STOP=順張り　LIMIT＝逆張り
+                        1,  # TP hedgedはレンジ指定
+                        1,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        3,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    self.orders_add_this_class_and_flag_on(orders_r)
+
+                # ■■レンジ方向
+                elif pattern == 2:
+                    # ●本命オーダー
+                    target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
+                    margin = 0.01  # 基本的に即時級。スプレッド分程度
+                    tp_range = self.ca.cal_move_ave(1.5)
+                    lc_price = t['latest_wick_peak_price']
+                    lc_range = abs(lc_price - self.current_price)
+                    orders_r = self.order_make_hedged(
+                        comment,  # nameとなるcomment
+                        target_price,  # targetPrice
+                        margin,  # margin
+                        t['direction'],  # direction
+                        "MARKET",  # STOP=順張り　LIMIT＝逆張り
+                        self.ca.cal_move_ave(1.5),  # TP hedgedはレンジ指定
+                        1,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        3,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    self.orders_add_this_class_and_flag_on(orders_r)
+
+                    # ●ヘッジオーダー
+                    target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
+                    margin = 0.025  # 基本的に即時級。スプレッド分程度
+                    tp_range = self.ca.cal_move_ave(1.5)
+                    lc_price = t['latest_wick_peak_price']
+                    lc_range = abs(lc_price - self.current_price)
+                    orders_r = self.order_make_hedged(
+                        comment + "HEDGE",  # nameとなるcomment
+                        target_price,  # targetPrice
+                        margin,  # margin
+                        r['direction'],  # direction
+                        "STOP",  # STOP=順張り　LIMIT＝逆張り
+                        1,  # TP hedgedはレンジ指定
+                        1,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        3,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    self.orders_add_this_class_and_flag_on(orders_r)
 
         elif r['count'] == 3:
             if ((self.rt.skip_exist_at_older or 7 <= t['count'] < 100) and self.rt.skip_num_at_older < 3 and
                     0 < self.rt.turn_strength_at_older <= 8):
                 if 0 < self.rt.lo_ratio <= 0.36:
-                    if 0.8 <= self.fp.lo_ratio <= 1.1 and self.tf.lo_ratio <= 0.75:
-                        # フラッグ形成の開始地点　⇒　すぐに取得し、すこしだけr方向に行く（そのあとはｔ方向に行くのか・・？）
-                        comment = "●●●強いやつ(旧式） フラッグ版　watch対象" + name_t
-                        # ■ターゲット価格＆マージンの設定
-                        target_price = self.peaks_class.latest_price
-                        margin = self.ca.cal_move_ave(0.15)  # 最強バージョン(回数は少ない＆現実は微妙）
-                        # ■TPの設定
-                        tp = self.ca.cal_move_ave(1.5)
-                        # ■LCの設定
-                        # パターン１（シンプルに、平均足で指定するケース)
-                        lc = self.ca.cal_move_ave(0.8)
-                        # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
-                        lc_range = round(t['gap'] / 3 * 2, 3)
-                        # ■LCChangeの設定
-                        lc_change = 3
+                    # ■■オーダーを作成＆発行
+                    comment = "●●●強いやつ(旧式"
+                    orders = self.order_make(
+                        comment,  # nameとなるcomment
+                        self.peaks_class.latest_price,  # targetPrice
+                        self.ca.cal_move_ave(1),  # margin
+                        t['direction'],  # direction
+                        "LIMIT",  # STOP=順張り　LIMIT＝逆張り
+                        self.ca.cal_move_ave(5),  # TP hedgedはレンジ指定
+                        2,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        4,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    # ■オーダーを登録
+                    self.orders_add_this_class_and_flag_on(orders)
 
-                        # ■■オーダーを作成＆発行
-                        orders = self.order_make_hedged(
-                            comment,  # nameとなるcomment
-                            target_price,  # targetPrice
-                            margin,  # margin
-                            r['direction'],  # direction
-                            "STOP",  # STOP=順張り　LIMIT＝逆張り
-                            tp,  # TP hedgedはレンジ指定
-                            lc_range,  # LC hedgedはレンジ指定
-                            lc_change,  # lcChange
-                            self.units_str,  # uni
-                            4,  # priority
-                            0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
-                        )
-                        # ■オーダーを登録
-                        self.orders_add_this_class_and_flag_on(orders)
-                    else:
-                        comment = "●●●強いやつ(旧式）　watch対象" + name_t
-                        # ■TPの設定
-                        tp = self.ca.cal_move_ave(5)
-                        # ■LCの設定
-                        # パターン１（シンプルに、平均足で指定するケース)
-                        lc = self.ca.cal_move_ave(0.8)
-                        # パターン２（ターンの移動幅の3分の2程度の距離を許容する）
-                        lc_range = round(t['gap'] / 3 * 2, 3)
-                        # ■LCChangeの設定
-                        lc_change = 3
-                        # ■■オーダーを作成＆発行
-                        orders = self.order_make_hedged(
-                            comment,  # nameとなるcomment
-                            self.peaks_class.latest_price,  # targetPrice
-                            self.ca.cal_move_ave(1),  # margin
-                            t['direction'],  # direction
-                            "LIMIT",  # STOP=順張り　LIMIT＝逆張り
-                            tp,  # TP hedgedはレンジ指定
-                            lc_range,  # LC hedgedはレンジ指定
-                            lc_change,  # lcChange
-                            self.units_str,  # uni
-                            4,  # priority
-                            0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
-                        )
-                        # ■オーダーを登録
-                        self.orders_add_this_class_and_flag_on(orders)
+                    # ■■オーダーを作成＆発行
+                    comment = "●●●強いやつ(旧式）逆"
+                    orders = self.order_make(
+                        comment,  # nameとなるcomment
+                        self.peaks_class.latest_price,  # targetPrice
+                        self.ca.cal_move_ave(0.1),  # margin
+                        r['direction'],  # direction
+                        "STOP",  # STOP=順張り　LIMIT＝逆張り
+                        self.ca.cal_move_ave(1),  # TP hedgedはレンジ指定
+                        2,  # LC hedgedはレンジ指定
+                        1,  # lcChange  1 =defence
+                        self.units_str,  # uni
+                        4,  # priority
+                        0,  # watching(0=off,1=On(watch基準はtarget(margin混み))
+                    )
+                    # ■オーダーを登録
+                    self.orders_add_this_class_and_flag_on(orders)
+
                 else:
                     print("戻りratio異なる", r['count'])
             else:
                 pass
         else:
             print("rCountが不適切", r['count'])
-
 
 class TuneAnalysisInformation:
     def __init__(self, peaks_class, older_no, name):
