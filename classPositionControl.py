@@ -63,7 +63,8 @@ class position_control:
 
             if len(same_n_classes) > 2:
                 # 新規と同レベルのオーダーが既に存在する場合、新規はスキップする（既存の物は消去しない）
-                tk.line_send("同レベルのオーダーがあるため、追加オーダーせず", len(same_n_classes))
+                tk.line_send("同レベルのオーダーがあるため、追加オーダーせず", len(same_n_classes),"個のオーダー,",
+                             order_max_priority, "のプライオリティ")
                 return 0
 
         # ■現在のクラスの状況の確認
@@ -198,6 +199,7 @@ class position_control:
                         "o_state": item.o_state,
                         "t_state": item.t_state,
                         "pl": item.t_pl_u,
+                        "realizedPL": item.t_json['realizedPL'],
                         "direction": item.plan_json['direction']
                     })
                     # ポジションの所有時間（ポジションがある中で最大）も取得しておく

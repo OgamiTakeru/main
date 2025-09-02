@@ -377,6 +377,7 @@ class Oanda:
         except Exception as e:
             # print(e)
             e_info = self.error_method("OrderDetail" + str(order_id), start_time, e)
+            e_info['o_id'] = order_id
             return {"data": e_info, "error": 1}
 
     # (9)指定のオーダーのステータス（オーダーとトレードの詳細）を取得

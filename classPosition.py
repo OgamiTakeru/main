@@ -509,15 +509,20 @@ class order_information:
                 order_information.total_PLu_max = order_information.total_PLu
             elif order_information.total_PLu < order_information.total_PLu_min:
                 order_information.total_PLu_min = order_information.total_PLu
+            # 回数の算出　決済が完了し、realizedPLが算出されている場合。
+            if float(trade_latest['realizedPL']) < 0:
+                order_information.minus_yen_position_num = order_information.minus_yen_position_num + 1
+            else:
+                order_information.plus_yen_position_num = order_information.plus_yen_position_num + 1
         else:
             # 価格情報の更新
             order_information.total_yen = round(order_information.total_yen + float(trade_latest['unrealizedPL']), 2)
             order_information.total_PLu = round(order_information.total_PLu + trade_latest['PLu'], 3)
-        # 計算する（回数）
-        if float(trade_latest['realizedPL']) < 0:
-            order_information.minus_yen_position_num = order_information.minus_yen_position_num + 1
-        else:
-            order_information.plus_yen_position_num = order_information.plus_yen_position_num + 1
+            # 計算する（回数）
+            if float(trade_latest['unrealizedPL']) <= 0:
+                order_information.minus_yen_position_num = order_information.minus_yen_position_num + 1
+            elif float(trade_latest['unrealizedPL']) > 0:
+                order_information.plus_yen_position_num = order_information.plus_yen_position_num + 1
 
         # 直前の結果を保存しておく
         order_information.before_latest_plu = trade_latest['PLu']
@@ -595,7 +600,7 @@ class order_information:
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
             # res1 = "強制Close【Unit】" + str(trade_latest['currentUnits'])
-            res1 = "【Unit】" + str(units_for_view * direction)
+            res1 = "【Unit】" + str(trade_latest['currentUnits'])  # )str(units_for_view * direction)
             id_info = "【orderID】" + str(self.o_id) + "【tradeID】" + str(self.t_id)
             res2 = "【決:" + "現価" + ", " + "取:" + str(trade_latest['price']) + "】"
             res3 = "【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "/ー域:" + str(self.lose_max_plu)
@@ -609,22 +614,45 @@ class order_information:
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
                 order_information.minus_yen_position_num)
 
-            self.send_line("■■■解消:", self.name, '\n', gene.now(), '\n',
+            self.send_line("■■■強制クローズ解消:", self.name, '\n', gene.now(), '\n',
                            res4, res5, res1, id_info, res2, res3, res6, res7, res8,
                            position_check_no_args()['name_list'])
 
-            # 結果のCSV保存
-            tk.write_result({
-                "time": gene.now(),
-                "orderId": str(self.o_id),
-                "tradeId": str(self.t_id),
-                "plus_max": str(self.win_max_plu),
-                "minus_max": str(self.lose_max_plu),
-                "hold_time": str(trade_latest['time_past']),
-                "result": str(trade_latest['PLu']),
-                "result_yen": str(order_information.total_yen),
-                "name": self.name
-            })
+            result_dic = {
+                "order_time": self.o_time,
+                "res": str(trade_latest['unrealizedPL']),  # 上と違う部分
+                "take_time": self.t_time,
+                "take_price": str(trade_latest['price']),
+                "end_time": datetime.datetime.now(),
+                "end_price": str(trade_latest['averageClosePrice']),
+                "orderID": str(self.o_id),
+                "tradeID": str(self.t_id),
+                "name": self.name,
+                "name_only": self.name[:-5],
+                "units": str(units_for_view * direction),
+                "pl_per_units": str(trade_latest['PLu']),  # 以下追加
+                "lc_price_plan": self.plan_json['lc_price'],
+                "lc_price_original_plan": self.plan_json['lc_price_original'],
+                "plus_minus": 1 if float(trade_latest['unrealizedPL']) > 0 else -1,
+                "max_plus": str(self.win_max_plu),
+                "max_minus": str(self.lose_max_plu),
+                "position_keep_time": str(trade_latest['time_past'])
+            }
+            order_information.result_dic_arr.append(result_dic)
+            # ファイルが利用できる場合、処理を行う
+            path = tk.folder_path + 'history.csv'
+            try:
+                if not os.path.exists(path):
+                    # ファイルが存在しない場合、新規作成
+                    df = pd.DataFrame(order_information.result_dic_arr)
+                    df.to_csv(path, index=False)
+                else:
+                    # ファイルが存在する場合、追記処理
+                    df = pd.DataFrame([result_dic])
+                    df.to_csv(path, mode='a', header=False, index=False)
+
+            except (OSError, PermissionError, IOError) as e:
+                print(f"ファイルにアクセスできませんでした: {e}")
 
     def close_trade(self, units):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -1486,7 +1514,8 @@ class order_information:
                     gene.print_arr(self.lc_change_dic_arr)
                     self.no_lc_change = False  # 念のため
                 else:
-                    print("  LCChangeおかしい問題の確認用(おかしくない）　最初のLC時刻", self.first_lc_change_time, i)
+                    pass
+                    # print("  　LCChange　確認用(おかしくない）　最初のLC時刻", self.first_lc_change_time, i)
 
                 if i == 0 and self.no_lc_change:
                     tk.line_send("LC_CHANGEがうまく発動しない可能性あり", i, "過去実行時間,", item['time_done'])
@@ -1509,7 +1538,7 @@ class order_information:
                 # print("　★変更確定")
                 self.no_lc_change = False
                 self.first_lc_change_time = datetime.datetime.now()
-                print(" 変更対象", i, lc_ensure_range, lc_trigger_range, self.t_pl_u)
+                print(" 　　変更対象", i, "番目のLC_Change", lc_ensure_range, lc_trigger_range, self.t_pl_u)
                 self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
                 # これで配列の中の辞書って変更できるっけ？？
                 item['done'] = True
@@ -1719,7 +1748,7 @@ class order_information:
         self.plan_json['type'] = "Already"
 
         self.life = True
-        self.name = name
+        self.name = name + "_" + str(gene.delYearDay(datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")))
         self.oa_mode = 2  # アカウント選択（１が通常、２が両建てアカウント）
         self.priority = 5  # このポジションのプライオリティ
 
@@ -1765,7 +1794,7 @@ class order_information:
 
         min10 = 0  # 60 * 10
         self.lc_change_dic_arr = [
-            {"exe": True, "time_after": min10, "trigger": 0.01, "ensure": 0.001},
+            # {"exe": True, "time_after": min10, "trigger": 0.01, "ensure": 0.001},
             {"exe": True, "time_after": min10, "trigger": 0.025, "ensure": 0.01},
             # {"exe": True, "time_after": 600, "trigger": 0.043, "ensure": 0.018},
             # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},

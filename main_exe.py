@@ -183,18 +183,31 @@ class main():
         self.latest_exe_time = datetime.datetime.now().replace(microsecond=0)  # 最終実行時刻を取得しておく
 
     def mode2(self):
+        print("Mode2")
         self.positions_control_class.all_update_information()  # positionの更新
         life_check_res = self.positions_control_class.life_check()
         if life_check_res['life_exist']:
             # オーダー以上がある場合。表示用（１分に１回表示させたい）
             temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
             if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒～２秒の間)
-                have_position = self.positions_control_class.position_check()
+                current_positions = self.positions_control_class.position_check()
                 print("■■■Mode2(いずれかポジション有)", f.now(), "これは１分に１回表示")
-                if len(have_position['watching_list']) > 0:
-                    print("ウォッチリスト")
-                    gene.print_arr(have_position['watching_list'])
-                print("     ", life_check_res['one_line_comment'])
+                if len(current_positions['open_positions']) > 0:
+                    # ポジションがある場合、表示する情報を組み立てる。
+                    info = []
+                    for i, item in enumerate(current_positions['open_positions']):
+                        name = item['name']
+                        pr = item['priority']
+                        rpl = item["realizedPL"]
+                        pl = item['pl']
+                        if len(current_positions['watching_list']) > 0:
+                            w = ", ".join(["|".join(map(str, d.values())) for d in current_positions['watching_list'][i]])
+                        else:
+                            w = ""
+                        c = name + "(priority:" + str(pr) + ",rpl:" + str(rpl) + ",pl:" + str(pl) + ",w:" + w + ")"
+                        print("   ⇒", c)
+
+                # print("     ", life_check_res['one_line_comment'])
 
     def exe_manage(self):
         """
@@ -217,11 +230,11 @@ class main():
                     print("■月曜になった深夜～朝までは実行無し", self.time_hour)
                 return 0
 
-        # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
-        if 6 <= self.time_hour <= 7:
+        # ■深夜帯(6時～7時)は実行しない　（ポジションやオーダーも全て解除）
+        if 5 <= self.time_hour <= 5:
             if self.midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
                 # self.positions_control_class.reset_all_position()
-                tk.line_send("■深夜のポジション・オーダー解消を実施")
+                # tk.line_send("■深夜のポジション・オーダー解消を実施")
                 self.midnight_close_flag = 1  # 実施済みフラグを立てる
             return 0
         else:
@@ -234,8 +247,8 @@ class main():
         else:
             price_dic = price_dic['data']
             if price_dic['spread'] > self.ARROW_SPREAD:
-                # print("    ▲スプレッド異常", gl_now, price_dic['spread'])
-                return -1  # 強制終了
+                print("    ▲スプレッド異常", self.now, price_dic['spread'])
+                # return -1  # 強制終了
             self.now_price_mid = price_dic['mid']  # 念のために保存しておく（APIの回数減らすため）
             self.now_spread = price_dic['spread']
 
