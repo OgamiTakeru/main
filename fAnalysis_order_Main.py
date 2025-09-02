@@ -16,6 +16,7 @@ class wrap_all_analisys():
         # 実行
         self.wrap_all_inspections()
 
+
     def orders_add_this_class_and_flag_on2(self, order_classes):
         """
 

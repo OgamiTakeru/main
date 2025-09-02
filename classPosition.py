@@ -6,7 +6,7 @@ import tokens as tk
 import fGeneric as gene
 import gc
 import sys
-import classCandleAnalysis as cpk
+import classCandleAnalysis as ca
 import os
 import pandas as pd
 
@@ -105,7 +105,7 @@ class order_information:
         self.lc_change_dic_arr = []
         self.lc_change_from_candle_lc_price = 0
         self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行で加算される。０は未実行。１以上は執行済み。
-        self.lc_change_Fless_minus_done = False
+        self.lc_change_less_minus_done = False
         self.lc_change_candle_done = False
         self.lc_change_status = ""
 
@@ -839,107 +839,115 @@ class order_information:
                 self.current_price = temp_current_price['data']['ask']
 
         # (1) OrderDetail,TradeDetailの取得（orderId,tradeIdの確保）
-        # print("     不具合原因追及用　classPosition 898行目")
-        # print("       　↑", self.life, self.name, self.o_id, self.t_id, self.o_json)
-        order_ans = self.oa.OrderDetails_exe(self.o_id)  # ■■API
-        if 'error' in order_ans:
-            if order_ans['error'] == 1:
-                # print("OrderErrorのためリターン０（@classPosition898）ID:", self.o_id)
-                # エラー対応
-                if self.update_information_error_o_id_num >= 3 and self.o_id == self.update_information_error_o_id:
-                    # 3回以上、同じIDでエラーが発生している場合、キャンセル
-                    tk.line_send("オーダーDetailエラー(繰り返し)⇒Orderクローズ", self.o_id)
-                    self.close_order()
-                    self.update_information_error_o_id_num = 0
-                    self.update_information_error_o_id = 0
+        if self.o_id == -1:
+            # 実行時に、既存のオーダーを拾ってきた場合、特殊な操作。
+            trade_ans = self.oa.TradeDetails_exe(self.t_id)  # ■■API
+            if trade_ans['error'] == 1:
+                print("    トレード情報取得Error＠update_information", self.t_id)
+                return 0
+            trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
+            self.t_json = trade_latest  # Json自体も格納
+        else:
+            # 通常のオーダーの場合（基本的にはこっち）
+            order_ans = self.oa.OrderDetails_exe(self.o_id)  # ■■API
+            if 'error' in order_ans:
+                if order_ans['error'] == 1:
+                    # print("OrderErrorのためリターン０（@classPosition898）ID:", self.o_id)
+                    # エラー対応
+                    if self.update_information_error_o_id_num >= 3 and self.o_id == self.update_information_error_o_id:
+                        # 3回以上、同じIDでエラーが発生している場合、キャンセル
+                        tk.line_send("オーダーDetailエラー(繰り返し)⇒Orderクローズ", self.o_id)
+                        self.close_order()
+                        self.update_information_error_o_id_num = 0
+                        self.update_information_error_o_id = 0
+                        return 0
+                    else:
+                        print("OrderErrorのためリターン０（@classPosition898）ID:", self.o_id, type(self.update_information_error_o_id))
+                        self.update_information_error_o_id_num = self.update_information_error_o_id_num + 1
+                        if self.o_id == 0:
+                            print("o_idがIでおかしい")
+                        else:
+                            self.update_information_error_o_id = self.o_id
+                        print("とりあえずreturn0　classposition 935行目くらい")
+                        return 0
+            self.update_information_error_o_id_num = 0
+            order_latest = order_ans['data']['order']  # jsonを取得
+            self.o_json = order_latest  # Json自体も格納
+            # print("現在の状態　オーダー", self.name, self.o_id)
+            # print("現在の状態　オー", self.name, self.o_json)
+
+            if order_latest['state'] == "FILLED":
+                #  オーダーが約定済みの場合
+                if "tradeOpenedID" in order_latest:
+                    # ポジションが存在している場合
+                    # 他のオーダーを完全にクローズさせた場合
+                    if "tradeClosedIDs" in order_latest and not (self.already_offset_notice):
+                        self.already_offset_notice = True  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
+                        # ただし、tradeCloseIDsもある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
+                        # ★トレード有かつ相殺有の場合は、このオーダーがトレードよりも多いユニット注文があったことを意味する。
+                        #  その為、オーダーのユニットの一部が相殺され、残るユニットがトレードとして存在する（その為Lifeを消さない）
+                        tk.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
+                                     self.name, "(",
+                                     self.o_json['id'], ")")
+                    #
+                    self.t_id = order_latest['tradeOpenedID']
+                    trade_ans = self.oa.TradeDetails_exe(self.t_id)  # ■■API
+                    if trade_ans['error'] == 1:
+                        print("    トレード情報取得Error＠update_information", self.t_id)
+                        return 0
+                    trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
+                    self.t_json = trade_latest  # Json自体も格納
+                    # print("ポジション詳細", self.t_json)
+                elif "tradeReducedID" in order_latest:
+                    # このオーダーが、他のオーダーのポジションの一部を相殺した場合（このオーダーのポジションは相殺で消滅）
+                    # （tradeReduceがある場合、一部相殺状態）
+                    # Reduceしたトレードを見に行くと、最終的な結果が重複するため、トランザクション結果の価格を求める。
+                    # ただし格納形式を整えたいため、トレード情報を取得し、Pipsの部分だけを置き換える
+                    transaction_id = order_latest['fillingTransactionID']
+                    transaction_info = self.oa.get_transaction_single(transaction_id)
+                    reduced_trade_id = order_latest['tradeReducedID']
+                    trade_latest = self.oa.TradeDetails_exe(reduced_trade_id)['data']['trade']  # ■■API
+                    # print("トランザクション")
+                    # print(transaction_info)
+                    # print("トレード")
+                    # print(trade_latest)
+                    # 以下相殺発生分のみの情報に置き換え
+                    tk.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
+                                 "相殺したトレード", str(reduced_trade_id) + ",相殺したUNIT",
+                                 transaction_info['transactions'][0]['requestedUnits'])
+                    trade_latest['state'] = "CLOSE"
+                    trade_latest['id'] = reduced_trade_id
+                    trade_latest['unrealizedPL'] = transaction_info['transactions'][0]['pl']  #
+                    trade_latest['currentUnits'] = float(
+                        transaction_info['transactions'][0]['requestedUnits'])  # 暫定的に相殺した分に置き換え
+                    trade_latest['state'] = "CLOSE"
+                    trade_latest['PLu'] = round(float(trade_latest['unrealizedPL']) / abs(
+                        float(transaction_info['transactions'][0]['requestedUnits'])), 3)
+                    self.t_json = trade_latest  # Json自体も格納
+                    # ★この場合に限り、このオーダーは存在しなくなるため、Close処理を実施する
+                    self.life_set(False)
+                    # self.after_close_trade_function()
+                elif "tradeClosedIDs" in order_latest:
+                    # tradeCloseIDsがある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
+                    # ★この場合は、このオーダーでの通知（クローズ処理）は実施不要で、Lifeをクローズにする
+                    self.life_set(False)
+                    tk.line_send("■■■オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
+                                 self.o_json['id'], ")")
                     return 0
                 else:
-                    print("OrderErrorのためリターン０（@classPosition898）ID:", self.o_id, type(self.update_information_error_o_id))
-                    self.update_information_error_o_id_num = self.update_information_error_o_id_num + 1
-                    if self.o_id == 0:
-                        print("o_idがIでおかしい")
-                    else:
-                        self.update_information_error_o_id = self.o_id
-                    print("とりあえずreturn0　classposition 935行目くらい")
+                    # ポジション取得待ち
+                    print("    トレード not detect", self.t_id)
+                    self.t_id = 0
+                    # tradeが０の場合、オーダーの更新のみ行う。
+                    self.order_update_and_close()
                     return 0
-        self.update_information_error_o_id_num = 0
-        order_latest = order_ans['data']['order']  # jsonを取得
-        self.o_json = order_latest  # Json自体も格納
-        # print("現在の状態　オーダー", self.name, self.o_id)
-        # print("現在の状態　オー", self.name, self.o_json)
-
-        if order_latest['state'] == "FILLED":
-            #  オーダーが約定済みの場合
-            if "tradeOpenedID" in order_latest:
-                # ポジションが存在している場合
-                # 他のオーダーを完全にクローズさせた場合
-                if "tradeClosedIDs" in order_latest and not (self.already_offset_notice):
-                    self.already_offset_notice = True  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
-                    # ただし、tradeCloseIDsもある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
-                    # ★トレード有かつ相殺有の場合は、このオーダーがトレードよりも多いユニット注文があったことを意味する。
-                    #  その為、オーダーのユニットの一部が相殺され、残るユニットがトレードとして存在する（その為Lifeを消さない）
-                    tk.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
-                                 self.name, "(",
-                                 self.o_json['id'], ")")
-                #
-                self.t_id = order_latest['tradeOpenedID']
-                trade_ans = self.oa.TradeDetails_exe(self.t_id)  # ■■API
-                if trade_ans['error'] == 1:
-                    print("    トレード情報取得Error＠update_information", self.t_id)
-                    return 0
-                trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
-                self.t_json = trade_latest  # Json自体も格納
-                # print("ポジション詳細", self.t_json)
-            elif "tradeReducedID" in order_latest:
-                # このオーダーが、他のオーダーのポジションの一部を相殺した場合（このオーダーのポジションは相殺で消滅）
-                # （tradeReduceがある場合、一部相殺状態）
-                # Reduceしたトレードを見に行くと、最終的な結果が重複するため、トランザクション結果の価格を求める。
-                # ただし格納形式を整えたいため、トレード情報を取得し、Pipsの部分だけを置き換える
-                transaction_id = order_latest['fillingTransactionID']
-                transaction_info = self.oa.get_transaction_single(transaction_id)
-                reduced_trade_id = order_latest['tradeReducedID']
-                trade_latest = self.oa.TradeDetails_exe(reduced_trade_id)['data']['trade']  # ■■API
-                # print("トランザクション")
-                # print(transaction_info)
-                # print("トレード")
-                # print(trade_latest)
-                # 以下相殺発生分のみの情報に置き換え
-                tk.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
-                             "相殺したトレード", str(reduced_trade_id) + ",相殺したUNIT",
-                             transaction_info['transactions'][0]['requestedUnits'])
-                trade_latest['state'] = "CLOSE"
-                trade_latest['id'] = reduced_trade_id
-                trade_latest['unrealizedPL'] = transaction_info['transactions'][0]['pl']  #
-                trade_latest['currentUnits'] = float(
-                    transaction_info['transactions'][0]['requestedUnits'])  # 暫定的に相殺した分に置き換え
-                trade_latest['state'] = "CLOSE"
-                trade_latest['PLu'] = round(float(trade_latest['unrealizedPL']) / abs(
-                    float(transaction_info['transactions'][0]['requestedUnits'])), 3)
-                self.t_json = trade_latest  # Json自体も格納
-                # ★この場合に限り、このオーダーは存在しなくなるため、Close処理を実施する
-                self.life_set(False)
-                # self.after_close_trade_function()
-            elif "tradeClosedIDs" in order_latest:
-                # tradeCloseIDsがある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
-                # ★この場合は、このオーダーでの通知（クローズ処理）は実施不要で、Lifeをクローズにする
-                self.life_set(False)
-                tk.line_send("■■■オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
-                             self.o_json['id'], ")")
-                return 0
             else:
-                # ポジション取得待ち
-                print("    トレード not detect", self.t_id)
+                # オーダーがペンディングの場合(tradeはない状態)
+                # print("    オーダーペンディング中", self.t_id)
                 self.t_id = 0
                 # tradeが０の場合、オーダーの更新のみ行う。
                 self.order_update_and_close()
                 return 0
-        else:
-            # オーダーがペンディングの場合(tradeはない状態)
-            # print("    オーダーペンディング中", self.t_id)
-            self.t_id = 0
-            # tradeが０の場合、オーダーの更新のみ行う。
-            self.order_update_and_close()
-            return 0
 
         # (2) 【以下トレードありが前提】変化点を確認する order_update,trade_update yori mae niarukoto
         self.detect_change()
@@ -1565,10 +1573,14 @@ class order_information:
                 else:
                     self.latest_df = d5_df['data']
                     self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
-                    peaks_class = cpk.PeaksClass(self.latest_df)
+                    candle_ana = ca.candleAnalysis(self.latest_df, self.oa)  # CandleAnalysisインスタンスの生成
+                    peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
+                    # peaks_class = cpk.PeaksClass(self.latest_df)
             else:
                 # 30秒以上立っていない場合
-                peaks_class = cpk.PeaksClass(self.latest_df)
+                candle_ana = ca.candleAnalysis(self.latest_df, self.oa)  # CandleAnalysisインスタンスの生成
+                peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
+                # peaks_class = cpk.PeaksClass(self.latest_df)
         else:
             # 5分（足が新規で完成するタイミングじゃない場合）
             return 0
@@ -1679,6 +1691,95 @@ class order_information:
         return {"is_previous_lose": is_previous_lose,
                 "tuned_tp_range": tp_range,
                 "tuned_lc_change_type": lc_change_type}
+
+    def catch_exist_position(self, name, oa_mode, priority, json):
+        """
+        既存のポジションを、登録する
+        """
+        print("既存のポジションあり⇒")
+        print(json)
+        if "takeProfitOrder" in json:
+            tp_price = json['takeProfitOrder']['price']
+        else:
+            tp_price = 0
+
+        if "stopLossOrder" in json:
+            lc_price = json['stopLossOrder']['price']
+        else:
+            lc_price = 0
+
+        price = json['price']
+
+        self.plan_json['price'] = float(price)
+        self.plan_json['tp_price'] = float(tp_price)
+        self.plan_json['lc_price'] = float(lc_price)
+        self.plan_json['lc_price_original'] = float(lc_price)
+        self.plan_json['direction'] = int(json['currentUnits']) / abs(int(json['currentUnits']))
+        self.plan_json['units'] = json['currentUnits']
+        self.plan_json['type'] = "Already"
+
+        self.life = True
+        self.name = name
+        self.oa_mode = 2  # アカウント選択（１が通常、２が両建てアカウント）
+        self.priority = 5  # このポジションのプライオリティ
+
+        self.waiting_order = False
+        self.order_register_time = 0
+        # オーダー情報(オーダー発行時に基本的に上書きされる）
+        self.o_id = -1  # ★大事な代入
+        self.o_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        self.o_state = ""
+        self.o_time_past_sec = 0
+        self.o_json['state'] = "FILLED"
+        self.o_json['time_past'] = 0
+        # トレード情報
+        self.t_id = json['id']  # ★大事な代入
+        self.t_state = ""  # ★大事な代入
+        self.t_type = ""  # 結合ポジションか？　plantとinitialとcurrentのユニットの推移でわかる？
+        self.t_initial_units = 0  # Planで代用可？少し意味異なる？
+        self.t_current_units = 0
+        self.t_time = 0
+        self.t_time_past_sec = 0
+        self.t_execution_price = 0  # 約定価格
+        self.t_unrealize_pl = 0
+        self.t_realize_pl = 0
+        self.t_pl_u = 0
+        self.t_close_time = 0
+        self.t_close_price = 0
+        self.already_offset_notice = False  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
+        # 経過時間管理
+        self.order_timeout_min = 45  # 分単位で指定
+        self.trade_timeout_min = 45
+        # 勝ち負け情報更新用
+        self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
+        self.win_hold_time_sec = 0
+        self.lose_hold_time_sec = 0
+        self.win_max_plu = 0
+        self.lose_max_plu = 0
+
+        # ロスカット変更情報
+        self.lc_change_dic_arr = []  # 空を持っておくだけ
+        self.lc_change_from_candle_lc_price = 0
+        self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行でTrueに変更される
+        self.lc_change_less_minus_done = False
+
+        min10 = 0  # 60 * 10
+        self.lc_change_dic_arr = [
+            {"exe": True, "time_after": min10, "trigger": 0.01, "ensure": 0.001},
+            {"exe": True, "time_after": min10, "trigger": 0.025, "ensure": 0.01},
+            # {"exe": True, "time_after": 600, "trigger": 0.043, "ensure": 0.018},
+            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
+            {"exe": True, "time_after": min10, "trigger": 0.05, "ensure": 0.052},
+            {"exe": True, "time_after": min10, "trigger": 0.08, "ensure": 0.05},
+            {"exe": True, "time_after": min10, "trigger": 0.20, "ensure": 0.15},
+            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
+        ]
+
 
 
 def position_check_no_args():

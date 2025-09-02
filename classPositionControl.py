@@ -38,11 +38,6 @@ class position_control:
             print(" ", i, "OaMode:", item.oa_mode, ",name:", item.name, ",life:", item.life)
             i = i + 1
 
-    def order_add_judge(self):
-        """
-        優先度に応じて、既存のオーダー優先か、新規オーダー優先かを決める
-        """
-
     def order_class_add(self, order_classes):
         """
         調査結果を受け取り、他のオーダーを比較し、オーダーを追加するかを判定する
@@ -66,9 +61,9 @@ class position_control:
             over_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority > order_max_priority]
             same_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority == order_max_priority]
 
-            if len(same_n_classes) >= 1:
+            if len(same_n_classes) > 2:
                 # 新規と同レベルのオーダーが既に存在する場合、新規はスキップする（既存の物は消去しない）
-                tk.line_send("同レベルのオーダーがあるため、追加オーダーせず")
+                tk.line_send("同レベルのオーダーがあるため、追加オーダーせず", len(same_n_classes))
                 return 0
 
         # ■現在のクラスの状況の確認
@@ -124,6 +119,7 @@ class position_control:
                         line_send = line_send + "【" + str(res_dic['order_name']) + "】,\n" +\
                                     "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
                                     ", 数量:" + str(o_trans['units']) + \
+                                    ", タイプ:" + a_order.ls_type + \
                                     ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
                                     "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
                                     ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
@@ -285,6 +281,38 @@ class position_control:
             "name_list": name_list,
             "watching_list": watching_list
         }
+
+    def catch_up_position_and_del_order(self):
+        """
+        最初に実行される
+        """
+        res = self.oa2.OpenTrades_exe()
+        if len(res['data']) == 0:
+            return 0
+        trades = res['json']['trades']
+        print("trades", len(trades))
+        print(trades)
+        if len(trades) == 0:
+            print("現状のポジションなし")
+        else:
+            # 既存のポジションをひとつづつ見ていく
+            for i, exist_position_json in enumerate(trades):
+                # クラスのスロットの空きをひとつづつ確認
+                print("o,", exist_position_json)
+                for class_index, each_exist_class in enumerate(self.classes):
+                    if each_exist_class.life:
+                        # Trueの所には上書きしない
+                        continue
+                    # Falseのところには代入して、
+                    print(class_index)
+                    each_exist_class.catch_exist_position(
+                        "既存" + str(i),
+                        2,
+                        5,
+                        exist_position_json)
+                    break
+        self.print_classes_and_count()
+
 
     def reset_all_position(self):
         print("  RESET ALL POSITIONS")

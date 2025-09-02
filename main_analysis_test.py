@@ -5,7 +5,7 @@ import fAnalysis_order_Main as am
 
 
 # グローバルでの宣言
-oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
+oa = oanda_class.Oanda(tk.accountIDl2, tk.access_tokenl, "live")  # クラスの定義
 print(oa.NowPrice_exe("USD_JPY"))
 gl_start_time = datetime.datetime.now()
 gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
@@ -98,3 +98,14 @@ gl_target_time = datetime.datetime(2025, 8, 27, 3, 35, 6)
 
 # Mainスタート
 main()  # 本番環境
+
+res = oa.OpenTrades_exe()
+print(res['json'])
+trades = res['json']
+
+if len(trades) == 0:
+    print("現状のポジションなし")
+else:
+    for i, item in enumerate(trades):
+        pass
+

@@ -15,7 +15,7 @@ import copy
 class main():
     def __init__(self):
         print("Mainインスタンスの生成")
-        self.base_oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)
+        self.base_oa = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
         self.exe_mode = tk.environmentl
 
         # ■変数の宣言
@@ -49,7 +49,8 @@ class main():
         # ■■■処理の開始
         # ■ポジションクラスの生成
         self.positions_control_class = classPositionControl.position_control(True)  # ポジションリストの用意
-        self.positions_control_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
+        # self.positions_control_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
+        self.positions_control_class.catch_up_position_and_del_order()
 
     def exe_loop(self, interval, wait=True):
         """
@@ -108,7 +109,7 @@ class main():
         })
 
         # ■オーダーの発行
-        print("tesu")
+        print("test")
         print(order_class.exe_order)
         exe_res = self.positions_control_class.order_class_add([order_class])
         if exe_res == 0:
@@ -210,7 +211,7 @@ class main():
                 if self.time_hour ==4 and self.time_min == 0 and self.time_sec <=2:
                     print("■土曜の朝4時で終了（ポジションは開放しない・・？）(4時０分2秒まで表示)")
                 return 0
-        elif self.now.weekday() == 1:
+        elif self.now.weekday() == 0:
             if self.time_hour <= 7:
                 if self.time_min == 0 and self.time_sec <=1:
                     print("■月曜になった深夜～朝までは実行無し", self.time_hour)
@@ -219,7 +220,7 @@ class main():
         # ■深夜帯は実行しない　（ポジションやオーダーも全て解除）
         if 6 <= self.time_hour <= 7:
             if self.midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
-                self.positions_control_class.reset_all_position()
+                # self.positions_control_class.reset_all_position()
                 tk.line_send("■深夜のポジション・オーダー解消を実施")
                 self.midnight_close_flag = 1  # 実施済みフラグを立てる
             return 0
@@ -257,14 +258,14 @@ class main():
             tk.line_send("start")
 
             # # ①成り行きの実行の場合
-            # d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
-            #                                         {"granularity": "M5", "count": self.need_df_num},
-            #                                         1)  # 時間昇順
-            # if d5_df_res['error'] == -1:
-            #     print("初回実行時、error Candle First")
-            #     return -1
-            # else:
-            #     d5_df_latest_bottom = d5_df_res['data']
+            d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+                                                    {"granularity": "M5", "count": self.need_df_num},
+                                                    1)  # 時間昇順
+            if d5_df_res['error'] == -1:
+                print("初回実行時、error Candle First")
+                return -1
+            else:
+                d5_df_latest_bottom = d5_df_res['data']
             #
             # # ②時間を指定する場合
             # jp_time = datetime.datetime(2025, 9, 1, 8, 5, 6)
@@ -278,14 +279,14 @@ class main():
             # else:
             #     d5_df_latest_bottom = d5_df_res['data']
             #
-            # # ①②共通
-            # print(d5_df_latest_bottom.head(5))
-            # self.d5_df = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
-            # self.mode1()
+            # ①②共通
+            print(d5_df_latest_bottom.head(5))
+            self.d5_df = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+            self.mode1()
 
             # 強制オーダーを入れる場合は、以下コメントイン
-            self.force_order()
-            self.positions_control_class.print_classes_and_count()
+            # self.force_order()
+            # self.positions_control_class.print_classes_and_count()
 
             # 初回実行の終了フラグ
             self.first_exe = False

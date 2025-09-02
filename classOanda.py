@@ -605,8 +605,10 @@ class Oanda:
                 # 注文からの経過時間を秒で算出する
                 res_df['past_time_sec'] = res_df.apply(lambda x: cal_past_time(x), axis=1)  # 経過時刻の算出
                 res_df['unrealizedPL_pips'] = round(res_df['unrealizedPL'].astype('float') /
-                                                    res_df['currentUnits'].astype('float'), 3)
-                return {"data": res_df, "error": 0}
+                                                    abs(res_df['currentUnits'].astype('float')), 3)
+                # res_json['unrealizedPL_pips'] = round(res_df['unrealizedPL'].astype('float') /
+                #                                     abs(res_df['currentUnits'].astype('float')), 3)
+                return {"data": res_df, "error": 0, "json": res_json}
         except Exception as e:
             e_info = self.error_method("OpenTrades", start_time, e)
             return e_info
