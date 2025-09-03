@@ -50,6 +50,7 @@ class main():
         # ■ポジションクラスの生成
         self.positions_control_class = classPositionControl.position_control(True)  # ポジションリストの用意
         # self.positions_control_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
+        self.positions_control_class.reset_all_position()
         self.positions_control_class.catch_up_position_and_del_order()
 
     def exe_loop(self, interval, wait=True):
@@ -183,11 +184,11 @@ class main():
         self.latest_exe_time = datetime.datetime.now().replace(microsecond=0)  # 最終実行時刻を取得しておく
 
     def mode2(self):
-        print("Mode2")
         self.positions_control_class.all_update_information()  # positionの更新
         life_check_res = self.positions_control_class.life_check()
         if life_check_res['life_exist']:
             # オーダー以上がある場合。表示用（１分に１回表示させたい）
+            c = ""
             temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
             if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒～２秒の間)
                 current_positions = self.positions_control_class.position_check()
@@ -204,8 +205,8 @@ class main():
                             w = ", ".join(["|".join(map(str, d.values())) for d in current_positions['watching_list'][i]])
                         else:
                             w = ""
-                        c = name + "(priority:" + str(pr) + ",rpl:" + str(rpl) + ",pl:" + str(pl) + ",w:" + w + ")"
-                        print("   ⇒", c)
+                        c = c + "   " + name + "(priority:" + str(pr) + ",rpl:" + str(rpl) + ",pl:" + str(pl) + ",w:" + w + ")"
+                print("   ⇒", c)
 
                 # print("     ", life_check_res['one_line_comment'])
 
@@ -247,8 +248,8 @@ class main():
         else:
             price_dic = price_dic['data']
             if price_dic['spread'] > self.ARROW_SPREAD:
-                print("    ▲スプレッド異常", self.now, price_dic['spread'])
-                # return -1  # 強制終了
+                # print("    ▲スプレッド異常", self.now, price_dic['spread'])
+                return -1  # 強制終了
             self.now_price_mid = price_dic['mid']  # 念のために保存しておく（APIの回数減らすため）
             self.now_spread = price_dic['spread']
 

@@ -323,7 +323,7 @@ class position_control:
         # self.oa.TradeAllClose_exe()
         # 両建て用のオアンダクラスのオーダーの削除（API）
         self.oa2.OrderCancel_All_exe()
-        self.oa2.TradeAllClose_exe()
+        # self.oa2.TradeAllClose_exe()
 
         # プログラム内のクラスの整理
         self.all_update_information()  # 関数呼び出し（アップデート）

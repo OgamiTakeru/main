@@ -195,7 +195,7 @@ def delYear(original_time):
     :param original_time: 年月日をあらわした文字配列
     :return:
     """
-    # 2023/01/01 09:10:12
+    # 2023/01/01 09:10:12 ⇒ 1/1 09:10
     day = original_time[5:10]  # 01/01
     day = day.replace("0", "")  # 1/1
     time = original_time[11:16]  # 09:10
@@ -205,11 +205,11 @@ def delYear(original_time):
 
 def delYearDay(original_time):
     """
-    現在時刻を短縮系で返す（年月を消す）
+    現在時刻を短縮系で返す⇒19:14
     :param original_time: 年月日をあらわした文字配列
     :return:
     """
-    # 2023/01/01 09:10:12
+    # 2023/01/01 09:10:12　⇒　9:10　
     # print(" 渡された値", original_time)
     day = original_time[5:10]  # 01/01
     day = day.replace("0", "")  # 1/1
