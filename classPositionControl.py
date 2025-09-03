@@ -12,6 +12,7 @@ class position_control:
     ポジションクラスをコントロースするためのもの
     """
     max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
+    max_same_level_posi = 5  # 同じレベルのポジションは最大5個まで
     is_live = True
 
     # 履歴ファイル
@@ -22,8 +23,12 @@ class position_control:
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)
         self.oa2 = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
 
+        # 最大所持個数の設定
+        self.max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
+        self.max_same_level_posi = 5  # 同じレベルのポジションは最大5個まで
+
         # 処理
-        for i in range(10):
+        for i in range(self.max_position_num):
             # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
             # クラス名を確定し、クラスを生成する。
             new_name = "c" + str(i)
@@ -61,22 +66,22 @@ class position_control:
             over_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority > order_max_priority]
             same_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority == order_max_priority]
 
-            if len(same_n_classes) > 2:
+            if len(same_n_classes) > self.max_same_level_posi:
                 # 新規と同レベルのオーダーが既に存在する場合、新規はスキップする（既存の物は消去しない）
-                tk.line_send("同レベルのオーダーがあるため、追加オーダーせず", len(same_n_classes),"個のオーダー,",
+                tk.line_send("同レベルのオーダーが既に" + str(len(same_n_classes)) + "個あるため、追加オーダーせず", self.max_same_level_posi, "が上限,",
                              order_max_priority, "のプライオリティ")
                 return 0
 
         # ■現在のクラスの状況の確認
         print("現在のクラスの状況を確認 (classPositionControl)")
         self.print_classes_and_count()
-        if self.count_true >= 10:
+        if self.count_true >= self.max_position_num:
             # 10個以上オーダーがある場合はオーダーしない。
             print("★★既に10個以上オーダーがあるため、オーダー発行しない")
             return 0
-        elif self.count_true + len(order_classes) >= 13:
+        elif self.count_true + len(order_classes) >= self.max_position_num + 2:  # ２はテキトーな数字。
             # 新規のオーダー合わせて13個以上になる場合もオーダーしない（新規オーダーがエラーで複数個出てる可能性のため）
-            print("★★既存の物＋新規の合わせて13個以上になるため、オーダー発行しない(新規オーダー数:", len(order_classes))
+            print("★★既存の物＋新規の合わせて12個以上になるため、オーダー発行しない(新規オーダー数:", len(order_classes))
             return 0
 
         # クラスに余りがある場合、その中で添え字が一番若いオーダーに上書き、または、追加をする
@@ -314,7 +319,6 @@ class position_control:
                         exist_position_json)
                     break
         self.print_classes_and_count()
-
 
     def reset_all_position(self):
         print("  RESET ALL POSITIONS")

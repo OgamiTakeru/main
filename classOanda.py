@@ -635,7 +635,7 @@ class Oanda:
             res_json['trade']['openTime'] = iso_to_jstdt_single(res_json['trade']['openTime'])  # OpenTimeを日本時刻に変換
             return {"data": res_json, "error": 0}  # 単品が対象なので、Jsonで返した方がよい（DataFrameで返すと、単品なのに行の指定が必要）
         except Exception as e:
-            print(trade_id)
+            print(trade_id, "でエラー　@oandaClass630")
             e_info = self.error_method("TradeDetails" + str(trade_id), start_time, e)
             return {"data": e_info, "error": 1}
 
@@ -777,6 +777,7 @@ class Oanda:
     def GetActPrice_exe(self, transactionID):
         ep = trans.TransactionDetails(accountID=self.accountID, transactionID=transactionID)
         res_json = eval(json.dumps(self.api.request(ep), indent=2))
+        print("トランザクション780行目")
         print(res_json)
         if "price" in res_json:
             act_price = res_json['price']

@@ -61,6 +61,8 @@ class order_information:
         self.name = name  #
         self.current_price = 0
         # self.reset()
+        self.ORDER_TIMEOUT_MIN_DEFAULT = 40  # 分単位で指定
+        self.TRADE_TIMEOUT_MIN_DEFAULT = 2400  # 分単位で指定
         # 以下リセット対象群
         self.priority = 0  # このポジションのプライオリティ（登録されるプランのプライオリティが、既登録以上の物だったら入れ替え予定）
         self.life = False  # 有効かどうか（オーダー発行からポジションクローズまでがTrue）
@@ -92,8 +94,8 @@ class order_information:
         self.t_close_price = 0
         self.already_offset_notice = False  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
         # 経過時間管理
-        self.order_timeout_min = 45  # 分単位で指定
-        self.trade_timeout_min = 50  # 分単位で指定
+        self.order_timeout_min = self.ORDER_TIMEOUT_MIN_DEFAULT  # 分単位で指定
+        self.trade_timeout_min = self.TRADE_TIMEOUT_MIN_DEFAULT  # 分単位で指定
         # 勝ち負け情報更新用(一つの関数を使いまわすため、辞書化する）
         self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
         self.win_hold_time_sec = 0
@@ -537,7 +539,7 @@ class order_information:
         # else:
         #     units_for_view = abs(float(trade_latest['currentUnits']))
         units_for_view = abs(float(trade_latest['initialUnits'])) - abs(float(trade_latest['currentUnits']))
-        print(float(trade_latest['initialUnits']), trade_latest['currentUnits'], self.o_json)
+        # print("　　　　classPosition 540行目", float(trade_latest['initialUnits']), trade_latest['currentUnits'], self.o_json)
         direction = float(trade_latest['initialUnits']) / abs(float(trade_latest['initialUnits']))
         # ②本文作成
         if trade_latest['state'] == "CLOSED":
@@ -1777,8 +1779,8 @@ class order_information:
         self.t_close_price = 0
         self.already_offset_notice = False  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
         # 経過時間管理
-        self.order_timeout_min = 45  # 分単位で指定
-        self.trade_timeout_min = 45
+        self.order_timeout_min = self.ORDER_TIMEOUT_MIN_DEFAULT  # 分単位で指定
+        self.trade_timeout_min = self.TRADE_TIMEOUT_MIN_DEFAULT
         # 勝ち負け情報更新用
         self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
         self.win_hold_time_sec = 0
@@ -1798,8 +1800,8 @@ class order_information:
             # {"exe": True, "time_after": min10, "trigger": 0.025, "ensure": 0.01},
             {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": 0.004},  # -0.02が強い
             # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
-            {"exe": True, "time_after": min10, "trigger": 0.05, "ensure": 0.052},
-            {"exe": True, "time_after": min10, "trigger": 0.08, "ensure": 0.05},
+            {"exe": True, "time_after": min10, "trigger": 0.05, "ensure": 0.012},
+            {"exe": True, "time_after": min10, "trigger": 0.08, "ensure": 0.044},
             {"exe": True, "time_after": min10, "trigger": 0.20, "ensure": 0.15},
             {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
             {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
