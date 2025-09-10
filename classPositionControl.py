@@ -396,7 +396,7 @@ class position_control:
 
                         # TPも変更する？プラス域であきらめ？(memo)
                         new_tp_range = abs(float(left_position.t_pl_u)) * 0.5  # 半分
-                        current_price = left_position.t_execution_price + float(left_position.t_pl_u)
+                        current_price = float(left_position.t_execution_price) + float(left_position.t_pl_u)
                         price = current_price  # 現在価格基準を利用する場合、これをコメントイン(現マイナスの半分、等の指定がしやすい
                         # price = left_position.t_execution_price  # 約定価格を利用する場合これをコメントイン
                         if left_position.plan_json['direction'] == 1:
@@ -405,7 +405,7 @@ class position_control:
                         else:
                             new_tp_price = price - new_tp_range
                         print("       TP:計算要素", new_tp_range, float(left_position.t_pl_u), new_tp_price)
-                        left_position.linkage_lc_change(new_tp_price)
+                        left_position.linkage_tp_change(new_tp_price)
             else:
                 pass
                 # print("オーダークラスがない！！！⇒未発行とかそこらへん")
