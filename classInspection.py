@@ -298,11 +298,11 @@ class Inspection:
                         target_class_instance = self.target_class(analysis_df, self.oa)  # インスタンス
                         analysis_result = {
                             "take_position_flag": target_class_instance.take_position_flag,
-                            "exe_orders": target_class_instance.exe_order,
+                            "exe_orders": [order.exe_order for order in target_class_instance.exe_order_classes],
                             "for_inspection_dic": {}
                         }
                         print("テスト用")
-                        print(target_class_instance.exe_order)
+                        print(analysis_result['exe_orders'])
                         # analysis_result = self.target_class(analysis_df)  # 検証専用コード
 
                     # for order in analysis_result["exe_orders"]:  # original_lc_priceの追加

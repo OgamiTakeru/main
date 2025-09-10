@@ -60,6 +60,10 @@ class order_information:
         self.select_oa(self.oa_mode)  # 重要！　id_noとis_liveを基に、oaクラスを選択する
         self.name = name  #
         self.current_price = 0
+        self.lc_change_candle_num = 100
+        self.order_class = None
+        self.linkage_order_classes = []
+        self.linkage_done = False
         # self.reset()
         self.ORDER_TIMEOUT_MIN_DEFAULT = 40  # 分単位で指定
         self.TRADE_TIMEOUT_MIN_DEFAULT = 2400  # 分単位で指定
@@ -110,6 +114,8 @@ class order_information:
         self.lc_change_less_minus_done = False
         self.lc_change_candle_done = False
         self.lc_change_status = ""
+        self.lc_change_exe = True  # 基本的には実施する
+        self.lc_change_candle_exe = True  # 基本的には実施する
 
         # アラートライン設定
         self.alert_watch_exe = False
@@ -163,6 +169,9 @@ class order_information:
         self.plan_json = {}  # plan(name,units,direction,tp_range,lc_range,type,price,order_permission,margin,order_timeout_min)
         self.for_api_json = {}
         self.order_register_time = 0
+        self.order_class = None
+        self.linkage_order_classes = []
+        self.linkage_done = False
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_id = 0
         self.o_time = 0
@@ -198,6 +207,9 @@ class order_information:
         self.lc_change_from_candle_lc_price = 0
         self.lc_change_num = 0  # LCChangeまたはLCChangeCandleのいずれかの執行でTrueに変更される
         self.lc_change_less_minus_done = False
+
+        self.lc_change_exe = True  # 基本的には実施する
+        self.lc_change_candle_exe = True  # 基本的には実施する
 
         # アラートライン設定
         self.alert_watch_exe = False
@@ -327,7 +339,7 @@ class order_information:
     #             self.current_price = temp_current_price['data']['ask']
     #     return self.current_price
 
-    def order_plan_registration(self, plan):
+    def order_plan_registration(self, order_class):
         """
         【最重要】
         【最初】オーダー計画情報をクラスに登録する（保存する）。名前やCDCRO情報があれば、その登録含めて行っていく。
@@ -348,6 +360,10 @@ class order_information:
             remark: 今は使っていないが、引数としては残してある。何かしら文字列をテキトーに渡す。
         """
         self.reset()  # 一旦リセットする
+
+        self.order_class = order_class
+        plan = order_class.exe_order
+
         # ■受け取った情報を、インスタンス変数に入れていく
         self.order_register_time = datetime.datetime.now()
         # Jsonをそのまま入れるもの
@@ -356,6 +372,8 @@ class order_information:
         self.select_oa(plan['oa_mode'])
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
+        if hasattr(self.order_class, "linkage_order_classes"):
+            self.linkage_order_classes = self.order_class.linkage_order_classes
         if 'priority' in plan:
             self.priority = plan['priority']  # プラオリティを登録する
         if 'trade_timeout_min' in plan:  # していない場合は初期値50分
@@ -425,17 +443,18 @@ class order_information:
             self.life_set(True)  # ★重要　LIFEのONはここで二個目。
             self.waiting_order = True
             self.o_state = "Watching"
-            order_res = {"order_name": self.name + "【未発行】", "order_id": -1, "order_result":{
+            order_res = {"order_name": self.name + "【未発行】", "order_id": -1, "order_result": {
                 "price": self.plan_json['target_price'],
                 "direction": self.plan_json['direction'],
                 "units": self.plan_json['units'],
                 "lc_price": self.plan_json['lc_price'],
                 "lc_range": self.plan_json['lc_range'],
                 "tp_price": self.plan_json['tp_price'],
-                "tp_range": self.plan_json['tp_range']
+                "tp_range": self.plan_json['tp_range'],
                 }}  # 返り値を揃えるため、強引だが辞書型を入れておく
 
-        return {"order_name": self.name, "order_id": order_res['order_id'], "order_result": order_res['order_result']}
+        return {"order_name": self.name, "order_id": order_res['order_id'], "order_result": order_res['order_result']
+                , "ref": {"move_ave": round(plan['move_ave'], 3)}}
 
     def make_order(self):
         """
@@ -747,7 +766,7 @@ class order_information:
                     # 初回の場合はやる
                     self.is_first_time_lc_change_candle = False  # 二回目以降はFalseにFalseを入れることになるが、、
 
-                    d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 5},
+                    d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": self.lc_change_candle_num},
                                                                  1)  # 時間昇順(直近が最後尾）
                     if d5_df['error'] == -1:
                         print("error Candle")
@@ -830,14 +849,15 @@ class order_information:
         #                        self.lose_hold_time_sec
         #                        , position_check_no_args()['name_list'])
         #         self.close_trade(None)
-        if trade_latest['state'] == "OPEN":
-            # 規定時間を過ぎ、大きくプラスもなくふらふらしている場合
-            if self.t_time_past_sec > self.trade_timeout_min * 60:  # 時間が経過している
-                if self.win_max_plu <= dependence_win_max_plu_max and self.t_pl_u <= dependence_t_pl_u_max:
-                    self.send_line("   Trade解消(微プラス膠着)@", self.name, "PastTime", self.t_time_past_sec,
-                                   ",LoseHold",
-                                   self.win_max_plu, self.t_pl_u)
-                    self.close_trade(None)
+
+        # if trade_latest['state'] == "OPEN":
+        #     # 規定時間を過ぎ、大きくプラスもなくふらふらしている場合
+        #     if self.t_time_past_sec > self.trade_timeout_min * 60:  # 時間が経過している
+        #         if self.win_max_plu <= dependence_win_max_plu_max and self.t_pl_u <= dependence_t_pl_u_max:
+        #             self.send_line("   Trade解消(微プラス膠着)@", self.name, "PastTime", self.t_time_past_sec,
+        #                            ",LoseHold",
+        #                            self.win_max_plu, self.t_pl_u)
+        #             self.close_trade(None)
 
     def update_information(self):  # orderとpositionを両方更新する
         """
@@ -1479,6 +1499,11 @@ class order_information:
             # print("既にキャンドルｌｃ変更有のため、通常ｌｃ無し", self.lc_change_from_candle_lc_price)
             pass
 
+        if self.lc_change_exe:
+            pass
+        else:
+            return 0
+
         if self.lc_change_candle_done:  # 既にキャンドルLCChangeに行った場合は、執行しない
             return 0
 
@@ -1554,17 +1579,11 @@ class order_information:
                 item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
                 # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
                 self.send_line("　(LC底上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3), "⇒", new_lc_price,
-                               "Border:", lc_trigger_range, "保証", lc_ensure_range, "Posiprice",
+                               "Border:", round(lc_trigger_range, 3), "保証", round(lc_ensure_range, 3), "Posiprice",
                                self.t_execution_price,
                                "予定価格", round(self.plan_json['target_price'], 3))
                 break
         self.lc_change_status = status_res
-
-    def relational_order(self):
-        """
-        同時に二つのオーダーを出し、どのどちらかが成立した場合、もう一つのオーダーを消去する仕組み。
-        名前に、KillBy[呼び出し元]
-        """
 
     def lc_change_from_candle(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
@@ -1582,6 +1601,12 @@ class order_information:
             # print("       lc_change_candleの実行あり", self.t_state, self.t_pl_u, self.t_time_past_sec)
             pass
 
+        if self.lc_change_candle_exe:
+            pass
+        else:
+            return 0
+
+
         # ★★★
 
         # LCChangeの実行部分
@@ -1596,7 +1621,7 @@ class order_information:
             time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
             seconds_difference = abs(time_difference.total_seconds())
             if seconds_difference >= 30:
-                d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 5},
+                d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": self.lc_change_candle_num},
                                                              1)  # 時間昇順(直近が最後尾）
                 if d5_df['error'] == -1:
                     print("error Candle")
@@ -1673,6 +1698,22 @@ class order_information:
         self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "新LC価格⇒", new_lc_price,
                        "保証", lc_range, "約定価格", self.t_execution_price,
                        "予定価格", self.plan_json['target_price'])
+
+    def linkage_func(self):
+        """
+        リンケージポジション（正確には、リンクが登録されたオーダークラスをもつポジション）の状況を調べる
+        """
+        print("ここからLinkage ", self.name)
+        if hasattr(self.order_class, "linkage_classes"):
+            if len(self.order_class.linkage_order_classes) == 0:
+                print(" linkage登録数０")
+                return 0
+        else:
+            print(" linkageのインスタンス変数なし")
+            return 0
+
+        for i, item in enumerate(self.order_class.linkage_order_classes):
+            print(item)
 
     def tuning_by_history_break(self):
         """
@@ -1811,6 +1852,40 @@ class order_information:
             {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
         ]
 
+    def linkage_done_func(self):
+        self.linkage_done = True
+
+    def linkage_lc_change(self, new_lc_price):
+        """
+        リンケージからのみの利用（リンケージフラグの取り下げあり）
+        """
+
+        data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+        res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+        if res['error'] == -1:
+            self.send_line("    LC変更ミス＠lc_change")
+            return 0  # APIエラー時は終了
+        self.linkage_done_func()
+        self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3),
+                       "⇒", new_lc_price,
+                       self.t_execution_price,
+                       "予定価格", round(self.plan_json['target_price'], 3))
+
+    def linkage_tp_change(self, new_tp_price):
+        """
+        リンケージからのみの利用（リンケージフラグの取り下げあり）
+        """
+
+        data = {"takeProfit": {"price": str(new_tp_price), "timeInForce": "GTC"}, }
+        res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+        if res['error'] == -1:
+            self.send_line("    TP変更ミス＠lc_change")
+            return 0  # APIエラー時は終了
+        self.linkage_done_func()
+        self.send_line("　(LinkageTP上げ)", self.name, self.t_pl_u, round(self.plan_json['TP_price'], 3),
+                       "⇒", new_tp_price,
+                       self.t_execution_price,
+                       "予定価格", round(self.plan_json['target_price'], 3))
 
 
 def position_check_no_args():

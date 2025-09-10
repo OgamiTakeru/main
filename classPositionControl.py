@@ -11,20 +11,18 @@ class position_control:
     """
     ポジションクラスをコントロースするためのもの
     """
-    max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
-    max_same_level_posi = 5  # 同じレベルのポジションは最大5個まで
-    is_live = True
+    # is_live = True
 
     # 履歴ファイル
     def __init__(self, is_live):
         # 変数の宣言
-        self.classes = []
+        self.position_classes = []
         self.count_true = 0
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)
         self.oa2 = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
 
         # 最大所持個数の設定
-        self.max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
+        self.max_position_num = 4  # 最大でも10個のポジションしかもてないようにする
         self.max_same_level_posi = 5  # 同じレベルのポジションは最大5個まで
 
         # 処理
@@ -32,14 +30,14 @@ class position_control:
             # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
             # クラス名を確定し、クラスを生成する。
             new_name = "c" + str(i)
-            self.classes.append(classPosition.order_information(new_name, is_live))  # 順思想のオーダーを入れるクラス
+            self.position_classes.append(classPosition.order_information(new_name, is_live))  # 順思想のオーダーを入れるクラス
         self.print_classes_and_count()
 
     def print_classes_and_count(self):
-        self.count_true = sum(1 for d in self.classes if hasattr(d, "life") and d.life)
+        self.count_true = sum(1 for d in self.position_classes if hasattr(d, "life") and d.life)
         i = 0
         print(" 現在のクラスの状況(True:", self.count_true, ")")
-        for item in self.classes:
+        for item in self.position_classes:
             print(" ", i, "OaMode:", item.oa_mode, ",name:", item.name, ",life:", item.life)
             i = i + 1
 
@@ -56,7 +54,7 @@ class position_control:
         order_max_priority = max_instance.exe_order['priority']
 
         # 現在のクラスで、生きている物のみ抽出
-        alive_classes = [c for c in self.classes if hasattr(c, "life") and c.life]
+        alive_classes = [c for c in self.position_classes if hasattr(c, "life") and c.life]
         if len(alive_classes) == 0:
             print(" プログラム上既存のオーダーは存在しないため、オーダー発行へ")
             pass
@@ -79,21 +77,21 @@ class position_control:
             # 10個以上オーダーがある場合はオーダーしない。
             print("★★既に10個以上オーダーがあるため、オーダー発行しない")
             return 0
-        elif self.count_true + len(order_classes) >= self.max_position_num + 2:  # ２はテキトーな数字。
+        elif self.count_true + len(order_classes) > self.max_position_num:  # ２はテキトーな数字。
             # 新規のオーダー合わせて13個以上になる場合もオーダーしない（新規オーダーがエラーで複数個出てる可能性のため）
             print("★★既存の物＋新規の合わせて12個以上になるため、オーダー発行しない(新規オーダー数:", len(order_classes))
             return 0
 
         # クラスに余りがある場合、その中で添え字が一番若いオーダーに上書き、または、追加をする
         line_send = ""
-        for order_i, a_order in enumerate(order_classes):
-            for class_index, each_exist_class in enumerate(self.classes):
+        for order_i, order_class in enumerate(order_classes):
+            for class_index, each_exist_class in enumerate(self.position_classes):
                 if each_exist_class.life:
                     # Trueの所には上書きしない
                     continue
 
                 # Falseのとこで実行する
-                res_dic = each_exist_class.order_plan_registration(a_order.exe_order)
+                res_dic = each_exist_class.order_plan_registration(order_class)
                 if res_dic['order_id'] == 0:
                     print("オーダー失敗している（大量オーダー等）")
                     line_send = line_send + "オーダー失敗(" + str(order_i) + ")" + "\n"
@@ -115,6 +113,7 @@ class position_control:
                                     "(" + str(round(res_dic['order_result']['tp_range'], 3)) + ")" + \
                                     ", LC:" + str(round(res_dic['order_result']['lc_price'], 3)) + \
                                     "(" + str(round(res_dic['order_result']['lc_range'], 3)) + ")" + \
+                                    ", AveMove:" + str(round(res_dic['ref']['move_ave'], 3)) + \
                                     "[システム]classNo:" + str(class_index) + ",\n"
                         break
                     else:
@@ -125,11 +124,12 @@ class position_control:
                         line_send = line_send + "【" + str(res_dic['order_name']) + "】,\n" +\
                                     "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
                                     ", 数量:" + str(o_trans['units']) + \
-                                    ", タイプ:" + a_order.ls_type + \
+                                    ", タイプ:" + order_class.ls_type + \
                                     ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
                                     "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
                                     ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
                                     "(" + str(round(abs(float(o_trans['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
+                                    ", AveMove:" + str(round(res_dic['ref']['move_ave'], 3)) + \
                                     ", OrderID:" + str(res_dic['order_id']) + \
                                     ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "[システム]classNo:" + str(class_index) + ",\n"
                                     # "\n"
@@ -141,9 +141,12 @@ class position_control:
         全ての情報を更新する
         :return:
         """
-        for item in self.classes:
+        for item in self.position_classes:
             if item.life:
                 item.update_information()
+
+        # # 関連オーダーの更新
+        # self.linkage_control()
 
     def life_check(self):
         """
@@ -153,7 +156,7 @@ class position_control:
         life = []
         unlife = []
         comment = ""
-        for item in self.classes:
+        for item in self.position_classes:
             if item.life:
                 life.append(item)
                 if item.t_state == "OPEN":
@@ -181,7 +184,7 @@ class position_control:
         watching_list = []
         open_class_names = closed_class_names = pending_class_names = ""
         total_pl = 0
-        for item in self.classes:
+        for item in self.position_classes:
             if item.life:  # lifeがTrueの場合、ポジションかオーダーが存在
                 # 各情報
                 if item.o_state == "Watching":
@@ -205,7 +208,8 @@ class position_control:
                         "t_state": item.t_state,
                         "pl": item.t_pl_u,
                         "realizedPL": item.t_json['realizedPL'],
-                        "direction": item.plan_json['direction']
+                        "direction": item.plan_json['direction'],
+                        "t_time_past_sec": item.t_time_past_sec
                     })
                     # ポジションの所有時間（ポジションがある中で最大）も取得しておく
                     if item.t_time_past_sec > max_position_time_sec:
@@ -306,7 +310,7 @@ class position_control:
             for i, exist_position_json in enumerate(trades):
                 # クラスのスロットの空きをひとつづつ確認
                 print("o,", exist_position_json)
-                for class_index, each_exist_class in enumerate(self.classes):
+                for class_index, each_exist_class in enumerate(self.position_classes):
                     if each_exist_class.life:
                         # Trueの所には上書きしない
                         continue
@@ -331,3 +335,77 @@ class position_control:
 
         # プログラム内のクラスの整理
         self.all_update_information()  # 関数呼び出し（アップデート）
+
+    def linkage_control(self):
+        """
+        終わってしまったポジションから、残っているポジションを変えに行く、という方向。
+        """
+        # print("PositionControlのリンケージセクション", len(self.position_classes))
+        for main_position in self.position_classes:
+            # print("★★", main_position.name, "のリンケージ残存を確認")
+            if main_position.linkage_done:
+                # print(main_position.name, " リンケージ調整済み(相手側を調整した,またはされた）")
+                continue
+            elif main_position.life and main_position.t_state == "OPEN":
+                # print(main_position.name, " まだ自分がポジション所持中のため、処理しない", main_position.life, main_position.t_state)
+                continue
+            elif main_position.life and main_position.o_state == "PENDING":
+                # print(main_position.name, " まだ自分がオーダー状態(ポジション前）のため、処理しない")
+                continue
+
+
+            # 走査する
+            if hasattr(main_position, "order_class"):
+                if hasattr(main_position.order_class, "linkage_order_classes"):
+                    # print("  ", main_position.name, "のリンケージ")
+                    if len(main_position.order_class.linkage_order_classes) == 0:
+                        # print("    linkage登録数０")
+                        continue
+                else:
+                    # print("    linkageのインスタンス変数なし")
+                    continue
+
+                # 本処理
+                for i, linkage_class in enumerate(main_position.linkage_order_classes):
+                    left_position = next((obj for obj in self.position_classes if obj.name == linkage_class.name), None)
+                    # print("    ", linkage_class.name, "のオーダーが対象", left_position.life, left_position.t_pl_u)
+                    if left_position.t_state == "" and left_position.o_state == "PENDING":
+                        # print(" まだlinage先のポジションが成立していないため、オーダー解除")
+                        left_position.close_order()
+                        main_position.linkage_done_func()  # 自身のリンケージも終了
+                        continue
+
+                    # 自分自身はポジションあるが、相手がクローズしてしまっている場合
+
+                    if left_position.linkage_done:
+                        # 既に残された側が、
+                        # print("     ", left_position.name, " 既にリンケージ調整され済み", )
+                        continue
+
+                    if left_position.life and left_position.t_state == "OPEN":
+                        main_position.linkage_done_func()  # リンケージが単数前提の場合、ここでクローズしてしまう
+                        print("      相手のPL情報", left_position.t_pl_u)
+                        print("      自分の現在の状況", main_position.t_pl_u, main_position.plan_json['lc_price'])
+                        print("         ", main_position.t_execution_price)
+                        new_lc_range = abs(float(left_position.t_pl_u)) + 0.02
+                        dir = int(left_position.plan_json['direction'])
+                        print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
+                        new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
+                        print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
+                        left_position.linkage_lc_change(new_lc_price)
+
+                        # TPも変更する？プラス域であきらめ？(memo)
+                        new_tp_range = abs(float(left_position.t_pl_u)) * 0.5  # 半分
+                        current_price = left_position.t_execution_price + float(left_position.t_pl_u)
+                        price = current_price  # 現在価格基準を利用する場合、これをコメントイン(現マイナスの半分、等の指定がしやすい
+                        # price = left_position.t_execution_price  # 約定価格を利用する場合これをコメントイン
+                        if left_position.plan_json['direction'] == 1:
+                            # 約定価格を基にした、利確価格変更
+                            new_tp_price = price + new_tp_range
+                        else:
+                            new_tp_price = price - new_tp_range
+                        print("       TP:計算要素", new_tp_range, float(left_position.t_pl_u), new_tp_price)
+                        left_position.linkage_lc_change(new_tp_price)
+            else:
+                pass
+                # print("オーダークラスがない！！！⇒未発行とかそこらへん")

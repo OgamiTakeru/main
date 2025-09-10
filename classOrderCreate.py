@@ -55,6 +55,17 @@ class Order:
         self.order_timeout_min = 0
         self.order_permission = True
         self.lc_change = {}
+        self.linkage_order_classes = []
+
+        # 色々な情報を受け取っていれば、それを取得する(ただし、エラー防止のため、インスタンス変数で明示的に損z内を示す）
+        self.candle_analysis = None
+        self.move_ave = 0
+        if "candle_analysis_class" in order_json:
+            print("candle_analysis_classがあるよ", order_json['candle_analysis_class'].cal_move_ave(1))
+            self.move_ave = order_json['candle_analysis_class'].cal_move_ave(1)
+        else:
+            print("candle_analysis_classがない")
+            print(order_json)
 
         # ■■処理
         self.check_order_json()  # 渡された引数に、必要項目の抜けがある場合、ここで表示
@@ -109,10 +120,18 @@ class Order:
             "watching_price": 0,
             "lc_price_original": self.lc_price,
             "for_api_json": self.data,  # 発注API用(classPositionにはexe_orderしか渡さないため、その中に入れておく）
-            "lc_change": self.lc_change
+            "lc_change": self.lc_change,
+            "move_ave": self.move_ave  # 参考情報だが追加（無いとLineSendでエラーになるが、オーダーには影響ない）
         }
-        # print("最終系")
-        # gene.print_json(self.exe_order)
+
+        # クラスにある情報を明示しておく（混乱防止用で、冗長な書き方）
+        if "candle_analysis_class" in self.order_json:
+            self.candle_analysis = self.order_json['candle_analysis_class']
+        else:
+            self.candle_analysis = None
+
+        # 他に対外的に使うやつ
+        # self.linkage_classes = self.linkage_classes  # 覚書
 
     def check_order_json(self):
         """
@@ -308,28 +327,36 @@ class Order:
         if "ref" in order_json:
             pass
         else:
-            order_json['ref'] = {"move_ave": 0, "peak1_target_gap": 0}
+            pass
+            # order_json['ref'] = {"move_ave": 0, "peak1_target_gap": 0}
+
+    def add_linkage(self, another_order_class):
+        # print("OrderCreate334")
+        # print(self.linkage_classes)
+        self.linkage_order_classes.append(another_order_class)
 
     def lc_change_control(self):
         order_json = self.order_json
         # LC_Changeを付与する 検証環境の都合で、必須。(finalizedに直接追加）
         # lc_changeは数字か辞書が入る。辞書の場合、lc_changeの先頭にそれが入る
         # self.finalized_order['lc_change'] = [] # 初期化
-        if "lc_change_type" not in order_json:
+        print("lc_change order create 324")
+        print(self.order_json)
+        if "lc_change" not in order_json:
             # typeしていない場合はノーマルを追加
             self.add_lc_change_defence()
         else:
-            if isinstance(order_json['lc_change_type'], int):
+            if isinstance(order_json['lc_change'], int):
                 # print("処理A: int型です", order_json['lc_change_type'])
                 # 指定されている場合は、指定のLC_Change処理へ
-                if order_json['lc_change_type'] == 1:
+                if order_json['lc_change'] == 1:
                     self.add_lc_change_defence()
-                elif order_json['lc_change_type'] == 0:
+                elif order_json['lc_change'] == 0:
                     self.add_lc_change_no_change()
-                elif order_json['lc_change_type'] == 3:
+                elif order_json['lc_change'] == 3:
                     self.add_lc_change_offence()
             else:
-                self.add_lc_change_start_with_dic(order_json['lc_change_type'])
+                self.add_lc_change_start_with_dic(order_json['lc_change'])
 
     def add_lc_change_no_change(self):
         """

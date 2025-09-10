@@ -99,13 +99,13 @@ gl_target_time = datetime.datetime(2025, 8, 27, 3, 35, 6)
 # Mainスタート
 main()  # 本番環境
 
-res = oa.OpenTrades_exe()
-print(res['json'])
-trades = res['json']
-
-if len(trades) == 0:
-    print("現状のポジションなし")
-else:
-    for i, item in enumerate(trades):
-        pass
+# res = oa.OpenTrades_exe()
+# print(res['json'])
+# trades = res['json']
+#
+# if len(trades) == 0:
+#     print("現状のポジションなし")
+# else:
+#     for i, item in enumerate(trades):
+#         pass
 

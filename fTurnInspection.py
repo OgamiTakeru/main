@@ -50,6 +50,18 @@ class turn_analisys:
         self.units_mini = 0.1
         self.units_reg = 0.5
         self.units_str = 0.1
+        # 汎用性高め
+        self.lc_change_test = [
+            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(3), "ensure": self.ca.cal_move_ave(1)},
+            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(4), "ensure": self.ca.cal_move_ave(2)},
+            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(5), "ensure": self.ca.cal_move_ave(3)},
+            {"exe": True, "time_after": 6000, "trigger": self.ca.cal_move_ave(6), "ensure": self.ca.cal_move_ave(4)},
+            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(7), "ensure": self.ca.cal_move_ave(5)},
+            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(8), "ensure": self.ca.cal_move_ave(6)},
+            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(9), "ensure": self.ca.cal_move_ave(7)},
+            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(10), "ensure": self.ca.cal_move_ave(8)},
+            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(11), "ensure": self.ca.cal_move_ave(9)},
+        ]
 
         # 調査実行（調査を実施し、self.flag_and_ordersの中身を埋める）
         if test_mode:
@@ -288,6 +300,7 @@ class turn_analisys:
 
         # ■分岐
         print(" ●判定パラメーター一覧●  rCount:", r['count'])
+        print("  平均キャンドル長", self.ca.cal_move_ave(1))
         print("  RT情報 比率:", self.rt.lo_ratio)
         print("  TF情報 比率:", self.tf.lo_ratio)
         print("  T情報 SKIP有無:", self.rt.skip_exist_at_older, ",Skip数:", self.rt.skip_num_at_older, "t-Count:", t['count'])
@@ -362,7 +375,7 @@ class turn_analisys:
                 if pattern == 1:
                     # ●本命オーダー
                     target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
-                    order_class = OCreate.Order({
+                    order_class1 = OCreate.Order({
                         "name": comment,
                         "current_price": self.peaks_class.latest_price,
                         "target": target_price,
@@ -370,14 +383,15 @@ class turn_analisys:
                         "type": "MARKET",
                         "tp": self.base_tp_range,  # self.ca.cal_move_ave(5),
                         "lc": self.base_lc_range,
-                        "lc_change": 3,
+                        "lc_change": self.lc_change_test,
                         "units": self.units_str,
                         "priority": 3,
                         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                        "candle_analysis_class": self.ca
                     })
-                    self.add_order_and_flag_inspecion_class(order_class)
+                    self.add_order_and_flag_inspecion_class(order_class1)
                     # ●ヘッジオーダー
-                    order_class = OCreate.Order({
+                    order_class2 = OCreate.Order({
                         "name": comment + "HEDGE",
                         "current_price": self.peaks_class.latest_price,
                         "target": self.ca.cal_move_ave(1.5),
@@ -385,18 +399,23 @@ class turn_analisys:
                         "type": "STOP",
                         "tp": self.base_tp_range,  # self.ca.cal_move_ave(5),
                         "lc": self.base_lc_range,
-                        "lc_change": 3,
+                        "lc_change": self.lc_change_test,
                         "units": self.units_str,
                         "priority": 3,
                         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                        "candle_analysis_class": self.ca
                     })
-                    self.add_order_and_flag_inspecion_class(order_class)
+                    self.add_order_and_flag_inspecion_class(order_class2)
+
+                    # リンケージをたがいに登録する
+                    order_class1.add_linkage(order_class2)
+                    order_class2.add_linkage(order_class1)
 
                 # ■■レンジ方向
                 elif pattern == 2:
                     # ●本命オーダー
                     target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
-                    order_class = OCreate.Order({
+                    order_class1 = OCreate.Order({
                         "name": comment,
                         "current_price": self.peaks_class.latest_price,
                         "target": target_price,
@@ -404,15 +423,16 @@ class turn_analisys:
                         "type": "MARKET",
                         "tp": self.base_tp_range,  # self.ca.cal_move_ave(1.5),
                         "lc": self.base_lc_range,
-                        "lc_change": 3,
+                        "lc_change": self.lc_change_test,
                         "units": self.units_str,
                         "priority": 3,
                         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                        "candle_analysis_class": self.ca
                     })
-                    self.add_order_and_flag_inspecion_class(order_class)
+                    self.add_order_and_flag_inspecion_class(order_class1)
 
                     # ●ヘッジオーダー
-                    order_class = OCreate.Order({
+                    order_class2 = OCreate.Order({
                         "name": comment + "HEDGE",
                         "current_price": self.peaks_class.latest_price,
                         "target": 0.025,
@@ -420,12 +440,17 @@ class turn_analisys:
                         "type": "STOP",
                         "tp": self.base_tp_range,  # self.ca.cal_move_ave(2.5),
                         "lc": self.base_lc_range,
-                        "lc_change": 3,
+                        "lc_change": self.lc_change_test,
                         "units": self.units_str,
                         "priority": 3,
                         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                        "candle_analysis_class": self.ca
                     })
-                    self.add_order_and_flag_inspecion_class(order_class)
+                    self.add_order_and_flag_inspecion_class(order_class2)
+
+                    # リンケージをたがいに登録する
+                    order_class1.add_linkage(order_class2)
+                    order_class2.add_linkage(order_class1)
 
         elif r['count'] == 3:
             if ((self.rt.skip_exist_at_older or 7 <= t['count'] < 100) and self.rt.skip_num_at_older < 3 and
@@ -433,7 +458,7 @@ class turn_analisys:
                 if 0 < self.rt.lo_ratio <= 0.36:
                     # ■■オーダーを作成＆発行
                     comment = "●●●強いやつ(旧式"
-                    order_class = OCreate.Order({
+                    order_class1 = OCreate.Order({
                         "name": comment,
                         "current_price": self.peaks_class.latest_price,
                         "target": 0,
@@ -441,16 +466,17 @@ class turn_analisys:
                         "type": "MARKET",
                         "tp": self.ca.cal_move_ave(5),
                         "lc": self.base_lc_range,
-                        "lc_change": 3,
+                        "lc_change": self.lc_change_test,
                         "units": self.units_str,
                         "priority": 4,
                         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                        "candle_analysis_class": self.ca
                     })
-                    self.add_order_and_flag_inspecion_class(order_class)
+                    self.add_order_and_flag_inspecion_class(order_class1)
 
                     # ■■オーダーを作成＆発行
                     comment = "●●●強いやつ(旧式）逆"
-                    order_class = OCreate.Order({
+                    order_class2 = OCreate.Order({
                         "name": comment,
                         "current_price": self.peaks_class.latest_price,
                         "target": self.ca.cal_move_ave(1),
@@ -458,12 +484,16 @@ class turn_analisys:
                         "type": "STOP",
                         "tp": self.ca.cal_move_ave(1),
                         "lc": self.base_lc_range,
-                        "lc_change": 3,
+                        "lc_change": self.lc_change_test,
                         "units": self.units_str,
                         "priority": 4,
                         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                        "candle_analysis_class": self.ca
                     })
-                    self.add_order_and_flag_inspecion_class(order_class)
+                    self.add_order_and_flag_inspecion_class(order_class2)
+                    # リンケージをたがいに登録する
+                    order_class1.add_linkage(order_class2)
+                    order_class2.add_linkage(order_class1)
 
                 else:
                     print("戻りratio異なる", r['count'])
@@ -510,6 +540,7 @@ class turn_analisys:
 
         # ■分岐
         print(" ●判定パラメーター一覧●")
+        print("  平均キャンドル長", self.ca.cal_move_ave(1))
         print("  RT情報 比率:", self.rt.lo_ratio)
         print("  TF情報 比率:", self.tf.lo_ratio)
         print("  T情報 SKIP有無:", self.rt.skip_exist_at_older, ",Skip数:", self.rt.skip_num_at_older, "t-Count:",
