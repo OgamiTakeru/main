@@ -101,20 +101,20 @@ class main():
             "target": 0.02,
             "direction": 1,
             "type": "MARKET",
-            "tp": 0.02,
-            "lc": 0.02,
+            "tp": 0.1,
+            "lc": 0.1,
             "lc_change": 0,
-            "units": 0.1,
+            "units": 0.2,
             "priority": 1,
             "decision_time": '2025/07/11 23:30:00',
         })
         order_class2 = OCreate.Order({
             "name": "強制オーダーテスト逆",
             "current_price": current_price,
-            "target": 0.02,
+            "target": 0.03,
             "direction": -1,
-            "type": "MARKET",
-            "tp": 0.03,
+            "type": "STOP",
+            "tp": 0.1,
             "lc": 1,
             "lc_change": 0,
             "units": 0.1,
@@ -314,8 +314,8 @@ class main():
             self.mode1()
 
             # 強制オーダーを入れる場合は、以下コメントイン
-            # self.force_order()
-            # self.positions_control_class.print_classes_and_count()
+            self.force_order()
+            self.positions_control_class.print_classes_and_count()
 
             # 初回実行の終了フラグ
             self.first_exe = False

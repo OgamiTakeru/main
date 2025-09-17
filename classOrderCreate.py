@@ -23,7 +23,7 @@ class Order:
         self.basic_unit = 10000
         self.basic_lc_range = 1  # 1円
         self.trade_timeout_min_base = 240
-        self.order_timeout_min_base = 30
+        self.order_timeout_min_base = 60
         self.lc_change_base = 3  # ベースは０（LCchangeなし）
         # 判定に利用する、初期値
         self.u = 3  # round時の有効桁数
@@ -340,8 +340,8 @@ class Order:
         # LC_Changeを付与する 検証環境の都合で、必須。(finalizedに直接追加）
         # lc_changeは数字か辞書が入る。辞書の場合、lc_changeの先頭にそれが入る
         # self.finalized_order['lc_change'] = [] # 初期化
-        print("lc_change order create 324")
-        print(self.order_json)
+        # print("lc_change order create 324")
+        # print(self.order_json)
         if "lc_change" not in order_json:
             # typeしていない場合はノーマルを追加
             self.add_lc_change_defence()
@@ -417,8 +417,8 @@ class Order:
             {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
             {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
         ]
-        print("   渡されたLcChange", dic_arr)
-        print("　　最終的なLcChange", add)
+        # print("   渡されたLcChange", dic_arr)
+        # print("　　最終的なLcChange", add)
         self.lc_change = dic_arr + add
 
     def add_lc_change_defence(self):

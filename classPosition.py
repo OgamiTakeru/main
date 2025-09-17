@@ -25,8 +25,9 @@ class order_information:
     plus_yen_position_num = 0
     exist_alive_class = False  # 生きているクラスがあるかどうか（ある場合に限り、ローソクデータの取得を行いたいため）
     latest_df = None  # 直近の解析用のデータを持っておく（LcChangeFromCnadleで利用）
+    latest_df_r = None
     latest_df_get_time = datetime.datetime.now().replace(microsecond=0) - timedelta(minutes=1)
-    add_margin = 0.02  # CandleLcChangeで、余裕を見る分。初期は０だったが、マイナスを多くしても維持したい・・・！
+    add_margin = 0.015  # CandleLcChangeで、余裕を見る分。初期は０だったが、マイナスを多くしても維持したい・・・！
 
     # history
     result_dic_arr = []
@@ -210,6 +211,7 @@ class order_information:
 
         self.lc_change_exe = True  # 基本的には実施する
         self.lc_change_candle_exe = True  # 基本的には実施する
+        self.lc_change_candle_done = False
 
         # アラートライン設定
         self.alert_watch_exe = False
@@ -1535,19 +1537,19 @@ class order_information:
                 diff_seconds = datetime.datetime.now() - item['time_done']
                 seconds = diff_seconds.total_seconds()
                 # 2時間 = 7200 秒以上離れているか判定
-                if seconds >= 2 * 60 * 60 and self.no_lc_change:
-                    tk.line_send("LC_CHANGEがうまく発動しない可能性あり[", i, "]過去実行時間,", item['time_done'], self.name,
-                                 self.first_lc_change_time, self.no_lc_change, "1519行目cPosi")
-                    gene.print_arr(self.lc_change_dic_arr)
-                    self.no_lc_change = False  # 念のため
-                else:
-                    pass
-                    # print("  　LCChange　確認用(おかしくない）　最初のLC時刻", self.first_lc_change_time, i)
-
-                if i == 0 and self.no_lc_change:
-                    tk.line_send("LC_CHANGEがうまく発動しない可能性あり", i, "過去実行時間,", item['time_done'])
-                    gene.print_arr(self.lc_change_dic_arr)
-                    self.no_lc_change = False  # 念のため
+                # if seconds >= 2 * 60 * 60 and self.no_lc_change:
+                #     tk.line_send("LC_CHANGEがうまく発動しない可能性あり[", i, "]過去実行時間,", item['time_done'], self.name,
+                #                  self.first_lc_change_time, self.no_lc_change, "1519行目cPosi")
+                #     gene.print_arr(self.lc_change_dic_arr)
+                #     self.no_lc_change = False  # 念のため
+                # else:
+                #     pass
+                #     # print("  　LCChange　確認用(おかしくない）　最初のLC時刻", self.first_lc_change_time, i)
+                #
+                # if i == 0 and self.no_lc_change:
+                #     tk.line_send("LC_CHANGEがうまく発動しない可能性あり", i, "過去実行時間,", item['time_done'])
+                #     gene.print_arr(self.lc_change_dic_arr)
+                #     self.no_lc_change = False  # 念のため
                 continue
             elif lc_change_till_sec < self.t_time_past_sec < lc_change_waiting_time_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
@@ -1591,10 +1593,18 @@ class order_information:
         ひとつ前のローソクの最高値や最低値までをLC底上げする関数。
         最新のローソクを取得する必要がある。この関数自体は２秒に１回呼び出されるが、
         ローソクを取得するのは、５分に１回のみで問題ないため、メインと同じコードを書くことになるが、それで対応する。
+        主な発動条件は、
+        　・LCChangeを一回でも実行
+        　または
+        　・現価格を含むピークのカウントが３以上。（最初の300秒以上経過と重複してる）
+        　　　かつ
+        　・現価格を含むピークの方向と、ポジションが同じ方向
+        の場合。
+        ⇒LCChangeは、LCChangeを実行してなくてもLinkageなどで強制的にフラグを立てさせられる場合有
         """
-        # print("  ★LC＿ChangeFromCandle実行関数")
-        if self.t_state != "OPEN" or self.t_pl_u < 0 or self.t_time_past_sec < 300:  # 足数×〇分足×秒
-            # ポジションがない場合、プラス域ではない場合、所持時間が短い場合は実行しない
+        # print("  ★LC＿ChangeFromCandle実行関数", self.name, self.t_state, self.lc_change_candle_exe)
+        if self.t_state != "OPEN" or self.t_time_past_sec < 30:  # 足数×〇分足×秒
+            # ポジションがない場合、所持時間が短い場合は実行しない
             # print("       lc_change_candleの実行無", self.t_state, self.t_pl_u, self.t_time_past_sec)
             return 0
         else:
@@ -1604,13 +1614,14 @@ class order_information:
         if self.lc_change_candle_exe:
             pass
         else:
+            # lc_Change_Candle実行フラグない場合はやらない
             return 0
 
 
-        # ★★★
-
         # LCChangeの実行部分
         # 定期的にデータフレームを取得する部分（引数で渡してもいいが、この関数で完結したかった）
+        # print("CANDLE LC")
+
         gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
         time_hour = gl_now.hour  # 現在時刻の「時」のみを取得
         time_min = gl_now.minute  # 現在時刻の「分」のみを取得
@@ -1628,13 +1639,14 @@ class order_information:
                     return -1
                 else:
                     self.latest_df = d5_df['data']
+                    self.latest_df_r = self.latest_df.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
                     self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
-                    candle_ana = ca.candleAnalysis(self.latest_df, self.oa)  # CandleAnalysisインスタンスの生成
+                    candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
                     peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
                     # peaks_class = cpk.PeaksClass(self.latest_df)
             else:
                 # 30秒以上立っていない場合
-                candle_ana = ca.candleAnalysis(self.latest_df, self.oa)  # CandleAnalysisインスタンスの生成
+                candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
                 peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
                 # peaks_class = cpk.PeaksClass(self.latest_df)
         else:
@@ -1645,7 +1657,12 @@ class order_information:
         # 逆張り注文の際、self.latest_df.iloc[-2]['low']基準だとおかしいくなる。
         # peakを算出し、peaks[0]がカウント２以上ある場合のみ、self.latest_df.iloc[-2]['low']を参照するケースに変更(25/5/17)
         peaks = peaks_class.peaks_original
-        if peaks[0]['count'] >= 3:
+        # print("CANDLE:" ,self.name)
+        # print("CANDLE LC:", self.latest_df.iloc[-2]['low'])
+        # print("CANDLE LC::", peaks[0]['latest_time_jp'], peaks[0]['count'])
+
+        # 直近のピークが3カウント以上の場合、かつ、ポジションと同じ方向（利益が増える方向）時に実行（ひとつ前のキャンドルを参照するため）
+        if peaks[0]['count'] >= 3 and peaks[0]['direction'] == self.plan_json['direction']:
             # self.latest_df.iloc[-2]['low']の-2が選択できる状態であれば、実行する
             if self.plan_json['direction'] > 0:
                 # 買い方向の場合、ひとつ前のローソクのLowの値をLC価格に
@@ -1669,16 +1686,18 @@ class order_information:
         if lc_ensure_range <= 0.01:
             # print(" 確保できる利益幅が0.01以下のため、変更なし")
             return 0
-        if self.plan_json['direction'] > 0 and lc_price_temp < take_position_price:
-            # 買い方向で、ターゲットよりLCtempが小さい価格の場合（lctempがマイナス域の場合)
-            # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , "<",take_position_price )
-            # print("lc_priceにしたい価格", lc_price_temp ,"　が取得価格", take_position_price, "より小さいためプラス確保のLCにならずNG")
-            return 0
-        elif self.plan_json['direction'] < 0 and lc_price_temp > take_position_price:
-            # 売り方向で、ターゲットよりLCtempが大きい価格の場合（lctempがマイナス域の場合)
-            # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , ">",take_position_price )
-            # print("lc_priceにしたい価格", lc_price_temp, "　が取得価格", take_position_price, "より大きいためプラス確保のLCにならずNG")
-            return 0
+
+        # マイナス域の場合は、処理しない
+        # if self.plan_json['direction'] > 0 and lc_price_temp < take_position_price:
+        #     # 買い方向で、ターゲットよりLCtempが小さい価格の場合（lctempがマイナス域の場合)
+        #     # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , "<",take_position_price )
+        #     # print("lc_priceにしたい価格", lc_price_temp ,"　が取得価格", take_position_price, "より小さいためプラス確保のLCにならずNG")
+        #     return 0
+        # elif self.plan_json['direction'] < 0 and lc_price_temp > take_position_price:
+        #     # 売り方向で、ターゲットよりLCtempが大きい価格の場合（lctempがマイナス域の場合)
+        #     # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , ">",take_position_price )
+        #     # print("lc_priceにしたい価格", lc_price_temp, "　が取得価格", take_position_price, "より大きいためプラス確保のLCにならずNG")
+        #     return 0
 
         # レンジ換算の時、大きすぎないかを確認
         if lc_ensure_range >= 0.08:
@@ -1698,22 +1717,6 @@ class order_information:
         self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "新LC価格⇒", new_lc_price,
                        "保証", lc_range, "約定価格", self.t_execution_price,
                        "予定価格", self.plan_json['target_price'])
-
-    def linkage_func(self):
-        """
-        リンケージポジション（正確には、リンクが登録されたオーダークラスをもつポジション）の状況を調べる
-        """
-        print("ここからLinkage ", self.name)
-        if hasattr(self.order_class, "linkage_classes"):
-            if len(self.order_class.linkage_order_classes) == 0:
-                print(" linkage登録数０")
-                return 0
-        else:
-            print(" linkageのインスタンス変数なし")
-            return 0
-
-        for i, item in enumerate(self.order_class.linkage_order_classes):
-            print(item)
 
     def tuning_by_history_break(self):
         """
@@ -1887,6 +1890,18 @@ class order_information:
                        self.t_execution_price,
                        "予定価格", round(self.plan_json['target_price'], 3))
 
+    def linkage_forced_lc_change_exe(self, main_max_plus):
+        """
+        強制的にLCChange実行したフラグ（これによりlc_Change_Candleに移行可能に）を立て、
+        さらに、CandleLcChangeを実行したフラグ（これによりlc_changeを実行しなくなる）
+        """
+        self.lc_change_num = 1  # 回数が０以外の場合、LCCHANGE　CANDLEを実行するため
+        self.lc_change_candle_done = True
+        self.send_line("　(Linkage 強制CandleLcChangeへ)", self.name)
+
+        # LC_PRICEを底上げする(潔く、少しのマイナスで終了させる）
+
+
 
 def position_check_no_args():
     """
@@ -2014,47 +2029,3 @@ def position_check_no_args():
         "name_list": name_list,
         "watching_list": watching_list
     }
-
-    # def tuning_by_history_resi(self):
-    #     """
-    #     検討中
-    #     呼びもとで過去１回分の結果を参照し、それが大きなLCだった場合は、この関数を呼ぶ。
-    #     この関数は、リスクをとってそのLCと同額をTPとする。
-    #     """
-    #
-    #     tp_up_border_minus = -0.045  # これ以上のマイナスの場合、取り返しに行く。
-    #     # 過去の履歴を確認する
-    #     if len(order_information.history_plus_minus) == 1:
-    #         # 過去の履歴が一つだけの場合
-    #         latest_plu = order_information.history_plus_minus[-1]
-    #         print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", order_information.history_plus_minus[-1])
-    #     else:
-    #         # 過去の履歴が二つ以上の場合、直近の二つの合計で判断する
-    #         latest_plu = order_information.history_plus_minus[-1] + order_information.history_plus_minus[-2]  # 変数化(短縮用)
-    #         print("  直近の勝敗pips", latest_plu, "詳細(直近)", order_information.history_plus_minus[-1],
-    #               order_information.history_plus_minus[-2])
-    #     # 最大でも現実的な10pips程度のTPに収める
-    #     if abs(latest_plu) >= 0.01:
-    #         latest_plu = 0.01
-    #
-    #     # 値を調整する
-    #     if latest_plu == 0:
-    #         print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
-    #         # 通常環境の場合
-    #         tp_range = 0.5
-    #         lc_change_type = 1
-    #     else:
-    #         if latest_plu <= tp_up_border_minus:
-    #             print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）", latest_plu * 0.8)
-    #             # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
-    #             tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
-    #             lc_change_type = 3  # LCchangeの設定なし
-    #             tk.line_send("取り返し調整発生")
-    #         else:
-    #             # 直近がプラスの場合プラスの場合、普通。
-    #             print("  ★前回プラスのため、通常TP設定")
-    #             tp_range = 0.5
-    #             lc_change_type = 1  # LCchangeの設定なし
-    #
-    #     return {"tuned_tp_range": tp_range, "tuned_lc_change_type": lc_change_type}
-    #

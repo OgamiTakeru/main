@@ -43,7 +43,7 @@ class PeaksClass:
     break_peaks_inner = []
     break_peaks_outer = []
 
-    def __init__(self, original_df):
+    def __init__(self, original_df_r):
         """
         処理解説
         make_peakでdf_rの直近一つのブロック（Peakと呼ぶ。同方向へローソクが進む範囲のこと。）を取得する。
@@ -83,28 +83,43 @@ class PeaksClass:
         self.hyper_range = False
 
         # ■実処理
-        if original_df.equals(PeaksClass.df_r_original):
+        if PeaksClass.df_r_original is None:
+            print(" 初回")
+            # PeaksClass.df_r_original = original_df_r
+        # else:
+        #     print("元々登録済みのデータ範囲　From", PeaksClass.df_r_original.iloc[-1]['time_jp'], "to", PeaksClass.df_r_original.iloc[0]['time_jp'])
+        #     print(original_df_r.equals(PeaksClass.df_r_original))
+        #     if PeaksClass.df_r_original.iloc[-1]['time_jp'] == original_df_r.iloc[-1]['time_jp'] and PeaksClass.df_r_original.iloc[0]['time_jp'] == original_df_r.iloc[0]['time_jp']:
+        #         print("同じ", PeaksClass.df_r_original.iloc[-1]['time_jp'], original_df_r.iloc[-1]['time_jp'])
+        #         print("    ", PeaksClass.df_r_original.iloc[0]['time_jp'], original_df_r.iloc[0]['time_jp'])
+
+        # if original_df_r.equals(PeaksClass.df_r_original):  # ←ほんとうはこれがいいけど、何故か差分が出るときあり
+        if not PeaksClass.df_r_original is None and PeaksClass.df_r_original.iloc[-1]['time_jp'] == original_df_r.iloc[-1]['time_jp'] and PeaksClass.df_r_original.iloc[0]['time_jp'] == original_df_r.iloc[0]['time_jp']:
             # print("         [既にPeaksに変換済みのデータフレーム]")
             # print(PeaksClass.peaks_original)
             pass
         else:
+
             # (1)ピークスの算出
-            PeaksClass.df_r_original = original_df
+            PeaksClass.df_r_original = original_df_r
             # print("直近価格", PeaksClass.latest_price, original_df.iloc[0]['time_jp'])
-            self.df_r = original_df[1:]  # df_rは先頭は省く（数秒分の足のため）
+            print("異なる", PeaksClass.df_r_original.iloc[-1]['time_jp'], original_df_r.iloc[-1]['time_jp'])
+            print("    ", PeaksClass.df_r_original.iloc[0]['time_jp'], original_df_r.iloc[0]['time_jp'])
+
+            self.df_r = original_df_r[1:]  # df_rは先頭は省く（数秒分の足のため）
             self.df_r = self.df_r[:55]  # 直近4.5時間分(55足分)のデータフレームにする
-            print("API取得したデータ範囲　From", original_df.iloc[-1]['time_jp'], "to", original_df.iloc[0]['time_jp'])
+            print("API取得したデータ範囲　From", original_df_r.iloc[-1]['time_jp'], "to", original_df_r.iloc[0]['time_jp'])
             print("調査範囲　From", self.df_r.iloc[-1]['time_jp'], "to", self.df_r.iloc[0]['time_jp'])
             PeaksClass.peaks_original = self.make_peaks(self.df_r)  # 一番感度のいいPeaks。引数は書くとするなら。self.df_r。
             PeaksClass.peaks_original_with_df = self.make_peaks_with_df(self.df_r)  # 一番感度のいいPeaksにDfがついたもの
             # たまに起きる謎のエラー対応
             if len(PeaksClass.peaks_original) <= 2:
-                tk.line_send("データがうまくとれていない。", len(original_df), "行のみ")
-                print("おかしなことが起きている originalデータが少なすぎる @peakclass　全", len(original_df), "行のみ")
+                tk.line_send("データがうまくとれていない。", len(original_df_r), "行のみ")
+                print("おかしなことが起きている originalデータが少なすぎる @peakclass　全", len(original_df_r), "行のみ")
                 gene.print_arr(PeaksClass.peaks_original)
                 print(PeaksClass.df_r_original)
                 print("↑", len(PeaksClass.df_r_original))
-                print(original_df)
+                print(original_df_r)
                 print("↑　originalDf")
                 print("おかしなことの表示")
             PeaksClass.skipped_peaks = self.skip_peaks()  # スキップピークの算出
@@ -112,13 +127,13 @@ class PeaksClass:
             self.recalculation_peak_strength_for_peaks()  # ピークストレングスの算出
 
             # (2) ある程度よく使う値は変数に入れておく
-            PeaksClass.latest_price = original_df.iloc[0]['open']
+            PeaksClass.latest_price = original_df_r.iloc[0]['open']
             PeaksClass.latest_peak_price = PeaksClass.peaks_original[0]['peak']
             print("直近価格", PeaksClass.latest_price)
             print("直近ピーク", PeaksClass.latest_peak_price)
 
             # (3) 時間の取得
-            time_obj = pd.to_datetime(original_df.iloc[0]['time_jp'], format='%Y/%m/%d %H:%M:%S')
+            time_obj = pd.to_datetime(original_df_r.iloc[0]['time_jp'], format='%Y/%m/%d %H:%M:%S')
             PeaksClass.time_hour = time_obj.hour
 
             # (4)追加の機能（直近の数個が承服しすぎているかどうかの確認）
@@ -132,10 +147,11 @@ class PeaksClass:
                 d.pop('previous_time_peak', None)
                 d.pop('support_info', None)
                 d.pop('memo_time', None)
-            print(s, "<SKIP前>", )
-            gene.print_arr(peaks_original[:10])
-            print("   |")
-            gene.print_arr(peaks_original[-2:])
+
+            # print(s, "<SKIP前>", )
+            # gene.print_arr(peaks_original[:10])
+            # print("   |")
+            # gene.print_arr(peaks_original[-2:])
 
             # print("")
             # print(s, "<SKIP後　対象>")
@@ -147,15 +163,15 @@ class PeaksClass:
             #     d.pop('memo_time', None)
             # gene.print_arr(skipped_peaks[:10])
 
-            print("")
-            print(s, "<hard SKIP後　対象>")
-            skipped_peaks_hard = copy.deepcopy(PeaksClass.skipped_peaks_hard)# 深いコピーを作成
-            for d in skipped_peaks_hard:# 指定キーを削除
-                d.pop('next', None)
-                d.pop('previous_time_peak', None)
-                d.pop('support_info', None)
-                d.pop('memo_time', None)
-            gene.print_arr(skipped_peaks_hard[:10])
+            # print("")
+            # print(s, "<hard SKIP後　対象>")
+            # skipped_peaks_hard = copy.deepcopy(PeaksClass.skipped_peaks_hard)# 深いコピーを作成
+            # for d in skipped_peaks_hard:# 指定キーを削除
+            #     d.pop('next', None)
+            #     d.pop('previous_time_peak', None)
+            #     d.pop('support_info', None)
+            #     d.pop('memo_time', None)
+            # gene.print_arr(skipped_peaks_hard[:10])
 
             # print("")
             # print(s, "<hard SKIPのフラグのみ")
@@ -533,8 +549,7 @@ class PeaksClass:
 
             print("超レンジ可の判定用")
             print("最大Body", max_gap_row['time_jp'])
-            print(df[['time_jp', 'overlap_ratio_with_max',
-                      'exceed_ratio_with_max']])
+            # print(df[['time_jp', 'overlap_ratio_with_max','exceed_ratio_with_max']])
             is_mini_range = ((df['exceed_ratio_with_max'] <= 0.24) & (df['overlap_ratio_with_max'] >= 0.4)).all()
 
         print("〇超レンジ判定⇒", is_mini_range)

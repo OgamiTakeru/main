@@ -369,6 +369,12 @@ class position_control:
                 for i, linkage_class in enumerate(main_position.linkage_order_classes):
                     left_position = next((obj for obj in self.position_classes if obj.name == linkage_class.name), None)
                     # print("    ", linkage_class.name, "のオーダーが対象", left_position.life, left_position.t_pl_u)
+                    if left_position is None:
+                        print("    ", linkage_class.name, "のリンケージオーダー[", linkage_class.name, "]が対象だが見つからない")
+                        tk.line_send("リンケージ先がない物があった.", linkage_class.name, "のリンケージ", linkage_class.name)
+                        main_position.linkage_done_func()  # 自身のリンケージも終了
+                        continue
+
                     if left_position.t_state == "" and left_position.o_state == "PENDING":
                         # print(" まだlinage先のポジションが成立していないため、オーダー解除")
                         left_position.close_order()
@@ -383,29 +389,46 @@ class position_control:
                         continue
 
                     if left_position.life and left_position.t_state == "OPEN":
-                        main_position.linkage_done_func()  # リンケージが単数前提の場合、ここでクローズしてしまう
-                        print("      相手のPL情報", left_position.t_pl_u)
-                        print("      自分の現在の状況", main_position.t_pl_u, main_position.plan_json['lc_price'])
-                        print("         ", main_position.t_execution_price)
-                        new_lc_range = abs(float(left_position.t_pl_u)) + 0.02
-                        dir = int(left_position.plan_json['direction'])
-                        print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
-                        new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
-                        print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
-                        left_position.linkage_lc_change(new_lc_price)
+                        main_position.linkage_done_func()  # リンケージが単数前提の場合、ここでリンケージ機能をクローズしてしまう
+                        # print("      相手のPL情報", left_position.t_pl_u)
+                        # print("      自分の現在の状況", main_position.t_pl_u, main_position.plan_json['lc_price'])
+                        # print("         ", main_position.t_execution_price)
+                        # new_lc_range = abs(float(left_position.t_pl_u)) + 0.02
+                        # dir = int(left_position.plan_json['direction'])
+                        # print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
+                        # new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
+                        # print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
+                        # left_position.linkage_lc_change(new_lc_price)
+                        #
+                        # # TPも変更する？プラス域であきらめ？(memo)
+                        # new_tp_range = abs(float(left_position.t_pl_u)) * 0.5  # 半分
+                        # current_price = float(left_position.t_execution_price) + float(left_position.t_pl_u)
+                        # price = current_price  # 現在価格基準を利用する場合、これをコメントイン(現マイナスの半分、等の指定がしやすい
+                        # # price = left_position.t_execution_price  # 約定価格を利用する場合これをコメントイン
+                        # if left_position.plan_json['direction'] == 1:
+                        #     # 約定価格を基にした、利確価格変更
+                        #     new_tp_price = price + new_tp_range
+                        # else:
+                        #     new_tp_price = price - new_tp_range
+                        # print("       TP:計算要素", new_tp_range, float(left_position.t_pl_u), new_tp_price)
+                        # left_position.linkage_tp_change(new_tp_price)
 
-                        # TPも変更する？プラス域であきらめ？(memo)
-                        new_tp_range = abs(float(left_position.t_pl_u)) * 0.5  # 半分
-                        current_price = float(left_position.t_execution_price) + float(left_position.t_pl_u)
-                        price = current_price  # 現在価格基準を利用する場合、これをコメントイン(現マイナスの半分、等の指定がしやすい
-                        # price = left_position.t_execution_price  # 約定価格を利用する場合これをコメントイン
-                        if left_position.plan_json['direction'] == 1:
-                            # 約定価格を基にした、利確価格変更
-                            new_tp_price = price + new_tp_range
+                        # プラス域かマイナス域で判定を変更する
+                        left_pl_u = float(left_position.t_pl_u)  # 現在のプラマイ
+                        if left_pl_u >= 0:
+                            # 残されたオーダーがプラス域の場合（こっちの場合はほとんどない？）
+                            pass
                         else:
-                            new_tp_price = price - new_tp_range
-                        print("       TP:計算要素", new_tp_range, float(left_position.t_pl_u), new_tp_price)
-                        left_position.linkage_tp_change(new_tp_price)
+                            # 残されたオーダーがマイナス域の場合（こっちがメインのケース）
+                            new_lc_range = abs(float(main_position.win_max_plu))
+                            dir = int(left_position.plan_json['direction'])
+                            print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
+                            new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
+                            print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
+                            left_position.linkage_lc_change(new_lc_price)
+
+                            # lc_Change_Candleにする
+                            left_position.linkage_forced_lc_change_exe(main_position.win_max_plu)
             else:
                 pass
                 # print("オーダークラスがない！！！⇒未発行とかそこらへん")

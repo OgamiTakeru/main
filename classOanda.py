@@ -917,6 +917,9 @@ class Oanda:
             self.already_error_send1 = True  # 一度きりの送信
             tk.line_send("おかしなオーダーdetailエラー発生⇒", e)
 
+        if name == "価格情報取得":
+            print(e)
+
 
         if past_sec > 10:
             print("   時間切れエラー？")

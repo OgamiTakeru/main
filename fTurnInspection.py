@@ -49,10 +49,11 @@ class turn_analisys:
         # Unit調整用
         self.units_mini = 0.1
         self.units_reg = 0.5
-        self.units_str = 0.1
+        self.units_str = 1
         # 汎用性高め
         self.lc_change_test = [
-            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(3), "ensure": self.ca.cal_move_ave(1)},
+            {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": -1},  # ←とにかく、LCCandleを発動させたい場合
+            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(1.2), "ensure": self.ca.cal_move_ave(0.1)},
             {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(4), "ensure": self.ca.cal_move_ave(2)},
             {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(5), "ensure": self.ca.cal_move_ave(3)},
             {"exe": True, "time_after": 6000, "trigger": self.ca.cal_move_ave(6), "ensure": self.ca.cal_move_ave(4)},
@@ -379,7 +380,7 @@ class turn_analisys:
                         "name": comment,
                         "current_price": self.peaks_class.latest_price,
                         "target": target_price,
-                        "direction": r['direction'],
+                        "direction": t['direction'],
                         "type": "MARKET",
                         "tp": self.base_tp_range,  # self.ca.cal_move_ave(5),
                         "lc": self.base_lc_range,
@@ -395,7 +396,7 @@ class turn_analisys:
                         "name": comment + "HEDGE",
                         "current_price": self.peaks_class.latest_price,
                         "target": self.ca.cal_move_ave(1.5),
-                        "direction": t['direction'],
+                        "direction": r['direction'],
                         "type": "STOP",
                         "tp": self.base_tp_range,  # self.ca.cal_move_ave(5),
                         "lc": self.base_lc_range,
@@ -419,7 +420,7 @@ class turn_analisys:
                         "name": comment,
                         "current_price": self.peaks_class.latest_price,
                         "target": target_price,
-                        "direction": t['direction'],
+                        "direction": r['direction'],
                         "type": "MARKET",
                         "tp": self.base_tp_range,  # self.ca.cal_move_ave(1.5),
                         "lc": self.base_lc_range,
@@ -435,8 +436,8 @@ class turn_analisys:
                     order_class2 = OCreate.Order({
                         "name": comment + "HEDGE",
                         "current_price": self.peaks_class.latest_price,
-                        "target": 0.025,
-                        "direction": r['direction'],
+                        "target": self.ca.cal_move_ave(1.1),  # 0.025,
+                        "direction": t['direction'],
                         "type": "STOP",
                         "tp": self.base_tp_range,  # self.ca.cal_move_ave(2.5),
                         "lc": self.base_lc_range,
@@ -464,7 +465,7 @@ class turn_analisys:
                         "target": 0,
                         "direction": t['direction'],
                         "type": "MARKET",
-                        "tp": self.ca.cal_move_ave(5),
+                        "tp": self.base_tp_range,  # self.ca.cal_move_ave(5),
                         "lc": self.base_lc_range,
                         "lc_change": self.lc_change_test,
                         "units": self.units_str,
@@ -482,7 +483,7 @@ class turn_analisys:
                         "target": self.ca.cal_move_ave(1),
                         "direction": r['direction'],
                         "type": "STOP",
-                        "tp": self.ca.cal_move_ave(1),
+                        "tp": self.base_tp_range,  # self.ca.cal_move_ave(5),
                         "lc": self.base_lc_range,
                         "lc_change": self.lc_change_test,
                         "units": self.units_str,
