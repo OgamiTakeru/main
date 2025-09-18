@@ -53,7 +53,7 @@ class turn_analisys:
         # 汎用性高め
         self.lc_change_test = [
             {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": -1},  # ←とにかく、LCCandleを発動させたい場合
-            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(1.2), "ensure": self.ca.cal_move_ave(0.1)},
+            # {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(1.2), "ensure": self.ca.cal_move_ave(0.1)},
             {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(4), "ensure": self.ca.cal_move_ave(2)},
             {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(5), "ensure": self.ca.cal_move_ave(3)},
             {"exe": True, "time_after": 6000, "trigger": self.ca.cal_move_ave(6), "ensure": self.ca.cal_move_ave(4)},

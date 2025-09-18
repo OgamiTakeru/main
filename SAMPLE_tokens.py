@@ -10,8 +10,9 @@ environment = "practice"  # デモ口座 本番は"live"
 
 # 本番環境
 accountIDl = ""  # 本番用    # ★★★
+accountIDl2 = ""
 access_tokenl = ''    # ★★★
-environmentl = "live"  # デモ口座 本番は"live"
+environmentl = "live"  # 本番は"live"
 
 # Line環境設定
 TOKEN = ''    # ★★★
@@ -39,8 +40,32 @@ def line_send(*msg):
     # requests.post(api_url, headers=TOKEN_dic, data={'message': message})  # 送信を関数化
     # print("     [Line]", message)  # コマンドラインにも表示
 
-    # ■Discard　送信
-    WEBHOOK_URL = ("")
+    # ■■■Discard
+    # ■履歴の送信（これだけ独立）
+    if "検証期間" in message:
+        if "LONG" in message:
+            # 【長期間の検証用】
+            WEBHOOK_URL = ""
+            data = {"content": "@everyone " + message,
+                    "allowed_mentions": {
+                        "parse": ["everyone"]
+                    }
+                    }
+            requests.post(WEBHOOK_URL, json=data)
+            return 0
+
+        # 【短期間専用　よく動かすやつ】履歴送信の場合は、サードのみに送信　 # ■Discord３ テスト結果を送信する用
+        WEBHOOK_URL = ""
+        data = {"content": "@everyone " + message,
+                "allowed_mentions": {
+                    "parse": ["everyone"]
+                }
+                }
+        requests.post(WEBHOOK_URL, json=data)
+        return 0
+
+    # ■■■  通常のDiscord送信　■■■　　最悪これ以下だけあればいい
+    WEBHOOK_URL = ""
     data = {"content": "@everyone " + message,
             "allowed_mentions": {
                     "parse": ["everyone"]
@@ -48,8 +73,8 @@ def line_send(*msg):
             }
     requests.post(WEBHOOK_URL, json=data)
 
-    # ■Discord2 共有サーバーに送付
-    line_to_friend(message)
+    # ■Discord2 共有サーバーに送付(テストなので25/8には消去)
+    # line_to_friend(message)  # オプション（オーダーと結果のみを送信する。人に送りたくなければなくて負い）
 
     # ■コマンドラインに表示
     print("     [Disc]", message)  # コマンドラインにも表示
@@ -59,19 +84,14 @@ def line_to_friend(meg):
     """
     メッセージを受け取り、内容によって共有のDiscordに通知を送信する
     """
-    if "■■■解消:" in meg or "★オーダー発行" in meg:
+    print("サブ", meg)
+    if "■■■解消:" in meg or "★オーダー発行" in meg or "test from Webfook" in meg:
         # 指定の文字を含む場合のみ、送信
-        WEBHOOK_URL = ("")
-        data = {")content": "@everyone " + meg,
-                "allowed_mentions": {
-                    "parse": ["everyone"]
-                }
-                }
+        WEBHOOK_URL = ""
+        data = {"content":meg}
         requests.post(WEBHOOK_URL, json=data)
     else:
-        print(" LineToFriendは実施しない")
-
-
+        pass
 
 
 def f_write(path, msg):
@@ -96,17 +116,17 @@ def write_result(dic):
 
 
 # ログ用ファイル設定
-path_log = "C:/Users/taker/Dropbox/fx/log.txt"  # ★★★
+path_log = ""  # ★★★
 
 # 結果核のようようCSVファイル
 path_csv = ""
 
 # ログフォルダ設定
-folder_path = "C:/Users/taker/OneDrive/Desktop/oanda_logs/"
+folder_path = ""
 
 # 読み込み設定ファイル（条件を途中で変えられるように）
-setting_folder_path = "C:/Users/taker/OneDrive/Desktop/OandaPrograms/main/"
+setting_folder_path = ""
 
 # 検討フォルダ用
-inspection_data_cache_folder_path = 'C:/Users/taker/Desktop/oanda_details/'
+inspection_data_cache_folder_path = ''
 
