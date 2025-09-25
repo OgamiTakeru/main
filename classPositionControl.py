@@ -22,7 +22,10 @@ class position_control:
         self.oa2 = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
 
         # 最大所持個数の設定
-        self.max_position_num = 4  # 最大でも10個のポジションしかもてないようにする
+        self.max_position_num = 7  # 最大でも10個のポジションしかもてないようにする
+        self.high_priority_num = 1  # max numのうち、基本的には使わないスロット数。最後尾に確保されてるはず
+        self.high_priority_i = self.max_position_num - 1  # ハイプライオリティスロット(1つ限)の、添え字（最大5スロットの場合、添え字的には4番目スロット）
+        self.normal_priority_num = self.max_position_num - self.high_priority_num
         self.max_same_level_posi = 5  # 同じレベルのポジションは最大5個まで
 
         # 処理
@@ -38,7 +41,7 @@ class position_control:
         i = 0
         print(" 現在のクラスの状況(True:", self.count_true, ")")
         for item in self.position_classes:
-            print(" ", i, "OaMode:", item.oa_mode, ",name:", item.name, ",life:", item.life)
+            print(" ", i, "OaMode:", item.oa_mode, "Pno:", item.t_id, ",name:", item.name, ",life:", item.life)
             i = i + 1
 
     def order_class_add(self, order_classes):
@@ -73,11 +76,48 @@ class position_control:
         # ■現在のクラスの状況の確認
         print("現在のクラスの状況を確認 (classPositionControl)")
         self.print_classes_and_count()
-        if self.count_true >= self.max_position_num:
+        if order_max_priority == 100 and len(order_classes) == 1:
+            # order_priorityが100なら、ハイクラス専用のスロットに入れる
+            high_class = self.position_classes[self.high_priority_i]
+            if high_class.life:
+                # スロットが埋まっている場合、強制キャンセル
+                high_class.close_order()
+                high_class.close_trade()
+            # オーダー追加
+            res_dic = high_class.order_plan_registration(order_classes[0])
+            line_send = ""
+            if res_dic['order_id'] == 0:
+                print("オーダー失敗している（大量オーダー等）")
+                line_send = line_send + "オーダー失敗(" + str(self.high_priority_i) + ")" + "\n"
+            else:
+                # ■オーダーが成功している場合
+                if res_dic['order_id'] == -1:
+                    # ウォッチオーダー
+                    print("オーダー通知")
+                    # print(res_dic)
+                    # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
+                    # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
+                    # print(res_dic['order_name'])
+                    # print(res_dic)
+                    line_send = line_send + "◆【" + str(res_dic['order_name']) + "】を即時ポジションなしで発行" + \
+                                "指定価格:【" + str(round(res_dic['order_result']['price'], 3)) + "】" + \
+                                ",DIR:" + str(res_dic['order_result']['direction']) + \
+                                ", 数量:" + str(res_dic['order_result']['units']) + \
+                                ", TP:" + str(round(res_dic['order_result']['tp_price'], 3)) + \
+                                "(" + str(round(res_dic['order_result']['tp_range'], 3)) + ")" + \
+                                ", LC:" + str(round(res_dic['order_result']['lc_price'], 3)) + \
+                                "(" + str(round(res_dic['order_result']['lc_range'], 3)) + ")" + \
+                                ", AveMove:" + str(round(res_dic['ref']['move_ave'], 3)) + \
+                                "[システム]classNo:" + str(self.high_priority_i) + ",\n"
+            return line_send
+
+
+        # 通常のオーダーの場合
+        if self.count_true >= self.normal_priority_num:
             # 10個以上オーダーがある場合はオーダーしない。
             print("★★既に10個以上オーダーがあるため、オーダー発行しない")
             return 0
-        elif self.count_true + len(order_classes) > self.max_position_num:  # ２はテキトーな数字。
+        elif self.count_true + len(order_classes) > self.normal_priority_num:  # ２はテキトーな数字。
             # 新規のオーダー合わせて13個以上になる場合もオーダーしない（新規オーダーがエラーで複数個出てる可能性のため）
             print("★★既存の物＋新規の合わせて12個以上になるため、オーダー発行しない(新規オーダー数:", len(order_classes))
             return 0
@@ -88,6 +128,9 @@ class position_control:
             for class_index, each_exist_class in enumerate(self.position_classes):
                 if each_exist_class.life:
                     # Trueの所には上書きしない
+                    continue
+                if class_index == self.high_priority_i:
+                    # ハイクラス用の添え字の場所には、入れない
                     continue
 
                 # Falseのとこで実行する
@@ -420,15 +463,17 @@ class position_control:
                             pass
                         else:
                             # 残されたオーダーがマイナス域の場合（こっちがメインのケース）
-                            new_lc_range = abs(float(main_position.win_max_plu))
+                            bigger_minus = min(float(main_position.lose_max_plu), float(left_position.t_pl_u))
+                            new_lc_range = abs(bigger_minus) + 0.01
                             dir = int(left_position.plan_json['direction'])
+                            tk.line_send("    LC変更kakumin", main_position.lose_max_plu, left_position.t_pl_u, bigger_minus)
                             print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
                             new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
                             print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
                             left_position.linkage_lc_change(new_lc_price)
 
                             # lc_Change_Candleにする
-                            left_position.linkage_forced_lc_change_exe(main_position.win_max_plu)
+                            left_position.linkage_forced_lc_change_exe(main_position.lose_max_plu, left_pl_u)
             else:
                 pass
                 # print("オーダークラスがない！！！⇒未発行とかそこらへん")

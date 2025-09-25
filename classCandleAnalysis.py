@@ -1,5 +1,4 @@
 import datetime
-from datetime import datetime
 from datetime import timedelta
 import pandas as pd
 from collections import defaultdict
@@ -10,25 +9,212 @@ import copy
 import classCandlePeaks as peaksClass
 
 
-
 class candleAnalysis:
-    def __init__(self, original_df, oa):
-        self.df_r = original_df
-        self.peaks_class = peaksClass.PeaksClass(original_df)  # ★★peaks_classインスタンスの生成
 
-        # 変数系
-        # cal_move_size関数
-        self.recent_fluctuation_range = 0  # 指定ではなく、計算で算出される。直近N足分以内での最大変動幅（最高値ー最低値）round済み
-        self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
-        self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
-        self.is_big_move_candle = False
-        # cal_move_ave関数
+    # 重複のAPIたたきを極力減らしたい
+    avoid_dup_5min_kara_time = 0  # 重複での処理作業防止用（最新で取得した5分足のデータのカラマデの時間を所持。クラス生成時、同じ場合は新規処理しない）
+    avoid_dup_5min_made_time = 0
+    latest_df_d5_df_r = None
+    latest_peaks_class = None  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
+    latest_candle_class = None
+    latest_df_d60_df_r = None
+    latest_peaks_class_hour = None  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
+    latest_candle_class_hour = None
+
+    def __init__(self, base_oa, target_time_jp):
+        """
+        target_time_jpまでの時間を取得する
+        """
+        # オアンダクラス
+        self.base_oa = base_oa
+        self.need_df_num = 100
+
+        # データ入れる用
+        self.d5_df_r = None
+        self.d60_df_r = None
+
+        # # ■■　重複でAPIを打つことを避けたい
+        # now_time = datetime.datetime.now()
+        # n_year = now_time.year  # 年
+        # n_month = now_time.month  # 月
+        # n_day = now_time.day  # 日
+        # n_hour = now_time.hour  # 時間
+        # n_minute = now_time.minute  # 分
+
+
+        # ■■データ取得
+        self.get_date_df(target_time_jp)  # self.d5_df_rとself.d60_df_rを取得
+        # 表示用（テスト用）
+        l = self.d5_df_r.iloc[0]
+        print(l['bb_upper'], l['bb_lower'], l['bb_range'])
+
+        # ■■処理続行判定
+        # 重複作業防止用に、クラス変数に5分足の最初と最後の情報を入れておく
+        if self.d5_df_r is None:
+            print("★★ データフレームが取得されていないエラーが発生")
+            return
+        else:
+            if candleAnalysis.avoid_dup_5min_kara_time == self.d5_df_r.iloc[-1]['time_jp'] and candleAnalysis.avoid_dup_5min_made_time == self.d5_df_r.iloc[0]['time_jp']:
+                print("同じデータのため、Peaksは呼ばず(主にcandleLCChangeで発生)")
+                # データを移植する（5分足）
+                self.peaks_class = candleAnalysis.latest_peaks_class
+                self.candle_class = candleAnalysis.latest_candle_class
+                # データを移植する（60分足）
+                self.peaks_class_hour = candleAnalysis.latest_peaks_class_hour
+                self.candle_class_hour = candleAnalysis.latest_candle_class_hour
+                return
+
+        # ■■処理
+        # データを取得する(5分足系）
+        granularity = "M5"
+        self.peaks_class = peaksClass.PeaksClass(self.d5_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        self.candle_class = eachCandleAnalysis(self.peaks_class, granularity)
+        # データを取得する（60分足）
+        granularity = "H1"
+        self.peaks_class_hour = peaksClass.PeaksClass(self.d60_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        self.candle_class_hour = eachCandleAnalysis(self.peaks_class_hour, granularity)
+
+        # ■■重複作業防止用に、クラス変数に5分足の最初と最後の情報、今回算出した情報を入れておく
+        if self.d5_df_r is None:
+            # Noneの場合はおかしいので処理しない（基本ない）
+            pass
+        else:
+            # クラス変数に、最新の値だけを入れておく
+            candleAnalysis.avoid_dup_5min_kara_time = self.d5_df_r.iloc[-1]['time_jp']
+            candleAnalysis.avoid_dup_5min_made_time = self.d5_df_r.iloc[0]['time_jp']
+            candleAnalysis.latest_df_d5_df_r = self.d5_df_r
+            candleAnalysis.latest_peaks_class = self.peaks_class  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
+            candleAnalysis.latest_candle_class = self.candle_class
+            candleAnalysis.latest_df_d60_df_r = self.d60_df_r
+            candleAnalysis.latest_peaks_class_hour = self.peaks_class_hour  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
+            candleAnalysis.latest_candle_class_hour = self.candle_class_hour
+
+    def get_date_df(self, target_time_jp):
+        # データを取得する
+        if target_time_jp == 0:
+            # nowでやる場合（通常）
+            # 5分足のデータ
+            d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+                                                                  {"granularity": "M5", "count": self.need_df_num},
+                                                                  1)  # 時間昇順(直近が最後尾）
+            if d5_df_res['error'] == -1:
+                print("error Candle")
+                tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                return -1
+            else:
+                d5_df_latest_bottom = d5_df_res['data']
+            self.d5_df_r = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+
+            # 60分足のデータ
+            d60_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+                                                                   {"granularity": "H1", "count": self.need_df_num},
+                                                                   1)  # 時間昇順(直近が最後尾）
+            if d60_df_res['error'] == -1:
+                print("error Candle")
+                tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                return -1
+            else:
+                d60_df_latest_bottom = d60_df_res['data']
+            self.d60_df_r = d60_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+
+        else:
+            # 指定の時刻でやる場合
+            jp_time = target_time_jp
+            euro_time_datetime = jp_time - datetime.timedelta(hours=9)
+            euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
+
+            # ５分足データ
+            param = {"granularity": "M5", "count": self.need_df_num, "to": euro_time_datetime_iso}
+            d5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param) # 時間昇順(直近が最後尾）
+            if d5_df_res['error'] == -1:
+                print("error Candle")
+                tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                return -1
+            else:
+                d5_df_latest_bottom = d5_df_res['data']
+            self.d5_df_r = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+
+            # 60分足のデータ
+            param = {"granularity": "H1", "count": self.need_df_num, "to": euro_time_datetime_iso}
+            d60_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param) # 時間昇順(直近が最後尾）
+            if d60_df_res['error'] == -1:
+                print("error Candle")
+                tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                return -1
+            else:
+                d60_df_latest_bottom = d60_df_res['data']
+            self.d60_df_r = d60_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+
+
+
+class eachCandleAnalysis:
+    def __init__(self, peaks_class, granularity):
+        """
+        target_time_jpまでの時間を取得する
+        """
+        # データ入れる用
+        self.df_r = peaks_class.df_r_original
+        self.peaks_class = peaks_class
+        # 初期値
         self.ave_move = 0
         self.ave_move_for_lc = 0
 
+        # データを取得する(5分足系）
+        if granularity == "M5":
+            self.recent_fluctuation_range = 0  # 指定ではなく、計算で算出される。直近N足分以内での最大変動幅（最高値ー最低値）round済み
+            self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
+            self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
+            self.is_big_move_candle = False
+        elif granularity == "H1":
+            self.recent_fluctuation_range = 0  # 指定ではなく、計算で算出される。直近N足分以内での最大変動幅（最高値ー最低値）round済み
+            self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
+            self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
+            self.is_big_move_candle = False
+
+        #
+        self.cal_move_size()
+        self.current_place()
+
+
+    def current_place(self):
+        """
+        1時間足でメイン。いま動きの中のどのくらいにいるか
+        """
+        res = self.peaks_class.peak_strength_sort()
+        print("    current price")
+        # print("マイナス方向")
+        # # v = [d["latest_body_peak_price"] for d in res["-1"]]
+        # gene.print_arr(res["-1"])
+        # # gene.print_arr(v)
+        #
+        # print("プラス方向")
+        # # m = [d["latest_body_peak_price"] for d in res["1"]]
+        # gene.print_arr(res["1"])
+        # # gene.print_arr(m)
+
+        # print("個数", len(self.peaks_class.peaks_with_same_price_list))
+        #
+        # print("山頂点")
+        # m = [d for d in self.peaks_class.peaks_with_same_price_list if d.get("direction") == 1]
+        # for i, item in enumerate(m):
+        #     print(i, item['latest_time_jp'], item['latest_body_peak_price'])
+        #     print("    ", len(item['same_price_list']), item['same_price_list'])
+        #     gene.print_arr(item['same_price_list'])
+        #     for m, mmm in enumerate(item['same_price_list']):
+        #         print("      ", mmm['item']['latest_time_jp'])
+        #
+        # print("谷頂点")
+        # v = [d for d in self.peaks_class.peaks_with_same_price_list if d.get("direction") == -1]
+        # for i, item in enumerate(v):
+        #     print(i, item['latest_time_jp'], item['latest_body_peak_price'])
+        #     print("    ", len(item['same_price_list']), item['same_price_list'])
+        #     for m, mmm in enumerate(item['same_price_list']):
+        #         print("      ", mmm['item']['latest_time_jp'])
+
+
     def cal_move_size(self):
         # ■データフレームの状態で、サイズ感を色々求める
-        filtered_df = self.df_r.df_r_original[:65]  # 直近4時間の場合、12×4 48
+        filtered_df = self.df_r[:65]  # 直近4時間の場合、12×4 48
         sorted_df = filtered_df.sort_values(by='body_abs', ascending=False)
         max_high = sorted_df["inner_high"].max()
         min_low = sorted_df['inner_low'].min()
@@ -40,6 +226,7 @@ class candleAnalysis:
         print("    最大値、最小値", max_high, min_low, "差分")
         print("    平均キャンドル長", filtered_df.head(5)["highlow"].mean())
         print("    提唱LC幅", self.ave_move_for_lc)
+        print("    狭いレンジか？", self.peaks_class.hyper_range)
         # print(t6, "最大足(最高-最低),", sorted_df.iloc[0]['time_jp'], sorted_df.iloc[0]['highlow'])
         # print(t6, "最小足(最高-最低),", sorted_df.iloc[-1]['time_jp'], sorted_df.iloc[-1]['highlow'])
         # print(t6, "平均(最高-最低)", sorted_df['highlow'].mean())
@@ -89,6 +276,7 @@ class candleAnalysis:
             self.is_big_move_candle = True
         else:
             self.is_big_move_candle = False
+        print("    大きな変動があるか？", self.is_big_move_candle)
 
     def cal_move_ave(self, times):
         """

@@ -5,19 +5,14 @@ import classOrderCreate as OCreate
 
 
 class turn_analisys:
-    def __init__(self, candle_analysis, oa):
-        self.oa = oa
+    def __init__(self, candle_analysis):
+        self.oa = candle_analysis.base_oa
         # test時と本番時で、分岐（本番ではpeaks_classが渡されるが、テストではdfが渡されるため、peaks_classに変換が必要）
-        if isinstance(candle_analysis, pd.DataFrame):
-            print("candle_analysisはDataFrameなのでtestと判断 ⇒ candle_analysisに変換し、格納")
-            self.ca = ca.candleAnalysis(candle_analysis, oa)  # CandleAnalysisインスタンスの生成
-            self.peaks_class = self.ca.peaks_class  # peaks_classだけを抽出
-            test_mode = True
-        else:
-            print("PはDataFrameではないため、peaks_classと考える⇒返還不要")
-            self.ca = candle_analysis
-            self.peaks_class = self.ca.peaks_class  # peaks_classだけを抽出
-            test_mode = False
+        self.ca = candle_analysis
+        self.ca5 = self.ca.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
+        self.peaks_class = self.ca.peaks_class  # peaks_classだけを抽出
+        self.ca60 = self.ca.candle_class_hour
+        self.peaks_class_hour = self.ca.peaks_class_hour
 
         # 結果として使う大事な変数
         self.take_position_flag = False
@@ -49,211 +44,24 @@ class turn_analisys:
         # Unit調整用
         self.units_mini = 0.1
         self.units_reg = 0.5
-        self.units_str = 1
+        self.units_str = 0.1
         # 汎用性高め
         self.lc_change_test = [
             {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": -1},  # ←とにかく、LCCandleを発動させたい場合
-            # {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(1.2), "ensure": self.ca.cal_move_ave(0.1)},
-            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(4), "ensure": self.ca.cal_move_ave(2)},
-            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(5), "ensure": self.ca.cal_move_ave(3)},
-            {"exe": True, "time_after": 6000, "trigger": self.ca.cal_move_ave(6), "ensure": self.ca.cal_move_ave(4)},
-            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(7), "ensure": self.ca.cal_move_ave(5)},
-            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(8), "ensure": self.ca.cal_move_ave(6)},
-            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(9), "ensure": self.ca.cal_move_ave(7)},
-            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(10), "ensure": self.ca.cal_move_ave(8)},
-            {"exe": True, "time_after": 600, "trigger": self.ca.cal_move_ave(11), "ensure": self.ca.cal_move_ave(9)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(2), "ensure": -0.001},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(4), "ensure": self.ca5.cal_move_ave(2)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(5), "ensure": self.ca5.cal_move_ave(3)},
+            {"exe": True, "time_after": 6000, "trigger": self.ca5.cal_move_ave(6), "ensure": self.ca5.cal_move_ave(4)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(7), "ensure": self.ca5.cal_move_ave(5)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(8), "ensure": self.ca5.cal_move_ave(6)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(9), "ensure": self.ca5.cal_move_ave(7)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(10), "ensure": self.ca5.cal_move_ave(8)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(11), "ensure": self.ca5.cal_move_ave(9)},
         ]
 
-        # 調査実行（調査を実施し、self.flag_and_ordersの中身を埋める）
-        if test_mode:
-            self.cal_little_turn_at_trend_test()
-        else:
-            self.cal_little_turn_at_trend()
-
-    # def order_make_hedged(self, name, target_p, margin, direction, ls_type, tp, lc, lc_change, u, priority, watching):
-    #     """
-    #     与えられたtargetに対して、マージンを考慮し、指定の方向（STOPかLIMIT）を尊重してオーダーを生成。
-    #     また、逆向きのオーダーも生成しておく。
-    #     """
-    #     # ■変数のミスをチェック
-    #     if ls_type == "LIMIT" or ls_type == "STOP":
-    #         pass
-    #     else:
-    #         print("type指定がミスってるよ:", ls_type)
-    #
-    #     if tp >= 80:
-    #         print("●●●　hedgedなのにTPがPrice指定されている（Range指定のみ）")
-    #     if lc >= 80:
-    #         print("●●●　hedgedなのにLCがPrice指定されている（Range指定のみ）")
-    #
-    #     # ■本オーダーを生成
-    #     # ■■エントリーポイントの算出
-    #     if direction == 1:
-    #         if ls_type == "LIMIT":
-    #             # 買いの逆張り(今より低値で買い)。現在150円、ターゲット149円、1円マージンの場合、148円に下がった状態で買い。
-    #             entry_price = target_p - margin
-    #             if entry_price >= self.current_price:
-    #                 print("ERROR発生の可能性　買いの逆張り(今より低値で買い)なのに、今より高い値段で買いになってる")
-    #         else:
-    #             # 買いの順張り(今より高値で買い)。現在150円、ターゲット151円、1円マージンの場合、152円に上がった時に買い。
-    #             entry_price = target_p + margin
-    #             if entry_price <= self.current_price:
-    #                 print("ERROR発生の可能性　買いの順張り(今より高値で買い)なのに、今より低い値段で買いになってる")
-    #     else:
-    #         if ls_type == "LIMIT":
-    #             # 売りの逆張り(今より高値で売り)。現在150円、ターゲット151円、1円マージンの場合、151円に上がった状態で売り。
-    #             entry_price = target_p + margin
-    #             if entry_price <= self.current_price:
-    #                 print("ERROR発生の可能性　売りの逆張り(今より高値で売り)なのに、今より低い値段で売りになってる")
-    #         else:
-    #             # 売りの順張り(今より低値で売り)。現在150円、ターゲット149円、1円マージンの場合、148円に下がった時に売り。
-    #             entry_price = target_p - margin
-    #             if entry_price >= self.current_price:
-    #                 print("ERROR発生の可能性　売りの順張り(今より低値で買い)なのに、今より高い値段で売りになってる")
-    #
-    #     # watching
-    #     if watching == 0:
-    #         watching_setting = 0
-    #     else:
-    #         watching_setting = entry_price
-    #
-    #     # flag形状の場合（＝Breakの場合）
-    #     base_order_dic = {
-    #         # targetはプラスで取得しにくい方向に。
-    #         "oa_mode": 2,
-    #         "target": entry_price,
-    #         "type": ls_type,  # "STOP",
-    #         "direction": direction,
-    #         "tp": tp,
-    #         "lc": lc,
-    #         'priority': 3,
-    #         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-    #         "decision_price": self.peaks_class.df_r_original.iloc[1]['close'],
-    #         "order_timeout_min": 20,
-    #         "lc_change_type": lc_change,
-    #         "units": self.units_str,
-    #         "name": name,
-    #         "watching_price": watching_setting,
-    #         "alert": {"range": 0, "time": 0},
-    #         "ref": {"move_ave": self.ca.cal_move_ave(1),
-    #                 "peak1_target_gap": 0
-    #                 }
-    #     }
-    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
-    #     main_order = base_order_class.finalized_order
-    #
-    #     # 逆向きのオーダーを生成する
-    #     """
-    #     逆の定義
-    #     ①張りの基準は変更しない場合
-    #     現在150円、ターゲット151円　マージン1円の買い順張り　⇒　現在150円、ターゲット149円、マージン1円の売り順張り
-    #     　⇒この場合、ターゲットの変更が必要。ターゲット基本渡される（ターゲットと現在価格からの差分でみれはするが）
-    #     ②張りを変更してしまう場合
-    #     現在150円、ターゲット151円、マージン1円の買い順張り　⇒　現在150円、ターゲット151円、マージン1円の売り逆張り
-    #     現在150円、ターゲット151円、マージン1円の売り逆張り　⇒　現在150円、ターゲット151円、マージン1円の買い順張り
-    #
-    #     いったん②を採用（変更規模が少ないので）
-    #     """
-    #     if ls_type == "LIMIT":
-    #         op_ls_type = "STOP"
-    #     else:
-    #         op_ls_type = "LIMIT"
-    #
-    #     base_order_dic = {
-    #         # targetはプラスで取得しにくい方向に。
-    #         "oa_mode": 2,
-    #         "target": entry_price,
-    #         "type": "MARKET",  # op_ls_type,
-    #         "direction": direction * -1,
-    #         "tp": tp * 1.5,
-    #         "lc": lc * 1.5,
-    #         'priority': 3,
-    #         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-    #         "decision_price": self.peaks_class.df_r_original.iloc[1]['close'],
-    #         "order_timeout_min": 20,
-    #         "lc_change_type": lc_change,
-    #         "units": self.units_str,
-    #         "name": "逆" + name,
-    #         "watching_price": watching_setting,
-    #         "alert": {"range": 0, "time": 0},
-    #         "ref": {"move_ave": self.ca.cal_move_ave(1),
-    #                 "peak1_target_gap": 0
-    #                 }
-    #     }
-    #     op_base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
-    #     op_main_order = op_base_order_class.finalized_order
-    #
-    #     orders = [main_order, op_main_order]
-    #     return orders
-    #
-    # def order_make(self, name, target_p, margin, direction, ls_type, tp, lc, lc_change, u, priority, watching):
-    #     """
-    #     与えられたtargetに対して、マージンを考慮し、指定の方向（STOPかLIMIT）を尊重してオーダーを生成。
-    #     また、逆向きのオーダーも生成しておく。
-    #     """
-    #     # ■変数のミスをチェック
-    #     if ls_type == "LIMIT" or ls_type == "STOP" or "MARKET":
-    #         pass
-    #     else:
-    #         print("type指定がミスってるよ:", ls_type)
-    #
-    #     # ■本オーダーを生成
-    #     # ■■エントリーポイントの算出
-    #     if direction == 1:
-    #         if ls_type == "LIMIT":
-    #             # 買いの逆張り(今より低値で買い)。現在150円、ターゲット149円、1円マージンの場合、148円に下がった状態で買い。
-    #             entry_price = target_p - margin
-    #             if entry_price >= self.current_price:
-    #                 print("ERROR発生の可能性　買いの逆張り(今より低値で買い)なのに、今より高い値段で買いになってる")
-    #         else:
-    #             # 買いの順張り(今より高値で買い)。現在150円、ターゲット151円、1円マージンの場合、152円に上がった時に買い。
-    #             entry_price = target_p + margin
-    #             if entry_price <= self.current_price:
-    #                 print("ERROR発生の可能性　買いの順張り(今より高値で買い)なのに、今より低い値段で買いになってる")
-    #     else:
-    #         if ls_type == "LIMIT":
-    #             # 売りの逆張り(今より高値で売り)。現在150円、ターゲット151円、1円マージンの場合、151円に上がった状態で売り。
-    #             entry_price = target_p + margin
-    #             if entry_price <= self.current_price:
-    #                 print("ERROR発生の可能性　売りの逆張り(今より高値で売り)なのに、今より低い値段で売りになってる")
-    #         else:
-    #             # 売りの順張り(今より低値で売り)。現在150円、ターゲット149円、1円マージンの場合、148円に下がった時に売り。
-    #             entry_price = target_p - margin
-    #             if entry_price >= self.current_price:
-    #                 print("ERROR発生の可能性　売りの順張り(今より低値で買い)なのに、今より高い値段で売りになってる")
-    #
-    #     # watching
-    #     if watching == 0:
-    #         watching_setting = 0
-    #     else:
-    #         watching_setting = entry_price
-    #
-    #     # flag形状の場合（＝Breakの場合）
-    #     base_order_dic = {
-    #         # targetはプラスで取得しにくい方向に。
-    #         "target": entry_price,
-    #         "type": ls_type,  # "STOP",
-    #         "direction": direction,
-    #         "tp": tp,
-    #         "lc": lc,
-    #         'priority': 3,
-    #         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-    #         "decision_price": self.peaks_class.df_r_original.iloc[1]['close'],
-    #         "order_timeout_min": 20,
-    #         "trade_timeout_min": 240,
-    #         "lc_change_type": lc_change,
-    #         "units": self.units_str,
-    #         "name": name,
-    #         "watching_price": watching_setting,
-    #         "alert": {"range": 0, "time": 0},
-    #         "ref": {"move_ave": self.ca.cal_move_ave(1),
-    #                 "peak1_target_gap": 0
-    #                 }
-    #     }
-    #     base_order_class = OCreate.OrderCreateClass(base_order_dic)  # オーダーファイナライズ
-    #     main_order = base_order_class.finalized_order
-    #     orders = [main_order]
-    #     return orders
+        # ★★★調査実行
+        #     self.big_move_r_direction_order()
+        self.cal_little_turn_at_trend()
 
     def add_order_and_flag_inspecion_class(self, order_class):
         """
@@ -263,6 +71,60 @@ class turn_analisys:
         self.exe_order_classes.append(order_class)
         # print("発行したオーダー2↓　(turn255)")
         # print(order_class.exe_order)
+
+    def big_move_r_direction_order(self):
+        """
+        大きい変動が認められた場合、反発オーダーを順張りで、少し戻った位置で設ける。この場合、LCも入れたいなぁ
+        """
+        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        if peaks[1]['gap'] < 0.04:
+            print("対象が小さい", peaks[1]['gap'])
+            # return default_return_item
+
+        # ■基本的な情報の取得
+        # (1)
+        r = peaks[0]
+        t = peaks[1]
+        f = peaks[2]
+        comment = "大変動後の反発"
+
+        target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
+        order_class1 = OCreate.Order({
+            "name": comment,
+            "current_price": self.peaks_class.latest_price,
+            "target": self.ca5.cal_move_ave(0.5),  # target_price,
+            "direction": r['direction'],
+            "type": "STOP",  # "MARKET",
+            "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
+            "lc": self.base_lc_range,
+            "lc_change": self.lc_change_test,
+            "units": self.units_str,
+            "priority": 3,
+            "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+            "candle_analysis_class": self.ca
+        })
+        self.add_order_and_flag_inspecion_class(order_class1)
+        # ●ヘッジオーダー
+        order_class2 = OCreate.Order({
+            "name": comment + "HEDGE",
+            "current_price": self.peaks_class.latest_price,
+            "target": self.ca5.cal_move_ave(0.6),
+            "direction": t['direction'],
+            "type": "STOP",
+            "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
+            "lc": self.base_lc_range,
+            "lc_change": self.lc_change_test,
+            "units": self.units_str,
+            "priority": 3,
+            "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+            "candle_analysis_class": self.ca
+        })
+        self.add_order_and_flag_inspecion_class(order_class2)
+
+        # リンケージをたがいに登録する
+        order_class1.add_linkage(order_class2)
+        order_class2.add_linkage(order_class1)
+
 
     def cal_little_turn_at_trend(self):
         """
@@ -301,7 +163,7 @@ class turn_analisys:
 
         # ■分岐
         print(" ●判定パラメーター一覧●  rCount:", r['count'])
-        print("  平均キャンドル長", self.ca.cal_move_ave(1))
+        print("  平均キャンドル長", self.ca5.cal_move_ave(1))
         print("  RT情報 比率:", self.rt.lo_ratio)
         print("  TF情報 比率:", self.tf.lo_ratio)
         print("  T情報 SKIP有無:", self.rt.skip_exist_at_older, ",Skip数:", self.rt.skip_num_at_older, "t-Count:", t['count'])
@@ -310,6 +172,14 @@ class turn_analisys:
         print("  ビッグキャンドル有無", self.peaks_class.is_big_move_candle)
 
         # オーダーテスト用
+        # ■■■BigMoveの場合は別途注意が必要
+        if r['count'] == 2 and t['include_large']:
+            print("BIG_MOVEテスト")
+            print(t["latest_time_jp"], t['include_large'])
+            self.big_move_r_direction_order()
+            return 0
+
+
         # ■■Latestのピークが伸びる方向（基本形）
         comment = "None"
         if r['count'] == 2 and t['count'] >= 4:
@@ -382,7 +252,7 @@ class turn_analisys:
                         "target": target_price,
                         "direction": t['direction'],
                         "type": "MARKET",
-                        "tp": self.base_tp_range,  # self.ca.cal_move_ave(5),
+                        "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
                         "lc": self.base_lc_range,
                         "lc_change": self.lc_change_test,
                         "units": self.units_str,
@@ -395,10 +265,10 @@ class turn_analisys:
                     order_class2 = OCreate.Order({
                         "name": comment + "HEDGE",
                         "current_price": self.peaks_class.latest_price,
-                        "target": self.ca.cal_move_ave(1.5),
+                        "target": self.ca5.cal_move_ave(1.5),
                         "direction": r['direction'],
                         "type": "STOP",
-                        "tp": self.base_tp_range,  # self.ca.cal_move_ave(5),
+                        "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
                         "lc": self.base_lc_range,
                         "lc_change": self.lc_change_test,
                         "units": self.units_str,
@@ -422,7 +292,7 @@ class turn_analisys:
                         "target": target_price,
                         "direction": r['direction'],
                         "type": "MARKET",
-                        "tp": self.base_tp_range,  # self.ca.cal_move_ave(1.5),
+                        "tp": self.base_tp_range,  # self.ca5.cal_move_ave(1.5),
                         "lc": self.base_lc_range,
                         "lc_change": self.lc_change_test,
                         "units": self.units_str,
@@ -436,10 +306,10 @@ class turn_analisys:
                     order_class2 = OCreate.Order({
                         "name": comment + "HEDGE",
                         "current_price": self.peaks_class.latest_price,
-                        "target": self.ca.cal_move_ave(1.1),  # 0.025,
+                        "target": self.ca5.cal_move_ave(1.1),  # 0.025,
                         "direction": t['direction'],
                         "type": "STOP",
-                        "tp": self.base_tp_range,  # self.ca.cal_move_ave(2.5),
+                        "tp": self.base_tp_range,  # self.ca5.cal_move_ave(2.5),
                         "lc": self.base_lc_range,
                         "lc_change": self.lc_change_test,
                         "units": self.units_str,
@@ -465,7 +335,7 @@ class turn_analisys:
                         "target": 0,
                         "direction": t['direction'],
                         "type": "MARKET",
-                        "tp": self.base_tp_range,  # self.ca.cal_move_ave(5),
+                        "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
                         "lc": self.base_lc_range,
                         "lc_change": self.lc_change_test,
                         "units": self.units_str,
@@ -480,10 +350,10 @@ class turn_analisys:
                     order_class2 = OCreate.Order({
                         "name": comment,
                         "current_price": self.peaks_class.latest_price,
-                        "target": self.ca.cal_move_ave(1),
+                        "target": self.ca5.cal_move_ave(1),
                         "direction": r['direction'],
                         "type": "STOP",
-                        "tp": self.base_tp_range,  # self.ca.cal_move_ave(5),
+                        "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
                         "lc": self.base_lc_range,
                         "lc_change": self.lc_change_test,
                         "units": self.units_str,
@@ -495,233 +365,6 @@ class turn_analisys:
                     # リンケージをたがいに登録する
                     order_class1.add_linkage(order_class2)
                     order_class2.add_linkage(order_class1)
-
-                else:
-                    print("戻りratio異なる", r['count'])
-            else:
-                pass
-        else:
-            print("rCountが不適切", r['count'])
-
-    def cal_little_turn_at_trend_test(self):
-        """
-        args[0]は必ずpeaks_classであること。
-        args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
-
-        直近[0]がcount4の時、riverPeakにレジスタンスオーダーを入れる
-        """
-        # ■基本情報の取得
-        print("★★TURN　TEST")
-
-        # ■実行除外
-        # 対象のPeakのサイズを確認（小さすぎる場合、除外）
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
-        if peaks[1]['gap'] < 0.04:
-            print("対象が小さい", peaks[1]['gap'])
-            # return default_return_item
-
-        # ■基本的な情報の取得
-        # (1)
-        r = peaks[0]
-        t = peaks[1]
-        f = peaks[2]
-
-        # テスト専用のコード
-        name_t = (("@" + str(self.rt.lo_ratio) + "@" +
-                   str(self.rt.turn_strength_at_older)) + "@" + str(self.tf.lo_ratio) + "@" +
-                  str(self.rt.skip_num_at_older) + "@" +
-                  str(t['count']) + "@" + str(t['gap']))
-
-        # (4)よく使う条件分岐を、簡略化しておく
-        # ■一部共通の分岐条件を生成しておく
-        if self.rt.skip_num_at_older < 3 and 0 < self.rt.turn_strength_at_older <= 8:
-            is_extendable_line = True
-        else:
-            is_extendable_line = False
-
-        # ■分岐
-        print(" ●判定パラメーター一覧●")
-        print("  平均キャンドル長", self.ca.cal_move_ave(1))
-        print("  RT情報 比率:", self.rt.lo_ratio)
-        print("  TF情報 比率:", self.tf.lo_ratio)
-        print("  T情報 SKIP有無:", self.rt.skip_exist_at_older, ",Skip数:", self.rt.skip_num_at_older, "t-Count:",
-              t['count'])
-        print("       T-strength:", self.rt.turn_strength_at_older)
-        print("  超レンジ状態", self.peaks_class.hyper_range)
-        print("  ビッグキャンドル有無", self.peaks_class.is_big_move_candle)
-
-
-
-        # オーダーテスト用
-        # ■■Latestのピークが伸びる方向（基本形）
-        comment = "None"
-        if r['count'] == 2 and t['count'] >= 4:
-
-            # ●判定セクション
-            pattern = 0  # 1はトレンド（ｒ方向）、2はレンジ（ｔ方向）
-            # ■■[B] リバーの戻りが、ターンに比べて小さい（当初からのルールと近しい場合）
-            if self.rt.lo_ratio <= 0.3:
-                # ■■■■
-                if self.tf.lo_ratio <= 0.26:
-                    comment = "2B_強いトレンド"
-                    pattern = 1
-                elif 0.26 <= self.tf.lo_ratio <= 0.45:
-                    comment = "3B_ペナント型"
-                    pattern = 2
-                elif 0.7 <= self.tf.lo_ratio <= 1.3:
-                    comment = "4B_レンジの強turnダブルトップ(r小)"
-                    pattern = 2
-                elif self.tf.lo_ratio > 1.45 and self.rt.lo_ratio >= 0.195 and self.rt.skip_num_at_older < 4:
-                    comment = "◎◎5B_ジグザグトレンド(r短)"
-                    pattern = 1
-            # ■■[B] リバーの戻りが、ターンの半分前後
-            elif 0.3 <= self.rt.lo_ratio <= 0.55:
-                # ■■■■
-                if self.tf.lo_ratio > 1.45 and self.rt.skip_num_at_older < 10:
-                    comment = "◎◎5B_ジグザグトレンド(r中)"
-                    pattern = 1
-            # ■■[D] リバーの戻りがターンと同等のサイズ
-            elif 0.8 <= self.rt.lo_ratio <= 1.1:
-                # ■■■■
-                if self.tf.lo_ratio <= 0.45:
-                    comment = "3D_強いトレンド(r大)"
-                    pattern = 1
-                # ■■■■
-                elif 0.7 <= self.tf.lo_ratio <= 1.3:
-                    comment = "4D_レンジの強turnダブルトップ"
-                    pattern = 2
-                # ■■■■
-                elif self.tf.lo_ratio > 1.5 and self.rt.skip_num_at_older < 4:
-                    comment = "◎◎5B_ジグザグトレンド(r同等)"
-                    pattern = 2
-            # ■■[F] リバーが大きいとき
-            elif self.rt.lo_ratio > 1.2:
-                # ■■■■
-                if self.tf.lo_ratio <= 0.45:
-                    comment = "3F_強いジグザグトレンド"
-                    pattern = 1
-                # ■■■■
-                elif 0.7 <= self.tf.lo_ratio <= 1.3:
-                    comment = "4F_トレンド開始点"
-                    pattern = 1
-                # ■■■■
-                elif self.tf.lo_ratio > 1.3:
-                    comment = "5F_検討中"
-                    pattern = 2
-
-            # ●オーダーセクション
-            if pattern == 0:
-                print("オーダーなし", comment)
-                return 0
-            else:
-                # ■オーダーがある場合
-                # ■■突破方向
-                if pattern == 1:
-                    # ●本命オーダー
-                    target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
-                    order_class = OCreate.Order({
-                        "name": comment,
-                        "current_price": self.peaks_class.latest_price,
-                        "target": target_price,
-                        "direction": r['direction'],
-                        "type": "MARKET",
-                        "tp": self.ca.cal_move_ave(5),
-                        "lc": self.base_lc_range,
-                        "lc_change": 1,
-                        "units": self.units_str,
-                        "priority": 3,
-                        "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    })
-                    self.add_order_and_flag_inspecion_class(order_class)
-
-                    # ●ヘッジオーダー
-                    order_class = OCreate.Order({
-                        "name": comment + "HEDGE",
-                        "current_price": self.peaks_class.latest_price,
-                        "target": self.ca.cal_move_ave(1.5),
-                        "direction": t['direction'],
-                        "type": "STOP",
-                        "tp": self.ca.cal_move_ave(5),
-                        "lc": self.base_lc_range,
-                        "lc_change": 1,
-                        "units": self.units_str,
-                        "priority": 3,
-                        "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    })
-                    self.add_order_and_flag_inspecion_class(order_class)
-
-                # ■■レンジ方向
-                elif pattern == 2:
-                    # ●本命オーダー
-                    target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
-                    order_class = OCreate.Order({
-                        "name": comment,
-                        "current_price": self.peaks_class.latest_price,
-                        "target": target_price,
-                        "direction": t['direction'],
-                        "type": "MARKET",
-                        "tp": self.ca.cal_move_ave(1.5),
-                        "lc": self.base_lc_range,
-                        "lc_change": 1,
-                        "units": self.units_str,
-                        "priority": 3,
-                        "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    })
-                    self.add_order_and_flag_inspecion_class(order_class)
-
-                    # ●ヘッジオーダー
-                    order_class = OCreate.Order({
-                        "name": comment + "HEDGE",
-                        "current_price": self.peaks_class.latest_price,
-                        "target": 0.025,
-                        "direction": r['direction'],
-                        "type": "STOP",
-                        "tp": self.ca.cal_move_ave(2.5),
-                        "lc": self.base_lc_range,
-                        "lc_change": 1,
-                        "units": self.units_str,
-                        "priority": 3,
-                        "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    })
-                    self.add_order_and_flag_inspecion_class(order_class)
-
-        elif r['count'] == 3:
-            if ((self.rt.skip_exist_at_older or 7 <= t['count'] < 100) and self.rt.skip_num_at_older < 3 and
-                    0 < self.rt.turn_strength_at_older <= 8):
-                if 0 < self.rt.lo_ratio <= 0.36:
-                    # ■■オーダーを作成＆発行
-                    comment = "●●●強いやつ(旧式"
-                    order_class = OCreate.Order({
-                        "name": comment,
-                        "current_price": self.peaks_class.latest_price,
-                        "target": 0,
-                        "direction": t['direction'],
-                        "type": "MARKET",
-                        "tp": self.ca.cal_move_ave(5),
-                        "lc": self.base_lc_range,
-                        "lc_change": 1,
-                        "units": self.units_str,
-                        "priority": 4,
-                        "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    })
-                    self.add_order_and_flag_inspecion_class(order_class)
-
-                    # ■■オーダーを作成＆発行
-                    comment = "●●●強いやつ(旧式）逆"
-                    order_class = OCreate.Order({
-                        "name": comment,
-                        "current_price": self.peaks_class.latest_price,
-                        "target": self.ca.cal_move_ave(0.1),
-                        "direction": r['direction'],
-                        "type": "STOP",
-                        "tp": self.ca.cal_move_ave(1),
-                        "lc": self.base_lc_range,
-                        "lc_change": 1,
-                        "units": self.units_str,
-                        "priority": 4,
-                        "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    })
-                    self.add_order_and_flag_inspecion_class(order_class)
 
                 else:
                     print("戻りratio異なる", r['count'])
@@ -849,7 +492,7 @@ class TuneAnalysisInformation:
                 print("　　　◎リバーの方向が全部同じ（負方向）", self.second_last_close_price)
             else:
                 pass
-                print("　　　NG リバー方向", target_peak['direction'], "ボディー向き", latest_df['body'], second_df['body'])
+                # print("　　　 リバー方向", target_peak['direction'], "ボディー向き", latest_df['body'], second_df['body'])
 
     def single_peak_additional_information_later(self, peak_no):
         """

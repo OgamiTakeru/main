@@ -2,6 +2,7 @@ import datetime
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
 import fAnalysis_order_Main as am
+import classCandleAnalysis as ca
 
 
 # グローバルでの宣言
@@ -13,8 +14,8 @@ gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
             str(gl_now.hour).zfill(2) + str(gl_now.minute).zfill(2) + "_" + str(gl_now.second).zfill(2)
 
 # 解析パート
-def analysis_part(df_r):
-    analysis_result_instance = am.wrap_all_analisys(df_r, oa)
+def analysis_part():
+    analysis_result_instance = am.wrap_all_analisys(gl_candleAnalysisClass)
 
 
 def main():
@@ -27,6 +28,7 @@ def main():
     """
 
     # （０）環境の準備
+    global gl_candleAnalysisClass
     mode = "2time"
     f = 5
 
@@ -46,31 +48,33 @@ def main():
     print('###')
     if now_time:
         # 直近の時間で検証
-        df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": gr, "count": count}, times)
+        # df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": gr, "count": count}, times)
+        gl_candleAnalysisClass = ca.candleAnalysis(oa, 0)
     else:
         # jp_timeは解析のみは指定時刻のまま、解析＋検証の場合は指定時間を解析時刻となるようにする（検証分を考慮）。
-        jp_time = target_time
-        euro_time_datetime = jp_time - datetime.timedelta(hours=9)
-        euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-        param = {"granularity": gr, "count": count, "to": euro_time_datetime_iso}  # 最低５０行
-        df = oa.InstrumentsCandles_multi_exe("USD_JPY", param, times)
-        print("   @",jp_time)
-        print("  @",euro_time_datetime)
+        # jp_time = target_time
+        # euro_time_datetime = jp_time - datetime.timedelta(hours=9)
+        # euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
+        # param = {"granularity": gr, "count": count, "to": euro_time_datetime_iso}  # 最低５０行
+        # df = oa.InstrumentsCandles_multi_exe("USD_JPY", param, times)
+        # print("   @",jp_time)
+        # print("  @",euro_time_datetime)
+        gl_candleAnalysisClass = ca.candleAnalysis(oa, gl_target_time)
         # df = oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間指定
     # データの成型と表示
-    df = df["data"]  # data部のみを取得
+    df = gl_candleAnalysisClass.d5_df_r  # data部のみを取得
     df.to_csv(tk.folder_path + 'main_analysis_original_data.csv', index=False, encoding="utf-8")  # 直近保存用
     df_r = df.sort_index(ascending=False)  # 逆順に並び替え（直近が上側に来るように）
-    print("全", len(df_r), "行")
+    # print("全", len(df_r), "行(test用表示↓")
     df_r = df_r[:100]
-    print(df_r.head(2))
-    print(df_r.tail(2))
+    # print(df_r.head(2))
+    # print(df_r.tail(2))
 
     # （2）【解析パートを一回のみ実施する場合】　直近N行で検証パートのテストのみを行う場合はここでTrue
-    print("Do Only Inspection　↓解析パート用データ↓")
-    print(df_r.head(2))
-    analysis_part(df_r[:analysis_part_low])  # 取得したデータ（直近上位順）をそのまま渡す。検証に必要なのは現在200行
-
+    # print("Do Only Inspection　↓解析パート用データ↓")
+    # print(df_r.head(2))
+    analysis_part()  # 取得したデータ（直近上位順）をそのまま渡す。検証に必要なのは現在200行
+    # print("test用表示ここまで")
 
 gl_gr = "M5"  # 取得する足の単位
 gl_inspection_start_time = 0
@@ -82,6 +86,7 @@ gl_analysis_part_low = 85  # 解析には200行必要(逆順DFで直近N行を�
 # 取得する行数(1回のテストをしたい場合、指定でもres_part_low + analysis_part_lowが必要）
 gl_count = gl_res_part_low + gl_analysis_part_low + 1
 gl_times = 1  # Count(最大5000件）を何セット取るか  大体2225×３で１
+gl_candleAnalysisClass = None
 
 
 # ■■取得時間の指定
@@ -92,7 +97,7 @@ gl_target_time = datetime.datetime(2025, 6, 6, 18, 30, 6)  # 検証時間 (以�
 gl_target_time = datetime.datetime(2024, 10, 2, 0, 5, 6)  #SKIPテスト
 gl_target_time = datetime.datetime(2022, 2, 3, 16, 55, 6)
 gl_target_time = datetime.datetime(2025, 7, 17, 10, 20, 6)
-gl_target_time = datetime.datetime(2025, 9, 11, 19, 00, 6)
+gl_target_time = datetime.datetime(2025, 9, 25, 19, 40, 6)
 # gl_target_time = datetime.datetime(2025, 6, 25, 14, 45, 6)
 # gl_target_time = datetime.datetime(2025, 6, 17, 21, 30, 6)
 

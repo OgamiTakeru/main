@@ -1,4 +1,5 @@
 import fGeneric as gene
+import tokens as tk
 import copy
 
 class Order:
@@ -61,9 +62,10 @@ class Order:
         self.candle_analysis = None
         self.move_ave = 0
         if "candle_analysis_class" in order_json:
-            print("candle_analysis_classがあるよ", order_json['candle_analysis_class'].cal_move_ave(1))
-            self.move_ave = order_json['candle_analysis_class'].cal_move_ave(1)
+            # print("candle_analysis_classがあるよ", round(order_json['candle_analysis_class'].candle_class.cal_move_ave(1), 3))
+            self.move_ave = order_json['candle_analysis_class'].candle_class.cal_move_ave(1)
         else:
+            tk.line_send("【注意】キャンドルアナリシスが添付されていない注文が発生")
             print("candle_analysis_classがない")
             print(order_json)
 
@@ -128,7 +130,8 @@ class Order:
         if "candle_analysis_class" in self.order_json:
             self.candle_analysis = self.order_json['candle_analysis_class']
         else:
-            self.candle_analysis = None
+
+            self.candle_analysis = None  # 基本、初回の強制オーダー以外では、candle_analysisは入ってくる
 
         # 他に対外的に使うやつ
         # self.linkage_classes = self.linkage_classes  # 覚書
@@ -199,7 +202,7 @@ class Order:
             self.oa_mode = self.base_oa_mode
 
         # 名前の入力
-        print(order_json['name'])
+        # print(order_json['name'])
         self.name = order_json['name'] + "_" + str(gene.delYearDay(order_json['decision_time']))
 
         # priority
@@ -400,7 +403,7 @@ class Order:
         　（一度20pips位上がった後に、LCまで戻っており、悔しかった。上がるのは大体直前
         ・30分以降は、ローソク形状の効果が切れたとみなし、プラスにいる場合はとにかく利確に向けた動きをする
         """
-        print("特殊LCChange")
+        # print("   特殊LCChange")
 
         add = [
             # {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
@@ -408,9 +411,9 @@ class Order:
             # {"exe": True, "time_after": 0, "trigger": 0.04, "ensure": 0.010},
             # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
             # {"exe": True, "time_after": 0, "trigger": 0.08, "ensure": 0.05},
-            {"exe": True, "time_after": 0, "trigger": 0.15, "ensure": 0.1},
-            {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
-            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
+            # {"exe": True, "time_after": 0, "trigger": 0.15, "ensure": 0.1},
+            # {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
+            # {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
             {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
             {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
             {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},

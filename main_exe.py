@@ -1,6 +1,7 @@
 import threading  # 定時実行用
 import time
 import datetime
+
 # 自作ファイルインポート
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as classOanda
@@ -8,7 +9,7 @@ import classPosition as classPosition  # とりあえずの関数集
 import classOrderCreate as OCreate
 import fGeneric as f
 import fAnalysis_order_Main as am
-import fGeneric as gene
+import classCandleAnalysis as ca
 import classPositionControl as classPositionControl
 import copy
 
@@ -36,9 +37,10 @@ class main():
         # 価格系
         self.now_price_mid = 0
         self.now_spread = 0
+
         # データ系
-        self.d5_df = None  # データフレーム
-        self.need_df_num = self.NEED_DF_NUM  # 解析には100行必要
+        self.candleAnalysisClass = None
+
         # 回数カウント系
         self.trade_num = 1
 
@@ -104,7 +106,7 @@ class main():
             "tp": 0.1,
             "lc": 0.1,
             "lc_change": 0,
-            "units": 0.2,
+            "units": 150,
             "priority": 1,
             "decision_time": '2025/07/11 23:30:00',
         })
@@ -117,7 +119,7 @@ class main():
             "tp": 0.1,
             "lc": 1,
             "lc_change": 0,
-            "units": 0.1,
+            "units": 250,
             "priority": 1,
             "decision_time": '2025/07/11 23:30:00',
         })
@@ -135,32 +137,57 @@ class main():
                          "直前の結果:", classPosition.order_information.before_latest_plu, ",開始時間",
                          self.start_time_str)
 
-    def get_df_data(self):
-        """
-        データを取得する
-        """
-        d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
-                                                {"granularity": "M5", "count": self.need_df_num},
-                                                1)  # 時間昇順(直近が最後尾）
-        if d5_df_res['error'] == -1:
-            print("error Candle")
-            tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
-            return -1
-        else:
-            d5_df_latest_bottom = d5_df_res['data']
-        tc = (datetime.datetime.now().replace(microsecond=0) - classOanda.str_to_time(
-            d5_df_latest_bottom.iloc[-1]['time_jp'])).seconds
-        if tc > 420:  # 何故か直近の時間がおかしい時がる
-            print(" ★★直近データがおかしい", d5_df_latest_bottom.iloc[-1]['time_jp'], f.now())
-        if len(d5_df_latest_bottom) <= 10:
-            print("　取得したデータフレームの行数がおかしい", len(d5_df_latest_bottom))
-            print(d5_df_latest_bottom)
-            print("ｄｆここまで")
-        else:
-            print("取得したデータは正常と思われる")
-
-        self.d5_df = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
-        self.d5_df.to_csv(tk.folder_path + 'main_data5.csv', index=False, encoding="utf-8")  # 直近保存用
+    # def get_df_data(self):
+    #     """
+    #     データを取得する
+    #     """
+    #     # 5分足のデータ
+    #     d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+    #                                             {"granularity": "M5", "count": self.need_df_num},
+    #                                             1)  # 時間昇順(直近が最後尾）
+    #     if d5_df_res['error'] == -1:
+    #         print("error Candle")
+    #         tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
+    #         return -1
+    #     else:
+    #         d5_df_latest_bottom = d5_df_res['data']
+    #     tc = (datetime.datetime.now().replace(microsecond=0) - classOanda.str_to_time(
+    #         d5_df_latest_bottom.iloc[-1]['time_jp'])).seconds
+    #     if tc > 420:  # 何故か直近の時間がおかしい時がる
+    #         print(" ★★直近データがおかしい", d5_df_latest_bottom.iloc[-1]['time_jp'], f.now())
+    #     if len(d5_df_latest_bottom) <= 10:
+    #         print("　取得したデータフレームの行数がおかしい", len(d5_df_latest_bottom))
+    #         print(d5_df_latest_bottom)
+    #         print("ｄｆここまで")
+    #     else:
+    #         print("取得したデータは正常と思われる")
+    #
+    #     self.d5_df = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+    #     self.d5_df.to_csv(tk.folder_path + 'main_data5.csv', index=False, encoding="utf-8")  # 直近保存用
+    #
+    #     # 60分足のデータ
+    #     d60_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+    #                                             {"granularity": "H1", "count": self.need_df_num},
+    #                                             1)  # 時間昇順(直近が最後尾）
+    #     if d60_df_res['error'] == -1:
+    #         print("error Candle")
+    #         tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
+    #         return -1
+    #     else:
+    #         d60_df_latest_bottom = d60_df_res['data']
+    #     tc = (datetime.datetime.now().replace(microsecond=0) - classOanda.str_to_time(
+    #         d60_df_latest_bottom.iloc[-1]['time_jp'])).seconds
+    #     if tc > 420:  # 何故か直近の時間がおかしい時がる
+    #         print(" ★★直近データがおかしい", d60_df_latest_bottom.iloc[-1]['time_jp'], f.now())
+    #     if len(d60_df_latest_bottom) <= 10:
+    #         print("　取得したデータフレームの行数がおかしい", len(d60_df_latest_bottom))
+    #         print(d60_df_latest_bottom)
+    #         print("ｄｆここまで")
+    #     else:
+    #         print("取得したデータは正常と思われる")
+    #
+    #     self.d60_df = d60_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+    #     self.d60_df.to_csv(tk.folder_path + 'main_data60.csv', index=False, encoding="utf-8")  # 直近保存用
 
     def mode1(self):
         """
@@ -174,10 +201,11 @@ class main():
             pass
         else:
             self.positions_control_class.all_update_information()  # positionの更新
-            self.get_df_data()  # データの取得
+            self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, 0)  # 現在時刻（０）でデータ取得
+            # self.get_df_data()  # データの取得
 
         # ■調査実行
-        analysis_result_instance = am.wrap_all_analisys(self.d5_df, self.base_oa)
+        analysis_result_instance = am.wrap_all_analisys(self.candleAnalysisClass)
         # ■ オーダー発行
         if not analysis_result_instance.take_position_flag:
             # 発注がない場合は、終了 (ポケ除け的な部分）
@@ -250,7 +278,8 @@ class main():
         if 6 <= self.time_hour <= 7:
             if self.midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
                 # self.positions_control_class.reset_all_position()
-                # tk.line_send("■深夜のポジション・オーダー解消を実施")
+                tk.line_send("■深夜のオーダー解消を実施")
+                self.base_oa.OrderCancel_All_exe()
                 self.midnight_close_flag = 1  # 実施済みフラグを立てる
             return 0
         else:
@@ -277,45 +306,27 @@ class main():
 
             # ↓秒指定だと飛ぶので、前回から●秒経過&秒数に余裕を追加
             if self.time_min % 5 == 0 and 6 <= self.time_sec < 30 and self.past_time_from_latest_mode1_exe > 60:
+                print("  ")
+                print("  ")
                 self.mode1()  # ★★Mode1の実行
+
             if self.time_min % 1 == 0 and self.time_sec % 2 == 0:  # 高頻度での確認事項（キャンドル調査時のみ飛ぶ）
-                self.mode2()  # ★★Mode2の実行
+                self.mode2()  #
 
         else:
             # ■　初回だけ実行と同時に行う特殊処理
             print("■■■初回", self.exe_mode)  # 表示用（実行時）
             tk.line_send("start")
 
-            # # ①成り行きの実行の場合
-            d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
-                                                    {"granularity": "M5", "count": self.need_df_num},
-                                                    1)  # 時間昇順
-            if d5_df_res['error'] == -1:
-                print("初回実行時、error Candle First")
-                return -1
-            else:
-                d5_df_latest_bottom = d5_df_res['data']
-            #
-            # # ②時間を指定する場合
-            # jp_time = datetime.datetime(2025, 9, 1, 8, 5, 6)
-            # euro_time_datetime = jp_time - datetime.timedelta(hours=9)
-            # euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-            # param = {"granularity": "M5", "count": 100, "to": euro_time_datetime_iso}
-            # d5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)
-            # if d5_df_res['error'] == -1:
-            #     print("初回実行時、error Candle First")
-            #     return -1
-            # else:
-            #     d5_df_latest_bottom = d5_df_res['data']
-            #
-            # ①②共通
-            print(d5_df_latest_bottom.head(5))
-            self.d5_df = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+            # 現時刻を使う
+            self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, 0)  # 現在時刻（０）でデータ取得
+            # 指定時刻を使う
+            # self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, datetime.datetime(2025, 9, 1, 8, 5, 6))
             self.mode1()
 
             # 強制オーダーを入れる場合は、以下コメントイン
-            # self.force_order()
-            # self.positions_control_class.print_classes_and_count()
+            self.force_order()
+            self.positions_control_class.print_classes_and_count()
 
             # 初回実行の終了フラグ
             self.first_exe = False

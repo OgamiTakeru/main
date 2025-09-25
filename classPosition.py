@@ -117,6 +117,7 @@ class order_information:
         self.lc_change_status = ""
         self.lc_change_exe = True  # 基本的には実施する
         self.lc_change_candle_exe = True  # 基本的には実施する
+        self.lc_change_candle_exe_at_minus = False  # マイナス域で、キャンドルLC＿Changeを実行する
 
         # アラートライン設定
         self.alert_watch_exe = False
@@ -157,6 +158,9 @@ class order_information:
         # エラー対応用
         self.update_information_error_o_id = 0
         self.update_information_error_o_id_num = 0
+
+        # 調査結果も保有する
+        self.ca = None  # CandleAnalysisの格納
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
@@ -211,6 +215,7 @@ class order_information:
 
         self.lc_change_exe = True  # 基本的には実施する
         self.lc_change_candle_exe = True  # 基本的には実施する
+        self.lc_change_candle_exe_at_minus = False  # マイナス域で、キャンドルLC＿Changeを実行する
         self.lc_change_candle_done = False
 
         # アラートライン設定
@@ -252,6 +257,9 @@ class order_information:
         # エラー対応用
         self.update_information_error_o_id = 0
         self.update_information_error_o_id_num = 0
+
+        # 調査結果も保有する
+        self.ca = None  # CandleAnalysisの格納
 
     def print_info(self):
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
@@ -1641,12 +1649,14 @@ class order_information:
                     self.latest_df = d5_df['data']
                     self.latest_df_r = self.latest_df.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
                     self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
-                    candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
+                    # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
+                    candle_ana = ca.candleAnalysis(self.oa, 0)
                     peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
                     # peaks_class = cpk.PeaksClass(self.latest_df)
             else:
                 # 30秒以上立っていない場合
-                candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
+                # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
+                candle_ana = ca.candleAnalysis(self.oa, 0)
                 peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
                 # peaks_class = cpk.PeaksClass(self.latest_df)
         else:
@@ -1688,16 +1698,16 @@ class order_information:
             return 0
 
         # マイナス域の場合は、処理しない
-        # if self.plan_json['direction'] > 0 and lc_price_temp < take_position_price:
-        #     # 買い方向で、ターゲットよりLCtempが小さい価格の場合（lctempがマイナス域の場合)
-        #     # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , "<",take_position_price )
-        #     # print("lc_priceにしたい価格", lc_price_temp ,"　が取得価格", take_position_price, "より小さいためプラス確保のLCにならずNG")
-        #     return 0
-        # elif self.plan_json['direction'] < 0 and lc_price_temp > take_position_price:
-        #     # 売り方向で、ターゲットよりLCtempが大きい価格の場合（lctempがマイナス域の場合)
-        #     # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , ">",take_position_price )
-        #     # print("lc_priceにしたい価格", lc_price_temp, "　が取得価格", take_position_price, "より大きいためプラス確保のLCにならずNG")
-        #     return 0
+        if self.plan_json['direction'] > 0 and lc_price_temp < take_position_price:
+            # 買い方向で、ターゲットよりLCtempが小さい価格の場合（lctempがマイナス域の場合)
+            # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , "<",take_position_price )
+            # print("lc_priceにしたい価格", lc_price_temp ,"　が取得価格", take_position_price, "より小さいためプラス確保のLCにならずNG")
+            return 0
+        elif self.plan_json['direction'] < 0 and lc_price_temp > take_position_price:
+            # 売り方向で、ターゲットよりLCtempが大きい価格の場合（lctempがマイナス域の場合)
+            # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , ">",take_position_price )
+            # print("lc_priceにしたい価格", lc_price_temp, "　が取得価格", take_position_price, "より大きいためプラス確保のLCにならずNG")
+            return 0
 
         # レンジ換算の時、大きすぎないかを確認
         if lc_ensure_range >= 0.08:
@@ -1842,7 +1852,7 @@ class order_information:
         self.lc_change_dic_arr = [
             # {"exe": True, "time_after": min10, "trigger": 0.01, "ensure": 0.001},
             # {"exe": True, "time_after": min10, "trigger": 0.025, "ensure": 0.01},
-            {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": 0.004},  # -0.02が強い
+            # {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": 0.004},  # -0.02が強い
             # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
             {"exe": True, "time_after": min10, "trigger": 0.05, "ensure": 0.012},
             {"exe": True, "time_after": min10, "trigger": 0.08, "ensure": 0.044},
@@ -1890,16 +1900,28 @@ class order_information:
                        self.t_execution_price,
                        "予定価格", round(self.plan_json['target_price'], 3))
 
-    def linkage_forced_lc_change_exe(self, main_max_plus):
+    def linkage_forced_lc_change_exe(self, main_max_plus, pl_u):
         """
         強制的にLCChange実行したフラグ（これによりlc_Change_Candleに移行可能に）を立て、
         さらに、CandleLcChangeを実行したフラグ（これによりlc_changeを実行しなくなる）
         """
-        self.lc_change_num = 1  # 回数が０以外の場合、LCCHANGE　CANDLEを実行するため
-        self.lc_change_candle_done = True
-        self.send_line("　(Linkage 強制CandleLcChangeへ)", self.name)
+        # LC_Change_Candleにいきなり入る場合はここをコメントイン
+        # self.lc_change_num = 1  # 回数が０以外の場合、LCCHANGE　CANDLEを実行するため
+        # self.lc_change_candle_done = True
+        # self.send_line("　(Linkage 強制CandleLcChangeへ)", self.name)
 
-        # LC_PRICEを底上げする(潔く、少しのマイナスで終了させる）
+        # LC_Changeを再執行するにはこちらから
+        self.lc_change_num = 0  #
+        self.lc_change_exe = True
+        self.lc_change_from_candle_lc_price = 0  # キャンドル変更済の場合０以外。０にすることで、LcChangeに戻す
+        self.lc_change_candle_done = False  # キャンドル変更がTrueの場合通常lc_Changeは実行されないため、戻す
+        self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(pl_u/2, 3), "確保",)
+        self.lc_change_dic_arr = [
+            {"exe": True, "time_after": 0, "trigger": round(pl_u / 2, 3), "ensure": main_max_plus},  # 負けの半分まで行ったら、、
+            {"exe": True, "time_after": 0, "trigger": round(pl_u / 3, 3), "ensure": round((pl_u / 3) * 2, 3)},
+        ]
+
+
 
 
 

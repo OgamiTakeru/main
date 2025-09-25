@@ -144,6 +144,7 @@ class Oanda:
             data_df = pd.DataFrame(res_json['candles'])  # Jsonの一部(candles)をDataframeに変換
             data_df['time_jp'] = data_df.apply(lambda x: iso_to_jstdt(x, 'time'), axis=1)  # 日本時刻の表示
             data_df = add_basic_data(data_df)  # 【関数/必須】基本項目を追加する
+            data_df = add_bb_data(data_df)
             # 返却
             return {"data": data_df, "error": 0}
         except Exception as e:
@@ -182,7 +183,7 @@ class Oanda:
         # 解析用の列を追加する（不要列の削除も含む）
         data_df = add_basic_data(temp_df)  # 【関数/必須】基本項目を追加する
         # data_df = add_ema_data(data_df)
-        # data_df = add_bb_data(data_df)
+        data_df = add_bb_data(data_df)
         # data_df = self.add_peak(data_df)
         # 返却
         return {"data": data_df, "error": 0}
