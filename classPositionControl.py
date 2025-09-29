@@ -22,11 +22,18 @@ class position_control:
         self.oa2 = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
 
         # 最大所持個数の設定
-        self.max_position_num = 7  # 最大でも10個のポジションしかもてないようにする
-        self.high_priority_num = 1  # max numのうち、基本的には使わないスロット数。最後尾に確保されてるはず
-        self.high_priority_i = self.max_position_num - 1  # ハイプライオリティスロット(1つ限)の、添え字（最大5スロットの場合、添え字的には4番目スロット）
+        self.max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
+        self.middle_priority_num = 2  # ミドルプライオリティ(max_position_numのうち）
+        self.high_priority_num = 1  # ハイプライオリティのもの（max_position_numのうち）
+
+        self.high_i_to = self.max_position_num
+        self.high_i_from = self.high_i_to - self.high_priority_num  # ハイプライオリティスロット(1つ限)の、添え字（最大5スロットの場合、添え字的には4番目スロット）
+        self.mid_i_to = self.high_i_from  # python配列のTO指定は「未満」なので、ー１が不要。（以下の場合はマイナスが必要）
+        self.mid_i_from = self.mid_i_to - self.middle_priority_num
+        self.normal_i_to = self.mid_i_from
+        self.normal_i_from = 0
+
         self.normal_priority_num = self.max_position_num - self.high_priority_num
-        self.max_same_level_posi = 5  # 同じレベルのポジションは最大5個まで
 
         # 処理
         for i in range(self.max_position_num):
@@ -40,9 +47,20 @@ class position_control:
         self.count_true = sum(1 for d in self.position_classes if hasattr(d, "life") and d.life)
         i = 0
         print(" 現在のクラスの状況(True:", self.count_true, ")")
-        for item in self.position_classes:
-            print(" ", i, "OaMode:", item.oa_mode, "Pno:", item.t_id, ",name:", item.name, ",life:", item.life)
-            i = i + 1
+        for i, item in enumerate(self.position_classes):
+            if self.high_i_from <= i < self.high_i_to:
+                comment = "h"
+            elif self.mid_i_from <= i < self.mid_i_to:
+                comment = "m"
+            else:
+                comment = "n"
+            print(" ", i, "OaMode:", item.oa_mode, "[", comment, "], Pno:", item.t_id, ",name:", item.name, ",life:", item.life)
+
+        # テスト
+        # allowed_position_slot = self.position_classes[self.mid_i_from:self.mid_i_to]
+        # for i, item in enumerate(allowed_position_slot):
+        #     print(" ", i, "OaMode:", item.oa_mode, "Pno:", item.t_id, ",name:", item.name, ",life:", item.life)
+
 
     def order_class_add(self, order_classes):
         """
@@ -55,86 +73,70 @@ class position_control:
         # order_max_priority = max_dict['priority']
         max_instance = max(order_classes, key=lambda x: x.exe_order["priority"])
         order_max_priority = max_instance.exe_order['priority']
+        if order_max_priority >=100:
+            order_priority_class = "high"
+            i_from = self.high_i_from
+            i_to = self.high_i_to
+        elif order_max_priority >= 10:
+            order_priority_class = "mid"
+            i_from = self.mid_i_from
+            i_to = self.mid_i_to
+        else:
+            order_priority_class = "normal"
+            i_from = self.normal_i_from
+            i_to = self.normal_i_to
+        allowed_position_slot = self.position_classes[i_from:i_to]  # もらったオーダーの優先度で、許可されたスロット(positionList)
+
+        for i, order_class in enumerate(allowed_position_slot):
+            print(" Allowed　", i, "OaMode:", order_class.oa_mode, ",name:", order_class.name, ",life:", order_class.life)
+            i = i + 1
 
         # 現在のクラスで、生きている物のみ抽出
-        alive_classes = [c for c in self.position_classes if hasattr(c, "life") and c.life]
+        alive_classes = [c for c in allowed_position_slot if hasattr(c, "life") and c.life]
         if len(alive_classes) == 0:
             print(" プログラム上既存のオーダーは存在しないため、オーダー発行へ")
             pass
+        elif len(alive_classes) == len(allowed_position_slot):
+            tk.line_send("許容スロットがいっぱい（オーダー発行せず)", len(alive_classes), len(allowed_position_slot))
+            self.print_classes_and_count()
+            return 0
+        elif len(order_classes) + len(alive_classes) > len(allowed_position_slot):
+            tk.line_send("オーダー入れるとオーバーフロー（オーダー発行せず)", len(order_classes), len(alive_classes), len(allowed_position_slot))
+            self.print_classes_and_count()
+            return 0
         else:
             # 生きているインスタンスの最高値と、指定のプライオリティより高いものを算出
             max_instance = max(alive_classes, key=lambda c: getattr(c, "priority", float("-inf")))
             over_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority > order_max_priority]
             same_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority == order_max_priority]
 
-            if len(same_n_classes) > self.max_same_level_posi:
-                # 新規と同レベルのオーダーが既に存在する場合、新規はスキップする（既存の物は消去しない）
-                tk.line_send("同レベルのオーダーが既に" + str(len(same_n_classes)) + "個あるため、追加オーダーせず", self.max_same_level_posi, "が上限,",
-                             order_max_priority, "のプライオリティ")
-                return 0
 
         # ■現在のクラスの状況の確認
         print("現在のクラスの状況を確認 (classPositionControl)")
         self.print_classes_and_count()
-        if order_max_priority == 100 and len(order_classes) == 1:
-            # order_priorityが100なら、ハイクラス専用のスロットに入れる
-            high_class = self.position_classes[self.high_priority_i]
-            if high_class.life:
-                # スロットが埋まっている場合、強制キャンセル
-                high_class.close_order()
-                high_class.close_trade()
-            # オーダー追加
-            res_dic = high_class.order_plan_registration(order_classes[0])
-            line_send = ""
-            if res_dic['order_id'] == 0:
-                print("オーダー失敗している（大量オーダー等）")
-                line_send = line_send + "オーダー失敗(" + str(self.high_priority_i) + ")" + "\n"
-            else:
-                # ■オーダーが成功している場合
-                if res_dic['order_id'] == -1:
-                    # ウォッチオーダー
-                    print("オーダー通知")
-                    # print(res_dic)
-                    # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
-                    # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
-                    # print(res_dic['order_name'])
-                    # print(res_dic)
-                    line_send = line_send + "◆【" + str(res_dic['order_name']) + "】を即時ポジションなしで発行" + \
-                                "指定価格:【" + str(round(res_dic['order_result']['price'], 3)) + "】" + \
-                                ",DIR:" + str(res_dic['order_result']['direction']) + \
-                                ", 数量:" + str(res_dic['order_result']['units']) + \
-                                ", TP:" + str(round(res_dic['order_result']['tp_price'], 3)) + \
-                                "(" + str(round(res_dic['order_result']['tp_range'], 3)) + ")" + \
-                                ", LC:" + str(round(res_dic['order_result']['lc_price'], 3)) + \
-                                "(" + str(round(res_dic['order_result']['lc_range'], 3)) + ")" + \
-                                ", AveMove:" + str(round(res_dic['ref']['move_ave'], 3)) + \
-                                "[システム]classNo:" + str(self.high_priority_i) + ",\n"
-            return line_send
-
-
         # 通常のオーダーの場合
-        if self.count_true >= self.normal_priority_num:
-            # 10個以上オーダーがある場合はオーダーしない。
-            print("★★既に10個以上オーダーがあるため、オーダー発行しない")
-            return 0
-        elif self.count_true + len(order_classes) > self.normal_priority_num:  # ２はテキトーな数字。
-            # 新規のオーダー合わせて13個以上になる場合もオーダーしない（新規オーダーがエラーで複数個出てる可能性のため）
-            print("★★既存の物＋新規の合わせて12個以上になるため、オーダー発行しない(新規オーダー数:", len(order_classes))
-            return 0
+        # if self.count_true >= self.normal_priority_num:
+        #     # 10個以上オーダーがある場合はオーダーしない。
+        #     print("★★既に10個以上オーダーがあるため、オーダー発行しない")
+        #     return 0
+        # elif self.count_true + len(order_classes) > self.max_position_num:  # ２はテキトーな数字。
+        #     # 新規のオーダー合わせて13個以上になる場合もオーダーしない（新規オーダーがエラーで複数個出てる可能性のため）
+        #     print("★★既存の物＋新規の合わせて12個以上になるため、オーダー発行しない(新規オーダー数:", len(order_classes))
+        #     return 0
 
         # クラスに余りがある場合、その中で添え字が一番若いオーダーに上書き、または、追加をする
         line_send = ""
         for order_i, order_class in enumerate(order_classes):
-            for class_index, each_exist_class in enumerate(self.position_classes):
-                if each_exist_class.life:
+            for class_index, position_slot in enumerate(allowed_position_slot):
+                if position_slot.life:
                     # Trueの所には上書きしない
                     continue
-                if class_index == self.high_priority_i:
+                if class_index == self.high_i_from:
                     # ハイクラス用の添え字の場所には、入れない
                     continue
 
                 # Falseのとこで実行する
-                res_dic = each_exist_class.order_plan_registration(order_class)
+                res_dic = position_slot.order_plan_registration(order_class)
                 if res_dic['order_id'] == 0:
                     print("オーダー失敗している（大量オーダー等）")
                     line_send = line_send + "オーダー失敗(" + str(order_i) + ")" + "\n"

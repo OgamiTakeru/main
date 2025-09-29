@@ -210,10 +210,10 @@ class Order:
 
         # Unitsがない場合は初期値を入れる
         if "units" in order_json:
-            if order_json['units'] <= 100:
+            if order_json['units'] < 100:
                 # 100以下の数字は倍率とみなす
                 # print("   UNITが倍数として処理されています")
-                self.units = self.basic_unit * order_json['units']
+                self.units = round(self.basic_unit * order_json['units'])
                 self.units_adj = order_json['units']
             else:
                 # 直接の指定と判断

@@ -34,35 +34,48 @@ class candleAnalysis:
         self.d60_df_r = None
 
         # # ■■　重複でAPIを打つことを避けたい
-        # now_time = datetime.datetime.now()
-        # n_year = now_time.year  # 年
-        # n_month = now_time.month  # 月
-        # n_day = now_time.day  # 日
-        # n_hour = now_time.hour  # 時間
-        # n_minute = now_time.minute  # 分
-
+        if candleAnalysis.latest_df_d5_df_r is None:
+            t1 = 0
+            pass
+        else:
+            t1 = datetime.datetime.strptime(candleAnalysis.latest_df_d5_df_r.iloc[0]['time_jp'], "%Y/%m/%d %H:%M:%S")
+            t2 = datetime.datetime.now()
+            same = (t1.year == t2.year and
+                    t1.month == t2.month and
+                    t1.day == t2.day and
+                    t1.hour == t2.hour and
+                    t1.minute == t2.minute)
+            # print("既存のDataFrameと同じかどうか？", same)
+            if same:
+                print("同じデータのため、データ新規取得＆Peaks生成は呼ばず(主にcandleLCChangeで発生)  既存:", t1, ",現時刻:", t2)
+                # データを移植する（5分足）
+                self.d5_df_r = candleAnalysis.latest_df_d5_df_r
+                self.peaks_class = candleAnalysis.latest_peaks_class
+                self.candle_class = candleAnalysis.latest_candle_class
+                # データを移植する（60分足）
+                self.d60_df_r = candleAnalysis.latest_df_d60_df_r
+                self.peaks_class_hour = candleAnalysis.latest_peaks_class_hour
+                self.candle_class_hour = candleAnalysis.latest_candle_class_hour
+                return
 
         # ■■データ取得
+        print("データ取得＆Peaks生成", t1, datetime.datetime.now())
         self.get_date_df(target_time_jp)  # self.d5_df_rとself.d60_df_rを取得
-        # 表示用（テスト用）
-        l = self.d5_df_r.iloc[0]
-        print(l['bb_upper'], l['bb_lower'], l['bb_range'])
-
         # ■■処理続行判定
         # 重複作業防止用に、クラス変数に5分足の最初と最後の情報を入れておく
         if self.d5_df_r is None:
             print("★★ データフレームが取得されていないエラーが発生")
             return
-        else:
-            if candleAnalysis.avoid_dup_5min_kara_time == self.d5_df_r.iloc[-1]['time_jp'] and candleAnalysis.avoid_dup_5min_made_time == self.d5_df_r.iloc[0]['time_jp']:
-                print("同じデータのため、Peaksは呼ばず(主にcandleLCChangeで発生)")
-                # データを移植する（5分足）
-                self.peaks_class = candleAnalysis.latest_peaks_class
-                self.candle_class = candleAnalysis.latest_candle_class
-                # データを移植する（60分足）
-                self.peaks_class_hour = candleAnalysis.latest_peaks_class_hour
-                self.candle_class_hour = candleAnalysis.latest_candle_class_hour
-                return
+        # else:
+        #     if candleAnalysis.avoid_dup_5min_kara_time == self.d5_df_r.iloc[-1]['time_jp'] and candleAnalysis.avoid_dup_5min_made_time == self.d5_df_r.iloc[0]['time_jp']:
+        #         print("同じデータのため、Peaksは呼ばず(主にcandleLCChangeで発生)", self.d5_df_r.iloc[0]['time_jp'], datetime.datetime.now(), gene.time_to_str(datetime.datetime.now()))
+        #         # データを移植する（5分足）
+        #         self.peaks_class = candleAnalysis.latest_peaks_class
+        #         self.candle_class = candleAnalysis.latest_candle_class
+        #         # データを移植する（60分足）
+        #         self.peaks_class_hour = candleAnalysis.latest_peaks_class_hour
+        #         self.candle_class_hour = candleAnalysis.latest_candle_class_hour
+        #         return
 
         # ■■処理
         # データを取得する(5分足系）

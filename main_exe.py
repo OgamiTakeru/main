@@ -325,8 +325,8 @@ class main():
             self.mode1()
 
             # 強制オーダーを入れる場合は、以下コメントイン
-            self.force_order()
-            self.positions_control_class.print_classes_and_count()
+            # self.force_order()
+            # self.positions_control_class.print_classes_and_count()
 
             # 初回実行の終了フラグ
             self.first_exe = False

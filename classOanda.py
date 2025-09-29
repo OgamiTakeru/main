@@ -1300,9 +1300,10 @@ def add_bb_data(data_df):
     引数はInstrumentsCandles_exeで取得したデータフレーム。返却値は、それに下記列を付与した情報
     """
     data_df = data_df.copy()  # 謎のスライスウォーニング対策
+    bb_range = 30
     # ボリバン基本項目
-    data_df['mean'] = data_df['close'].rolling(window=20).mean()  # BB用(直後に削除）
-    data_df['std'] = data_df['close'].rolling(window=20).std()  # BB用（直後に削除）
+    data_df['mean'] = data_df['close'].rolling(window=bb_range).mean()  # BB用(直後に削除）
+    data_df['std'] = data_df['close'].rolling(window=bb_range).std()  # BB用（直後に削除）
     data_df['bb_upper'] = data_df['mean'] + (data_df['std'] * 2)  # BB用
     data_df['bb_lower'] = data_df['mean'] - (data_df['std'] * 2)  # BB用
     data_df['bb_middle'] = round((data_df['bb_lower'] + data_df['bb_upper']) / 2, 3)

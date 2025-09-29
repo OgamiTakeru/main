@@ -1650,6 +1650,7 @@ class order_information:
                     self.latest_df_r = self.latest_df.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
                     self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
                     # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
+                    print("Position_lc candle", self.name)
                     candle_ana = ca.candleAnalysis(self.oa, 0)
                     peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
                     # peaks_class = cpk.PeaksClass(self.latest_df)
