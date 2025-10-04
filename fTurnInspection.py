@@ -45,7 +45,7 @@ class turn_analisys:
         # Unit調整用
         self.units_mini = 0.1
         self.units_reg = 0.5
-        self.units_str = 0.1
+        self.units_str = 1  #0.1
         self.units_hedge = self.units_str * 0.9
         # 汎用性高め
         self.lc_change_test = [
@@ -176,7 +176,7 @@ class turn_analisys:
                 "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
                 "lc": self.base_lc_range,
                 "lc_change": self.lc_change_test,
-                "units": self.units_str,
+                "units": self.units_str * 1.1,
                 "priority": 4,
                 "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
                 "candle_analysis_class": self.ca
@@ -191,7 +191,7 @@ class turn_analisys:
                 "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
                 "lc": self.base_lc_range,
                 "lc_change": self.lc_change_test,
-                "units": self.units_hedge,
+                "units": self.units_hedge * 1.1,
                 "priority": 4,
                 "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
                 "candle_analysis_class": self.ca
@@ -246,7 +246,7 @@ class turn_analisys:
                 "tp": self.ca5.cal_move_ave(1),
                 "lc": self.ca5.cal_move_ave(3),
                 "lc_change": self.lc_change_test,
-                "units": self.units_str,
+                "units": self.units_str * 0.9,
                 "priority": 4,
                 "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
                 "candle_analysis_class": self.ca
@@ -261,7 +261,7 @@ class turn_analisys:
                 "tp": self.ca5.cal_move_ave(1),  # self.base_tp_range,  # self.ca5.cal_move_ave(5),
                 "lc": self.ca5.cal_move_ave(3),  # self.base_lc_range,
                 "lc_change": self.lc_change_test,
-                "units": self.units_hedge,
+                "units": self.units_hedge * 0.9,
                 "priority": 4,
                 "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
                 "candle_analysis_class": self.ca
@@ -420,7 +420,7 @@ class turn_analisys:
             "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
             "lc": self.ca5.cal_move_ave(2),  # self.base_lc_range,
             "lc_change": self.lc_change_test,
-            "units": self.units_str,
+            "units": self.units_str * 1.2,
             "priority": 11,
             "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
             "candle_analysis_class": self.ca
@@ -435,7 +435,7 @@ class turn_analisys:
             "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
             "lc": self.ca5.cal_move_ave(2),  # self.base_lc_range,
             "lc_change": self.lc_change_test,
-            "units": self.units_hedge,
+            "units": self.units_hedge * 1.2,
             "priority": 11,
             "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
             "candle_analysis_class": self.ca

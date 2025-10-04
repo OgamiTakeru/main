@@ -468,7 +468,7 @@ class position_control:
                             bigger_minus = min(float(main_position.lose_max_plu), float(left_position.t_pl_u))
                             new_lc_range = abs(bigger_minus) + 0.01
                             dir = int(left_position.plan_json['direction'])
-                            tk.line_send("    LC変更kakumin", main_position.lose_max_plu, left_position.t_pl_u, bigger_minus)
+                            # tk.line_send("    LC変更kakumin", main_position.lose_max_plu, left_position.t_pl_u, bigger_minus)
                             print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
                             new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
                             print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))

@@ -40,6 +40,9 @@ class order_information:
     history_plus_minus = [0]  # 空だと、過去のプラスマイナスを参照するときおかしなことになるので０を入れておく
     history_names = ["0"]  # 上の理由と同様に数字を入れておく
 
+    # 結果一覧送信時、その行数指定
+    result_row = 7  # 過去10回分の結果を送信
+
     def select_oa(self, oa_mode):
         # print("SelectMode", oa_mode)
         self.oa_mode = oa_mode
@@ -161,6 +164,8 @@ class order_information:
 
         # 調査結果も保有する
         self.ca = None  # CandleAnalysisの格納
+
+        self.send_line_exe = False  # いるか不明（Trueの場合は一部の情報についてLINE送信頻度増）
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
@@ -613,21 +618,6 @@ class order_information:
                 "position_keep_time": str(trade_latest['time_past'])
             }
             order_information.result_dic_arr.append(result_dic)
-            # ファイルが利用できる場合、処理を行う
-            path = tk.folder_path + 'history.csv'
-            try:
-                if not os.path.exists(path):
-                    # ファイルが存在しない場合、新規作成
-                    df = pd.DataFrame(order_information.result_dic_arr)
-                    df.to_csv(path, index=False)
-                else:
-                    # ファイルが存在する場合、追記処理
-                    df = pd.DataFrame([result_dic])
-                    df.to_csv(path, mode='a', header=False, index=False)
-
-            except (OSError, PermissionError, IOError) as e:
-                print(f"ファイルにアクセスできませんでした: {e}")
-
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
             # res1 = "強制Close【Unit】" + str(trade_latest['currentUnits'])
@@ -670,20 +660,62 @@ class order_information:
                 "position_keep_time": str(trade_latest['time_past'])
             }
             order_information.result_dic_arr.append(result_dic)
-            # ファイルが利用できる場合、処理を行う
-            path = tk.folder_path + 'history.csv'
-            try:
-                if not os.path.exists(path):
-                    # ファイルが存在しない場合、新規作成
-                    df = pd.DataFrame(order_information.result_dic_arr)
-                    df.to_csv(path, index=False)
-                else:
-                    # ファイルが存在する場合、追記処理
-                    df = pd.DataFrame([result_dic])
-                    df.to_csv(path, mode='a', header=False, index=False)
 
-            except (OSError, PermissionError, IOError) as e:
-                print(f"ファイルにアクセスできませんでした: {e}")
+        # 共通処理
+        # ①共通処理（ファイルへの書き込み）
+        path = tk.folder_path + 'history.csv'
+        try:
+            # ファイル書き込み
+            if not os.path.exists(path):
+                # ファイルが存在しない場合、新規作成
+                df = pd.DataFrame(order_information.result_dic_arr)
+                df.to_csv(path, index=False)
+            else:
+                # ファイルが存在する場合、追記処理
+                df = pd.DataFrame([result_dic])
+                df.to_csv(path, mode='a', header=False, index=False)
+
+        except (OSError, PermissionError, IOError) as e:
+            print(f"ファイルにアクセスできませんでした: {e}")
+
+        # ②集計値の送信(一覧）
+        temp = pd.read_csv(path)
+        df_part = temp.tail(order_information.result_row)
+        lines = []
+        a_sum = sum(int(x) for x in df_part['res'])
+        max_width = max(len(str(int(x))) for x in df_part['res'])
+        for _, row in df_part.iterrows():
+            # res_val = int(row['res']) if isinstance(row['res'], (int, float)) else row['res']
+            res_val = f"{int(row['res']):>{max_width}}"
+            uni_val = int(row['units'] / abs(row['units']))
+            hh_mm = ":".join(gene.str_to_time_hms(row['end_time']).split(":")[:2])
+            if uni_val == 1:
+                uni_str = "L"  # 買い（ドルを）
+            else:
+                uni_str = "S"  # 売り
+            line = f"{res_val}, {uni_str}, {hh_mm}, {row['name_only'][:13]}, "
+            lines.append(line)
+        # 改行で結合
+        lines.append(f"{a_sum:>{max_width}}")
+        output_str = "\n".join(lines)
+        tk.line_send("■■■:", "\n", output_str)
+
+        # ③ピボット結果の送信
+        temp = pd.read_csv(path)
+        df_part = temp.tail(order_information.result_row)
+        summary = df_part.groupby("name_only").agg(
+            res_sum=("res", lambda x: int(x.sum())),
+            negative_count=("res", lambda x: (x < 0).sum()),
+            positive_count=("res", lambda x: (x > 0).sum())
+        ).reset_index()
+        lines = []
+        for _, row in summary.iterrows():
+            name_val = f"{row['name_only'][:13]:<13}"
+            line = f"{name_val}, {row['res_sum']}, {row['positive_count']}, {row['negative_count']}"
+            lines.append(line)
+        pivot_str = "\n".join(lines)
+        print(pivot_str)
+        # tk.line_send("■■■:", "\n", pivot_str)
 
     def close_trade(self, units):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -1588,10 +1620,11 @@ class order_information:
                     return 0  # APIエラー時は終了
                 item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
                 # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-                self.send_line("　(LC底上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3), "⇒", new_lc_price,
-                               "Border:", round(lc_trigger_range, 3), "保証", round(lc_ensure_range, 3), "Posiprice",
-                               self.t_execution_price,
-                               "予定価格", round(self.plan_json['target_price'], 3))
+                if self.send_line_exe:
+                    self.send_line("　(LC底上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3), "⇒", new_lc_price,
+                                   "Border:", round(lc_trigger_range, 3), "保証", round(lc_ensure_range, 3), "Posiprice",
+                                   self.t_execution_price,
+                                   "予定価格", round(self.plan_json['target_price'], 3))
                 break
         self.lc_change_status = status_res
 
@@ -1725,9 +1758,10 @@ class order_information:
         self.lc_change_from_candle_lc_price = lc_price_temp  # ロスカット価格の保存
         lc_range = round(abs(float(lc_price_temp) - float(self.t_execution_price)), 5)
         self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
-        self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "新LC価格⇒", new_lc_price,
-                       "保証", lc_range, "約定価格", self.t_execution_price,
-                       "予定価格", self.plan_json['target_price'])
+        if self.send_line_exe:
+            self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "新LC価格⇒", new_lc_price,
+                           "保証", lc_range, "約定価格", self.t_execution_price,
+                           "予定価格", self.plan_json['target_price'])
 
     def tuning_by_history_break(self):
         """
@@ -1880,10 +1914,11 @@ class order_information:
             self.send_line("    LC変更ミス＠lc_change")
             return 0  # APIエラー時は終了
         self.linkage_done_func()
-        self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3),
-                       "⇒", new_lc_price,
-                       self.t_execution_price,
-                       "予定価格", round(self.plan_json['target_price'], 3))
+        if self.send_line_exe:
+            self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3),
+                           "⇒", new_lc_price,
+                           self.t_execution_price,
+                           "予定価格", round(self.plan_json['target_price'], 3))
 
     def linkage_tp_change(self, new_tp_price):
         """
@@ -1896,10 +1931,11 @@ class order_information:
             self.send_line("    TP変更ミス＠lc_change")
             return 0  # APIエラー時は終了
         self.linkage_done_func()
-        self.send_line("　(LinkageTP上げ)", self.name, self.t_pl_u, round(self.plan_json['TP_price'], 3),
-                       "⇒", new_tp_price,
-                       self.t_execution_price,
-                       "予定価格", round(self.plan_json['target_price'], 3))
+        if self.send_line_exe:
+            self.send_line("　(LinkageTP上げ)", self.name, self.t_pl_u, round(self.plan_json['TP_price'], 3),
+                           "⇒", new_tp_price,
+                           self.t_execution_price,
+                           "予定価格", round(self.plan_json['target_price'], 3))
 
     def linkage_forced_lc_change_exe(self, main_max_plus, pl_u):
         """
@@ -1916,12 +1952,12 @@ class order_information:
         self.lc_change_exe = True
         self.lc_change_from_candle_lc_price = 0  # キャンドル変更済の場合０以外。０にすることで、LcChangeに戻す
         self.lc_change_candle_done = False  # キャンドル変更がTrueの場合通常lc_Changeは実行されないため、戻す
-        self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(pl_u/2, 3), "確保",)
         self.lc_change_dic_arr = [
             {"exe": True, "time_after": 0, "trigger": round(pl_u / 2, 3), "ensure": main_max_plus},  # 負けの半分まで行ったら、、
             {"exe": True, "time_after": 0, "trigger": round(pl_u / 3, 3), "ensure": round((pl_u / 3) * 2, 3)},
         ]
-
+        if self.send_line_exe:
+            self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(pl_u / 2, 3), "確保", )
 
 
 
