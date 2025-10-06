@@ -1,6 +1,8 @@
 import datetime
 from datetime import timedelta
 
+import numpy as np
+
 import classOanda
 import tokens as tk
 import fGeneric as gene
@@ -9,6 +11,7 @@ import sys
 import classCandleAnalysis as ca
 import os
 import pandas as pd
+# import classCandleAnalysis as ca
 
 # from test_loop import get_instances_of_class
 
@@ -57,17 +60,23 @@ class order_information:
             # デモ口座
             self.oa = classOanda.Oanda(tk.accountID, tk.access_token, tk.environment)
 
-    def __init__(self, name, is_live):
+    def __init__(self, name, is_live, filepath):
         self.oa = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)  # 仮の値
         self.oa_mode = 2  # アカウント選択（１が通常、２が両建てアカウント） 初期値は１
         self.is_live = is_live  # 本番環境か練習か（Boolean）
         self.select_oa(self.oa_mode)  # 重要！　id_noとis_liveを基に、oaクラスを選択する
         self.name = name  #
+        self.name_ymdhms = ""
         self.current_price = 0
         self.lc_change_candle_num = 100
         self.order_class = None
         self.linkage_order_classes = []
         self.linkage_done = False
+        self.round_num = 3  # ラウンド時の小数点指定
+        self.inspection_df = None  # 検証用
+        self.filepath = filepath  # 検証用
+        self.lc_kind = "Normal"  # 検証用
+        self.temp_file_name = ""
         # self.reset()
         self.ORDER_TIMEOUT_MIN_DEFAULT = 40  # 分単位で指定
         self.TRADE_TIMEOUT_MIN_DEFAULT = 2400  # 分単位で指定
@@ -84,11 +93,13 @@ class order_information:
         self.o_id = 0
         self.o_time = 0
         self.o_state = ""
+        self.o_state_new = ""  # テスト専用
         self.o_time_past_sec = 0  # オーダー発行からの経過秒
         # トレード情報
         self.t_json = {}  # 最新情報は常に持っておく
         self.t_id = 0
         self.t_state = ""
+        self.t_state_new = ""  # テスト用
         self.t_type = ""  # 結合ポジションか？　plantとinitialとcurrentのユニットの推移でわかる？
         self.t_initial_units = 0  # Planで代用可？少し意味異なる？
         self.t_current_units = 0
@@ -100,6 +111,7 @@ class order_information:
         self.t_pl_u = 0
         self.t_close_time = 0
         self.t_close_price = 0
+        self.t_time_first = 0
         self.already_offset_notice = False  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
         # 経過時間管理
         self.order_timeout_min = self.ORDER_TIMEOUT_MIN_DEFAULT  # 分単位で指定
@@ -121,6 +133,8 @@ class order_information:
         self.lc_change_exe = True  # 基本的には実施する
         self.lc_change_candle_exe = True  # 基本的には実施する
         self.lc_change_candle_exe_at_minus = False  # マイナス域で、キャンドルLC＿Changeを実行する
+
+        self.test_count = 0  #テキトーに使うよう
 
         # アラートライン設定
         self.alert_watch_exe = False
@@ -166,11 +180,13 @@ class order_information:
         self.ca = None  # CandleAnalysisの格納
 
         self.send_line_exe = False  # いるか不明（Trueの場合は一部の情報についてLINE送信頻度増）
+        self.adjuster = 0
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
         # print("    ●●●●OrderClassリセット●●●●")
         self.name = ""
+        self.name_ymdhms = ""
         self.oa_mode = 0  # アカウント選択（１が通常、２が両建てアカウント）
         self.priority = 0  # このポジションのプライオリティ
         # self.is_live = True  # 本番環境か練習か（Boolean）　⇒する必要なし
@@ -328,31 +344,6 @@ class order_information:
             else:
                 tk.line_send(*args)
 
-            # args = ("☆☆練習環境:",) + args
-            # tk.line_send(*args)
-            # if args[1] == "■■■解消:":
-            #     # 中身を編集するため、一度リストに変換
-            #     args_list = list(args)
-            #     args_list[1] = "□□□解消:"  # ぱっとわかりやすいように変更
-            #     tk.line_send(*tuple(args_list))
-            # else:
-            #     print("★★★", args)
-
-    # def get_current_price(self):
-    #     """
-    #     BidかAskをもとに求めるため、オーダーが入っていない状態では取得できない
-    #     """
-    #     temp_current_price = self.oa.NowPrice_exe("USD_JPY")
-    #     if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
-    #         print("API異常で現在価格が取得できず（ポジションクラス）")
-    #         return 0
-    #     else:
-    #         if self.plan_json['direction'] == 1:
-    #             # 注文がBidの場合、現在価格もBidにする
-    #             self.current_price = temp_current_price['data']['bid']
-    #         else:
-    #             self.current_price = temp_current_price['data']['ask']
-    #     return self.current_price
 
     def order_plan_registration(self, order_class):
         """
@@ -386,6 +377,10 @@ class order_information:
         self.for_api_json = plan['for_api_json']
         self.select_oa(plan['oa_mode'])
 
+        # 検証用のアジャスター
+        self.adjuster = -0.004 if self.plan_json['direction'] == 1 else 0.004
+
+
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
         if hasattr(self.order_class, "linkage_order_classes"):
             self.linkage_order_classes = self.order_class.linkage_order_classes
@@ -395,7 +390,8 @@ class order_information:
             self.trade_timeout_min = plan['trade_timeout_min']
         if 'order_timeout_min' in plan:  # していない場合は初期値50分
             self.order_timeout_min = plan['order_timeout_min']
-        self.name = plan['name']  #  + "(" + str(self.priority) + ")"  # 名前を入れる(クラス内の変更）
+        self.name = plan['name']  # 本番用
+        self.name_ymdhms = plan['name_ymdhms']  # 本番用
         # (2)各フラグを指定しておく
         # オーダ―パーミッションは、plan内でwatchingPrice指定なし、または０指定でパーミッションはTrue(即時取得）。
         if "watching_price" in plan:
@@ -477,20 +473,38 @@ class order_information:
         :return:
         """
         # オーダー発行処理★
-        order_ans_dic = self.oa.OrderCreate_dic_exe(self.for_api_json)
-        order_ans = order_ans_dic['data']  # エラーはあんまりないから、いいわ。
-        if order_ans['cancel']:  # キャンセルされている場合は、リセットする
-            self.send_line(" 　Order不成立（今後ループの可能性）", self.name, order_ans['order_id'])
-            return {"order_name": "error", "order_id": 0}
+        # order_ans_dic = self.oa.OrderCreate_dic_exe(self.for_api_json)
+        # order_ans = order_ans_dic['data']  # エラーはあんまりないから、いいわ。
+        # if order_ans['cancel']:  # キャンセルされている場合は、リセットする
+        #     self.send_line(" 　Order不成立（今後ループの可能性）", self.name, order_ans['order_id'])
+        #     return {"order_name": "error", "order_id": 0}
 
         # 必要な情報を登録する
-        self.o_id = order_ans['order_id']
-        self.o_time = order_ans['order_time']
+        self.o_id = 1
+        self.o_time = self.plan_json['decision_time']
+        self.o_state = "PENDING"
         self.o_time_past_sec = 0  # 初回は変更なし
         self.life_set(True)  # ★重要　LIFEのONはここでのみ実施
-        print("    オーダー発行完了＠make_order", self.name, )
+        print("    オーダー発行完了test＠make_order", self.name, )
 
-        return {"order_name": "", "order_id": order_ans['order_id'], "order_result": order_ans}
+        candleAnalysisClass = self.order_class.candle_analysis
+
+        memory_dic = {
+            "name": self.name,
+            "name_ymdhms": self.name_ymdhms,
+            "target_price": self.plan_json['target_price'],
+            "direction": self.plan_json['direction'],
+            "units": self.plan_json['units'],
+            "lc_price": self.plan_json['lc_price'],
+            "lc_range": self.plan_json['lc_range'],
+            "tp_price": self.plan_json['tp_price'],
+            "tp_range": self.plan_json['tp_range'],
+            "move_ave": candleAnalysisClass.candle_class.ave_move
+        }
+
+        self.update_dataframe(memory_dic)
+
+        return {"order_name": "", "order_id": self.o_id, "order_result": ""}
 
     def close_order(self):
         # オーダークローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -501,17 +515,17 @@ class order_information:
         if self.o_state == "Watching":
             return 0
 
-        order_res_dic = self.oa.OrderDetails_exe(self.o_id)  # トレード情報の取得
-        if order_res_dic['error'] == 1:
-            print("    CloseOrderError@close_order")
-            return 0
-        order_info = order_res_dic["data"]['order']
-        if order_info['state'] == "PENDING":  # orderがキャンセルできる状態の場合
-            res = self.oa.OrderCancel_exe(self.o_id)
-            if res['error'] == -1:
-                print("   OrderCancelError@close_order")
-                return 0
-            # Close処理を実施
+        # order_res_dic = self.oa.OrderDetails_exe(self.o_id)  # トレード情報の取得
+        # if order_res_dic['error'] == 1:
+        #     print("    CloseOrderError@close_order")
+        #     return 0
+        # order_info = order_res_dic["data"]['order']
+        if self.o_state == "PENDING":  # orderがキャンセルできる状態の場合
+            # res = self.oa.OrderCancel_exe(self.o_id)
+            # if res['error'] == -1:
+            #     print("   OrderCancelError@close_order")
+            #     return 0
+            # # Close処理を実施
             self.o_state = "CANCELLED"
             # self.life_set(False)  # 本当はここに欲しい
             print("    orderCancel@close_order", self.o_id)
@@ -591,24 +605,23 @@ class order_information:
                 order_information.total_PLu_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
                 order_information.minus_yen_position_num)
-            self.send_line("■■■解消:", self.name, '\n',
-                           res4, res5, res1, id_info, res2, res3, res6, res7, res8,
-                           position_check_no_args()['name_list'])
             # 履歴の書き込み
             # print("書き込みエラー確認用")
             # print(trade_latest)
             result_dic = {
                 "order_time": self.o_time,
                 "res": str(trade_latest['realizedPL']),
+                "res_tp_lc": self.t_json['res_tplc'],
                 "take_time": self.t_time,
                 "take_price": str(trade_latest['price']),
-                "end_time": datetime.datetime.now(),
+                "end_time": trade_latest['closeTime'],
                 "end_price": str(trade_latest['averageClosePrice']),
                 "orderID": str(self.o_id),
                 "tradeID": str(self.t_id),
                 "name": self.name,
+                "name_ymdhms": self.name_ymdhms,
                 "name_only": self.name[:-5],
-                "units": str(units_for_view * direction),
+                "units": str(self.plan_json['units'] * direction),
                 "pl_per_units": str(trade_latest['PLu']),  # 以下追加
                 "lc_price_plan": self.plan_json['lc_price'],
                 "lc_price_original_plan": self.plan_json['lc_price_original'],
@@ -618,6 +631,8 @@ class order_information:
                 "position_keep_time": str(trade_latest['time_past'])
             }
             order_information.result_dic_arr.append(result_dic)
+            #
+            self.update_dataframe(result_dic)
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
             # res1 = "強制Close【Unit】" + str(trade_latest['currentUnits'])
@@ -635,22 +650,20 @@ class order_information:
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
                 order_information.minus_yen_position_num)
 
-            self.send_line("■■■強制クローズ解消:", self.name, '\n',
-                           res4, res5, res1, id_info, res2, res3, res6, res7, res8,
-                           position_check_no_args()['name_list'])
             print("テスト620 ", trade_latest)
             result_dic = {
                 "order_time": self.o_time,
                 "res": str(trade_latest['unrealizedPL']),  # 上と違う部分
                 "take_time": self.t_time,
                 "take_price": str(trade_latest['price']),
-                "end_time": datetime.datetime.now(),
+                "end_time": trade_latest['closeTime'],
                 "end_price": str(self.current_price),  #str(trade_latest['averageClosePrice']),
                 "orderID": str(self.o_id),
                 "tradeID": str(self.t_id),
                 "name": self.name,
+                "name_ymdhms": self.name_ymdhms,
                 "name_only": self.name[:-5],
-                "units": str(units_for_view * direction),
+                "units": str(self.plan_json['units'] * direction),
                 "pl_per_units": str(trade_latest['PLu']),  # 以下追加
                 "lc_price_plan": self.plan_json['lc_price'],
                 "lc_price_original_plan": self.plan_json['lc_price_original'],
@@ -660,62 +673,141 @@ class order_information:
                 "position_keep_time": str(trade_latest['time_past'])
             }
             order_information.result_dic_arr.append(result_dic)
+            self.update_dataframe(result_dic)
 
-        # 共通処理
+        # # 共通処理
+        # path = tk.folder_path + 'test.csv'
+        # try:
+        #     # ファイル書き込み
+        #     if not os.path.exists(path):
+        #         # ファイルが存在しない場合、新規作成
+        #         df = pd.DataFrame(self.inspection_df)
+        #         df.to_csv(path, index=False)
+        #         self.inspection_df.to_csv(path, index=False)
+        #     else:
+        #         # ファイルが存在する場合、追記処理
+        #         # df = pd.DataFrame([self.inspection_df])
+        #         # df.to_csv(path, mode='a', header=False, index=False)
+        #         self.inspection_df.to_csv(path, mode='a', header=False, index=False)
+        #
+        # except (OSError, PermissionError, IOError) as e:
+        #     print(f"ファイルにアクセスできませんでした: {e}")
+
+
         # ①共通処理（ファイルへの書き込み）
-        path = tk.folder_path + 'history.csv'
+        # path = tk.folder_path + 'history.csv'
+        # try:
+        #     # ファイル書き込み
+        #     if not os.path.exists(path):
+        #         # ファイルが存在しない場合、新規作成
+        #         df = pd.DataFrame(order_information.result_dic_arr)
+        #         df.to_csv(path, index=False)
+        #     else:
+        #         # ファイルが存在する場合、追記処理
+        #         df = pd.DataFrame([result_dic])
+        #         df.to_csv(path, mode='a', header=False, index=False)
+        #
+        # except (OSError, PermissionError, IOError) as e:
+        #     print(f"ファイルにアクセスできませんでした: {e}")
+        #
+        # # ②集計値の送信(一覧）
+        # temp = pd.read_csv(path)
+        # df_part = temp.tail(order_information.result_row)
+        # lines = []
+        # a_sum = sum(int(x) for x in df_part['res'])
+        # max_width = max(len(str(int(x))) for x in df_part['res'])
+        # for _, row in df_part.iterrows():
+        #     # res_val = int(row['res']) if isinstance(row['res'], (int, float)) else row['res']
+        #     res_val = f"{int(row['res']):>{max_width}}"
+        #     uni_val = int(row['units'] / abs(row['units']))
+        #     hh_mm = ":".join(gene.str_to_time_hms(row['end_time']).split(":")[:2])
+        #     if uni_val == 1:
+        #         uni_str = "L"  # 買い（ドルを）
+        #     else:
+        #         uni_str = "S"  # 売り
+        #     line = f"{res_val}, {uni_str}, {hh_mm}, {row['name_only'][:13]}, "
+        #     lines.append(line)
+        # # 改行で結合
+        # lines.append(f"{a_sum:>{max_width}}")
+        # output_str = "\n".join(lines)
+        # tk.line_send("■■■:", "\n", output_str)
+        #
+        # # ③ピボット結果の送信
+        # temp = pd.read_csv(path)
+        # df_part = temp.tail(order_information.result_row)
+        # summary = df_part.groupby("name_only").agg(
+        #     res_sum=("res", lambda x: int(x.sum())),
+        #     negative_count=("res", lambda x: (x < 0).sum()),
+        #     positive_count=("res", lambda x: (x > 0).sum())
+        # ).reset_index()
+        # lines = []
+        # for _, row in summary.iterrows():
+        #     name_val = f"{row['name_only'][:13]:<13}"
+        #     line = f"{name_val}, {row['res_sum']}, {row['positive_count']}, {row['negative_count']}"
+        #     lines.append(line)
+        # pivot_str = "\n".join(lines)
+        # print(pivot_str)
+        # tk.line_send("■■■:", "\n", pivot_str)
+
+    def update_dataframe(self, new_data_dic):
+        path = self.filepath
+        # ファイル処理
+        if os.path.exists(path):
+            # あれば中身のデータフレーム
+            original_df = pd.read_csv(path)
+        else:
+            # 無ければ空のデータフレーム
+            original_df = pd.DataFrame()
+
+        # 最初はNoneならDataFrameを新規作成
+        if original_df.empty:
+            # 初回の空の場合
+            original_df = pd.DataFrame([new_data_dic])
+        else:
+            name = new_data_dic.get("name_ymdhms")
+            if name is None:
+                raise ValueError("new_data に 'name_ymdhms' キーが必要です。")
+
+            # name が既に存在するかチェック
+            mask = original_df["name_ymdhms"] == name
+
+            # 既存のnameがある場合 → 横方向に更新
+            if mask.any():
+                idx = original_df.index[mask][0]
+                for key, value in new_data_dic.items():
+                    if key in original_df.columns:
+                        col_dtype = original_df[key].dtype
+
+                        # 数値列に文字列などが来たらキャスト
+                        if pd.api.types.is_numeric_dtype(col_dtype):
+                            try:
+                                value = float(value)
+                            except ValueError:
+                                value = np.nan
+                    original_df.loc[idx, key] = value
+            else:
+                # 既存のnameがない場合 → 新しい行として追加
+                original_df = pd.concat([original_df, pd.DataFrame([new_data_dic])], ignore_index=True)
+
+
         try:
             # ファイル書き込み
             if not os.path.exists(path):
                 # ファイルが存在しない場合、新規作成
-                df = pd.DataFrame(order_information.result_dic_arr)
-                df.to_csv(path, index=False)
+                # df = pd.DataFrame(self.inspection_df)
+                # df.to_csv(path, index=False)
+                original_df.to_csv(path, index=False)
             else:
                 # ファイルが存在する場合、追記処理
-                df = pd.DataFrame([result_dic])
-                df.to_csv(path, mode='a', header=False, index=False)
+                # df = pd.DataFrame([self.inspection_df])
+                # df.to_csv(path, mode='a', header=False, index=False)
+                # self.inspection_df.to_csv(path, mode='a', header=False, index=False)  # 追加モード
+                original_df.to_csv(path, index=False)  # 追加モード
 
         except (OSError, PermissionError, IOError) as e:
             print(f"ファイルにアクセスできませんでした: {e}")
 
-        # ②集計値の送信(一覧）
-        temp = pd.read_csv(path)
-        df_part = temp.tail(order_information.result_row)
-        lines = []
-        a_sum = sum(int(x) for x in df_part['res'])
-        max_width = max(len(str(int(x))) for x in df_part['res'])
-        for _, row in df_part.iterrows():
-            # res_val = int(row['res']) if isinstance(row['res'], (int, float)) else row['res']
-            res_val = f"{int(row['res']):>{max_width}}"
-            uni_val = int(row['units'] / abs(row['units']))
-            hh_mm = ":".join(gene.str_to_time_hms(row['end_time']).split(":")[:2])
-            if uni_val == 1:
-                uni_str = "L"  # 買い（ドルを）
-            else:
-                uni_str = "S"  # 売り
-            line = f"{res_val}, {uni_str}, {hh_mm}, {row['name_only'][:13]}, "
-            lines.append(line)
-        # 改行で結合
-        lines.append(f"{a_sum:>{max_width}}")
-        output_str = "\n".join(lines)
-        tk.line_send("■■■:", "\n", output_str)
-
-        # ③ピボット結果の送信
-        temp = pd.read_csv(path)
-        df_part = temp.tail(order_information.result_row)
-        summary = df_part.groupby("name_only").agg(
-            res_sum=("res", lambda x: int(x.sum())),
-            negative_count=("res", lambda x: (x < 0).sum()),
-            positive_count=("res", lambda x: (x > 0).sum())
-        ).reset_index()
-        lines = []
-        for _, row in summary.iterrows():
-            name_val = f"{row['name_only'][:13]:<13}"
-            line = f"{name_val}, {row['res_sum']}, {row['positive_count']}, {row['negative_count']}"
-            lines.append(line)
-        pivot_str = "\n".join(lines)
-        print(pivot_str)
-        # tk.line_send("■■■:", "\n", pivot_str)
+        return original_df
 
     def close_trade(self, units):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -729,36 +821,36 @@ class order_information:
             self.life_set(False)  # LIFEフラグの変更は、APIがエラーでも実行する
             self.t_state = "CLOSED"
 
-            close_res = self.oa.TradeClose_exe(self.t_id, None)  # ★クローズを実行
-            if close_res['error'] == -1:  # APIエラーの場合終了。ただし、
-                self.send_line("  ★ポジション解消ミスNone＠close_position", self.name, self.t_id, self.t_pl_u)
-                return 0
+            # close_res = self.oa.TradeClose_exe(self.t_id, None)  # ★クローズを実行
+            # if close_res['error'] == -1:  # APIエラーの場合終了。ただし、
+            #     self.send_line("  ★ポジション解消ミスNone＠close_position", self.name, self.t_id, self.t_pl_u)
+            #     return 0
             # self.send_line("  ポジション解消指示", self.name, self.t_id, self.t_pl_u)
             self.after_close_trade_function()
 
         # 部分解除の場合（LINE送信無し）
-        else:
-            if float(units) > abs(float(self.t_current_units)):
-                # 部分解消が失敗しそうなオーダーになっている場合
-                self.send_line("    指定されたCloseUnits大（Error)⇒全解除, units", ">", abs(float(self.t_current_units)))
-                self.life_set(False)  # ★大事　全解除の場合、APIがエラーでもLIFEフラグは取り下げる
-                self.t_state = "CLOSED"
-                close_res = self.oa.TradeClose_exe(self.t_id, None)  # ★オーダーを実行
-                return 0
-            else:
-                # 部分解消が正常に実行できる注文数の場合
-                close_res = self.oa.TradeClose_exe(self.t_id, {"units": units})  # ★オーダーを実行
-                self.send_line('部分解消')
-            if close_res['error'] == -1:  # APIエラーの場合終了。ただし、
-                self.send_line("  ★ポジション解消ミス部分＠close_position", self.name, self.t_id, self.t_pl_u)
-                return 0
-            res_json = close_res['data_json']  # jsonデータを取得
-            tradeID = res_json['orderFillTransaction']['tradeReduced']['tradeID']
-            units = res_json['orderFillTransaction']['tradeReduced']['units']
-            realizedPL = res_json['orderFillTransaction']['tradeReduced']['realizedPL']
-            price = res_json['orderFillTransaction']['tradeReduced']['price']
-            self.send_line("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL,
-                           "price", price)
+        # else:
+        #     if float(units) > abs(float(self.t_current_units)):
+        #         # 部分解消が失敗しそうなオーダーになっている場合
+        #         self.send_line("    指定されたCloseUnits大（Error)⇒全解除, units", ">", abs(float(self.t_current_units)))
+        #         self.life_set(False)  # ★大事　全解除の場合、APIがエラーでもLIFEフラグは取り下げる
+        #         self.t_state = "CLOSED"
+        #         close_res = self.oa.TradeClose_exe(self.t_id, None)  # ★オーダーを実行
+        #         return 0
+        #     else:
+        #         # 部分解消が正常に実行できる注文数の場合
+        #         close_res = self.oa.TradeClose_exe(self.t_id, {"units": units})  # ★オーダーを実行
+        #         self.send_line('部分解消')
+        #     if close_res['error'] == -1:  # APIエラーの場合終了。ただし、
+        #         self.send_line("  ★ポジション解消ミス部分＠close_position", self.name, self.t_id, self.t_pl_u)
+        #         return 0
+        #     res_json = close_res['data_json']  # jsonデータを取得
+        #     tradeID = res_json['orderFillTransaction']['tradeReduced']['tradeID']
+        #     units = res_json['orderFillTransaction']['tradeReduced']['units']
+        #     realizedPL = res_json['orderFillTransaction']['tradeReduced']['realizedPL']
+        #     price = res_json['orderFillTransaction']['tradeReduced']['price']
+        #     self.send_line("  ポジション部分解消", self.name, self.t_id, self.t_pl_u, "UNITS", units, "PL", realizedPL,
+        #                    "price", price)
 
     def updateWinLoseTime(self, new_pl):
         """
@@ -787,39 +879,40 @@ class order_information:
         if self.win_max_plu < self.t_pl_u:  # 最大値更新時
             self.win_max_plu = self.t_pl_u
 
-    def detect_change(self):
+    def detect_change(self, target_5s_row):
         """
         update_informationでへんかを検知した場合これが　呼ばれる。
         :return:
         """
         order_latest = self.o_json
         trade_latest = self.t_json
-        # print("detect_change関数")
-        # print(order_latest)
-        # print(trade_latest)
+        # print("    detect_change関数")
+        # print("    ", order_latest)
+        # print("    ", trade_latest)
         if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
-                self.send_line("    (取得)", self.name, trade_latest['price'])
+                # self.send_line("    (取得)", self.name, trade_latest['price'])
+                print(" 取得", self.name, target_5s_row['time_jp'])
                 #  取得時には、ローソクデータも取得しておく
-                now = datetime.datetime.now().replace(microsecond=0)
-                time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
-                seconds_difference = abs(time_difference.total_seconds())
-                if seconds_difference >= 30:
-                    # 初回の場合はやる
-                    self.is_first_time_lc_change_candle = False  # 二回目以降はFalseにFalseを入れることになるが、、
-
-                    d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": self.lc_change_candle_num},
-                                                                 1)  # 時間昇順(直近が最後尾）
-                    if d5_df['error'] == -1:
-                        print("error Candle")
-                        return -1
-                    else:
-                        self.latest_df = d5_df['data']
-                        if self.is_first_time_lc_change_candle:
-                            # 初回の場合は、取得したことにしない（５分ごとの時間が一番欲しいから）
-                            self.is_first_time_lc_change_candle = False
-                        else:
-                            self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
+                # now = datetime.datetime.now().replace(microsecond=0)
+                # time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
+                # seconds_difference = abs(time_difference.total_seconds())
+                # if seconds_difference >= 30:
+                #     # 初回の場合はやる
+                #     self.is_first_time_lc_change_candle = False  # 二回目以降はFalseにFalseを入れることになるが、、
+                #
+                #     d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": self.lc_change_candle_num},
+                #                                                  1)  # 時間昇順(直近が最後尾）
+                #     if d5_df['error'] == -1:
+                #         print("error Candle")
+                #         return -1
+                #     else:
+                #         self.latest_df = d5_df['data']
+                #         if self.is_first_time_lc_change_candle:
+                #             # 初回の場合は、取得したことにしない（５分ごとの時間が一番欲しいから）
+                #             self.is_first_time_lc_change_candle = False
+                #         else:
+                #             self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
                         # print("LCChange用にDFを取得しました(取得時）", self.latest_df_get_time)
                         # print(self.latest_df)
                         # print("1行のみ抽出（取得時）")
@@ -829,12 +922,12 @@ class order_information:
                 #     print("前回取得時（取得時）", self.latest_df_get_time, "経過秒", seconds_difference)
                 #     pass
 
-            if "position_state" in trade_latest:
-                if trade_latest['position_state'] == 'CLOSED':  # ポジションクローズ（ポジション取得とほぼ同時にクローズ[異常]）
-                    self.send_line("    (即時)クローズ")
-            else:
-                pass
-                # print("    NOT GOOD Ref")
+            # if "position_state" in trade_latest:
+            #     if trade_latest['position_state'] == 'CLOSED':  # ポジションクローズ（ポジション取得とほぼ同時にクローズ[異常]）
+            #         self.send_line("    (即時)クローズ")
+            # else:
+            #     pass
+            #     # print("    NOT GOOD Ref")
 
         elif self.t_state == "OPEN" and trade_latest['state'] == "CLOSED":  # 通常の成り行きのクローズ時
             print("    成り行きのクローズ発生")
@@ -844,6 +937,7 @@ class order_information:
     def order_update_and_close(self):
         order_latest = self.o_json
         # 情報の更新
+        # print(" オーダー情報の上書き", self.o_state, " ⇒", order_latest['state'])
         self.o_state = order_latest['state']  # ここで初めて更新
         self.o_time_past_sec = order_latest['time_past']
         # オーダーのクローズを検討する
@@ -851,8 +945,15 @@ class order_information:
             # print("    時間的な解消を検討", self.o_time_past, self.o_state, "基準", self.order_timeout_min * 60)
             if self.o_time_past_sec > self.order_timeout_min * 60 and (self.o_state == "" or self.o_state == "PENDING"):
                 self.close_order()
-                self.send_line("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min
-                               , position_check_no_args()['name_list'])
+                temp_dic = {
+                    "name": self.name,
+                    "name_ymdhms": self.name_ymdhms,
+                    "order_cancel": True,
+                    "order_keep_time": self.o_time_past_sec
+                }
+                self.inspection_df = self.update_dataframe(temp_dic)
+                # self.send_line("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min
+                #                , position_check_no_args()['name_list'])
         if order_latest['state'] == "CANCELLED":
             self.close_order()
 
@@ -866,7 +967,7 @@ class order_information:
         self.t_state = trade_latest['state']  # Openとかそういう物
         self.t_initial_units = trade_latest['initialUnits']  # 初回だけでよい？
         self.t_current_units = trade_latest['currentUnits']
-        self.t_time = trade_latest['openTime']  # 初回だけでよい？
+        # self.t_time = trade_latest['openTime']  # 初回だけでよい？
         self.t_time_past_sec = trade_latest['time_past']
         self.t_execution_price = trade_latest['price']  # 初回だけでよい？
         if trade_latest['state'] == "OPEN":
@@ -901,15 +1002,20 @@ class order_information:
         #                            self.win_max_plu, self.t_pl_u)
         #             self.close_trade(None)
 
-    def update_information(self):  # orderとpositionを両方更新する
+    def is_in_range(self, range_row, target_price):
+        if range_row['low'] + self.adjuster < target_price < range_row['high'] + self.adjuster:
+            return True
+        else:
+            return False
+
+    def update_information(self, target_5s_row, candleAnalysisClass):  # orderとpositionを両方更新する
         """
-        この関数では最新の状態を取得する（インスタンス変数を更新する）
-        ただし、orderやTradeのステータスはこの関数では変更しない。
-        （Update実行前との差分をみて変化を検知するプログラムより変更したくなく、その変化検知後に、order_update,trade_updateで更新）
+        直近の5秒足のデータを取得する
         order "PENDING" "CANCELLED" "FILLED"
         position "OPEN" "CLOSED"
         :return:
         """
+        print("  UpdateInformation", self.name)
         if not self.life:
             return 0  # LifeがFalse（＝オーダーが発行されていない状態）では実行しない
 
@@ -919,146 +1025,148 @@ class order_information:
             return 0
 
         # (0)現在価格の取得
-        temp_current_price = self.oa.NowPrice_exe("USD_JPY")
-        if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
-            print("API異常で現在価格が取得できず（ポジションクラス）")
-            return 0
-        else:
-            if self.plan_json['direction'] == 1:
-                # 注文がBidの場合、現在価格もBidにする
-                self.current_price = temp_current_price['data']['bid']
+        self.current_price = target_5s_row['open']
+
+        o_gap_time = gene.cal_str_time_gap(self.o_time, target_5s_row['time_jp'])
+        o_gap_time_abs = o_gap_time['gap_abs']
+
+        # 今の価格から、直近の状態を取得する
+        print("   オーダーの調査", self.name)
+        if self.o_state == "PENDING":
+            print("    オーダーがpending時の判定")
+            if self.is_in_range(target_5s_row, self.plan_json['target_price']) or self.plan_json['type'] == "MARKET":
+                print("     取得要件の達成", self.name, self.o_state)
+                self.o_json = {
+                    "state": "FILLED",
+                    "id": 1,
+                    "time_past": o_gap_time_abs
+                }
+                self.t_json = {
+                    "state": "OPEN",
+                    "id": 2,
+                    "time_past": 0,  # 取得したてとみて０
+                }
+                # self.o_state = "FILLED"
+                self.t_time = target_5s_row['time_jp']
             else:
-                self.current_price = temp_current_price['data']['ask']
+                print("     取得要件達成せず")
+                self.o_json = {
+                    "state": "PENDING",
+                    "id": 11,
+                    "time_past": o_gap_time_abs
+                }
+        else:
+            print("    取得済みのため、経過時間を更新", self.name)
+            self.o_json = {
+                "state": "FILLED",
+                "id": 11,
+                "time_past": o_gap_time_abs
+            }
 
         # (1) OrderDetail,TradeDetailの取得（orderId,tradeIdの確保）
         if self.o_id == -1:
             # 実行時に、既存のオーダーを拾ってきた場合、特殊な操作。
-            trade_ans = self.oa.TradeDetails_exe(self.t_id)  # ■■API
-            if trade_ans['error'] == 1:
-                print("    トレード情報取得Error＠update_information", self.t_id)
-                return 0
-            trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
-            self.t_json = trade_latest  # Json自体も格納
+            # trade_ans = self.oa.TradeDetails_exe(self.t_id)  # ■■API
+            # if trade_ans['error'] == 1:
+            #     print("    トレード情報取得Error＠update_information", self.t_id)
+            #     return 0
+            # trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
+            # self.t_json = trade_latest  # Json自体も格納
+            pass
         else:
-            # 通常のオーダーの場合（基本的にはこっち）
-            order_ans = self.oa.OrderDetails_exe(self.o_id)  # ■■API
-            if 'error' in order_ans:
-                if order_ans['error'] == 1:
-                    # print("OrderErrorのためリターン０（@classPosition898）ID:", self.o_id)
-                    # エラー対応
-                    if self.update_information_error_o_id_num >= 3 and self.o_id == self.update_information_error_o_id:
-                        # 3回以上、同じIDでエラーが発生している場合、キャンセル
-                        tk.line_send("オーダーDetailエラー(繰り返し)⇒Orderクローズ", self.o_id)
-                        self.close_order()
-                        self.update_information_error_o_id_num = 0
-                        self.update_information_error_o_id = 0
-                        return 0
-                    else:
-                        print("OrderErrorのためリターン０（@classPosition898）ID:", self.o_id, type(self.update_information_error_o_id))
-                        self.update_information_error_o_id_num = self.update_information_error_o_id_num + 1
-                        if self.o_id == 0:
-                            print("o_idがIでおかしい")
-                        else:
-                            self.update_information_error_o_id = self.o_id
-                        print("とりあえずreturn0　classposition 935行目くらい")
-                        return 0
             self.update_information_error_o_id_num = 0
-            order_latest = order_ans['data']['order']  # jsonを取得
-            self.o_json = order_latest  # Json自体も格納
-            # print("現在の状態　オーダー", self.name, self.o_id)
-            # print("現在の状態　オー", self.name, self.o_json)
-
-            if order_latest['state'] == "FILLED":
-                #  オーダーが約定済みの場合
-                if "tradeOpenedID" in order_latest:
-                    # ポジションが存在している場合
-                    # 他のオーダーを完全にクローズさせた場合
-                    if "tradeClosedIDs" in order_latest and not (self.already_offset_notice):
-                        self.already_offset_notice = True  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
-                        # ただし、tradeCloseIDsもある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
-                        # ★トレード有かつ相殺有の場合は、このオーダーがトレードよりも多いユニット注文があったことを意味する。
-                        #  その為、オーダーのユニットの一部が相殺され、残るユニットがトレードとして存在する（その為Lifeを消さない）
-                        tk.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
-                                     self.name, "(",
-                                     self.o_json['id'], ")")
-                    #
-                    self.t_id = order_latest['tradeOpenedID']
-                    trade_ans = self.oa.TradeDetails_exe(self.t_id)  # ■■API
-                    if trade_ans['error'] == 1:
-                        print("    トレード情報取得Error＠update_information", self.t_id)
-                        return 0
-                    trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
-                    self.t_json = trade_latest  # Json自体も格納
-                    # print("ポジション詳細", self.t_json)
-                elif "tradeReducedID" in order_latest:
-                    # このオーダーが、他のオーダーのポジションの一部を相殺した場合（このオーダーのポジションは相殺で消滅）
-                    # （tradeReduceがある場合、一部相殺状態）
-                    # Reduceしたトレードを見に行くと、最終的な結果が重複するため、トランザクション結果の価格を求める。
-                    # ただし格納形式を整えたいため、トレード情報を取得し、Pipsの部分だけを置き換える
-                    transaction_id = order_latest['fillingTransactionID']
-                    transaction_info = self.oa.get_transaction_single(transaction_id)
-                    reduced_trade_id = order_latest['tradeReducedID']
-                    trade_latest = self.oa.TradeDetails_exe(reduced_trade_id)['data']['trade']  # ■■API
-                    # print("トランザクション")
-                    # print(transaction_info)
-                    # print("トレード")
-                    # print(trade_latest)
-                    # 以下相殺発生分のみの情報に置き換え
-                    tk.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
-                                 "相殺したトレード", str(reduced_trade_id) + ",相殺したUNIT",
-                                 transaction_info['transactions'][0]['requestedUnits'])
-                    trade_latest['state'] = "CLOSE"
-                    trade_latest['id'] = reduced_trade_id
-                    trade_latest['unrealizedPL'] = transaction_info['transactions'][0]['pl']  #
-                    trade_latest['currentUnits'] = float(
-                        transaction_info['transactions'][0]['requestedUnits'])  # 暫定的に相殺した分に置き換え
-                    trade_latest['state'] = "CLOSE"
-                    trade_latest['PLu'] = round(float(trade_latest['unrealizedPL']) / abs(
-                        float(transaction_info['transactions'][0]['requestedUnits'])), 3)
-                    self.t_json = trade_latest  # Json自体も格納
-                    # ★この場合に限り、このオーダーは存在しなくなるため、Close処理を実施する
-                    self.life_set(False)
-                    # self.after_close_trade_function()
-                elif "tradeClosedIDs" in order_latest:
-                    # tradeCloseIDsがある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
-                    # ★この場合は、このオーダーでの通知（クローズ処理）は実施不要で、Lifeをクローズにする
-                    self.life_set(False)
-                    tk.line_send("■■■オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
-                                 self.o_json['id'], ")")
-                    return 0
+            print("   ポジションの調査", self.name, self.o_state, self.t_state, self.o_json['state'])
+            if self.o_json['state'] == "FILLED":
+                # 基本情報の計算
+                t_gap_time = gene.cal_str_time_gap(self.t_time, target_5s_row['time_jp'])
+                t_gap_time_abs = t_gap_time['gap_abs']
+                d = self.plan_json['direction']  # TPやLCの計算で利用する、ポジションの向き、１が買い
+                print("    ポジションありのため、TPLC判断",  target_5s_row['time_jp'], self.name, self.t_time)
+                print("     LC判定", target_5s_row['low'], self.plan_json['lc_price'], target_5s_row['high'])
+                print("     TP判定", target_5s_row['low'], self.plan_json['tp_price'], target_5s_row['high'])
+                #  オーダーが約定済みの場合、LC,TPに該当しているかを探索
+                if self.is_in_range(target_5s_row, self.plan_json['lc_price']):
+                    print("    ロスカットします", target_5s_row['time_jp'], self.plan_json['lc_price'])
+                    plu = round((self.plan_json['lc_price'] - self.plan_json['target_price']) * d, self.round_num)
+                    pl = round(plu * abs(self.plan_json['units']), self.round_num)
+                    self.t_json = {
+                        "state": "CLOSED",
+                        "id": 29,
+                        "initialUnits": self.plan_json['for_api_json']['order']['units'],
+                        "currentUnits": self.plan_json['for_api_json']['order']['units'],
+                        "averageClosePrice": self.plan_json['lc_price'],
+                        "openTime": self.t_time,
+                        "closeTime": target_5s_row['time_jp'],
+                        "price": self.plan_json['target_price'],
+                        "time_past": t_gap_time_abs,
+                        "realizedPL": pl,
+                        "PLu": plu,
+                        "res_tplc": self.lc_kind
+                    }
+                elif self.is_in_range(target_5s_row, self.plan_json['tp_price']):
+                    print("    利確します", target_5s_row['time_jp'], self.plan_json['tp_price'])
+                    plu = round((self.plan_json['tp_price'] - self.plan_json['target_price']) * d, self.round_num)
+                    pl = round(plu * abs(self.plan_json['units']), self.round_num)
+                    self.t_json = {
+                        "state": "CLOSED",
+                        "id": 28,
+                        "initialUnits": self.plan_json['for_api_json']['order']['units'],
+                        "currentUnits": self.plan_json['for_api_json']['order']['units'],
+                        "averageClosePrice": self.plan_json['tp_price'],
+                        "openTime": self.t_time,
+                        "closeTime": target_5s_row['time_jp'],
+                        "price": self.plan_json['target_price'],
+                        "time_past": t_gap_time_abs,
+                        "realizedPL": pl,
+                        "PLu": plu,
+                        "res_tplc": "TP"
+                    }
                 else:
-                    # ポジション取得待ち
-                    print("    トレード not detect", self.t_id)
-                    self.t_id = 0
-                    # tradeが０の場合、オーダーの更新のみ行う。
-                    self.order_update_and_close()
-                    return 0
+                    # 何もない場合は、PastTimeのカウントを実施
+                    plu = round((self.plan_json['target_price'] - target_5s_row['mid_outer']) * d * -1, self.round_num)
+                    pl = round(plu * abs(self.plan_json['units']), self.round_num)
+                    print("    ポジション継続", self.name, " 継続時間", t_gap_time_abs, ",PL:", pl, "PLu", plu, "     ", target_5s_row['time_jp'], self.t_time)
+                    self.t_json = {
+                        "state": "OPEN",
+                        "id": 2,
+                        "initialUnits": self.plan_json['for_api_json']['order']['units'],
+                        "currentUnits": self.plan_json['for_api_json']['order']['units'],
+                        "openTime": self.t_time,
+                        "price": self.plan_json['target_price'],
+                        "time_past": t_gap_time_abs,
+                        "unrealizedPL": pl,  # 途中では出せない
+                        "PLu": plu
+                    }
+
             else:
                 # オーダーがペンディングの場合(tradeはない状態)
-                # print("    オーダーペンディング中", self.t_id)
+                print("   オーダーペンディング中（", self.t_id, target_5s_row['time_jp'], self.name, self.o_time)
                 self.t_id = 0
                 # tradeが０の場合、オーダーの更新のみ行う。
                 self.order_update_and_close()
                 return 0
 
+            # if target_5s_row['time_jp'] == "2025/10/03 00:05:00":
+            #     e.print("")
+
         # (2) 【以下トレードありが前提】変化点を確認する order_update,trade_update yori mae niarukoto
-        self.detect_change()
+        self.detect_change(target_5s_row)
 
         # (3)情報をUpdate and Closeする
         self.order_update_and_close()
         self.trade_update_and_close()
         if self.o_state == "FILLED" and self.t_state == "CLOSED" and self.life:
             self.life_set(True)
-            self.send_line("Filled Closed Trueの謎状態あり⇒強制的にLifeにFalseを入れて終了　classPosition 537行目")
+            # self.send_line("Filled Closed Trueの謎状態あり⇒強制的にLifeにFalseを入れて終了　classPosition 537行目")
         # 変化による情報（勝ち負けの各最大値、継続時間等の取得）
-        self.updateWinLoseTime(trade_latest['PLu'])  # PLU(realizePL / Unit)の推移を記録する
+        self.updateWinLoseTime(self.t_json['PLu'])  # PLU(realizePL / Unit)の推移を記録する
         # ひっかけるようjなマイナス値を検出し、早期のロスカットを行う
         # self.lc_change_less_minus()
         # LCの変更を検討する(プラス域にいった場合のTP底上げ≒トレールに近い）
         self.lc_change()
         if self.lc_change_num != 0:
             # LC_Changeが執行されている場合は、Candleも有効にする
-            self.lc_change_from_candle()
+            self.lc_change_from_candle(candleAnalysisClass)
 
         # # アラート
         # if self.alert_watch_exe:
@@ -1091,12 +1199,12 @@ class order_information:
                         "(" + str(round(self.alert_price, 3)) + ")" + \
                         ", 取得価格:" + str(
                 order_res['order_result']['execution_price']) + ",\n"
-            tk.line_send(line_send)
+            # tk.line_send(line_send)
         else:
             order_res['order_result'] = "この処理はオーダー失敗の可能性大"
 
         return {"order_name": self.name, "order_id": order_res['order_id'],
-                "order_result": order_res['order_result']}
+                "name_ymdhms": self.name_ymdhms, "order_result": order_res['order_result']}
 
     def watching_for_position(self):
         """
@@ -1157,7 +1265,7 @@ class order_information:
                     # print("オーダー/ウォッチタイムアウト(またはgap_seconds_from_start_watchingが０でウォッチ状態ではない)",
                     #       self.order_register_time, "から", self.order_timeout_min ,"分経過,", gap_seconds_from_start_watching)
                     self.close_order()
-                    tk.line_send("ウォンチングのみのオーダーを解消", self.name)
+                    # tk.line_send("ウォンチングのみのオーダーを解消", self.name)
                     return 0
                 else:
                     # ウォッチの時間は時間内、または０ではなないため、このまま継続
@@ -1214,7 +1322,7 @@ class order_information:
                     exe_order = True
             # ■状態通知用
             if not self.watching_position_done_send_line:
-                tk.line_send("初回のポジションウォッチング状態(STOP):", self.name)
+                # tk.line_send("初回のポジションウォッチング状態(STOP):", self.name)
                 self.watching_position_done_send_line = True
             # ■実行
             if exe_order:
@@ -1261,7 +1369,7 @@ class order_information:
                     #     self.order_register_time, "から", self.order_timeout_min, "分経過,",
                     #     gap_seconds_from_start_watching)
                     self.close_order()
-                    tk.line_send("ウォンチングのみのオーダーを解消", self.name)
+                    # tk.line_send("ウォンチングのみのオーダーを解消", self.name)
                     return 0
                 else:
                     # ウォッチの時間は時間内、または０ではなないため、このまま継続
@@ -1418,109 +1526,6 @@ class order_information:
             self.step2_filled = False  # これ、ここで初期化する必要あり？
             self.watching_for_position_make_order()
 
-    # def watching_for_alert(self):  # マイナス領域で、マイナスを縮める手段
-    #     """
-    #     ロスカットを狭い物から広いものに変更する（取得直後の直マイナスを減らしたい）
-    #     特に、ブレイクと予想した物が、ひっかけですぐに戻るのを防止する
-    #     """
-    #     if self.t_state != "OPEN":  # 足数×〇分足×秒
-    #         # 実行しない条件は、既に実行済み　または、NotOpen
-    #         return 0
-    #
-    #     if not self.alert_watch_exe or self.alert_watch_done:
-    #         # そもそも機能させないか、既に実行済みの場合は、実行しない
-    #         return 0
-    #
-    #     current_price = self.get_current_price()
-    #     if current_price == 0:
-    #         return 0
-    #
-    #     # ■現状の変数化
-    #     now_time = datetime.datetime.now()
-    #     direction = self.plan_json['direction']
-    #     # 初回、ウォッチモードに入るかどうか
-    #     # print("ウォッチモード判定１", current_price, self.alert_price, self.plan['direction'], self.alert_watching)
-    #     if not self.alert_watching:
-    #         # ウォッチがONではない時は、アラートの成立を確認する（マイナスがどれくらいになっているかの判定）
-    #         if direction == 1:  # １の場合はドル買い（ASK）
-    #             if current_price < self.alert_price:
-    #                 self.beyond_alert_time = now_time
-    #                 self.alert_watching = True
-    #                 # print("ウォッチモード判定(買い)", current_price, "<", self.alert_price)
-    #                 # self.send_line("アラートモード")
-    #         else:
-    #             if current_price > self.alert_price:
-    #                 self.beyond_alert_time = now_time
-    #                 self.alert_watching = True
-    #                 # print("ウォッチモード判定(売り)", current_price, ">", self.alert_price)
-    #                 # self.send_line("アラートモード")
-    #     else:
-    #         # ウォッチがONの場合、プラス域に浮上したら、一回ウォッチをクリアする
-    #         if direction == 1:  # １の場合はドル買い（ASK）
-    #             if current_price > self.alert_price:
-    #                 self.beyond_alert_time = 0
-    #                 self.alert_watching = False
-    #                 # print("ウォッチモード解除(買い)", current_price, ">", self.alert_price)
-    #         else:
-    #             if current_price < self.alert_price:
-    #                 self.beyond_alert_time = 0
-    #                 self.alert_watching = False
-    #                 # print("ウォッチモード解除(売り)", current_price, "<", self.alert_price)
-    #
-    #     # ウォッチモードに入るかどうかを、改めて。
-    #     if not self.alert_watching:
-    #         return 0
-    #
-    #     # ■■現状の更新　
-    #     # ■経過時間（越えてからの経過時間)
-    #     delta = now_time - self.beyond_alert_time
-    #     gap_seconds = delta.total_seconds()
-    #     # ■現在のアラートの越えている価格量を取得する(alert基準。alert_plがマイナスは、アラートよりマイナス域
-    #     if direction == 1:  # １の場合はドル買い（ASK）　　　　　、-1の場合売り(Bid)
-    #         alert_pl = current_price - self.alert_price  # マイナスの値で表現する順庵
-    #     else:
-    #         alert_pl = self.alert_price - current_price
-    #     # ■状態通知用
-    #     if not self.alert_line_send_done:
-    #         tk.line_send("初回のウアラートォッチモード突入:", self.name, "ボーダー", round(self.alert_price, 3), "現在価格", current_price,
-    #                      "ポジション方向", direction, "越えPips", round(alert_pl, 4))
-    #         self.alert_line_send_done = True
-    #
-    #     # ■■更新判定
-    #     border = 0.01
-    #     change_exe = False
-    #     if gap_seconds >= self.alert_wait_time_sec:  # アラートOnになってから、180秒以上経過している状態
-    #         if alert_pl <= border:  # マイナスが1pip以上ある場合
-    #             # print("alertで終了したい状態（時間、マイナス域(alertPriceに対して）がNG)", gap_seconds, alert_pl)
-    #             change_exe = True
-    #         else:
-    #             pass
-    #             # print("alertの時間的には削除したいが、まだマイナスが少ない", gap_seconds, alert_pl)
-    #     else:
-    #         # print(" alert時間未達", round(gap_seconds, 0), "秒", round(alert_pl, 3), "規定", self.alert_wait_time_sec)
-    #         return 0
-    #
-    #     # ■■更新作業
-    #     if change_exe:
-    #         if direction == 1:  # １の場合はドル買い（ASK）　　　　　、-1の場合売り(Bid)
-    #             new_lc_price = current_price - 0.01
-    #         else:
-    #             new_lc_price = current_price + 0.01
-    #
-    #         data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
-    #         res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
-    #         if res['error'] == -1:
-    #             self.send_line("    LC変更ミス＠lc_change")
-    #             return 0  # APIエラー時は終了
-    #         # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-    #         self.send_line("　(LC底上げ★アラート基準)", self.name, self.t_pl_u, self.plan_json['lc_price'], "⇒",
-    #                        new_lc_price,
-    #                        "lc底上げ", new_lc_price, "Posiprice", self.t_execution_price,
-    #                        "予定価格", self.plan_json['price'], "[追加分]元々のRangeは", self.plan_json['lc_range'],
-    #                        "現在マイナスは", self.t_pl_u, "最大Plusは", self.win_max_plu, "所持時間",
-    #                        self.t_time_past_sec)
-    #         self.alert_watch_done =  True  # フラグの成立（変更済）
-
     def lc_change(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
         ロスカット底上げを実施する。セルフとレールに近い
@@ -1613,24 +1618,25 @@ class order_information:
                 item['done'] = True
                 item['time_done'] = datetime.datetime.now()
                 new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan_json['direction']), 3)
-                data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
-                res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
-                if res['error'] == -1:
-                    self.send_line("    LC変更ミス＠lc_change")
-                    return 0  # APIエラー時は終了
-                item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
-                # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
-                if self.send_line_exe:
-                    self.send_line("　(LC底上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3), "⇒", new_lc_price,
-                                   "Border:", round(lc_trigger_range, 3), "保証", round(lc_ensure_range, 3), "Posiprice",
-                                   self.t_execution_price,
-                                   "予定価格", round(self.plan_json['target_price'], 3))
+                self.lc_kind = "LC_Change"
+                # data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+                # res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+                # if res['error'] == -1:
+                #     self.send_line("    LC変更ミス＠lc_change")
+                #     return 0  # APIエラー時は終了
+                # item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
+                # # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
+                # if self.send_line_exe:
+                #     self.send_line("　(LC底上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3), "⇒", new_lc_price,
+                #                    "Border:", round(lc_trigger_range, 3), "保証", round(lc_ensure_range, 3), "Posiprice",
+                #                    self.t_execution_price,
+                #                    "予定価格", round(self.plan_json['target_price'], 3))
                 # LC Priceの入れ替え
                 self.plan_json['lc_price'] = new_lc_price
                 break
         self.lc_change_status = status_res
 
-    def lc_change_from_candle(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
+    def lc_change_from_candle(self, candleAnalysisClass):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
         ロスカット底上げを実施する。セルフとレールに近い
         ひとつ前のローソクの最高値や最低値までをLC底上げする関数。
@@ -1665,39 +1671,41 @@ class order_information:
         # 定期的にデータフレームを取得する部分（引数で渡してもいいが、この関数で完結したかった）
         # print("CANDLE LC")
 
-        gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
-        time_hour = gl_now.hour  # 現在時刻の「時」のみを取得
-        time_min = gl_now.minute  # 現在時刻の「分」のみを取得
-        time_sec = gl_now.second  # 現在時刻の「秒」のみを取得
-        if time_min % 5 == 0 and 6 <= time_sec < 30:
-            # ５分毎か初回で実行
-            now = datetime.datetime.now().replace(microsecond=0)
-            time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
-            seconds_difference = abs(time_difference.total_seconds())
-            if seconds_difference >= 30:
-                d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": self.lc_change_candle_num},
-                                                             1)  # 時間昇順(直近が最後尾）
-                if d5_df['error'] == -1:
-                    print("error Candle")
-                    return -1
-                else:
-                    self.latest_df = d5_df['data']
-                    self.latest_df_r = self.latest_df.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
-                    self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
-                    # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
-                    print("Position_lc candle", self.name)
-                    candle_ana = ca.candleAnalysis(self.oa, 0)
-                    peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
-                    # peaks_class = cpk.PeaksClass(self.latest_df)
-            else:
-                # 30秒以上立っていない場合
-                # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
-                candle_ana = ca.candleAnalysis(self.oa, 0)
-                peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
-                # peaks_class = cpk.PeaksClass(self.latest_df)
-        else:
-            # 5分（足が新規で完成するタイミングじゃない場合）
-            return 0
+        # gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
+        # time_hour = gl_now.hour  # 現在時刻の「時」のみを取得
+        # time_min = gl_now.minute  # 現在時刻の「分」のみを取得
+        # time_sec = gl_now.second  # 現在時刻の「秒」のみを取得
+        # if time_min % 5 == 0 and 6 <= time_sec < 30:
+        #     # ５分毎か初回で実行
+        #     now = datetime.datetime.now().replace(microsecond=0)
+        #     time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
+        #     seconds_difference = abs(time_difference.total_seconds())
+        #     if seconds_difference >= 30:
+        #         d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": self.lc_change_candle_num},
+        #                                                      1)  # 時間昇順(直近が最後尾）
+        #         if d5_df['error'] == -1:
+        #             print("error Candle")
+        #             return -1
+        #         else:
+        #             self.latest_df = d5_df['data']
+        #             self.latest_df_r = self.latest_df.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+        #             self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
+        #             # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
+        #             print("Position_lc candle", self.name)
+        #             candle_ana = ca.candleAnalysis(self.oa, 0)
+        #             peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
+        #             # peaks_class = cpk.PeaksClass(self.latest_df)
+        #     else:
+        #         # 30秒以上立っていない場合
+        #         # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
+        #         candle_ana = ca.candleAnalysis(self.oa, 0)
+        #         peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
+        #         # peaks_class = cpk.PeaksClass(self.latest_df)
+        # else:
+        #     # 5分（足が新規で完成するタイミングじゃない場合）
+        #     return 0
+        candle_ana = candleAnalysisClass
+        peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
 
 
         # 逆張り注文の際、self.latest_df.iloc[-2]['low']基準だとおかしいくなる。
@@ -1707,15 +1715,21 @@ class order_information:
         # print("CANDLE LC:", self.latest_df.iloc[-2]['low'])
         # print("CANDLE LC::", peaks[0]['latest_time_jp'], peaks[0]['count'])
 
+        self.latest_df = candle_ana.d5_df_r
+        # print("test表示")
+        # print(self.latest_df.head(3))
+        # print("確認用")
+        # print(self.latest_df.iloc[-2]['time_jp'], self.latest_df.iloc[-2]['low'])
+        # print(self.latest_df.iloc[2]['time_jp'], self.latest_df.iloc[2]['low'])
         # 直近のピークが3カウント以上の場合、かつ、ポジションと同じ方向（利益が増える方向）時に実行（ひとつ前のキャンドルを参照するため）
         if peaks[0]['count'] >= 3 and peaks[0]['direction'] == self.plan_json['direction']:
             # self.latest_df.iloc[-2]['low']の-2が選択できる状態であれば、実行する
             if self.plan_json['direction'] > 0:
                 # 買い方向の場合、ひとつ前のローソクのLowの値をLC価格に
-                lc_price_temp = float(self.latest_df.iloc[-2]['low']) - order_information.add_margin
+                lc_price_temp = float(self.latest_df.iloc[2]['low']) - order_information.add_margin  # 本番用は並び替え前のため[-2]
             else:
                 # 売り方向の場合、ひとつ前のローソクのHighの値をLC価格に
-                lc_price_temp = float(self.latest_df.iloc[-2]['high']) + order_information.add_margin
+                lc_price_temp = float(self.latest_df.iloc[2]['high']) + order_information.add_margin # 本番用は並び替え前のため[-2]
             # print("LCcandleChangeにて、直近peakカウント:", peaks[0]['count'], "変更基準ローソク時間:", self.latest_df.iloc[-2]['time_jp'])
         else:
             # self.latest_df.iloc[-2]['low']は逆張りの時におかしくなる
@@ -1741,7 +1755,7 @@ class order_information:
             return 0
         elif self.plan_json['direction'] < 0 and lc_price_temp > take_position_price:
             # 売り方向で、ターゲットよりLCtempが大きい価格の場合（lctempがマイナス域の場合)
-            # print("   LCChangeCnadle", self.plan['direction'], lc_price_temp , ">",take_position_price )
+            # print("   LCChangeCnadle", self.plan_json['direction'], lc_price_temp , ">",take_position_price )
             # print("lc_priceにしたい価格", lc_price_temp, "　が取得価格", take_position_price, "より大きいためプラス確保のLCにならずNG")
             return 0
 
@@ -1752,18 +1766,27 @@ class order_information:
         # LCチェンジ執行
         self.lc_change_candle_done = True  # このクラス自体にLCChangeを実行した後をつけておく（各LCChange条件ではなく）
         new_lc_price = round(lc_price_temp, 3)
-        data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
-        res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
-        if res['error'] == -1:
-            self.send_line("    LC変更ミス＠lc_change")
-            return 0  # APIエラー時は終了
+        # data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+        # res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+        # if res['error'] == -1:
+        #     self.send_line("    LC変更ミス＠lc_change")
+        #     return 0  # APIエラー時は終了
         self.lc_change_from_candle_lc_price = lc_price_temp  # ロスカット価格の保存
         lc_range = round(abs(float(lc_price_temp) - float(self.t_execution_price)), 5)
         self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
-        if self.send_line_exe:
-            self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "新LC価格⇒", new_lc_price,
-                           "保証", lc_range, "約定価格", self.t_execution_price,
-                           "予定価格", self.plan_json['target_price'])
+        self.lc_kind = "LC_Change_candle"
+        # if self.send_line_exe:
+        #     self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "新LC価格⇒", new_lc_price,
+        #                    "保証", lc_range, "約定価格", self.t_execution_price,
+        #                    "予定価格", self.plan_json['target_price'])
+        # print(lc_price_temp, "＜", take_position_price )
+        # print("■■■■LCCHANGE_candle", self.name, new_lc_price)
+        # if self.name == "中途半端⇒レンジ_23:35":
+        #     if self.test_count == 0:
+        #         te.print("")
+        #     else:
+        #         self.test_count = self.test_count + 1
+
         # LC Priceの入れ替え
         self.plan_json['lc_price'] = new_lc_price
 
@@ -1912,34 +1935,38 @@ class order_information:
         リンケージからのみの利用（リンケージフラグの取り下げあり）
         """
 
-        data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
-        res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
-        if res['error'] == -1:
-            self.send_line("    LC変更ミス＠lc_change")
-            return 0  # APIエラー時は終了
-        self.linkage_done_func()
-        if self.send_line_exe:
-            self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3),
-                           "⇒", new_lc_price,
-                           self.t_execution_price,
-                           "予定価格", round(self.plan_json['target_price'], 3))
+        # data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+        # res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+        # if res['error'] == -1:
+        #     self.send_line("    LC変更ミス＠lc_change")
+        #     return 0  # APIエラー時は終了
+        # self.linkage_done_func()
+        # if self.send_line_exe:
+        #     self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3),
+        #                    "⇒", new_lc_price,
+        #                    self.t_execution_price,
+        #                    "予定価格", round(self.plan_json['target_price'], 3))
+        # LC Priceの入れ替え
+        self.lc_kind = "Linkage" + self.lc_kind
+        self.plan_json['lc_price'] = new_lc_price
 
     def linkage_tp_change(self, new_tp_price):
         """
         リンケージからのみの利用（リンケージフラグの取り下げあり）
         """
-
-        data = {"takeProfit": {"price": str(new_tp_price), "timeInForce": "GTC"}, }
-        res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
-        if res['error'] == -1:
-            self.send_line("    TP変更ミス＠lc_change")
-            return 0  # APIエラー時は終了
-        self.linkage_done_func()
-        if self.send_line_exe:
-            self.send_line("　(LinkageTP上げ)", self.name, self.t_pl_u, round(self.plan_json['TP_price'], 3),
-                           "⇒", new_tp_price,
-                           self.t_execution_price,
-                           "予定価格", round(self.plan_json['target_price'], 3))
+        # data = {"takeProfit": {"price": str(new_tp_price), "timeInForce": "GTC"}, }
+        # res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+        # if res['error'] == -1:
+        #     self.send_line("    TP変更ミス＠lc_change")
+        #     return 0  # APIエラー時は終了
+        # self.linkage_done_func()
+        # if self.send_line_exe:
+        #     self.send_line("　(LinkageTP上げ)", self.name, self.t_pl_u, round(self.plan_json['TP_price'], 3),
+        #                    "⇒", new_tp_price,
+        #                    self.t_execution_price,
+        #                    "予定価格", round(self.plan_json['target_price'], 3))
+        # LC Priceの入れ替え
+        self.plan_json['tp_price_after'] = new_tp_price
 
     def linkage_forced_lc_change_exe(self, main_max_plus, pl_u):
         """
@@ -2051,13 +2078,13 @@ def position_check_no_args():
                 # tk.line_send(" 謎の状態(分岐前）　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=", item.life, ",try_num", item.try_update_num)
                 if item.try_update_num <= item.try_update_limit:
                     # まだ何回か確認するまで、LifeはFalseにしない
-                    tk.line_send(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name,
-                                 ",life=", item.life, ",try_num", item.try_update_num, "回目　⇒再トライ")
+                    # tk.line_send(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name,
+                    #              ",life=", item.life, ",try_num", item.try_update_num, "回目　⇒再トライ")
                     item.count_up_position_check()  # 対象ポジションのtry_update_numをカウントアップする
                 else:
                     item.life_set(False)  # 強制的にクローズ
-                    tk.line_send(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name,
-                                 ",life=", item.life, ",try_num", item.try_update_num, "回目のため終了（lifeFalse)")
+                    # tk.line_send(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name,
+                    #              ",life=", item.life, ",try_num", item.try_update_num, "回目のため終了（lifeFalse)")
         # else:
         #     # Lifeが終わっているもの
 

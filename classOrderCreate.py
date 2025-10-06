@@ -52,6 +52,7 @@ class Order:
         self.lc_price = 0
         self.lc_range = 0  # 正の値で起債
         self.name = "name"
+        self.name_ymdhms = "name_for_test"  # 大量処理のテストで1年を通じて同じ名前が発生しないように、年月日をくっつけたものも準備
         self.trade_timeout_min = 0
         self.order_timeout_min = 0
         self.order_permission = True
@@ -114,6 +115,7 @@ class Order:
             "tp_range": self.tp_range,
             "type": self.ls_type,
             "name": self.name,
+            "name_ymdhms": self.name_ymdhms,
             "oa_mode": self.oa_mode,
             "order_timeout_min": self.order_timeout_min,
             "trade_timeout_min": self.trade_timeout_min,
@@ -204,6 +206,7 @@ class Order:
         # 名前の入力
         # print(order_json['name'])
         self.name = order_json['name'] + "_" + str(gene.delYearDay(order_json['decision_time']))
+        self.name_ymdhms = order_json['name'] + "_" + order_json['decision_time']
 
         # priority
         self.priority = order_json['priority']

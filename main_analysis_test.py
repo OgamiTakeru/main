@@ -106,6 +106,8 @@ gl_target_time = datetime.datetime(2025, 9, 29, 14, 10, 6)
 # Mainスタート
 main()  # 本番環境
 
+print(f.delYear("2025/10/01 19:35:55"))
+
 # 過去履歴のまとめ検討
 # 生データ送信
 # path = tk.folder_path + 'history.csv'
@@ -132,23 +134,23 @@ main()  # 本番環境
 
 # pivot送信
 # ピボット：A列でまとめ、resは合計、woは件数（count）
-path = tk.folder_path + 'history.csv'
-temp = pd.read_csv(path)
-df_part = temp.tail(30)
-summary = df_part.groupby("name_only").agg(
-    res_sum=("res", lambda x: int(x.sum())),
-    negative_count=("res", lambda x: (x < 0).sum()),
-    positive_count=("res", lambda x: (x > 0).sum())
-).reset_index()
-lines = []
-for _, row in summary.iterrows():
-    name_val = f"{row['name_only'][:13]:<13}"
-    line = f"{name_val}, {row['res_sum']}, {row['positive_count']}, {row['negative_count']}"
-    lines.append(line)
-
-pivot_str = "\n".join(lines)
-print(pivot_str)
-tk.line_send("■■■:", pivot_str)
+# path = tk.folder_path + 'history.csv'
+# temp = pd.read_csv(path)
+# df_part = temp.tail(30)
+# summary = df_part.groupby("name_only").agg(
+#     res_sum=("res", lambda x: int(x.sum())),
+#     negative_count=("res", lambda x: (x < 0).sum()),
+#     positive_count=("res", lambda x: (x > 0).sum())
+# ).reset_index()
+# lines = []
+# for _, row in summary.iterrows():
+#     name_val = f"{row['name_only'][:13]:<13}"
+#     line = f"{name_val}, {row['res_sum']}, {row['positive_count']}, {row['negative_count']}"
+#     lines.append(line)
+#
+# pivot_str = "\n".join(lines)
+# print(pivot_str)
+# tk.line_send("■■■:", pivot_str)
 
 # res = oa.OpenTrades_exe()
 # print(res['json'])

@@ -5,6 +5,7 @@ import classOanda
 import tokens as tk
 import fGeneric as gene
 import classPosition as classPosition  # とりあえずの関数集
+import classPositionForTest as testClassPosition
 
 
 class position_control:
@@ -398,7 +399,6 @@ class position_control:
                 # print(main_position.name, " まだ自分がオーダー状態(ポジション前）のため、処理しない")
                 continue
 
-
             # 走査する
             if hasattr(main_position, "order_class"):
                 if hasattr(main_position.order_class, "linkage_order_classes"):
@@ -416,7 +416,7 @@ class position_control:
                     # print("    ", linkage_class.name, "のオーダーが対象", left_position.life, left_position.t_pl_u)
                     if left_position is None:
                         print("    ", linkage_class.name, "のリンケージオーダー[", linkage_class.name, "]が対象だが見つからない")
-                        tk.line_send("リンケージ先がない物があった.", linkage_class.name, "のリンケージ", linkage_class.name)
+                        # tk.line_send("リンケージ先がない物があった.", linkage_class.name, "のリンケージ", linkage_class.name)
                         main_position.linkage_done_func()  # 自身のリンケージも終了
                         continue
 
@@ -479,3 +479,172 @@ class position_control:
             else:
                 pass
                 # print("オーダークラスがない！！！⇒未発行とかそこらへん")
+
+
+class position_control_for_test(position_control):
+    def __init__(self, is_live, filename):
+        # 変数の宣言
+        print("test用　positioncontorol")
+        self.position_classes = []
+        self.count_true = 0
+        self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)
+        self.oa2 = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
+        self.filename = filename
+        # self.temp_file_name = memo
+
+        # 最大所持個数の設定
+        self.max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
+        self.middle_priority_num = 2  # ミドルプライオリティ(max_position_numのうち）
+        self.high_priority_num = 1  # ハイプライオリティのもの（max_position_numのうち）
+
+        self.high_i_to = self.max_position_num
+        self.high_i_from = self.high_i_to - self.high_priority_num  # ハイプライオリティスロット(1つ限)の、添え字（最大5スロットの場合、添え字的には4番目スロット）
+        self.mid_i_to = self.high_i_from  # python配列のTO指定は「未満」なので、ー１が不要。（以下の場合はマイナスが必要）
+        self.mid_i_from = self.mid_i_to - self.middle_priority_num
+        self.normal_i_to = self.mid_i_from
+        self.normal_i_from = 0
+
+        self.normal_priority_num = self.max_position_num - self.high_priority_num
+
+        # 処理
+        for i in range(self.max_position_num):
+            # 複数のクラスを動的に生成する。クラス名は「C＋通し番号」とする。
+            # クラス名を確定し、クラスを生成する。
+            new_name = "c" + str(i)
+            self.position_classes.append(testClassPosition.order_information(new_name, is_live, filename))  # 順思想のオーダーを入れるクラス
+        self.print_classes_and_count()
+
+    def order_class_add(self, order_classes):
+        """
+        調査結果を受け取り、他のオーダーを比較し、オーダーを追加するかを判定する
+        """
+        # ■オーダーのプライオリティの関係
+        # 渡されたオーダーの中で、最大のプライオリティのものと、そのプライオリティを算出
+        # max_dict = max(order_dic_list, key=lambda d: d["priority"], default=None)
+        # max_dict = max(order_dic_list, key=lambda d: d.get("priority", float("-inf")))
+        # order_max_priority = max_dict['priority']
+        max_instance = max(order_classes, key=lambda x: x.exe_order["priority"])
+        order_max_priority = max_instance.exe_order['priority']
+        if order_max_priority >=100:
+            order_priority_class = "high"
+            i_from = self.high_i_from
+            i_to = self.high_i_to
+        elif order_max_priority >= 10:
+            order_priority_class = "mid"
+            i_from = self.mid_i_from
+            i_to = self.mid_i_to
+        else:
+            order_priority_class = "normal"
+            i_from = self.normal_i_from
+            i_to = self.normal_i_to
+        allowed_position_slot = self.position_classes[i_from:i_to]  # もらったオーダーの優先度で、許可されたスロット(positionList)
+
+        for i, order_class in enumerate(allowed_position_slot):
+            print(" Allowed　", i, "OaMode:", order_class.oa_mode, ",name:", order_class.name, ",life:", order_class.life)
+            i = i + 1
+
+        # 現在のクラスで、生きている物のみ抽出
+        alive_classes = [c for c in allowed_position_slot if hasattr(c, "life") and c.life]
+        if len(alive_classes) == 0:
+            print(" プログラム上既存のオーダーは存在しないため、オーダー発行へ")
+            pass
+        elif len(alive_classes) == len(allowed_position_slot):
+            # tk.line_send("許容スロットがいっぱい（オーダー発行せず)", len(alive_classes), len(allowed_position_slot))
+            self.print_classes_and_count()
+            return 0
+        elif len(order_classes) + len(alive_classes) > len(allowed_position_slot):
+            # tk.line_send("オーダー入れるとオーバーフロー（オーダー発行せず)", len(order_classes), len(alive_classes), len(allowed_position_slot))
+            self.print_classes_and_count()
+            return 0
+        else:
+            # 生きているインスタンスの最高値と、指定のプライオリティより高いものを算出
+            max_instance = max(alive_classes, key=lambda c: getattr(c, "priority", float("-inf")))
+            over_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority > order_max_priority]
+            same_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority == order_max_priority]
+
+
+        # ■現在のクラスの状況の確認
+        print("現在のクラスの状況を確認 (classPositionControl)")
+        self.print_classes_and_count()
+
+        # クラスに余りがある場合、その中で添え字が一番若いオーダーに上書き、または、追加をする
+        line_send = ""
+        for order_i, order_class in enumerate(order_classes):
+            for class_index, position_slot in enumerate(allowed_position_slot):
+                if position_slot.life:
+                    # Trueの所には上書きしない
+                    continue
+                if class_index == self.high_i_from:
+                    # ハイクラス用の添え字の場所には、入れない
+                    continue
+
+                # Falseのとこで実行する
+                res_dic = position_slot.order_plan_registration(order_class)
+                break
+                # if res_dic['order_id'] == 0:
+                #     print("オーダー失敗している（大量オーダー等）")
+                #     line_send = line_send + "オーダー失敗(" + str(order_i) + ")" + "\n"
+                # else:
+                #     # ■オーダーが成功している場合
+                #     if res_dic['order_id'] == -1:
+                #         # ウォッチオーダー
+                #         print("オーダー通知")
+                #         # print(res_dic)
+                #         # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
+                #         # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
+                #         # print(res_dic['order_name'])
+                #         # print(res_dic)
+                #         line_send = line_send + "◆【" + str(res_dic['order_name']) + "】を即時ポジションなしで発行" + \
+                #                     "指定価格:【" + str(round(res_dic['order_result']['price'], 3)) + "】" + \
+                #                     ",DIR:" + str(res_dic['order_result']['direction']) + \
+                #                     ", 数量:" + str(res_dic['order_result']['units']) + \
+                #                     ", TP:" + str(round(res_dic['order_result']['tp_price'], 3)) + \
+                #                     "(" + str(round(res_dic['order_result']['tp_range'], 3)) + ")" + \
+                #                     ", LC:" + str(round(res_dic['order_result']['lc_price'], 3)) + \
+                #                     "(" + str(round(res_dic['order_result']['lc_range'], 3)) + ")" + \
+                #                     ", AveMove:" + str(round(res_dic['ref']['move_ave'], 3)) + \
+                #                     "[システム]classNo:" + str(class_index) + ",\n"
+                #         break
+                #     else:
+                #         # オーダーの生成完了をLINE通知する
+                #         print("オーダー通知", res_dic['order_name'])
+                #         print(res_dic)
+                #         o_trans = res_dic['order_result']['json']['orderCreateTransaction']  # 短縮のための変数化
+                #         line_send = line_send + "【" + str(res_dic['order_name']) + "】,\n" +\
+                #                     "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
+                #                     ", 数量:" + str(o_trans['units']) + \
+                #                     ", タイプ:" + order_class.ls_type + \
+                #                     ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
+                #                     "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
+                #                     ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
+                #                     "(" + str(round(abs(float(o_trans['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
+                #                     ", AveMove:" + str(round(res_dic['ref']['move_ave'], 3)) + \
+                #                     ", OrderID:" + str(res_dic['order_id']) + \
+                #                     ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "[システム]classNo:" + str(class_index) + ",\n"
+                #                     # "\n"
+                #         break
+        return line_send
+
+    def all_update_information(self, df_row, candleAnalysisClass):
+        """
+        全ての情報を更新する
+        :return:
+        """
+        for item in self.position_classes:
+            if item.life:
+                item.update_information(df_row, candleAnalysisClass)
+
+        # # 関連オーダーの更新
+        # self.linkage_control()
+
+    def reset_all_position(self, df_row):
+        print("  RESET ALL POSITIONS")
+        # mainのオアンダクラスのオーダーを削除（API）
+        # self.oa.OrderCancel_All_exe()
+        # self.oa.TradeAllClose_exe()
+        # 両建て用のオアンダクラスのオーダーの削除（API）
+        self.oa2.OrderCancel_All_exe()
+        # self.oa2.TradeAllClose_exe()
+
+        # プログラム内のクラスの整理
+        self.all_update_information(df_row)  # 関数呼び出し（アップデート）

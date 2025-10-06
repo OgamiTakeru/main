@@ -12,13 +12,13 @@ memo = "大量23_24LONG"
 intest = ci.Inspection(
                         # pred.wrap_predict_turn_inspection_test,
                        ti.turn_analisys,
-                       True,
-                       datetime.datetime(2025, 5, 22, 15, 55, 0),
+                       False,
+                       datetime.datetime(2024, 10, 6, 15, 55, 0),
                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_m5_df.csv',
                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量データ_test_s5_df.csv',
-                       600,
-                       1,
-                       memo + "2のみ",
+                       5000,
+                       10,
+                       memo,
                        False,
                        ""
                        )

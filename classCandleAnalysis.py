@@ -159,7 +159,6 @@ class candleAnalysis:
             self.d60_df_r = d60_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
 
-
 class eachCandleAnalysis:
     def __init__(self, peaks_class, granularity):
         """
@@ -194,7 +193,7 @@ class eachCandleAnalysis:
         1時間足でメイン。いま動きの中のどのくらいにいるか
         """
         res = self.peaks_class.peak_strength_sort()
-        print("    current price")
+        # print("    current price")
         # print("マイナス方向")
         # # v = [d["latest_body_peak_price"] for d in res["-1"]]
         # gene.print_arr(res["-1"])
@@ -234,12 +233,12 @@ class eachCandleAnalysis:
         self.recent_fluctuation_range = round(max_high - min_low, 3)
         self.ave_move = filtered_df.head(5)["highlow"].mean()
         self.ave_move_for_lc = self.ave_move * 1.6
-        print("   ＜稼働範囲サマリ＞")
-        print("    検出範囲", filtered_df.iloc[0]["time_jp"], "-", filtered_df.iloc[-1]['time_jp'])
-        print("    最大値、最小値", max_high, min_low, "差分")
-        print("    平均キャンドル長", filtered_df.head(5)["highlow"].mean())
-        print("    提唱LC幅", self.ave_move_for_lc)
-        print("    狭いレンジか？", self.peaks_class.hyper_range)
+        # print("   ＜稼働範囲サマリ＞")
+        # print("    検出範囲", filtered_df.iloc[0]["time_jp"], "-", filtered_df.iloc[-1]['time_jp'])
+        # print("    最大値、最小値", max_high, min_low, "差分")
+        # print("    平均キャンドル長", filtered_df.head(5)["highlow"].mean())
+        # print("    提唱LC幅", self.ave_move_for_lc)
+        # print("    狭いレンジか？", self.peaks_class.hyper_range)
         # print(t6, "最大足(最高-最低),", sorted_df.iloc[0]['time_jp'], sorted_df.iloc[0]['highlow'])
         # print(t6, "最小足(最高-最低),", sorted_df.iloc[-1]['time_jp'], sorted_df.iloc[-1]['highlow'])
         # print(t6, "平均(最高-最低)", sorted_df['highlow'].mean())
@@ -251,7 +250,7 @@ class eachCandleAnalysis:
         if len(self.peaks_class.peaks_original) == 1:
             # 極まれに範囲外になる。
             target_peak = self.peaks_class.peaks_original[0]
-            print("特殊事態（Peaksが少なすぎる）")
+            # print("特殊事態（Peaksが少なすぎる）")
             gene.print_arr(self.peaks_class.peaks_original)
         else:
             target_peak = self.peaks_class.peaks_original[1]  # ビッグムーブ検査の対象となるのはひとつ前のピーク
@@ -289,7 +288,7 @@ class eachCandleAnalysis:
             self.is_big_move_candle = True
         else:
             self.is_big_move_candle = False
-        print("    大きな変動があるか？", self.is_big_move_candle)
+        # print("    大きな変動があるか？", self.is_big_move_candle)
 
     def cal_move_ave(self, times):
         """
@@ -300,3 +299,34 @@ class eachCandleAnalysis:
         self.ave_move = filtered_df.head(9)["highlow"].mean()
         self.ave_move_for_lc = self.ave_move * times
         return self.ave_move_for_lc
+
+
+class candleAnalisysForTest(candleAnalysis):
+        # テストモードの場合はtarget_time_jpにデーらフレームが入っている
+    def __init__(self, base_oa, df):
+        """
+        target_time_jpまでの時間を取得する
+        """
+        # オアンダクラス
+        self.base_oa = base_oa
+        self.need_df_num = 100
+
+        # データ入れる用
+        self.d5_df_r = None
+        self.d60_df_r = None
+
+        if isinstance(df, pd.DataFrame):  # a が DataFrame の場合だけ
+            # 既存のDFを利用する
+            # データを移植する（5分足）
+            self.d5_df_r = df
+            # データを移植する（60分足）
+            self.d60_df_r = df
+
+        # データを取得する(5分足系）
+        granularity = "M5"
+        self.peaks_class = peaksClass.PeaksClass(self.d5_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        self.candle_class = eachCandleAnalysis(self.peaks_class, granularity)
+        # データを取得する（60分足）
+        granularity = "H1"
+        self.peaks_class_hour = peaksClass.PeaksClass(self.d60_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        self.candle_class_hour = eachCandleAnalysis(self.peaks_class_hour, granularity)

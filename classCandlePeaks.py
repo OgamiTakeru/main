@@ -108,8 +108,8 @@ class PeaksClass:
 
         self.df_r = original_df_r[1:]  # df_rは先頭は省く（数秒分の足のため）
         self.df_r = self.df_r[:55]  # 直近4.5時間分(55足分)のデータフレームにする
-        print("API取得したデータ範囲　From", original_df_r.iloc[-1]['time_jp'], "to", original_df_r.iloc[0]['time_jp'])
-        print("調査範囲　From", self.df_r.iloc[-1]['time_jp'], "to", self.df_r.iloc[0]['time_jp'])
+        # print("API取得したデータ範囲　From", original_df_r.iloc[-1]['time_jp'], "to", original_df_r.iloc[0]['time_jp'])
+        # print("調査範囲　From", self.df_r.iloc[-1]['time_jp'], "to", self.df_r.iloc[0]['time_jp'])
         self.peaks_original = self.make_peaks(self.df_r)  # 一番感度のいいPeaks。引数は書くとするなら。self.df_r。
         self.peaks_original_with_df = self.make_peaks_with_df(self.df_r)  # 一番感度のいいPeaksにDfがついたもの
         # たまに起きる謎のエラー対応
@@ -140,25 +140,25 @@ class PeaksClass:
         self.check_very_narrow_range(self.df_r)
 
         # (4) 表示
-        s = "   "
-        peaks_original = copy.deepcopy(self.peaks_original)# 深いコピーを作成
-        for d in peaks_original:# 指定キーを削除
-            d.pop('next', None)
-            d.pop('previous_time_peak', None)
-            d.pop('support_info', None)
-            d.pop('memo_time', None)
-
-        # (5)samePriceListを、各Peakに付与する
-        for i, item in enumerate(self.peaks_original):
-            # print(i, item['latest_time_jp'], item['latest_body_peak_price'])
-            spl_res = self.make_same_price_list(i, False)
-            spl = spl_res['same_price_list']
-            # print(" ", len(spl))
-            item_copy = copy.deepcopy(item)
-            item_copy['same_price_list'] = spl
-            item_copy['same_price_list_till_break'] = spl_res['till_break_list']
-            item_copy['opposite_peaks'] = spl_res['opposite_peaks']
-            self.peaks_with_same_price_list.append(item_copy)
+        # s = "   "
+        # peaks_original = copy.deepcopy(self.peaks_original)# 深いコピーを作成
+        # for d in peaks_original:# 指定キーを削除
+        #     d.pop('next', None)
+        #     d.pop('previous_time_peak', None)
+        #     d.pop('support_info', None)
+        #     d.pop('memo_time', None)
+        #
+        # # (5)samePriceListを、各Peakに付与する
+        # for i, item in enumerate(self.peaks_original):
+        #     # print(i, item['latest_time_jp'], item['latest_body_peak_price'])
+        #     spl_res = self.make_same_price_list(i, False)
+        #     spl = spl_res['same_price_list']
+        #     # print(" ", len(spl))
+        #     item_copy = copy.deepcopy(item)
+        #     item_copy['same_price_list'] = spl
+        #     item_copy['same_price_list_till_break'] = spl_res['till_break_list']
+        #     item_copy['opposite_peaks'] = spl_res['opposite_peaks']
+        #     self.peaks_with_same_price_list.append(item_copy)
 
         # print(s, "<SKIP前>", )
         # gene.print_arr(peaks_original[:10])

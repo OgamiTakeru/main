@@ -31,11 +31,11 @@ if mode == 1:
                            #  datetime.datetime(2022, 2, 6, 23, 40, 6),  # いいマイナスデータ
                            # datetime.datetime(2022, 2, 21, 23, 40, 6),  # いいマイナスデータ
                            # datetime.datetime(2025, 8, 8, 23, 0, 6),  # 勝てるとき(700行）
-                            datetime.datetime(2025, 8, 27, 5, 0, 6),  #ここが最後
+                            datetime.datetime(2025, 10, 6, 17, 0, 6),  #ここが最後
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5m.csv',
                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_1_7_5s.csv',
-                           500,
-                           1,
+                           5000,
+                           10,
                            " テスト" + memo,
                            True,  # グラフの描画あり
                            ""

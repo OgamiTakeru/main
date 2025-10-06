@@ -81,7 +81,7 @@ class turn_analisys:
         直近[0]がcount4の時、riverPeakにレジスタンスオーダーを入れる
         """
         # ■基本情報の取得
-        print("★★TURN　本番用")
+        # print("★★TURN　本番用")
 
         # ■実行除外
         # 対象のPeakのサイズを確認（小さすぎる場合、除外）
@@ -155,7 +155,7 @@ class turn_analisys:
                 pat = 2
             else:
                 comment = "中途半端⇒レンジ"
-                pat = 1
+                pat = 1.5
         elif self.rt.lo_ratio <= 0.9 and r['count'] == 2:
             comment = "すぐTPしたい"
             pat = 3
@@ -200,6 +200,23 @@ class turn_analisys:
             # リンケージをたがいに登録する
             order_class1.add_linkage(order_class2)
             order_class2.add_linkage(order_class1)
+        elif pat == 1.5:
+            # レンジメイン(Hedgeなし！）
+            order_class1 = OCreate.Order({
+                "name": comment,
+                "current_price": self.peaks_class.latest_price,
+                "target": 0,
+                "direction": t['direction'],
+                "type": "MARKET",
+                "tp": self.ca5.cal_move_ave(2),  # self.ca5.cal_move_ave(5),
+                "lc": self.ca5.cal_move_ave(2),  # self.base_lc_range,
+                "lc_change": self.lc_change_test,
+                "units": self.units_str * 1.1,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_and_flag_inspecion_class(order_class1)
         elif pat == 2:
             # ブレイクメイン
             order_class1 = OCreate.Order({
@@ -252,24 +269,24 @@ class turn_analisys:
                 "candle_analysis_class": self.ca
             })
             self.add_order_and_flag_inspecion_class(order_class1)
-            order_class2 = OCreate.Order({
-                "name": comment + "HEDGE",
-                "current_price": self.peaks_class.latest_price,
-                "target": self.ca5.cal_move_ave(1.5),
-                "direction": t['direction'],
-                "type": "STOP",
-                "tp": self.ca5.cal_move_ave(1),  # self.base_tp_range,  # self.ca5.cal_move_ave(5),
-                "lc": self.ca5.cal_move_ave(3),  # self.base_lc_range,
-                "lc_change": self.lc_change_test,
-                "units": self.units_hedge * 0.9,
-                "priority": 4,
-                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                "candle_analysis_class": self.ca
-            })
-            self.add_order_and_flag_inspecion_class(order_class2)
-            # リンケージをたがいに登録する
-            order_class1.add_linkage(order_class2)
-            order_class2.add_linkage(order_class1)
+            # order_class2 = OCreate.Order({
+            #     "name": comment + "HEDGE",
+            #     "current_price": self.peaks_class.latest_price,
+            #     "target": self.ca5.cal_move_ave(1.5),
+            #     "direction": t['direction'],
+            #     "type": "STOP",
+            #     "tp": self.ca5.cal_move_ave(1),  # self.base_tp_range,  # self.ca5.cal_move_ave(5),
+            #     "lc": self.ca5.cal_move_ave(3),  # self.base_lc_range,
+            #     "lc_change": self.lc_change_test,
+            #     "units": self.units_hedge * 0.9,
+            #     "priority": 4,
+            #     "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+            #     "candle_analysis_class": self.ca
+            # })
+            # self.add_order_and_flag_inspecion_class(order_class2)
+            # # リンケージをたがいに登録する
+            # order_class1.add_linkage(order_class2)
+            # order_class2.add_linkage(order_class1)
 
     def big_move_r_direction_order(self):
         """
@@ -364,6 +381,9 @@ class turn_analisys:
         ②抵抗線とは逆側のピークの傾きを検証
         ③直近のピークが収束（ピーク幅が15pips以下）かを判定
         """
+        if len(peaks_with_same_price_list) == 0:
+            print("同一価格リストサイズ０")
+            return 0
         # 変数代入＆表示
         r = peaks_with_same_price_list[0]
         t = peaks_with_same_price_list[1]

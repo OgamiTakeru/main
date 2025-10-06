@@ -9,71 +9,12 @@ import fGeneric as gene
 import math
 import plotly.graph_objects as go
 import pandas as pd
+import classPositionControl as pc
+import classPositionForTest as p
+import classCandleAnalysis as ca
+import fAnalysis_order_Main as am
+import os
 
-
-class Order:
-    class_total = 0
-
-    def __init__(self, order_dic, for_inspection_dic):
-        # print("検証でオーダー受付", order_dic['units'])
-        print(order_dic)
-        self.take_position_flag = False
-        self.is_live = True  # オーダー発行時（インスタンス生成時）にTrueとなり、Orderキャンセルと、ポジション移行後のクローズでFalseとなる
-        self.position_is_live = False
-        self.position_status = "PENDING"  # pending, open ,closed, cancelled
-        self.name = order_dic['name']
-        self.target_price = order_dic['target_price']
-
-        self.tp_price = order_dic['tp_price']
-        self.lc_price = order_dic['lc_price']
-        self.lc_price_original = order_dic['lc_price_original']
-        self.units = order_dic['units'] * order_dic['direction']  # 正の値しか来ないようだ！？ なので、directionをかけておく
-        self.direction = order_dic['direction']  # self.units / abs(self.units)
-        self.order_keeping_time_sec = 0  # 現在オーダーをキープしている時間
-        self.order_timeout_sec = order_dic['order_timeout_min'] * 60
-        self.position_timeout_sec = 120 * 60  # 45 * 60
-
-        self.unrealized_pl = 0  # 含み損益
-        self.unrealized_pl_high = 0  # 最大含み損益(検証特有。最もその足でプラスに考えた状態の損益）
-        self.unrealized_pl_low = 0  # 最小含み損益（検証特融。最もその足でマイナスに考えた状態の損益）
-        self.unrealized_pl_per_units = 0
-        self.realized_pl = 0
-        self.realized_pl_per_units = 0
-
-        self.position_time = 0
-        self.position_keeping_time_sec = 0  # 現在ポジションをキープしている時間
-        self.order_time = order_dic['order_time']
-        self.max_plus = 0  # ポジションを持っている中で、一番プラスになっている時を取得
-        self.max_plus_time_past = 0  # 何分経過時に最大のプラスを記録したか
-        self.max_minus = 999  # ポジションを持っている中で、一番マイナスになっている時を取得
-        self.max_minus_time_past = 0  # 何分経過時に、最大の負けを記録したか
-        self.settlement_price = 0
-        self.lc_change = order_dic['lc_change']
-        self.priority = order_dic['priority']
-
-        self.for_inspection_dic = for_inspection_dic
-
-        # watching系
-        if "watching_price" in order_dic:
-            # 指定有
-            if order_dic['watching_price'] == 0:
-                self.watch_for_order_exe = False
-            else:
-                self.watch_for_order_exe = True  # 待機
-        else:
-            # 指定なし
-            self.watch_for_order_exe = False
-        # self.watch_for_order_exe = False
-        self.watch_for_order_trigger_on = False
-        self.watch_for_order_keeping_time = 0
-        self.watch_for_order_border_time = 30
-        self.watch_for_order_border_range = 0
-        self.watching_price = order_dic['watching_price']
-
-        self.comment = ""  # クラスごとに残すコメント（決済がLCChangeの場合LCとなるので、ClChangeとしたい、とか）
-
-    def lc_change_done(self, i):
-        self.lc_change[i]['done'] = True
 
 
 class Inspection:
@@ -97,6 +38,7 @@ class Inspection:
         # グローバルでの宣言
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
+        self.candleAnalysisClass = None
         self.target_class = target_func
 
         self.gl_classes = []
@@ -151,8 +93,14 @@ class Inspection:
         self.gl_start_time_str = str(self.gl_now.month).zfill(2) + str(self.gl_now.day).zfill(2) + "_" + \
                             str(self.gl_now.hour).zfill(2) + str(self.gl_now.minute).zfill(2) + str(self.gl_now.second).zfill(2)
 
+        self.filepath = tk.folder_path + self.gl_start_time_str + '_main_analysis_temp.csv'
+        self.positions_control_class = pc.position_control_for_test(True, self.filepath)  # ポジションリストの用意
+        # self.positions_control_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
+        # self.positions_control_class.reset_all_position()
+
         # 処理
         self.get_data()
+        print(" 取得したデータ", len(self.gl_d5_df_r))
         self.main()
         ans = self.cal_result_and_send_line()  # １は通常終了 0は異常終了
         self.res_send()
@@ -272,11 +220,9 @@ class Inspection:
             if index % 1000 == 0:
                 print("■■■検証", row_s5['time_jp'], "■■■", index, "行目/", len(self.gl_inspection_base_df), "中")
 
-            # 【解析処理】結合した5分足の部分にデータがあれば、解析トライをする   旧（分が5の倍数であれば、解析を実施する）
-            dt = str_to_time(row_s5['time_jp'])  # 時間に変換
-            # if dt.minute % 5 == 0 and dt.second == 0:  # 各5分0秒で解析を実行する
             if pd.notna(row_s5['time_y']):  # 毎5の倍数分で解析を実行する
-                # ■■５分ごとの実行分
+                # 【解析処理】結合した5分足の部分にデータがあれば、解析トライをする   旧（分が5の倍数であれば、解析を実施する）
+                dt = str_to_time(row_s5['time_jp'])  # 時間に変換
                 analysis_df = find_analysis_dataframe(self.gl_d5_df_r, row_s5['time_jp'])  # 解析用の5分足データを取得する
                 if len(analysis_df) < self.gl_need_to_analysis:
                     # 解析できない行数しかない場合、実施しない（5秒足の飛びや、取得範囲の関係で発生）
@@ -284,99 +230,59 @@ class Inspection:
                           self.gl_need_to_analysis, "データ数", len(analysis_df), "行数:", index, "行目/",
                           len(self.gl_inspection_base_df), "中")
                     continue  # returnではなく、次のループへ
-                else:
-                    # ★★★ 解析を呼び出す★★★★★
-                    # ★★★ 解析を呼び出す★★★★★
-                    print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/",
-                          len(self.gl_inspection_base_df), "中")
-                    # analysis_result = im.new_analysis_test(analysis_df)  # 検証専用コード
-                    # analysis_result = self.target_func(analysis_df)  # 検証専用コード
-                    # print("TARAMS確認", self.params)
-                    if self.params:
-                        analysis_result = self.target_class(analysis_df, self.params)  # 検証専用コード
-                    else:
-                        target_class_instance = self.target_class(analysis_df, self.oa)  # インスタンス
-                        analysis_result = {
-                            "take_position_flag": target_class_instance.take_position_flag,
-                            "exe_orders": [order.exe_order for order in target_class_instance.exe_order_classes],
-                            "for_inspection_dic": {}
-                        }
-                        print("テスト用")
-                        print(analysis_result['exe_orders'])
-                        # analysis_result = self.target_class(analysis_df)  # 検証専用コード
+                # ■■５分ごとの実行分
+                # ★★★ 解析を呼び出す★★★★★
+                # ★★★ 解析を呼び出す★★★★★
+                print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/",
+                      len(self.gl_inspection_base_df), "中")
 
-                    # for order in analysis_result["exe_orders"]:  # original_lc_priceの追加
-                    #     order["lc_price_original"] = order["lc_price"]
-                    # analysis_result = im.analysis_warp_up_and_make_order(analysis_df)
-                    if not analysis_result['take_position_flag']:
-                        # オーダー判定なしの場合、次のループへ（5秒後）
-                        continue
-                    # ■上書き有無を判断
-                    overwrite_order = False
-                    if overwrite_order:
-                        # 上書きする場合(実運用に近い）
-                        # 既存のクラスをリセットして、改めて登録しなおす
-                        # クラスをリセット＆オーダーをクラスに登録する
-                        self.gl_classes = []  # リセット
-                        order_time = row_s5['time_jp']
-                        for i_order in range(len(analysis_result['exe_orders'])):
-                            # print(analysis_result['exe_orders'][i_order])
-                            analysis_result['exe_orders'][i_order]['order_time'] = order_time  # order_time追加（本番marketだとない）
-                            self.gl_classes.append(Order(analysis_result['exe_orders'][i_order],
-                                                    analysis_result['for_inspection_dic']))  # インスタンス生成＋配列追加(is_life=True)
-                            # 結果表示用の情報を作成
-                            self.gl_order_list.append(
-                                {"order_time": order_time, "name": analysis_result['exe_orders'][i_order]['name']})
-                    else:
-                        # ★上書きしない検証用
-                        # 全てのオーダーに対して、検証を行う。LifeがFalseになったものに上書きしていく。ポジ解消タイミングによって、結果の時系列が逆になることも。
-                        order_time = row_s5['time_jp']
-                        for i_order in range(len(analysis_result['exe_orders'])):
-                            # print(analysis_result['exe_orders'][i_order])
-                            analysis_result['exe_orders'][i_order][
-                                'order_time'] = order_time  # order_time追加（本番marketだとない）
-                            # print("星星星これ？")
-                            # gene.print_json(analysis_result)
-                            self.gl_classes.append(Order(analysis_result['exe_orders'][i_order],
-                                                    analysis_result[
-                                                        'for_inspection_dic']))  # 【配列追加】インスタンス生成し、オーダーと検証用データを渡す。
-                            # 結果表示用の情報を作成
-                            self.gl_order_list.append(
-                                {"order_time": order_time,
-                                 "direction": analysis_result['exe_orders'][i_order]['direction'],
-                                 "price": analysis_result['exe_orders'][i_order]['target_price'],
-                                 "name": analysis_result['exe_orders'][i_order]['name']
-                                 })
+                self.candleAnalysisClass = ca.candleAnalisysForTest("oa", analysis_df)  # 現在時刻（０）でデータ取得
+                # ■調査実行
+                analysis_result_instance = am.wrap_all_analisys(self.candleAnalysisClass)
+                # ■ オーダー発行
+                if not analysis_result_instance.take_position_flag:
+                    # 発注がない場合は、終了 (ポケ除け的な部分）
+                    pass
+                else:
+                    # オーダーを登録＆発行する
+                    print("オーダー発行 in test")
+                    exe_res = self.positions_control_class.order_class_add(analysis_result_instance.exe_order_classes)
             else:
                 # ５の倍数分以外の処理（特になし）
                 pass
 
-            # 以下全ての５秒で実施するもの
-            # 【実質的な検証処理】各クラスを巡回し取得、解消　を5秒単位で実行する
-            for i, each_c in enumerate(self.gl_classes):
-                # すでに実行済の場合は実行しない
-                if not each_c.is_live:
-                    continue
+            # 5秒沖の処理
+            print("■■■■■■MAIN----", row_s5['time_jp'])
+            # dt = datetime.datetime.strptime(row_s5['time_jp'], "%Y/%m/%d %H:%M:%S")
+            # minute = dt.minute - (dt.minute % 5)  # 分を5の倍数に切り下げ
+            # rounded = dt.replace(minute=minute, second=0, microsecond=0)
+            # analysis_df = find_analysis_dataframe(self.gl_d5_df_r, rounded)  # 解析用の5分足データを取得する
+            # print("秒ごとのCandleの生成", rounded, len(analysis_df))
+            # print(analysis_df.head(2))
 
-                # 処理を実施する(ポジション取得～解消まで）
-                if not each_c.position_is_live:
-                    # ポジションがない場合は、取得判定
-                    # print("    取得待ち", row_s5['low'], row_s5['high'], each_c.target_price,each_c.position_is_live)
-                    update_order_information_and_take_position(each_c, row_s5, index)
-                else:
-                    # 現状をアップデートする
-                    update_position_information(each_c, row_s5, index)
-                    # ロスカ（利確）判定や、LCチェンジ等の処理を行う
-                    self.execute_position_finish(each_c, row_s5, index)
+            self.positions_control_class.all_update_information(row_s5, self.candleAnalysisClass)  # positionの更新
+            life_check_res = self.positions_control_class.life_check()
+
+            if life_check_res['life_exist']:
+                # オーダー以上がある場合。表示用（１分に１回表示させたい）
+                self.positions_control_class.linkage_control()  # positionの更新
+
 
     def cal_result_and_send_line(self):
         # ■結果処理
+        if os.path.exists(self.filepath):
+            # あれば中身のデータフレーム
+            result_df = pd.read_csv(self.filepath)
+        else:
+            # 無ければ空のデータフレーム
+            result_df = pd.DataFrame()
+
         # 検証内容をデータフレームに変換
-        print(self.gl_results_list)
-        if len(self.gl_results_list) == 0:
+        print(result_df)
+        if len(result_df) == 0:
             print("結果無し（０件）")
             return 0
-        result_df = pd.DataFrame(self.gl_results_list)  # 結果の辞書配列をデータフレームに変換
+        # result_df = pd.DataFrame(self.gl_results_list)  # 結果の辞書配列をデータフレームに変換
         # 解析に使いそうな情報をつけてしまう（オプショナルでなくてもいいかも）
         result_df['plus_minus'] = result_df['pl_per_units'].apply(lambda x: -1 if x < 0 else 1)  # プラスかマイナスかのカウント用
         result_df['order_time_datetime'] = pd.to_datetime(result_df['order_time'])  # 文字列の時刻をdatatimeに変換したもの
@@ -410,12 +316,12 @@ class Inspection:
         # 結果表示（共通）
         print("●●検証終了●●", "   クラス数", len(self.gl_classes))
         fin_time = datetime.datetime.now()
-        print("●スキップされたオーダー")
-        gene.print_arr(self.gl_not_overwrite_orders)
-        print("●オーダーリスト（約定しなかったものが最下部の結果に表示されないため、オーダーを表示）")
-        gene.print_arr(self.gl_order_list)
-        print("●結果リスト")
-        gene.print_arr(self.gl_results_list)
+        # print("●スキップされたオーダー")
+        # gene.print_arr(self.gl_not_overwrite_orders)
+        # print("●オーダーリスト（約定しなかったものが最下部の結果に表示されないため、オーダーを表示）")
+        # gene.print_arr(self.gl_order_list)
+        # print("●結果リスト")
+        # gene.print_arr(self.gl_results_list)
         print("●データの範囲", self.gl_5m_start_time, self.gl_5m_end_time)
         print("●実際の解析範囲", self.gl_actual_5m_start_time, "-", self.gl_actual_end_time, "行(5分足換算:",
               round(len(self.gl_inspection_base_df) / 60, 0), ")")
@@ -424,20 +330,20 @@ class Inspection:
             print("結果０です")
         else:
             # 簡易的な結果表示用
-            plus_df = result_df[result_df["pl"] >= 0]  # PLがプラスのもの（TPではない。LCでもトレール的な場合プラスになっているため）
-            minus_df = result_df[result_df["pl"] < 0]
+            plus_df = result_df[result_df["pl_per_units"] >= 0]  # PLがプラスのもの（TPではない。LCでもトレール的な場合プラスになっているため）
+            minus_df = result_df[result_df["pl_per_units"] < 0]
             # 結果表示部
-            print("●オーダーの個数", len(self.gl_order_list), "、約定した個数", len(self.gl_results_list))
+            print("●オーダーの個数", len(result_df))  # , "、約定した個数", len(self.gl_results_list))
             print("●プラスの個数", len(plus_df), ", マイナスの個数", len(minus_df))
-            print("●最終的な合計", round(self.gl_total, 3), round(self.gl_total_per_units, 3))
+            print("●最終的な合計", round(result_df['res'].sum(), 3), round(result_df['pl_per_units'].sum(), 3))
             # LINEを送る
             inspection_day_gap_sec = gene.cal_str_time_gap(self.gl_actual_start_time, self.gl_actual_end_time)
             inspection_day_gap = inspection_day_gap_sec['gap_abs'] // (24 * 60 * 60)
             if inspection_day_gap == 0:
                 inspection_day_gap = 1
-            tk.line_send("test fin 【結果】", round(self.gl_total, 0), ",\n"
+            tk.line_send("test fin 【結果】", round(result_df['res'].sum(), 3), ",\n"
                          , "【検証期間】", self.gl_actual_start_time, "-", self.gl_actual_end_time, "(", inspection_day_gap, "日)", "\n"
-                         , "【Unit平均】", round(absolute_mean, 0), ",\n"
+                         # , "【Unit平均】", round(absolute_mean, 0), ",\n"
                          , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), " 計:", len(plus_df) + len(minus_df), ",\n"
                          , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":",
                          round(minus_df['pl_per_units'].mean(), 3), ",\n"
@@ -452,14 +358,15 @@ class Inspection:
             # 名前ごとにも集計
             # nameごとに集約
             result = result_df.groupby('name').agg(
-                total_pl=('pl', 'sum'),
-                positive_count=('pl', lambda x: (x > 0).sum()),
-                negative_count=('pl', lambda x: (x < 0).sum())
+                total_pl=('res', 'sum'),
+                positive_count=('res', lambda x: (x > 0).sum()),
+                negative_count=('res', lambda x: (x < 0).sum())
             ).reset_index()
             # 並び替え
             result = result.sort_values('name', ascending=True).reset_index(drop=True)
 
             # 文字列を生成
+            print(result)
             output = "検証期間LONG\n"
             for _, row in result.iterrows():
                 output += (f"【名前】{row['name']}【計】:{round(row['total_pl'], 0)}({row['positive_count']}:{row['negative_count']})"
@@ -596,7 +503,7 @@ class Inspection:
             # 向き
             symbol = "triangle-up" if row["units"] > 0 else "triangle-down"
             # 色
-            color = "blue" if row["pl"] > 0 else "red"
+            color = "blue" if row["pl_per_units"] > 0 else "red"
 
             fig.add_trace(go.Scatter(
                 # x=[row["order_time"]],
@@ -610,7 +517,7 @@ class Inspection:
             # 黒い横棒（lc_price）：細い
             fig.add_trace(go.Scatter(
                 x=[row["order_time"]],
-                y=[row["lc_price_original"]],
+                y=[row["lc_price_original_plan"]],
                 mode="markers",
                 marker=dict(symbol='line-ew', size=7, color='black', line=dict(width=1)),
                 name="LC Price",
@@ -659,7 +566,7 @@ class Inspection:
             # 黒い横棒（lc_price）：細い
             fig.add_trace(go.Scatter(
                 x=[row["order_time"]],
-                y=[row["lc_price_original"]],
+                y=[row["lc_price_original_plan"]],
                 mode="markers",
                 marker=dict(symbol='line-ew', size=7, color='black', line=dict(width=1)),
                 name="LC Price",
@@ -688,6 +595,7 @@ class Inspection:
 
         # 表示
         fig.show()
+
 
 def str_to_time(str_time):
     """
