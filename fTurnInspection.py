@@ -155,7 +155,7 @@ class turn_analisys:
                 pat = 2
             else:
                 comment = "中途半端⇒レンジ"
-                pat = 1.5
+                pat = 1
         elif self.rt.lo_ratio <= 0.9 and r['count'] == 2:
             comment = "すぐTPしたい"
             pat = 3
@@ -260,8 +260,8 @@ class turn_analisys:
                 "target": 0,
                 "direction": r['direction'],
                 "type": "MARKET",
-                "tp": self.ca5.cal_move_ave(1),
-                "lc": self.ca5.cal_move_ave(3),
+                "tp": self.ca5.cal_move_ave(2),
+                "lc": self.ca5.cal_move_ave(2),
                 "lc_change": self.lc_change_test,
                 "units": self.units_str * 0.9,
                 "priority": 4,
@@ -269,24 +269,24 @@ class turn_analisys:
                 "candle_analysis_class": self.ca
             })
             self.add_order_and_flag_inspecion_class(order_class1)
-            # order_class2 = OCreate.Order({
-            #     "name": comment + "HEDGE",
-            #     "current_price": self.peaks_class.latest_price,
-            #     "target": self.ca5.cal_move_ave(1.5),
-            #     "direction": t['direction'],
-            #     "type": "STOP",
-            #     "tp": self.ca5.cal_move_ave(1),  # self.base_tp_range,  # self.ca5.cal_move_ave(5),
-            #     "lc": self.ca5.cal_move_ave(3),  # self.base_lc_range,
-            #     "lc_change": self.lc_change_test,
-            #     "units": self.units_hedge * 0.9,
-            #     "priority": 4,
-            #     "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-            #     "candle_analysis_class": self.ca
-            # })
-            # self.add_order_and_flag_inspecion_class(order_class2)
-            # # リンケージをたがいに登録する
-            # order_class1.add_linkage(order_class2)
-            # order_class2.add_linkage(order_class1)
+            order_class2 = OCreate.Order({
+                "name": comment + "HEDGE",
+                "current_price": self.peaks_class.latest_price,
+                "target": self.ca5.cal_move_ave(1.5),
+                "direction": t['direction'],
+                "type": "STOP",
+                "tp": self.ca5.cal_move_ave(2),  # self.base_tp_range,  # self.ca5.cal_move_ave(5),
+                "lc": self.ca5.cal_move_ave(2),  # self.base_lc_range,
+                "lc_change": self.lc_change_test,
+                "units": self.units_hedge * 0.9,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_and_flag_inspecion_class(order_class2)
+            # リンケージをたがいに登録する
+            order_class1.add_linkage(order_class2)
+            order_class2.add_linkage(order_class1)
 
     def big_move_r_direction_order(self):
         """
@@ -809,14 +809,14 @@ class TuneAnalysisInformation:
             if target_peak['direction'] == 1 and latest_df['body'] > 0 and second_df['body'] > 0:
                 self.is_same_direction_at_river_later = True  # リバー専用？　リバーの向きと、その直近2個のローソクの向きが同じかどうか
                 self.second_last_close_price_later = second_df['close']
-                print("　　◎リバーの方向が全部同じ（正方向）", self.second_last_close_price_later)
+                # print("　　◎リバーの方向が全部同じ（正方向）", self.second_last_close_price_later)
             elif target_peak['direction'] == -1 and latest_df['body'] < 0 and second_df['body'] < 0:
                 self.is_same_direction_at_river_later = True  # リバー専用？　リバーの向きと、その直近2個のローソクの向きが同じかどうか
                 self.second_last_close_price_later = second_df['close']
-                print("　　　◎リバーの方向が全部同じ（負方向）", self.second_last_close_price_later)
+                # print("　　　◎リバーの方向が全部同じ（負方向）", self.second_last_close_price_later)
             else:
                 pass
-                print("　　　NG リバー方向", target_peak['direction'], "ボディー向き", latest_df['body'], second_df['body'])
+                # print("　　　NG リバー方向", target_peak['direction'], "ボディー向き", latest_df['body'], second_df['body'])
 
     def relation_2peaks_information(self, older_peak, later_peak):
         """

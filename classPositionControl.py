@@ -23,7 +23,7 @@ class position_control:
         self.oa2 = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
 
         # 最大所持個数の設定
-        self.max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
+        self.max_position_num = 5  # 最大でも10個のポジションしかもてないようにする
         self.middle_priority_num = 2  # ミドルプライオリティ(max_position_numのうち）
         self.high_priority_num = 1  # ハイプライオリティのもの（max_position_numのうち）
 
@@ -192,7 +192,7 @@ class position_control:
                 item.update_information()
 
         # # 関連オーダーの更新
-        # self.linkage_control()
+        self.linkage_control()
 
     def life_check(self):
         """
@@ -410,7 +410,7 @@ class position_control:
                     # print("    linkageのインスタンス変数なし")
                     continue
 
-                # 本処理
+                # 本処理(残されたリンケージオーダーへの対応）
                 for i, linkage_class in enumerate(main_position.linkage_order_classes):
                     left_position = next((obj for obj in self.position_classes if obj.name == linkage_class.name), None)
                     # print("    ", linkage_class.name, "のオーダーが対象", left_position.life, left_position.t_pl_u)
@@ -432,6 +432,23 @@ class position_control:
                         # 既に残された側が、
                         # print("     ", left_position.name, " 既にリンケージ調整され済み", )
                         continue
+
+                    if main_position.o_state == "CANCELLED":
+                        main_position.linkage_done_func()
+                        left_pl_u = float(left_position.t_pl_u)  # 現在のプラマイ
+                        if left_pl_u >= 0:
+                            # 残されたオーダーがプラス域の場合（ほとんどないが、０の場合はOrder時間切れキャンセルの可能性←やられた）
+                            pass
+                        else:
+                            # 残されたオーダーがマイナス域の場合（こっちがメインのケース）
+                            new_lc_range = abs(0.03) + 0.01
+                            dir = int(left_position.plan_json['direction'])
+                            # tk.line_send("    LC変更kakumin", main_position.lose_max_plu, left_position.t_pl_u, bigger_minus)
+                            print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
+                            new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
+                            print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
+                            left_position.linkage_lc_change(new_lc_price)
+                            # tk.line_send("オーダー時間切れキャンセル発生＆Linkage先あり@", main_position.name, new_lc_price, left_position.name)
 
                     if left_position.life and left_position.t_state == "OPEN":
                         main_position.linkage_done_func()  # リンケージが単数前提の場合、ここでリンケージ機能をクローズしてしまう
@@ -461,7 +478,7 @@ class position_control:
                         # プラス域かマイナス域で判定を変更する
                         left_pl_u = float(left_position.t_pl_u)  # 現在のプラマイ
                         if left_pl_u >= 0:
-                            # 残されたオーダーがプラス域の場合（こっちの場合はほとんどない？）
+                            # 残されたオーダーがプラス域の場合（ほとんどないが、０の場合はOrder時間切れキャンセルの可能性←やられた）
                             pass
                         else:
                             # 残されたオーダーがマイナス域の場合（こっちがメインのケース）
@@ -475,7 +492,12 @@ class position_control:
                             left_position.linkage_lc_change(new_lc_price)
 
                             # lc_Change_Candleにする
-                            left_position.linkage_forced_lc_change_exe(main_position.lose_max_plu, left_pl_u)
+                            print("　　　　自身（先に解消したほう）の利益range", main_position.t_json['PLu'])
+                            if main_position.t_json['PLu'] >= 0:
+                                print("    自身がプラスの場合、そのプラスを最大限に生かしたLCChangeを行う")
+                                left_position.linkage_forced_lc_change_setting(main_position.t_json['PLu'], left_pl_u)
+                            else:
+                                print("     自身がマイナス終了のため、どうしようか考える")
             else:
                 pass
                 # print("オーダークラスがない！！！⇒未発行とかそこらへん")
@@ -635,7 +657,7 @@ class position_control_for_test(position_control):
                 item.update_information(df_row, candleAnalysisClass)
 
         # # 関連オーダーの更新
-        # self.linkage_control()
+        self.linkage_control()
 
     def reset_all_position(self, df_row):
         print("  RESET ALL POSITIONS")

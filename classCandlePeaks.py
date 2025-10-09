@@ -923,8 +923,8 @@ class PeaksClass:
         # target_num = 2
         target_peak = peaks[target_num]
         target_price = target_peak['latest_body_peak_price']
-        # print("   実行時引数 SKIP：", skip, " TargetNum:", target_num)
-        # print("   ターゲットになるピーク@cp:", target_peak)
+        print("   実行時引数 SKIP：", skip, " TargetNum:", target_num)
+        print("   ターゲットになるピーク@cp:", target_peak)
 
         # ■■閾値の情報
         # Margin情報
@@ -951,7 +951,7 @@ class PeaksClass:
         break_border = 1  # この数以上のBreakが発生するまでの同一価格リストを求める
         break_border2 = 2  # この数以上のBreakが発生するまでの同一価格リストを求める
         for i, item in enumerate(peaks):
-            # print("     検証対象：", item['time'], item['peak_strength'], base_time)
+            print("     検証対象：", item['time'], item['peak_strength'], base_time)
             # 既定の裾野の内側にある場合inner=True
             time_gap_sec = abs(datetime.strptime(item['latest_time_jp'], '%Y/%m/%d %H:%M:%S') - base_time)
             if time_gap_sec <= timedelta(minutes=mountain_foot_min):
@@ -965,6 +965,7 @@ class PeaksClass:
                     pass
                 else:
                     self.opposite_peaks.append({"i": i, "item": item, "time_gap": time_gap_sec})
+                    print("反対側")
                 continue
 
             # 最初の一つは確保する（自分自身はたとえ強度が低くても、確保する）
@@ -1017,7 +1018,7 @@ class PeaksClass:
             # if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range or wlen(result_same_price_list)ick_body_gap_abs <= arrowed_range:
             if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range:
                 # 同一価格とみなせる場合
-                # print("          同一価格：")
+                print("          同一価格：")
                 self.same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 # 同一価格とみなせる場合で、さらに時間いないかどうかを検証する
                 if is_inner:
@@ -1034,7 +1035,7 @@ class PeaksClass:
                 # 共通
                 same_price_num = same_price_num + 1
             else:
-                # print("          Not：",body_gap_abs,arrowed_range,body_wick_gap_abs,arrowed_range)
+                print("          Not：",body_gap_abs,arrowed_range,body_wick_gap_abs,arrowed_range)
                 self.result_not_same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
         # 表示用
         # print("同一価格一覧 @cp")

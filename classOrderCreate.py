@@ -21,7 +21,7 @@ class Order:
         # 色々なオーダーに必要になる初期値
         self.instrument = "USD_JPY"
         self.base_oa_mode = 2  # デフォルトの口座は2(両建て用）
-        self.basic_unit = 10000
+        self.basic_unit = 1000
         self.basic_lc_range = 1  # 1円
         self.trade_timeout_min_base = 240
         self.order_timeout_min_base = 60
@@ -109,9 +109,9 @@ class Order:
             "units": self.units,
             "direction": self.direction,
             "target_price": round(self.target_price, 3),
-            "lc_price": self.lc_price,
+            "lc_price": self.lc_price,  # 途中で変更される可能性あり（常に最新のLC価格を保持する物）
             "lc_range": self.lc_range,
-            "tp_price": self.tp_price,
+            "tp_price": self.tp_price,  # 途中で変更される可能性あり（常に最新のTP価格を保持する物）
             "tp_range": self.tp_range,
             "type": self.ls_type,
             "name": self.name,
@@ -122,7 +122,8 @@ class Order:
             "order_permission": self.order_permission,
             "priority": self.priority,
             "watching_price": 0,
-            "lc_price_original": self.lc_price,
+            "lc_price_original": self.lc_price,  # LCは変更される可能性がある（元々の価格を保存するため）
+            "tp_price_original": self.tp_price,  # TPは変更される可能性がある（元々の価格を保存するため）
             "for_api_json": self.data,  # 発注API用(classPositionにはexe_orderしか渡さないため、その中に入れておく）
             "lc_change": self.lc_change,
             "move_ave": self.move_ave  # 参考情報だが追加（無いとLineSendでエラーになるが、オーダーには影響ない）

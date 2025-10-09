@@ -47,7 +47,7 @@ class candleAnalysis:
                     t1.minute == t2.minute)
             # print("既存のDataFrameと同じかどうか？", same)
             if same:
-                print("同じデータのため、データ新規取得＆Peaks生成は呼ばず(主にcandleLCChangeで発生)  既存:", t1, ",現時刻:", t2)
+                # print("同じデータのため、データ新規取得＆Peaks生成は呼ばず(主にcandleLCChangeで発生)  既存:", t1, ",現時刻:", t2)
                 # データを移植する（5分足）
                 self.d5_df_r = candleAnalysis.latest_df_d5_df_r
                 self.peaks_class = candleAnalysis.latest_peaks_class

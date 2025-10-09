@@ -63,6 +63,7 @@ class order_information:
         self.is_live = is_live  # 本番環境か練習か（Boolean）
         self.select_oa(self.oa_mode)  # 重要！　id_noとis_liveを基に、oaクラスを選択する
         self.name = name  #
+        self.name_ymdhms = ""
         self.current_price = 0
         self.lc_change_candle_num = 100
         self.order_class = None
@@ -164,13 +165,13 @@ class order_information:
 
         # 調査結果も保有する
         self.ca = None  # CandleAnalysisの格納
-
         self.send_line_exe = False  # いるか不明（Trueの場合は一部の情報についてLINE送信頻度増）
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
         # print("    ●●●●OrderClassリセット●●●●")
         self.name = ""
+        self.name_ymdhms = ""
         self.oa_mode = 0  # アカウント選択（１が通常、２が両建てアカウント）
         self.priority = 0  # このポジションのプライオリティ
         # self.is_live = True  # 本番環境か練習か（Boolean）　⇒する必要なし
@@ -396,6 +397,7 @@ class order_information:
         if 'order_timeout_min' in plan:  # していない場合は初期値50分
             self.order_timeout_min = plan['order_timeout_min']
         self.name = plan['name']  #  + "(" + str(self.priority) + ")"  # 名前を入れる(クラス内の変更）
+        self.name_ymdhms = plan['name_ymdhms']
         # (2)各フラグを指定しておく
         # オーダ―パーミッションは、plan内でwatchingPrice指定なし、または０指定でパーミッションはTrue(即時取得）。
         if "watching_price" in plan:
@@ -610,12 +612,15 @@ class order_information:
                 "name_only": self.name[:-5],
                 "units": str(units_for_view * direction),
                 "pl_per_units": str(trade_latest['PLu']),  # 以下追加
-                "lc_price_plan": self.plan_json['lc_price'],
+                "lc_price": self.plan_json['lc_price'],
                 "lc_price_original_plan": self.plan_json['lc_price_original'],
+                "tp_price": self.plan_json['tp_price'],
                 "plus_minus": 1 if float(trade_latest['realizedPL']) > 0 else -1,
                 "max_plus": str(self.win_max_plu),
                 "max_minus": str(self.lose_max_plu),
-                "position_keep_time": str(trade_latest['time_past'])
+                "position_keep_time": str(trade_latest['time_past']),
+                "name_ymdhms": self.name_ymdhms,
+                "tp_price_original_plan": self.plan_json['tp_price_original'],
             }
             order_information.result_dic_arr.append(result_dic)
         else:
@@ -638,7 +643,7 @@ class order_information:
             self.send_line("■■■強制クローズ解消:", self.name, '\n',
                            res4, res5, res1, id_info, res2, res3, res6, res7, res8,
                            position_check_no_args()['name_list'])
-            print("テスト620 ", trade_latest)
+
             result_dic = {
                 "order_time": self.o_time,
                 "res": str(trade_latest['unrealizedPL']),  # 上と違う部分
@@ -652,12 +657,15 @@ class order_information:
                 "name_only": self.name[:-5],
                 "units": str(units_for_view * direction),
                 "pl_per_units": str(trade_latest['PLu']),  # 以下追加
-                "lc_price_plan": self.plan_json['lc_price'],
+                "lc_price": self.plan_json['lc_price'],
                 "lc_price_original_plan": self.plan_json['lc_price_original'],
+                "tp_price": self.plan_json['tp_price'],
                 "plus_minus": 1 if float(trade_latest['unrealizedPL']) > 0 else -1,
                 "max_plus": str(self.win_max_plu),
                 "max_minus": str(self.lose_max_plu),
-                "position_keep_time": str(trade_latest['time_past'])
+                "position_keep_time": str(trade_latest['time_past']),
+                "name_ymdhms": self.name_ymdhms,
+                "tp_price_original_plan": self.plan_json['tp_price_original'],
             }
             order_information.result_dic_arr.append(result_dic)
 
@@ -687,7 +695,7 @@ class order_information:
         for _, row in df_part.iterrows():
             # res_val = int(row['res']) if isinstance(row['res'], (int, float)) else row['res']
             res_val = f"{int(row['res']):>{max_width}}"
-            uni_val = int(row['units'] / abs(row['units']))
+            uni_val = int(row['units'] / abs(int(row['units'])))
             hh_mm = ":".join(gene.str_to_time_hms(row['end_time']).split(":")[:2])
             if uni_val == 1:
                 uni_str = "L"  # 買い（ドルを）
@@ -698,7 +706,7 @@ class order_information:
         # 改行で結合
         lines.append(f"{a_sum:>{max_width}}")
         output_str = "\n".join(lines)
-        tk.line_send("■■■:", "\n", output_str)
+        # tk.line_send("■■■:", "\n", output_str)
 
         # ③ピボット結果の送信
         temp = pd.read_csv(path)
@@ -1096,7 +1104,7 @@ class order_information:
             order_res['order_result'] = "この処理はオーダー失敗の可能性大"
 
         return {"order_name": self.name, "order_id": order_res['order_id'],
-                "order_result": order_res['order_result']}
+                "name_ymdhms": self.name_ymdhms, "order_result": order_res['order_result']}
 
     def watching_for_position(self):
         """
@@ -1838,6 +1846,7 @@ class order_information:
         self.plan_json['tp_price'] = float(tp_price)
         self.plan_json['lc_price'] = float(lc_price)
         self.plan_json['lc_price_original'] = float(lc_price)
+        self.plan_json['tp_price_original'] = float(tp_price)
         self.plan_json['direction'] = int(json['currentUnits']) / abs(int(json['currentUnits']))
         self.plan_json['units'] = json['currentUnits']
         self.plan_json['type'] = "Already"
@@ -1923,6 +1932,11 @@ class order_information:
                            "⇒", new_lc_price,
                            self.t_execution_price,
                            "予定価格", round(self.plan_json['target_price'], 3))
+        self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3),
+                       "⇒", new_lc_price,
+                       self.t_execution_price,
+                       "予定価格", round(self.plan_json['target_price'], 3))
+        self.plan_json['lc_price'] = new_lc_price
 
     def linkage_tp_change(self, new_tp_price):
         """
@@ -1940,8 +1954,13 @@ class order_information:
                            "⇒", new_tp_price,
                            self.t_execution_price,
                            "予定価格", round(self.plan_json['target_price'], 3))
+            self.send_line("　(LinkageTP上げ)", self.name, self.t_pl_u, round(self.plan_json['TP_price'], 3),
+                           "⇒", new_tp_price,
+                           self.t_execution_price,
+                           "予定価格", round(self.plan_json['target_price'], 3))
+            self.plan_json['tp_price'] = new_tp_price
 
-    def linkage_forced_lc_change_exe(self, main_max_plus, pl_u):
+    def linkage_forced_lc_change_setting(self, main_plu, pl_u):
         """
         強制的にLCChange実行したフラグ（これによりlc_Change_Candleに移行可能に）を立て、
         さらに、CandleLcChangeを実行したフラグ（これによりlc_changeを実行しなくなる）
@@ -1952,16 +1971,27 @@ class order_information:
         # self.send_line("　(Linkage 強制CandleLcChangeへ)", self.name)
 
         # LC_Changeを再執行するにはこちらから
+        # 執行のフラグの準備
         self.lc_change_num = 0  #
         self.lc_change_exe = True
         self.lc_change_from_candle_lc_price = 0  # キャンドル変更済の場合０以外。０にすることで、LcChangeに戻す
         self.lc_change_candle_done = False  # キャンドル変更がTrueの場合通常lc_Changeは実行されないため、戻す
+        # 執行内容の準備
+        if main_plu < 0:
+            print("　　想定と異なるLinkageLcChange（メイン側マイナス終了）")
+            return 0
+        else:
+            pass
+        # メインのプラスを生かす。（メインプラスの半分まで戻ったら、メインプラスプラマイゼロ。
+        tr = main_plu * -1  # 想定されているのはマイナス域で、どれだけマイナスを減らすか。
+
         self.lc_change_dic_arr = [
-            {"exe": True, "time_after": 0, "trigger": round(pl_u / 2, 3), "ensure": main_max_plus},  # 負けの半分まで行ったら、、
-            {"exe": True, "time_after": 0, "trigger": round(pl_u / 3, 3), "ensure": round((pl_u / 3) * 2, 3)},
+            {"exe": True, "time_after": 0, "trigger": round(tr / 2, 3), "ensure": round(tr, 3)},  # 負けの半分まで行ったら、、
+            {"exe": True, "time_after": 0, "trigger": round(tr / 3, 3), "ensure": round((tr / 3) * 2, 3)},
         ]
         if self.send_line_exe:
-            self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(pl_u / 2, 3), "確保", )
+            self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(tr / 2, 3), "確保", round(tr, 3))
+        self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(tr / 2, 3), "確保", round(tr, 3))
 
 
 
@@ -2019,7 +2049,7 @@ def position_check_no_args():
                 # トータルの含み損益を表示する
                 total_pl = total_pl + float(item.t_unrealize_pl)
                 # オーダー時間リストを作る（表示用）
-                open_class_names = open_class_names + "," + gene.delYearDay(item.o_time) + "(oa" + str(item.oa_mode) + ")"
+                open_class_names = open_class_names + "," + gene.delYearDay(item.o_time) + "(" + str(str(item.o_json['units'])) + ")"
                 # print("  ポジション状態", item.t_id, ",PL:", total_pl)
             elif item.o_state == "PENDING":
                 # オーダーのみ（取得俟ちの場合）取得まち用の配列に入れておく
@@ -2040,7 +2070,7 @@ def position_check_no_args():
                 if item.o_time_past_sec > max_order_time_sec:
                     max_order_time_sec = item.o_time_past_sec  # 何分間オーダー待ちか
                 # オーダー時間リストを作成する（表示用）
-                pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time) + "(oa" + str(item.oa_mode) + ")"
+                pending_class_names = pending_class_names + "," + gene.delYearDay(item.o_time) + "(" + str(item.o_json['units']) + ")"
             else:
                 # どうやらt_stateが入っていない状態（オーダーエラーや謎の状態）
                 if item.o_state == "Watching":

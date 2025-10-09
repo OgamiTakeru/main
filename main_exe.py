@@ -275,15 +275,16 @@ class main():
                 return 0
 
         # ■深夜帯(6時～7時)は実行しない　（ポジションやオーダーも全て解除）
-        if 6 <= self.time_hour <= 7:
-            if self.midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
-                # self.positions_control_class.reset_all_position()
-                tk.line_send("■深夜のオーダー解消を実施")
-                self.base_oa.OrderCancel_All_exe()
-                self.midnight_close_flag = 1  # 実施済みフラグを立てる
-            return 0
-        else:
-            self.midnight_close_flag = 0  # 実行可能開始時以降は深夜フラグを解除（毎回やってしまうけどいいや）
+        # if 6 <= self.time_hour <= 7:
+        #     if self.midnight_close_flag == 0:  # 繰り返し実行しないよう、フラグで管理する
+        #         # self.positions_control_class.reset_all_position()
+        #         tk.line_send("■深夜のオーダー解消を実施")
+        #         self.base_oa.OrderCancel_All_exe()
+        #         self.midnight_close_flag = 1  # 実施済みフラグを立てる
+        #     return 0
+        # else:
+        #     self.midnight_close_flag = 0  # 実行可能開始時以降は深夜フラグを解除（毎回やってしまうけどいいや）
+
         # ■時間内でスプレッドが広がっている場合は強制終了し実行しない　（現価を取得しスプレッドを算出する＋グローバル価格情報を取得する）
         price_dic = self.base_oa.NowPrice_exe("USD_JPY")
         if price_dic['error'] == -1:  # APIエラーの場合はスキップ
