@@ -2,6 +2,7 @@ import fGeneric as gene
 import pandas as pd
 import classCandleAnalysis as ca
 import classOrderCreate as OCreate
+import tokens as tk
 
 
 class turn_analisys:
@@ -825,3 +826,455 @@ class TuneAnalysisInformation:
         """
         # rt_ratio_sk = round(r_sk['gap'] / t_sk['gap'], 3)
         self.lo_ratio = round(later_peak['gap'] / older_peak['gap'], 3)
+
+
+class range_analisys:
+    def __init__(self, candle_analysis):
+        self.s = "    "
+        self.oa = candle_analysis.base_oa
+        # test時と本番時で、分岐（本番ではpeaks_classが渡されるが、テストではdfが渡されるため、peaks_classに変換が必要）
+        self.ca = candle_analysis
+        self.ca5 = self.ca.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
+        self.peaks_class = self.ca.peaks_class  # peaks_classだけを抽出
+        self.ca60 = self.ca.candle_class_hour
+        self.peaks_class_hour = self.ca.peaks_class_hour
+
+        # 結果として使う大事な変数
+        self.take_position_flag = False
+        self.exe_order_classes = []
+
+        # 簡易的な解析値
+        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        self.current_price = self.peaks_class.latest_price
+        r = peaks[0]
+        t = peaks[1]
+        f = peaks[2]
+
+        # 上限下限の線
+        self.upper_line = 0
+        self.lower_line = 999
+
+        # 調整用の係数たち
+        self.sp = 0.004  # スプレッド考慮用
+        self.base_lc_range = 1  # ここでのベースとなるLCRange
+        self.base_tp_range = 1
+        # 係数の調整用
+        self.lc_adj = 0.7
+        self.arrow_skip = 1
+        # Unit調整用
+        self.units_mini = 0.1
+        self.units_reg = 0.5
+        self.units_str = 1  #0.1
+        self.units_hedge = self.units_str * 0.9
+        # 汎用性高め
+        self.lc_change_test = [
+            {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": -1},  # ←とにかく、LCCandleを発動させたい場合
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(2), "ensure": -0.001},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(4), "ensure": self.ca5.cal_move_ave(2)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(5), "ensure": self.ca5.cal_move_ave(3)},
+            {"exe": True, "time_after": 6000, "trigger": self.ca5.cal_move_ave(6), "ensure": self.ca5.cal_move_ave(4)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(7), "ensure": self.ca5.cal_move_ave(5)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(8), "ensure": self.ca5.cal_move_ave(6)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(9), "ensure": self.ca5.cal_move_ave(7)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(10), "ensure": self.ca5.cal_move_ave(8)},
+            {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(11), "ensure": self.ca5.cal_move_ave(9)},
+        ]
+
+        # ★★★調査実行
+        self.range_main()
+
+    def add_order_and_flag_inspection_class(self, order_class):
+        """
+
+        """
+        self.take_position_flag = True
+        self.exe_order_classes.append(order_class)
+        # print("発行したオーダー2↓　(turn255)")
+        # print(order_class.exe_order)
+
+    def range_main(self):
+        """
+
+        """
+        # ■基本情報の取得
+        # print("★★TURN　本番用")
+
+        # ■実行除外
+        # 対象のPeakのサイズを確認（小さすぎる場合、除外）
+        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        r = peaks[0]
+        t = peaks[1]
+        f = peaks[2]
+        peaks_skip = self.peaks_class.skipped_peaks_hard
+        if peaks[1]['gap'] < 0.04:
+            print("対象が小さい", peaks[1]['gap'])
+
+        if r['count'] != 2:
+            return 0
+
+        # ■表示
+        print(" ●RangeAnalysis判定パラメーター一覧●  rCount:", r['count'])
+        print("  平均キャンドル長", )
+
+        # ■■■　条件によるオーダー発行
+        # ①BBの検証　直近１時間前、２時間前、３時間前のBBの幅の違いを求める
+        bb_ana = self.bb_range_analysis(self.ca.d5_df_r)
+
+        # ②抵抗線の算出
+        turn_info = self.support_line_detect(1)  # turn部分もの（上下かは問わず）
+        flop_info = self.support_line_detect(2)  # flop部分もの（上下かは問わず）
+        # ②フラッグ検証（最優先）
+        # self.flag_analysis(self.peaks_class.peaks_with_same_price_list)  # いつか分離できるように、引数に明示的に渡しておく
+
+        # ■■■判定
+
+        if bb_ana == 0:  # 比較的横這いか、下降上昇が長い状態(レンジ～レンジ解消に向かっている）
+            mes = ""
+            print(self.s, turn_info['line_strength'], flop_info['line_strength'])
+            if turn_info['line_strength'] >= 5 and flop_info['line_strength'] >= 5:
+                mes = "BB横這い　＆　完全横這い"
+                print(self.s, "BB横這い　＆　完全横這い")
+            elif turn_info['line_strength'] >=5 and flop_info['line_strength'] < 5:
+                if t['direction'] == 1:
+                    print(self.s, "BB横這い　＆　上限あり1")
+                    mes = "BB横這い　＆　上限あり1"
+                else:
+                    print(self.s, "BB横這い　＆　下限あり2")
+                    mes = "BB横這い　＆　下限あり2"
+            elif turn_info['line_strength'] < 5 and flop_info['line_strength'] >= 5:
+                if peaks[2]['direction'] == 1:
+                    print(self.s, "BB横這い　＆　上限あり3")
+                    mes = "BB横這い　＆　上限あり3"
+                else:
+                    print(self.s, "BB横這い　＆　下限あり4")
+                    mes = "BB横這い　＆　下限あり4"
+                # print(self.s, "BB横這い　＆　turnバラバラ（フラッグの可能性もあり）")
+            tk.line_send("test", mes)
+
+
+
+    def support_line_detect(self, target_no):
+        # ②抵抗線を探す（上側）
+        peaks_with_same_price_list = self.peaks_class.peaks_with_same_price_list
+        # gene.print_arr(peaks_with_same_price_list)
+        if len(peaks_with_same_price_list) == 0:
+            print("同一価格リストサイズ０")
+            return 0
+        # 変数代入＆表示
+        same_price_list = peaks_with_same_price_list[target_no]['same_price_list_till_break']  # ターンが抵抗線かを調べる。（リバーではない）
+        same_price_list_total = sum(d['item']["peak_strength"] for d in same_price_list)
+        same_price_list_till_break_5 = [d for d in peaks_with_same_price_list[target_no]['same_price_list_till_break'] if d["item"]["peak_strength"] >= 5]
+        same_price_list_till_break_5_total = sum(d['item']["peak_strength"] for d in same_price_list_till_break_5)
+        # 方向
+        d = same_price_list[0]['item']['direction']
+        target_price = same_price_list[0]['item']['latest_body_peak_price']
+        # 表示
+        print("----抵抗線検知  [方向]", d)
+        print(self.s, "ターンの強度（同一価格数）", len(same_price_list), "total", same_price_list_total)
+        for i, item in enumerate(same_price_list):
+            print("          ",  item['i'], item['item']['latest_time_jp'], item['item']['peak_strength'], item['item']['direction'])
+        print(self.s, "Breakまでの同一価格(上位ランクのみ） total", same_price_list_till_break_5_total)
+        for i, item in enumerate(same_price_list_till_break_5):
+            print("          ", item['i'], item['item']['latest_time_jp'], item['item']['peak_strength'])
+
+        # 判定
+        line_strength = 0
+        if same_price_list_total <= 2:
+            line_strength = 0
+            print(self.s, "抵抗なし(自身のみの検出）")
+        elif same_price_list_total <= 4:
+            line_strength = 1
+            print(self.s, "引っ掛かり程度の抵抗線")
+        elif same_price_list_total < 10:  # 12は5が二つと2が一つを想定。
+            if same_price_list_till_break_5_total >= 10:
+                print(self.s, "準 相当強めの抵抗線", same_price_list_total, same_price_list_till_break_5_total)
+                line_strength = 7
+            elif same_price_list_till_break_5_total >= 5 and len(same_price_list) >= 2:
+                print(self.s, "軽いダブルトップ抵抗線", same_price_list_total, same_price_list_till_break_5_total)
+                line_strength = 5
+            else:  # =5の場合は、自身のみ
+                print(self.s, "５自身のみか、複数の２", same_price_list_total, same_price_list_till_break_5_total)
+                line_strength = 3
+        else:
+            # 12以上
+            if same_price_list_till_break_5_total >= 10:
+                print(self.s, "相当強めの抵抗線", same_price_list_total, same_price_list_till_break_5_total)
+                line_strength = 10
+            else:
+                print(self.s, "強めの抵抗線", same_price_list_total, same_price_list_till_break_5_total)
+                line_strength = 7
+
+        # 狭い脚判定
+        if len(same_price_list) == 2:
+            latest_time = same_price_list[0]['item']['latest_time_jp']
+            oldest_time = same_price_list[1]['item']['latest_time_jp']
+            ans = gene.cal_str_time_gap(latest_time, oldest_time)
+            print(self.s, ans['gap_abs']/60, "分", latest_time, oldest_time)
+
+        # 登録
+        if d == 1:
+            self.upper_line = target_price
+        else:
+            self.lower_line = target_price
+        print(self.s, self.upper_line ,"-", self.lower_line)
+
+
+        return {
+            "same_price_list": same_price_list,
+            "same_price_list_total": same_price_list_total,
+            "same_price_list_till_break_5": same_price_list_till_break_5,
+            "same_price_list_till_break_5_total": same_price_list_till_break_5_total,
+            "line_strength": line_strength
+        }
+
+    def bb_range_analysis(self, df_r):
+        """
+        BBのすぼまりを見る
+        """
+        print("----BB analysis")
+        allowed_ratio = 0.8  # 2割程度のサイズの違いは同等とみなす
+        check_point1 = 0  # 直近
+        check_point2 = 12  # 12足前
+        check_point3 = 24  # 24足前
+        bb1_range = df_r.iloc[check_point1]['bb_range']
+        bb2_range = df_r.iloc[check_point2]['bb_range']
+        bb3_range = df_r.iloc[check_point3]['bb_range']
+        print(self.s, df_r.iloc[check_point1]['time_jp'], df_r.iloc[check_point1]['bb_range'], df_r.iloc[check_point1]['bb_upper'])
+        print(self.s, df_r.iloc[check_point2]['time_jp'], df_r.iloc[check_point2]['bb_range'], df_r.iloc[check_point2]['bb_upper'])
+        print(self.s, df_r.iloc[check_point3]['time_jp'], df_r.iloc[check_point3]['bb_range'], df_r.iloc[check_point3]['bb_upper'])
+
+
+
+        # 幅が同じでも、移動している場合があるため、三つのラップ率を算出する（直近のBBに対して、何割ラップしているか）
+        pairs = [(df_r.iloc[check_point1]['bb_lower'], df_r.iloc[check_point1]['bb_upper']),
+                 (df_r.iloc[check_point2]['bb_lower'], df_r.iloc[check_point2]['bb_upper']),
+                 (df_r.iloc[check_point3]['bb_lower'], df_r.iloc[check_point3]['bb_upper'])]
+        base_start, base_end = pairs[0]
+        base_len = base_end - base_start
+        results = []
+        for i, (start, end) in enumerate(pairs[1:], start=2):
+            # 重なり計算
+            overlap_start = max(base_start, start)
+            overlap_end = min(base_end, end)
+            overlap = max(0, overlap_end - overlap_start)
+
+            # 基準区間に対する重なり率（0〜1）
+            overlap_rate = overlap / (base_end - base_start)
+
+            # サイズ比（自身 / 基準
+            length = end - start
+            size_ratio = length / base_len
+
+            # タグ判定
+            lower_out = start < base_start
+            upper_out = end > base_end
+            if lower_out and upper_out:
+                tag = "両方に外れている"
+            elif lower_out:
+                tag = "下に外れている"
+            elif upper_out:
+                tag = "上に外れている"
+            else:
+                tag = "内側"
+
+            results.append({
+                "index": i,
+                "range": round(abs(length), 3),
+                "rap_ratio": round(overlap_rate * 100, 1),  # %
+                "size_ratio": round(size_ratio, 2),  # 直近を基準にした、各々のサイズ比率（BBなので2倍くらいなら同じとみなすかも）
+                "tag": tag,
+                "kukan": f"{start}-{end}",
+            })
+        print(self.s, "base", base_len)
+        for r in results:
+            print(self.s, r)
+        # 重なり判定
+        r0 = results[0]['rap_ratio']
+        r1 = results[1]['rap_ratio']
+        if r0 >= 73 and r1 >= 73:
+            print(self.s, "結構ラップしている")
+
+        elif r0 >= 40 and r1 >= 40:
+            if r0 >= 80 and r1 <= 30:
+                print(self.s, "変動後の落ち着き始め")
+            elif r1 >= 70 and r0 <= 30:
+                print(self.s, "変動の開始の可能性")
+            else:
+                print(self.s, "少しふらふら")
+        else:
+            print(self.s, "変動大きい中")
+
+        # 割合判定
+        sr0 = results[0]['size_ratio']
+        sr1 = results[1]['size_ratio']
+
+        # サイズ感の処理
+        if sr1 >= sr0 >= 1:
+            # すぼみの傾向
+            if 0.7 <= sr0 <= 1.5:
+                print(self.s, "収束傾向＆直近は平坦(すぼみ）", sr0)
+            elif sr1 >= 2.5:
+                print(self.s, "結構な収束傾向にあり", sr1)
+                is_converged = 11
+            elif sr1 >= 1.4:
+                print(self.s, "少々な収束傾向", sr1)
+            elif sr1 >= 1.6 and sr0 < 1:
+                print(self.s, "中ふくらみ")
+            is_converged = 1
+        elif sr1 <= sr0 <= 1:
+            # 広がる傾向
+            if 0.7 <= sr0 <= 1.5:
+                print(self.s, "収束傾向＆直近は平坦（発散）", sr0)
+            elif sr1 <= 0.5:
+                print(self.s, "結構な発散傾向にあり", sr1)
+            elif sr1 <= 0.8:
+                print(self.s, "少々な発散傾向にあり", sr1)
+            elif sr1 <= 0.6 and sr0 < 1:
+                print(self.s, "中すぼみで、これから発散するかも")
+
+        # return is_converged
+
+    def cal_tilt(self, target_peaks):
+        """
+        directionが-1の場合、下側のピークの傾きがあるかどうかの計算
+        """
+        dependence_y_change_min = 0.015
+        dependence_on_line_margin = 0.027
+        dependence_near_line_margin_at_least = 0.054
+        dependence_lc_range = 0.01
+        dependence_max_lc_range = 0.1
+        d = target_peaks[0]['item']['direction']  # 代表で先頭の方向を取得
+        is_tilt = False  # 返却される値
+
+        # ■■フィルタ作業
+        # ■フィルタに使う数字
+        till_id = self.peaks_class.peaks_with_same_price_list[1]['same_price_list_till_break'][-1]['i']  # Break前まで
+        # ■フィルタ作業
+        # ①peaksから指定の方向だけをフィルタし抜き出す場合（基本的に引数で、既にフィルタされた物を受け取る前提のため、使わないメモ用）
+        # target_peaks = [item for item in peaks if item["direction"] == d]  # 利用するのは、Lower側
+        # ②PeaksStrengthが５以上のもののみを抽出する
+        target_peaks = [d for d in target_peaks if d["item"]["peak_strength"] >= 5]
+        # ③同一価格（反対側の）のBreakまで
+        target_peaks = [d for d in target_peaks if d["i"] <= till_id]
+        # ④先頭の３個のピーク、または、Strengthが８の前までのものを取得する
+        # index_8 = next((i for i, d in enumerate(target_peaks) if d["item"]["peak_strength"] == 8), None)  # 強さ８のindex取得
+        # if index_8 is not None:
+        #     target_peaks = target_peaks[:index_8 + 1]  # 8 の手前まで
+        # else:
+        #     target_peaks = target_peaks[:3]  # 8 がなければ先頭3個
+        # ⑤最小または最大値まで、かつStrengthが５以上のものを取得
+        # ⑥数が０（強さが5以上のものが０）の場合、傾きは無いとする
+        if len(target_peaks) == 0:
+            is_tilt = False
+            print("  傾きを算出する対象のピークがない")
+            return is_tilt
+
+        if d == 1:
+            # 上方向（が下がってきているかを確認）の場合、Max値
+            min_index, min_or_max_info = max(enumerate(target_peaks), key=lambda x: x[1]['item']["latest_body_peak_price"])  # サイズ感把握のために取得
+        else:
+            # 下方向（が上ってきているかを確認）の場合、Min値
+            min_index, min_or_max_info = min(enumerate(target_peaks), key=lambda x: x[1]['item']["latest_body_peak_price"])
+        target_peaks = target_peaks[:min_index + 1]
+        total_peaks_num = len(target_peaks)
+        print(self.s, "TargetPeaksForTilt")
+        gene.print_arr(target_peaks)
+
+        # ■■処理
+        latest_item = target_peaks[0]['item']
+        oldest_item = target_peaks[-1]['item']
+        y_change = latest_item['latest_body_peak_price'] - oldest_item['latest_body_peak_price']
+        print(self.s, "Min Max Info")
+        print(self.s, min_or_max_info)
+        if abs(y_change) <= dependence_y_change_min:
+            print(self.s, "傾きが少なすぎる⇒フラッグ判定なし", abs(y_change), dependence_y_change_min)
+            return 0
+        else:
+            print(self.s, "傾きOK", abs(y_change), dependence_y_change_min)
+
+        # ■■傾きがある場合、詳細を確認（OnやNear）
+        # OLDESTの価格を原点として、直近Peaksへの直線の傾きを算出する　yの増加量(価格の差分)　/ xの増加量(時間の差分)
+        x_change_sec = (gene.cal_at_least(0.0000001,
+                    gene.cal_str_time_gap(oldest_item['latest_time_jp'], latest_item['latest_time_jp'])['gap_abs']))  # ０にならない最低値を設定する
+        tilt = y_change / x_change_sec
+        tilt = max(tilt, 1e-8)  # 0を防ぐ（この数で割るため）
+
+        on_line_num = near_line_num = 0
+        for i, item in enumerate(target_peaks):
+            # ■座標(a,b)を取得する
+            a = gene.cal_str_time_gap(oldest_item['latest_time_jp'], item['item']['latest_time_jp'])['gap_abs']  # 時間差分
+            b = item['item']["latest_body_peak_price"] - oldest_item['latest_body_peak_price']  # ここでは
+            # print(s7, "(ri)a:", a, ",b:", b)
+
+            # ■線上といえるか[判定]
+            jd_y_max = tilt * a + dependence_on_line_margin
+            jd_y_min = tilt * a + (dependence_on_line_margin * -1)
+            if jd_y_max > b > jd_y_min:
+                # print("　(ri)線上にあります", item['item']['latest_time_jp'], jd_y_max, b, jd_y_min, jd_y_max > b > jd_y_min)
+                on_line_num += 1
+            else:
+                # print("　(ri)線上にはありません", item['item']['latest_time_jp'], jd_y_max, b, jd_y_min, jd_y_max > b > jd_y_min)
+                pass
+
+            # ■線の近くにあるか[判定]
+            near_line_margin = abs(latest_item['latest_body_peak_price'] - min_or_max_info['item']['latest_body_peak_price']) * 0.405  # * 0.405がちょうどよさそう
+            near_line_margin = gene.cal_at_least(dependence_near_line_margin_at_least,
+                                                 near_line_margin)  # 下側の下落、上側の上昇の場合、最小最大が逆になると０になる可能性がある
+            # print(target_peaks[0]['time'], target_peaks[0]['peak'], min_or_max_info['time'], min_or_max_info['peak'])
+            # print("MARGIN:", abs(target_peaks[0]['peak'] - min_or_max_info['peak']), near_line_margin)
+            jd_y_max = tilt * a + near_line_margin
+            jd_y_min = tilt * a + (near_line_margin * -1)
+            if jd_y_max > b > jd_y_min:
+                # print("　(ri)　線近くにあります", item['item']['latest_time_jp'], jd_y_max, b, jd_y_min, jd_y_max > b > jd_y_min)
+                near_line_num += 1
+            else:
+                # print("　(ri)　線近くにはありません", item['item']['latest_time_jp'], jd_y_max, b, jd_y_min, jd_y_max > b > jd_y_min)
+                pass
+
+        on_line_ratio = round(on_line_num / total_peaks_num, 3)
+        near_line_ratio = round(near_line_num / total_peaks_num, 3)
+        # 最終判定
+        tilt_pm = tilt / abs(tilt)  # tiltの方向を算出する（上側が下傾斜、下側の上傾斜の情報のみが必要）
+        tilt_line_level_each = 0
+        # print(s7, "調査側は", d, "傾き方向は", tilt_pm)
+        if d == tilt_pm:
+            # print(s7, "下側が下方向、上側が上方向に行っている（今回は収束と見たいため、不向き）")
+            remark = "発散方向"
+            direction_integrity = False  # 方向の整合性
+        else:
+            # 傾斜は合格、ピークスを包括できるかを確認
+            # if on_line_ratio >= 0.55 and near_line_ratio >= 0.7:  # 0.35, 60
+            # if on_line_ratio >= 0.35 and near_line_ratio >= 0.6:  # 緩いほう（従来の結果がよかった条件）
+            if on_line_ratio > 0.5 and near_line_ratio >= 0.8:  # 結構完璧な形（両端の2個を含むため、4個の場合2個より大きくしないといけない）
+                # print(s7, "強力な継続的な傾きとみなせる", on_line_ratio, near_line_ratio, "peak_num", total_peaks_num,
+                #       "On", on_line_num, "Near", near_line_num)
+                tilt_line_level_each = 1
+                is_tilt = True
+                # remark = "継続した傾斜と判断"
+                if tilt < 0:
+                    remark = "上側下落(強)"
+                else:
+                    remark = "下側上昇(強)"
+            elif on_line_ratio >= 0.35 and near_line_ratio >= 0.5:  # さらに緩いほう（2025/1/13 13/50を取得したいため）
+                # print(s7, "継続的な傾きとみなせる", on_line_ratio, near_line_ratio, "peak_num", total_peaks_num, "On",
+                #       on_line_num, "Near", near_line_num)
+                tilt_line_level_each = 0.5
+                # remark = "継続した傾斜と判断"
+                if tilt < 0:
+                    remark = "上側下落(弱)"
+                else:
+                    remark = "下側上昇(弱)"
+                # print(s7, "継続した傾斜と判断", d)
+            else:
+                remark = "線上、線近くのどちらかが未達"
+                # print(s7, "線上、線近くのどちらかが未達", on_line_ratio, near_line_ratio)
+
+        # ■LC値の参考値を算出（対象のピーク群の中間値）
+        total_peak = sum(item['item']["latest_body_peak_price"] for item in target_peaks)
+        ave_peak_price = round(total_peak / len(target_peaks), 3)
+        lc_margin = dependence_lc_range * d * -1
+        ave_peak_price = ave_peak_price + lc_margin
+
+        print(self.s, remark, on_line_ratio, near_line_ratio)
+
+        return is_tilt

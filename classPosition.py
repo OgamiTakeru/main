@@ -1864,6 +1864,7 @@ class order_information:
         self.o_state = ""
         self.o_time_past_sec = 0
         self.o_json['state'] = "FILLED"
+        self.o_json['units'] = json['currentUnits']
         self.o_json['time_past'] = 0
         # トレード情報
         self.t_id = json['id']  # ★大事な代入

@@ -46,7 +46,7 @@ class PeaksClass:
             self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
             self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
             # 抵抗線関係の値　cal_big_mountain関数
-            self.arrowed_gap = 0.023  # 抵抗線を探す時、ずれていてもいい許容値
+            self.arrowed_gap = 0.0245  # 抵抗線を探す時、ずれていてもいい許容値
             self.arrowed_break_gap = 0.04  # 抵抗線を探す時、これ以上越えていると、Breakしてると判断する範囲
             # 狭いレンジの期間の判定用の閾値
             self.check_very_narrow_range_range = 0.07  # 一つの足のサイズが、この閾値以下の場合、小さいレンジの可能性
@@ -139,31 +139,33 @@ class PeaksClass:
         # (4)追加の機能（直近の数個が承服しすぎているかどうかの確認）
         self.check_very_narrow_range(self.df_r)
 
-        # (4) 表示
-        # s = "   "
-        # peaks_original = copy.deepcopy(self.peaks_original)# 深いコピーを作成
-        # for d in peaks_original:# 指定キーを削除
-        #     d.pop('next', None)
-        #     d.pop('previous_time_peak', None)
-        #     d.pop('support_info', None)
-        #     d.pop('memo_time', None)
-        #
-        # # (5)samePriceListを、各Peakに付与する
-        # for i, item in enumerate(self.peaks_original):
-        #     # print(i, item['latest_time_jp'], item['latest_body_peak_price'])
-        #     spl_res = self.make_same_price_list(i, False)
-        #     spl = spl_res['same_price_list']
-        #     # print(" ", len(spl))
-        #     item_copy = copy.deepcopy(item)
-        #     item_copy['same_price_list'] = spl
-        #     item_copy['same_price_list_till_break'] = spl_res['till_break_list']
-        #     item_copy['opposite_peaks'] = spl_res['opposite_peaks']
-        #     self.peaks_with_same_price_list.append(item_copy)
+        # (5)samePriceListを、各Peakに付与する
+        for i, item in enumerate(self.peaks_original):
+            # print(i, item['latest_time_jp'], item['latest_body_peak_price'])
+            spl_res = self.make_same_price_list(i, False)
+            spl = spl_res['same_price_list']
+            # print(" ", len(spl))
+            item_copy = copy.deepcopy(item)
+            item_copy['same_price_list'] = spl
+            item_copy['same_price_list_till_break'] = spl_res['till_break_list']
+            item_copy['opposite_peaks'] = spl_res['opposite_peaks']
+            self.peaks_with_same_price_list.append(item_copy)
 
-        # print(s, "<SKIP前>", )
-        # gene.print_arr(peaks_original[:10])
-        # print("   |")
-        # gene.print_arr(peaks_original[-2:])
+        # 一番シンプルなpeaks_originalを作成する（長くなる要素を消して、表示がしやすいようにする）
+        peaks_original = copy.deepcopy(self.peaks_original)# 深いコピーを作成
+        for d in peaks_original:# 指定キーを削除
+            d.pop('next', None)
+            d.pop('previous_time_peak', None)
+            d.pop('support_info', None)
+            d.pop('memo_time', None)
+
+        # (4) 表示
+        s = "   "
+
+        print(s, "<SKIP前>", )
+        gene.print_arr(peaks_original[:10])
+        print("   |")
+        gene.print_arr(peaks_original[-2:])
 
         # print("")
         # print(s, "<SKIP後　対象>")
@@ -923,8 +925,8 @@ class PeaksClass:
         # target_num = 2
         target_peak = peaks[target_num]
         target_price = target_peak['latest_body_peak_price']
-        print("   実行時引数 SKIP：", skip, " TargetNum:", target_num)
-        print("   ターゲットになるピーク@cp:", target_peak)
+        # print("   実行時引数 SKIP：", skip, " TargetNum:", target_num)
+        # print("   ターゲットになるピーク@cp:", target_peak)
 
         # ■■閾値の情報
         # Margin情報
@@ -951,7 +953,7 @@ class PeaksClass:
         break_border = 1  # この数以上のBreakが発生するまでの同一価格リストを求める
         break_border2 = 2  # この数以上のBreakが発生するまでの同一価格リストを求める
         for i, item in enumerate(peaks):
-            print("     検証対象：", item['time'], item['peak_strength'], base_time)
+            # print("     検証対象：", item['time'], item['peak_strength'], base_time)
             # 既定の裾野の内側にある場合inner=True
             time_gap_sec = abs(datetime.strptime(item['latest_time_jp'], '%Y/%m/%d %H:%M:%S') - base_time)
             if time_gap_sec <= timedelta(minutes=mountain_foot_min):
@@ -965,7 +967,7 @@ class PeaksClass:
                     pass
                 else:
                     self.opposite_peaks.append({"i": i, "item": item, "time_gap": time_gap_sec})
-                    print("反対側")
+                    # print("反対側")
                 continue
 
             # 最初の一つは確保する（自分自身はたとえ強度が低くても、確保する）
@@ -1018,7 +1020,7 @@ class PeaksClass:
             # if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range or wlen(result_same_price_list)ick_body_gap_abs <= arrowed_range:
             if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range:
                 # 同一価格とみなせる場合
-                print("          同一価格：")
+                # print("          同一価格：")
                 self.same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 # 同一価格とみなせる場合で、さらに時間いないかどうかを検証する
                 if is_inner:
@@ -1035,7 +1037,7 @@ class PeaksClass:
                 # 共通
                 same_price_num = same_price_num + 1
             else:
-                print("          Not：",body_gap_abs,arrowed_range,body_wick_gap_abs,arrowed_range)
+                # print("          Not：", body_gap_abs, arrowed_range, body_wick_gap_abs, abs(1))
                 self.result_not_same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
         # 表示用
         # print("同一価格一覧 @cp")

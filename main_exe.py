@@ -214,7 +214,8 @@ class main():
             # オーダーを登録＆発行する
             exe_res = self.positions_control_class.order_class_add(analysis_result_instance.exe_order_classes)
             if exe_res == 0:
-                tk.line_send(" オーダー発行せず　or 失敗　main 175")
+                pass
+                # tk.line_send(" オーダー発行せず　or 失敗　main 175")
             else:
                 tk.line_send("★★★オーダー発行", self.trade_num, "回目: ", " 　　　", exe_res,
                              ", 現在価格:", self.now_price_mid, "スプレッド", str(self.now_spread),
