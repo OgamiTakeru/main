@@ -25,13 +25,10 @@ class wrap_all_analisys():
             # 表示専用
             print(self.exe_order_classes[i].exe_order)
 
-
-    def orders_add_this_class_and_flag_on2(self, order_classes):
+    def orders_add_this_class_and_flag_on(self, order_classes):
         """
 
         """
-        # self.flag_and_orders['take_position_flag'] = True
-        # self.flag_and_orders['exe_orders'] = orders
         self.take_position_flag = True
         self.exe_order_classes.extend(order_classes)
 
@@ -48,16 +45,14 @@ class wrap_all_analisys():
         """
 
         # ターン起点のオーダー
-        turn_analysis_instance = ti.turn_analisys(self.ca)
-        # turn_result = ti.wrap_little_turn_inspection(peaks_class)  #
-        if turn_analysis_instance.take_position_flag:
-            # self.orders_add_this_class_and_flag_on(turn_analysis_instance.exe_orders)
-            self.orders_add_this_class_and_flag_on2(turn_analysis_instance.exe_order_classes)
+        # turn_analysis_instance = ti.turn_analisys(self.ca)
+        # if turn_analysis_instance.take_position_flag:
+        #     self.orders_add_this_class_and_flag_on(turn_analysis_instance.exe_order_classes)
 
         # テスト用
         range_analysis_instance = ti.range_analisys(self.ca)
         # if range_analysis_instance.take_position_flag:
-        #     self.orders_add_this_class_and_flag_on2(turn_analysis_instance.exe_order_classes)
+            # self.orders_add_this_class_and_flag_on2(turn_analysis_instance.exe_order_classes)
 
         # 時間起点のオーダー（深夜12時～2時前にかけて、下がる傾向がある気がする）
         time_analysis_instance = time_analysis(self.ca)

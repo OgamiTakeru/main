@@ -842,6 +842,7 @@ class range_analisys:
         # 結果として使う大事な変数
         self.take_position_flag = False
         self.exe_order_classes = []
+        self.test_comment = ""
 
         # 簡易的な解析値
         peaks = self.peaks_class.peaks_original_marked_hard_skip
@@ -918,7 +919,7 @@ class range_analisys:
 
         # ■■■　条件によるオーダー発行
         # ①BBの検証　直近１時間前、２時間前、３時間前のBBの幅の違いを求める
-        bb_ana = self.bb_range_analysis(self.ca.d5_df_r)
+        self.bb_range_analysis(self.ca.d5_df_r)  # self.test_commentに空欄、trend、rangeのいずれかを入れる
 
         # ②抵抗線の算出
         turn_info = self.support_line_detect(1)  # turn部分もの（上下かは問わず）
@@ -928,7 +929,7 @@ class range_analisys:
 
         # ■■■判定
 
-        if bb_ana == 0:  # 比較的横這いか、下降上昇が長い状態(レンジ～レンジ解消に向かっている）
+        if self.test_comment == "range":  # 比較的横這いか、下降上昇が長い状態(レンジ～レンジ解消に向かっている）
             mes = ""
             print(self.s, turn_info['line_strength'], flop_info['line_strength'])
             if turn_info['line_strength'] >= 5 and flop_info['line_strength'] >= 5:
@@ -949,7 +950,7 @@ class range_analisys:
                     print(self.s, "BB横這い　＆　下限あり4")
                     mes = "BB横這い　＆　下限あり4"
                 # print(self.s, "BB横這い　＆　turnバラバラ（フラッグの可能性もあり）")
-            tk.line_send("test", mes)
+
 
 
 
@@ -1027,6 +1028,7 @@ class range_analisys:
             "line_strength": line_strength
         }
 
+
     def bb_range_analysis(self, df_r):
         """
         BBのすぼまりを見る
@@ -1088,51 +1090,224 @@ class range_analisys:
         print(self.s, "base", base_len)
         for r in results:
             print(self.s, r)
-        # 重なり判定
-        r0 = results[0]['rap_ratio']
-        r1 = results[1]['rap_ratio']
-        if r0 >= 73 and r1 >= 73:
-            print(self.s, "結構ラップしている")
 
-        elif r0 >= 40 and r1 >= 40:
-            if r0 >= 80 and r1 <= 30:
-                print(self.s, "変動後の落ち着き始め")
-            elif r1 >= 70 and r0 <= 30:
-                print(self.s, "変動の開始の可能性")
-            else:
-                print(self.s, "少しふらふら")
-        else:
-            print(self.s, "変動大きい中")
+        # 重なり判定
+        r0 = results[0]['rap_ratio']  # ０とついているが、直近を含めない、一番最初という意味
+        r1 = results[1]['rap_ratio']
+        rap_res = 0
+        rap_comment = ""
+        t = str(r0) + "," + str(r1)
+        # if r0 >= 90:
+        #     if r1 >= 90:
+        #         rap_res = "flat-flag-just_flat"
+        #         rap_comment = "直近ラップ結構大（きれいな平坦、フラッグ(両傾斜フラッグ含）、平坦型収束[収束の瞬間])"
+        #     elif r1 >= 70:
+        #         rap_res = "soon_flat"
+        #         rap_comment = "直近ラップ結構大（上昇や下降から少し立った時（または弱めの上昇から)"
+        #     else:  # r1 < 70
+        #         rap_res = "just_flat"
+        #         rap_comment = "直近ラップ結構大（上昇や下降直後に近い（少し強めの上昇から)"
+        # elif r0 >= 80:
+        #     if r1 >= 80:
+        #         rap_res = "flat-flag-just_flat"
+        #         rap_comment = "直近ラップ結構大（きれいな平坦、フラッグ(両傾斜フラッグ含）、平坦型収束[収束の瞬間])"
+        #     elif r1 <= 60:
+        #         rap_res = "just_flat"
+        #         rap_comment = "直近ラップ結構大（急速な上昇や下降直後)"
+        #     else:  # r1 >= 60
+        #         rap_res = "soon_flat"
+        #         rap_comment = "直近ラップ結構大（上昇や下降から少し立った時)"
+        # elif r0 >= 70:
+        #     if r1 >= 70:
+        #         rap_res = "flat-flag-just_flat"
+        #         rap_comment = "ラップ大（やや平坦で多少の傾きの可能性あり、フラッグ(両傾斜フラッグ含）、平坦型収束)"
+        #     elif r1 <= 45:
+        #         rap_res = "diverge_converge"
+        #         rap_comment = "直近ラップわりと大（少し緩やかな上昇）、収まり始め、発散はじめ（発散フラッグ）"
+        #     else:  # 45～70
+        #         rap_res = "UNKNOWN"
+        #         rap_comment = "微妙な状態"
+        # elif r0 <= 55:
+        #     if r1 <= 57:
+        #         rap_res = "converge"
+        #         rap_comment = "結構半分以下（発散始め or 極端な乱高下)"
+        #     elif abs(r0 - r1) <= 10:
+        #         rap_res = "converge"
+        #         rap_comment = "レンジから発散し始めたタイミング"
+        #     else:  # r1が５７より大きい場合。
+        #         rap_res = "UNKNOWN"
+        #         rap_comment = "よくわからない形"
+        # elif r0 <= 70:
+        #     if r1 <= 55:
+        #         rap_res = "trend_flag"
+        #         rap_comment = "完全なトレンド中、フラッグ広がり"
+        #     elif abs(r0 - r1) <= 10:
+        #         rap_res = "trend_flag"
+        #         rap_comment = "レンジから発散し始めたタイミング"
+        # print(self.s, rap_comment, " ,", t)
 
         # 割合判定
-        sr0 = results[0]['size_ratio']
+        sr0 = results[0]['size_ratio']  # ０とついているが、直近を含めない、一番最初という意味
         sr1 = results[1]['size_ratio']
-
+        ts = str(sr0) + "," + str(sr1)
         # サイズ感の処理
-        if sr1 >= sr0 >= 1:
-            # すぼみの傾向
-            if 0.7 <= sr0 <= 1.5:
-                print(self.s, "収束傾向＆直近は平坦(すぼみ）", sr0)
-            elif sr1 >= 2.5:
-                print(self.s, "結構な収束傾向にあり", sr1)
-                is_converged = 11
-            elif sr1 >= 1.4:
-                print(self.s, "少々な収束傾向", sr1)
-            elif sr1 >= 1.6 and sr0 < 1:
-                print(self.s, "中ふくらみ")
-            is_converged = 1
-        elif sr1 <= sr0 <= 1:
-            # 広がる傾向
-            if 0.7 <= sr0 <= 1.5:
-                print(self.s, "収束傾向＆直近は平坦（発散）", sr0)
-            elif sr1 <= 0.5:
-                print(self.s, "結構な発散傾向にあり", sr1)
-            elif sr1 <= 0.8:
-                print(self.s, "少々な発散傾向にあり", sr1)
-            elif sr1 <= 0.6 and sr0 < 1:
-                print(self.s, "中すぼみで、これから発散するかも")
+        size_res = 0
+        size_comment = ""
 
-        # return is_converged
+        # if abs(sr0 - sr1) < 0.4:
+        #     # ■残り二つが同じサイズ
+        #     # ①完全平行系
+        #     if 0.8 <= sr0 <= 1.3 and 0.8 <= sr0 <= 1.3:
+        #         size_comment = "flat"
+        #     # ②前側平行系(ラッパ型）
+        #     elif sr0 < 0.8 and sr1 < 0.8:
+        #         size_comment = "trumpet"
+        #     # ③後側平衡系（収束系）
+        #     elif sr0 > 1.3 and sr1 > 1.3:
+        #         size_comment = "re-trumpet"
+        #     else:
+        #         size_comment = "UnKnown"
+        # elif sr0 > sr1 + 0.4:
+        #     # ■発散系（直前が最初より明らかに大きい）
+        #     # ①直前が1より小さい（直近が一番大きくなるフラッグ）
+        #     if sr0 < 0.8:
+        #         size_comment = "bigbang"
+        #     elif 0.8 <= sr0 <= 1.3:
+        #         size_comment = "semi_flat_from_small"
+        #     else:
+        #         size_comment = "中膨れ系(1時間程度の強変動後)"
+        # elif sr1 > sr0 + 0.4:
+        #     # ■収束系
+        #     # ①直前が1より小さい（直近が一番大きくなるフラッグ）
+        #     if sr0 < 0.8:
+        #         size_comment = "中すぼみ系"
+        #     elif 0.8 <= sr0 <= 1.3:
+        #         size_comment = "semi_flat_from_big"
+        #     else:
+        #         size_comment = "flag"
+        res_com = ""
+        order_recommend = ""
+        if abs(sr0 - sr1) < 0.3:
+            # ■残り二つが同じサイズ
+            # ①完全平行系
+            if 0.7 <= sr0 <= 1.3 and 0.7 <= sr0 <= 1.3:
+                size_comment = "parallel"
+                # ■■ラップ率で傾きを判断
+                # if r0 >= 88 and r1 >= 88:
+                b = 70
+                if r0 >= b and r1 >= b:
+                    res_com = "フラット"
+                    order_recommend = "range"
+                elif r0 >= b and r1 < b:
+                    res_com = "直近トレンド（平行折り返し後）"
+                    order_recommend = "range"
+                elif r0 < b and r1 < b-10 and r0 > r1:
+                    res_com = "平行移動のトレンド"
+                    order_recommend = "trend"
+                else:
+                    res_com = "平行移動のトレンドっぽいが微妙に違う"
+
+            # ②前側平行系(ラッパ型）
+            elif sr0 < 0.7 and sr1 < 0.7:
+                size_comment = "trumpet"
+                # ■■ラップで傾きを判定
+                if r0 >= 90 and r1 >= 90:
+                    res_com = "ラッパ型トレンドからの発散系"
+                    order_recommend = "trend"
+                elif r0 < 85:
+                    if r1 <= 60:
+                        res_com = "ラッパ型トレンド"
+                        order_recommend = "trend"
+                    else:
+                        res_com = "ラッパ型トレンド（前ラップ大）"
+                        order_recommend = "trend"
+                else:
+                    res_com = "ラッパ型中途半端"
+            # ③後側平衡系（収束系）
+            elif sr0 > 1.3 and sr1 > 1.3:
+                size_comment = "re-trumpet"
+                order_recommend = "range"
+                # ■■ラップで傾きを判定
+                if r0 >= 85:
+                    if r1 >= 95:
+                        res_com = "逆トランペット"
+                    elif r1 <= 70:
+                        res_com = "逆トランペット＿変動後の収束"
+                    else:
+                        res_com = "逆トランぺット中途半端１"
+                elif r0 < 85:
+                    if r1 <= 70:
+                        res_com = "逆トランペット＿変動後の収束２"
+                    else:
+                        res_com = "逆トランペット中途半端２"
+            else:
+                size_comment = "UnKnown"
+                res_com = "UnKnown1"
+        elif sr0 > sr1 + 0.4:
+            # ■発散系（直前が最初より明らかに大きい）
+            # ①直前が1より小さい（直近が一番大きくなるフラッグ）
+            if sr0 < 0.8:
+                size_comment = "bigbang"
+                order_recommend = "trend"
+                # ■■ラップで傾きを判定
+                if r0 >= 90:
+                    if r1 >= 90:
+                        res_com = "ビッグバン型"
+                    else:
+                        res_com = "ビッグバン型　初期ちょいずれ"
+                else:
+                    if r1 >= 90:
+                        res_com = "ビッグバン型　トレンドに入りそう"
+                    else:
+                        res_com = "ビッグバン型　トレンド"
+            elif 0.8 <= sr0 <= 1.3:
+                size_comment = "semi_flat_from_small"
+                res_com = "semi_flat_from_small"
+                order_recommend = "range"
+            else:
+                size_comment = "中膨れ系(1時間程度の強変動後)"
+                res_com = "中膨れ系（一時間程度の強変動後）"
+                order_recommend = "range"
+        elif sr1 > sr0 + 0.4:
+            # ■収束系
+            # ①直前が1より小さい（直近が一番大きくなるフラッグ）
+            if sr0 < 0.8:
+                size_comment = "中すぼみ系"
+                res_com = "中すぼみ系（一時間程度の強変動）⇒発散？？"
+                order_recommend = "trend"
+            elif 0.8 <= sr0 <= 1.3:
+                size_comment = "semi_flat_from_big"
+                res_com = "semi_flat_from_big"
+                order_recommend = "range"
+            else:
+                size_comment = "flag"
+                # ■■ラップで傾きを判定
+                if r0 >= 95:
+                    if r1 >= 95:
+                        res_com = "フラッグ型　両サイド収束"
+                        order_recommend = "trend"
+                    else:
+                        res_com = "フラッグ型　両サイド収束ちょいずれ"
+                        order_recommend = "trend"
+                else:
+                    if r1 >= 90:
+                        res_com = "フラッグ型　ブレイク気味"
+                        order_recommend = "trend"
+                        # order_recommend = "break"
+                    else:
+                        res_com = "フラッグ型　トレンド"
+                        order_recommend = "trend"
+        print(self.s, size_comment, str(ts))
+
+
+        # 最終判定
+        if rap_res == 0:  # 結構ラップしている場合(中央の価格は変わっていない⇒後はすぼんでるか広がってるか）
+            pass
+
+        for_line = res_com + "　:　" + "【" + order_recommend + "】" + str(ts) + ",　" + str(t)
+        self.test_comment = order_recommend
+        tk.line_send(for_line)
+
 
     def cal_tilt(self, target_peaks):
         """
