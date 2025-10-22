@@ -842,7 +842,14 @@ class range_analisys:
         # 結果として使う大事な変数
         self.take_position_flag = False
         self.exe_order_classes = []
+
+        # BB調査の結果
+        self.bb_upper = 0
+        self.bb_lower = 0
+        self.bb_range = 0
+        self.bb_current_ratio = 0
         self.test_comment = ""
+        self.latest_peak_price = 0
 
         # 簡易的な解析値
         peaks = self.peaks_class.peaks_original_marked_hard_skip
@@ -850,6 +857,7 @@ class range_analisys:
         r = peaks[0]
         t = peaks[1]
         f = peaks[2]
+        self.latest_peak_price = t['latest_body_peak_price']
 
         # 上限下限の線
         self.upper_line = 0
@@ -1045,6 +1053,26 @@ class range_analisys:
         print(self.s, df_r.iloc[check_point2]['time_jp'], df_r.iloc[check_point2]['bb_range'], df_r.iloc[check_point2]['bb_upper'])
         print(self.s, df_r.iloc[check_point3]['time_jp'], df_r.iloc[check_point3]['bb_range'], df_r.iloc[check_point3]['bb_upper'])
 
+        # BBの広さと、現在の価格の位置関係を抑える
+        self.bb_range = df_r.iloc[check_point1]['bb_range']
+        self.bb_upper = df_r.iloc[check_point1]['bb_upper']
+        self.bb_lower = df_r.iloc[check_point1]['bb_lower']
+        self.bb_current_ratio = 100 * (self.bb_upper - self.current_price) / (self.bb_upper - self.bb_lower)
+        # 現在の位置関係
+        C = self.current_price
+        C = self.latest_peak_price
+        dist_to_A = abs(C - self.bb_upper)
+        dist_to_B = abs(C - self.bb_lower)
+        # 基準を選択（等距離ならA）
+        if dist_to_A <= dist_to_B:
+            base = "UPPER"
+            percent = 100 * (self.bb_upper - C) / (self.bb_upper - self.bb_lower)
+        else:
+            base = "LOWER"
+            percent = 100 * (C - self.bb_lower) / (self.bb_upper - self.bb_lower)
+        bb_latest_peak_ratio = 100 * (self.bb_upper - self.latest_peak_price) / (self.bb_upper - self.bb_lower)
+        print("現在価格の存在位置（上限基準)", percent, base)
+        print("kakaku", self.latest_peak_price, self.current_price)
 
 
         # 幅が同じでも、移動している場合があるため、三つのラップ率を算出する（直近のBBに対して、何割ラップしているか）
