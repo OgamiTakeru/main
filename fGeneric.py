@@ -71,6 +71,8 @@ def str_merge(*msg):
     message = ""
     # 複数の引数を一つにする（数字が含まれる場合があるため、STRで文字化しておく）
     for item in msg:
+        if len(str(item)) == 0:
+            continue
         message = message + " " + str(item)
     return message
 
@@ -121,6 +123,19 @@ def str_to_time_hms(str_time):
     time_str = str_time[11:13] + ":" + str_time[14:16] + ":" + str_time[17:19]
 
     return time_str
+
+def str_to_time_short(str_time):
+    """
+    時刻（文字列：2023/5/24  21:55:00　形式）を　0524_21:55の形にする
+    :param str_time:
+    :return:
+    """
+    dt = datetime.datetime.strptime(str_time, "%Y/%m/%d  %H:%M:%S")
+
+    # 必要な形式に変換
+    result = dt.strftime("%m%d_%H:%M")
+
+    return result
 
 
 def cal_str_time_gap(time_str_1, time_str_2):

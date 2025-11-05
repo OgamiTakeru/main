@@ -1,53 +1,26 @@
-import copy
-
 import fGeneric as gene
 import pandas as pd
 import classCandleAnalysis as ca
 import classOrderCreate as OCreate
 import tokens as tk
-from datetime import datetime, timedelta
-import requests
 
-g_latest_exe_trumpet_turn_time = 0  # 1時間足のトランペット形状を探索した時の、ターンの時刻（重複のオーダーを行わないための変数）
-this_file_line_send = False
 
 class turn_analisys:
     def __init__(self, candle_analysis):
-        print(" ")
-        print(" ★★ターンアナリシス")
-        # ■■■基本情報の取得
-        self.line_send_exe = this_file_line_send
-        self.line_send_mes = ""
         self.s = "    "
         self.oa = candle_analysis.base_oa
+        # test時と本番時で、分岐（本番ではpeaks_classが渡されるが、テストではdfが渡されるため、peaks_classに変換が必要）
         self.ca = candle_analysis
         self.ca5 = self.ca.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
         self.peaks_class = self.ca.peaks_class  # peaks_classだけを抽出
         self.ca60 = self.ca.candle_class_hour
         self.peaks_class_hour = self.ca.peaks_class_hour
 
-        # ■■■基本結果の変数の宣言
+        # 結果として使う大事な変数
         self.take_position_flag = False
         self.exe_order_classes = []
-        self.send_message_at_last = ""
 
-        # ■■■基本情報の表示
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
-        peaks_skip = self.peaks_class.skipped_peaks_hard
-        print(self.s, "<SKIP前>", )
-        gene.print_arr(peaks[:10])
-        print("")
-        print(self.s, "<SKIP後＞")
-        gene.print_arr(peaks_skip[:10])
-        print("")
-        print(self.s, "<SKIP前 1h足>", )
-        gene.print_arr(self.peaks_class_hour.peaks_original_marked_hard_skip[:10])
-        print("")
-        print(self.s, "<SKIP後 1h足＞")
-        gene.print_arr(self.peaks_class_hour.skipped_peaks_hard[:10])
-
-        # ■■■■　以下は解析値等
-        # ■■■簡易的な解析値
+        # 簡易的な解析値
         peaks = self.peaks_class.peaks_original_marked_hard_skip
         r = peaks[0]
         t = peaks[1]
@@ -62,16 +35,6 @@ class turn_analisys:
         self.latest_turn_resistance_gap = abs(t['latest_body_peak_price'] - self.peaks_class.latest_price)
         self.latest_flop_resistance_gap = abs(f['latest_body_peak_price'] - self.peaks_class.latest_price)
         self.current_price = self.peaks_class.latest_price
-
-        # ■■BB用
-        self.bb_upper = 0
-        self.bb_lower = 0
-        self.bb_range = 0
-        self.bb_current_ratio = 0
-        self.bb_comment = ""
-        self.upper_line = 0
-        self.lower_line = 999
-        self.latest_peak_price = t['latest_body_peak_price']
 
         # 調整用の係数たち
         self.sp = 0.004  # スプレッド考慮用
@@ -98,47 +61,9 @@ class turn_analisys:
             {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(10), "ensure": self.ca5.cal_move_ave(8)},
             {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(11), "ensure": self.ca5.cal_move_ave(9)},
         ]
-        # self.lc_change_test = [
-        #     {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": -1},  # ←とにかく、LCCandleを発動させたい場合
-        #     {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(2), "ensure": -0.001},
-        #     {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(4), "ensure": self.ca5.cal_move_ave(2)},
-        #     {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(5), "ensure": self.ca5.cal_move_ave(3)},
-        #     {"exe": True, "time_after": 6000, "trigger": self.ca5.cal_move_ave(6), "ensure": self.ca5.cal_move_ave(4)},
-        #     {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(7), "ensure": self.ca5.cal_move_ave(5)},
-        #     {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(8), "ensure": self.ca5.cal_move_ave(6)},
-        #     {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(9), "ensure": self.ca5.cal_move_ave(7)},
-        #     {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(10), "ensure": self.ca5.cal_move_ave(8)},
-        #     {"exe": True, "time_after": 600, "trigger": self.ca5.cal_move_ave(11), "ensure": self.ca5.cal_move_ave(9)},
-        # ]
 
         # ★★★調査実行
         self.turn_main()
-
-    def line_send(self, *msg):
-        # 関数は可変複数のコンマ区切りの引数を受け付ける
-        message = ""
-        # 複数の引数を一つにする（数字が含まれる場合があるため、STRで文字化しておく）
-        for item in msg:
-            message = message + " " + str(item)
-        # 時刻の表示を作成する
-        now_str = f'{datetime.now():%Y/%m/%d %H:%M:%S}'
-        # メッセージの最後尾に付ける
-        message = message + " (" + now_str[5:10] + "_" + now_str[11:19] + ")"
-        if len(message) >= 2000:
-            print("@@文字オーバー")
-            print(message)
-            message = "Discord受信許容文字数オーバー" + str(len(message))
-        if not self.line_send_exe:
-            print("     [Disc(送付無し)]", message)  # コマンドラインにも表示
-            return 0
-        # ■■■  通常のDiscord送信　■■■　　最悪これ以下だけあればいい
-        data = {"content": "@everyone " + message,
-                "allowed_mentions": {
-                    "parse": ["everyone"]
-                }
-                }
-        requests.post(tk.WEBHOOK_URL_main, json=data)
-        print("     [Disc]", message)  # コマンドラインにも表示
 
     def add_order_to_this_class(self, order_class):
         """
@@ -151,10 +76,13 @@ class turn_analisys:
 
     def turn_main(self):
         """
-        ターン直後での判断。
+        args[0]は必ずpeaks_classであること。
+        args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
+
+        直近[0]がcount4の時、riverPeakにレジスタンスオーダーを入れる
         """
         # ■基本情報の取得
-        latest_exe_time = datetime.now()
+        # print("★★TURN　本番用")
 
         # ■実行除外
         # 対象のPeakのサイズを確認（小さすぎる場合、除外）
@@ -162,21 +90,204 @@ class turn_analisys:
         peaks_skip = self.peaks_class.skipped_peaks_hard
         if peaks[1]['gap'] < 0.04:
             print("対象が小さい", peaks[1]['gap'])
-        if peaks[0]['count'] != 2:
-            print("直近カウントが２以外", peaks[0]['count'])
 
-        # ■■■　
-        # BBによる形状判定　（直近１時間前、２時間前、３時間前のBBの幅の違いを求める）
-        # 1時間足のため、1時間に一回実行(5分足のデータフレームで判断。1時間足だと判定できない）
-        latest_time = self.ca.d5_df_r.iloc[0]['time_jp']
-        latest_time_datetime = datetime.strptime(latest_time, "%Y/%m/%d %H:%M:%S")
-        if latest_time_datetime.minute >= 57 or latest_time_datetime.minute <= 4:
-            bb_range_ans = self.bb_range_analysis(self.ca.d60_df_r)
-            self.first_of_trumpet_analysis(self.ca.d60_df_r, self.peaks_class_hour, bb_range_ans['shape_comment'])
+        # ■基本的な情報の取得
+        # (1)
+        r = peaks[0]
+        t = peaks[1]
+        f = peaks[2]
+        s = "   "
+        print(s, "<SKIP前>", )
+        gene.print_arr(peaks[:10])
+        print("")
+        print(s, "<SKIP後＞")
+        gene.print_arr(peaks_skip[:10])
+
+        # テスト専用のコード
+        name_t = (("@" + str(self.rt.lo_ratio) + "@" +
+                   str(self.rt.turn_strength_at_older)) + "@" + str(self.tf.lo_ratio) + "@" +
+                  str(self.rt.skip_num_at_older) + "@" +
+                  str(t['count']) + "@" + str(t['gap']))
+
+        # (4)よく使う条件分岐を、簡略化しておく
+        # ■一部共通の分岐条件を生成しておく
+        if self.rt.skip_num_at_older < 3 and 0 < self.rt.turn_strength_at_older <= 8:
+            is_extendable_line = True
         else:
-            print("1時間足のBB形状判定の実行時間外", latest_time_datetime.minute)
-        # self.bb_range_analysis(self.ca.d5_df_r)
-        # self.support_line_analysis()
+            is_extendable_line = False
+
+        # ■表示
+        print(" ●判定パラメーター一覧●  rCount:", r['count'])
+        print("  平均キャンドル長", self.ca5.cal_move_ave(1))
+        print("  RT情報 比率:", self.rt.lo_ratio)
+        print("  TF情報 比率:", self.tf.lo_ratio)
+        print("  T情報 SKIP有無:", self.rt.skip_exist_at_older, ",Skip数:", self.rt.skip_num_at_older, "t-Count:", t['count'])
+        print("       T-strength:", self.rt.turn_strength_at_older)
+        print("  超レンジ状態", self.peaks_class.hyper_range)
+        print("  ビッグキャンドル有無", self.peaks_class.is_big_move_candle)
+
+        # ■■■　条件によるオーダー発行
+        # ①BBの検証　直近１時間前、２時間前、３時間前のBBの幅の違いを求める
+        self.bb_range_analysis(self.ca.d5_df_r)
+
+        # ②フラッグ検証（最優先）
+        self.flag_analysis(self.peaks_class.peaks_with_same_price_list)  # いつか分離できるように、引数に明示的に渡しておく
+        if self.take_position_flag:
+            # この時点でフラッグがTrueになっている場合、続きはやらない
+            return 0
+
+        # ③形状の検証
+        # 　-1 BigMoveの場合 (そこそこ優先度高）
+        if r['count'] == 2 and t['include_large']:
+            print("BIG_MOVEテスト")
+            print(t["latest_time_jp"], t['include_large'])
+            self.big_move_r_direction_order()
+            return 0
+        # 　-2 ローソク形状による
+        # 基本的にRiverがTurnより短いもの、かつ、riverカウントが2の物（折り返し直後）が対象。
+        pat = 0
+        comment = ""
+        if self.rt.lo_ratio <= 0.4 and r['count'] == 2:
+            if 0.8 <= self.tf.lo_ratio <= 1.2:
+                comment = "ftで山形成⇒レンジへ"
+                pat = 1
+            elif self.tf.lo_ratio <= 0.4:
+                comment = "ジグザグ⇒ブレイクへ"
+                pat = 2
+            else:
+                comment = "中途半端⇒レンジ"
+                pat = 1
+        elif self.rt.lo_ratio <= 0.9 and r['count'] == 2:
+            comment = "すぐTPしたい"
+            pat = 3
+        else:
+            pass
+
+        if pat == 0:
+            return 0
+        elif pat == 1:
+            # レンジメイン
+            # ■■オーダーを作成＆発行
+            order_class1 = OCreate.Order({
+                "name": comment,
+                "current_price": self.peaks_class.latest_price,
+                "target": 0,
+                "direction": t['direction'],
+                "type": "MARKET",
+                "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
+                "lc": self.base_lc_range,
+                "lc_change": self.lc_change_test,
+                "units": self.units_str * 1.1,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_to_this_class(order_class1)
+            order_class2 = OCreate.Order({
+                "name": comment + "HEDGE",
+                "current_price": self.peaks_class.latest_price,
+                "target": self.ca5.cal_move_ave(1.5),
+                "direction": r['direction'],
+                "type": "STOP",
+                "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
+                "lc": self.base_lc_range,
+                "lc_change": self.lc_change_test,
+                "units": self.units_hedge * 1.1,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_to_this_class(order_class2)
+            # リンケージをたがいに登録する
+            order_class1.add_linkage(order_class2)
+            order_class2.add_linkage(order_class1)
+        elif pat == 1.5:
+            # レンジメイン(Hedgeなし！）
+            order_class1 = OCreate.Order({
+                "name": comment,
+                "current_price": self.peaks_class.latest_price,
+                "target": 0,
+                "direction": t['direction'],
+                "type": "MARKET",
+                "tp": self.ca5.cal_move_ave(2),  # self.ca5.cal_move_ave(5),
+                "lc": self.ca5.cal_move_ave(2),  # self.base_lc_range,
+                "lc_change": self.lc_change_test,
+                "units": self.units_str * 1.1,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_to_this_class(order_class1)
+        elif pat == 2:
+            # ブレイクメイン
+            order_class1 = OCreate.Order({
+                "name": comment,
+                "current_price": self.peaks_class.latest_price,
+                "target": 0,
+                "direction": r['direction'],
+                "type": "MARKET",
+                "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
+                "lc": self.base_lc_range,
+                "lc_change": self.lc_change_test,
+                "units": self.units_str,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_to_this_class(order_class1)
+            order_class2 = OCreate.Order({
+                "name": comment + "HEDGE",
+                "current_price": self.peaks_class.latest_price,
+                "target": self.ca5.cal_move_ave(1.5),
+                "direction": t['direction'],
+                "type": "STOP",
+                "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
+                "lc": self.base_lc_range,
+                "lc_change": self.lc_change_test,
+                "units": self.units_hedge,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_to_this_class(order_class2)
+            # リンケージをたがいに登録する
+            order_class1.add_linkage(order_class2)
+            order_class2.add_linkage(order_class1)
+        elif pat == 3:
+            # 動きが少なそうなので、すぐTP狙い
+            order_class1 = OCreate.Order({
+                "name": comment,
+                "current_price": self.peaks_class.latest_price,
+                "target": 0,
+                "direction": r['direction'],
+                "type": "MARKET",
+                "tp": self.ca5.cal_move_ave(2),
+                "lc": self.ca5.cal_move_ave(2),
+                "lc_change": self.lc_change_test,
+                "units": self.units_str * 0.9,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_to_this_class(order_class1)
+            order_class2 = OCreate.Order({
+                "name": comment + "HEDGE",
+                "current_price": self.peaks_class.latest_price,
+                "target": self.ca5.cal_move_ave(1.5),
+                "direction": t['direction'],
+                "type": "STOP",
+                "tp": self.ca5.cal_move_ave(2),  # self.base_tp_range,  # self.ca5.cal_move_ave(5),
+                "lc": self.ca5.cal_move_ave(2),  # self.base_lc_range,
+                "lc_change": self.lc_change_test,
+                "units": self.units_hedge * 0.9,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_to_this_class(order_class2)
+            # リンケージをたがいに登録する
+            order_class1.add_linkage(order_class2)
+            order_class2.add_linkage(order_class1)
 
     def big_move_r_direction_order(self):
         """
@@ -235,12 +346,10 @@ class turn_analisys:
         """
         BBのすぼまりを見る
         """
-        print("　★BBアナリシス")
-        s = self.s
-        allowed_ratio = 0.8  # 2割程度のサイズの違いは同等とみなす
+        print("----BB analysis")
         check_point1 = 0  # 直近
         check_point2 = 12  # 12足前
-        check_point3 = 18  # 24足前 ⇒ここはトランペット特化にするため18に
+        check_point3 = 24  # 24足前
         bb1_range = df_r.iloc[check_point1]['bb_range']
         bb2_range = df_r.iloc[check_point2]['bb_range']
         bb3_range = df_r.iloc[check_point3]['bb_range']
@@ -248,529 +357,23 @@ class turn_analisys:
         print(self.s, df_r.iloc[check_point2]['time_jp'], df_r.iloc[check_point2]['bb_range'], df_r.iloc[check_point2]['bb_upper'])
         print(self.s, df_r.iloc[check_point3]['time_jp'], df_r.iloc[check_point3]['bb_range'], df_r.iloc[check_point3]['bb_upper'])
 
-        # BBの広さと、現在の価格の位置関係を抑える
-        self.bb_range = df_r.iloc[check_point1]['bb_range']
-        self.bb_upper = df_r.iloc[check_point1]['bb_upper']
-        self.bb_lower = df_r.iloc[check_point1]['bb_lower']
-        self.bb_current_ratio = 100 * (self.bb_upper - self.current_price) / (self.bb_upper - self.bb_lower)
-        # 現在の位置関係
-        C = self.current_price
-        C = self.latest_peak_price
-        dist_to_A = abs(C - self.bb_upper)
-        dist_to_B = abs(C - self.bb_lower)
-        # 基準を選択（等距離ならA）
-        if dist_to_A <= dist_to_B:
-            base = "UPPER"
-            percent = 100 * (self.bb_upper - C) / (self.bb_upper - self.bb_lower)
-        else:
-            base = "LOWER"
-            percent = 100 * (C - self.bb_lower) / (self.bb_upper - self.bb_lower)
-        bb_latest_peak_ratio = 100 * (self.bb_upper - self.latest_peak_price) / (self.bb_upper - self.bb_lower)
-        print(s, "現在価格の存在位置（上限基準)", percent, base, self.latest_peak_price, self.current_price)
-
-        # 幅が同じでも、移動している場合があるため、三つのラップ率を算出する（直近のBBに対して、何割ラップしているか）
-        pairs = [(df_r.iloc[check_point1]['bb_lower'], df_r.iloc[check_point1]['bb_upper']),
-                 (df_r.iloc[check_point2]['bb_lower'], df_r.iloc[check_point2]['bb_upper']),
-                 (df_r.iloc[check_point3]['bb_lower'], df_r.iloc[check_point3]['bb_upper'])]
-        base_start, base_end = pairs[0]
-        base_len = base_end - base_start
-        results = []
-        for i, (start, end) in enumerate(pairs[1:], start=2):
-            # 重なり計算
-            overlap_start = max(base_start, start)
-            overlap_end = min(base_end, end)
-            overlap = max(0, overlap_end - overlap_start)
-
-            # 基準区間に対する重なり率（0〜1）
-            overlap_rate = overlap / (base_end - base_start)
-
-            # サイズ比（自身 / 基準
-            length = end - start
-            size_ratio = length / base_len
-
-            # タグ判定
-            lower_out = start < base_start
-            upper_out = end > base_end
-            if lower_out and upper_out:
-                tag = "両方に外れている"
-            elif lower_out:
-                tag = "下に外れている"
-            elif upper_out:
-                tag = "上に外れている"
-            else:
-                tag = "内側"
-
-            results.append({
-                "index": i,
-                "range": round(abs(length), 3),
-                "rap_ratio": round(overlap_rate * 100, 1),  # %
-                "size_ratio": round(size_ratio, 2),  # 直近を基準にした、各々のサイズ比率（BBなので2倍くらいなら同じとみなすかも）
-                "tag": tag,
-                "kukan": f"{start}-{end}",
-            })
-        print(s, "ベースとなる直近のBB幅", base_len)
-        for r in results:
-            print(s, r)
-
-        # 重なり判定
-        r0 = results[0]['rap_ratio']  # ０とついているが、直近を含めない、一番最初という意味
-        r1 = results[1]['rap_ratio']
-        rap_res = 0
-        rap_comment = ""
-        t = str(r0) + "," + str(r1)
-        sr0 = results[0]['size_ratio']  # ０とついているが、直近を含めない、一番最初という意味
-        sr1 = results[1]['size_ratio']
-        ts = str(sr0) + "," + str(sr1)
         # サイズ感の処理
-        size_res = 0
-        size_comment = ""
-
-        # if abs(sr0 - sr1) < 0.4:
-        #     # ■残り二つが同じサイズ
-        #     # ①完全平行系
-        #     if 0.8 <= sr0 <= 1.3 and 0.8 <= sr0 <= 1.3:
-        #         size_comment = "flat"
-        #     # ②前側平行系(ラッパ型）
-        #     elif sr0 < 0.8 and sr1 < 0.8:
-        #         size_comment = "trumpet"
-        #     # ③後側平衡系（収束系）
-        #     elif sr0 > 1.3 and sr1 > 1.3:
-        #         size_comment = "re-trumpet"
-        #     else:
-        #         size_comment = "UnKnown"
-        # elif sr0 > sr1 + 0.4:
-        #     # ■発散系（直前が最初より明らかに大きい）
-        #     # ①直前が1より小さい（直近が一番大きくなるフラッグ）
-        #     if sr0 < 0.8:
-        #         size_comment = "bigbang"
-        #     elif 0.8 <= sr0 <= 1.3:
-        #         size_comment = "semi_flat_from_small"
-        #     else:
-        #         size_comment = "中膨れ系(1時間程度の強変動後)"
-        # elif sr1 > sr0 + 0.4:
-        #     # ■収束系
-        #     # ①直前が1より小さい（直近が一番大きくなるフラッグ）
-        #     if sr0 < 0.8:
-        #         size_comment = "中すぼみ系"
-        #     elif 0.8 <= sr0 <= 1.3:
-        #         size_comment = "semi_flat_from_big"
-        #     else:
-        #         size_comment = "flag"
-        res_com = ""
-        order_recommend = ""
-        if abs(sr0 - sr1) < 0.3:
-            # ■残り二つが同じサイズ
-            # ①完全平行系
-            if 0.7 <= sr0 <= 1.3 and 0.7 <= sr0 <= 1.3:
-                size_comment = "parallel"
-                # ■■ラップ率で傾きを判断
-                # if r0 >= 88 and r1 >= 88:
-                b = 70
-                if r0 >= b and r1 >= b:
-                    res_com = "フラット"
-                    order_recommend = "range"
-                elif r0 >= b and r1 < b:
-                    res_com = "直近トレンド（平行折り返し後）"
-                    order_recommend = "range"
-                elif r0 < b and r1 < b-10 and r0 > r1:
-                    res_com = "平行移動のトレンド"
-                    order_recommend = "trend"
-                else:
-                    res_com = "平行移動のトレンドっぽいが微妙に違う"
-
-            # ②前側平行系(ラッパ型）
-            elif sr0 < 0.7 and sr1 < 0.7:
-                size_comment = "trumpet"
-                # ■■ラップで傾きを判定
-                if r0 >= 90 and r1 >= 90:
-                    res_com = "ラッパ型トレンドからの発散系"
-                    order_recommend = "trend"
-                elif r0 < 85:
-                    if r1 <= 60:
-                        res_com = "ラッパ型トレンド"
-                        order_recommend = "trend"
-                    else:
-                        res_com = "ラッパ型トレンド（前ラップ大）"
-                        order_recommend = "trend"
-                else:
-                    res_com = "ラッパ型中途半端"
-            # ③後側平衡系（収束系）
-            elif sr0 > 1.3 and sr1 > 1.3:
-                size_comment = "re-trumpet"
-                order_recommend = "range"
-                # ■■ラップで傾きを判定
-                if r0 >= 85:
-                    if r1 >= 95:
-                        res_com = "逆トランペット"
-                    elif r1 <= 70:
-                        res_com = "逆トランペット＿変動後の収束"
-                    else:
-                        res_com = "逆トランぺット中途半端１"
-                elif r0 < 85:
-                    if r1 <= 70:
-                        res_com = "逆トランペット＿変動後の収束２"
-                    else:
-                        res_com = "逆トランペット中途半端２"
-            else:
-                size_comment = "UnKnown"
-        elif sr0 > sr1 + 0.4:
-            # ■発散系（直前が最初より明らかに大きい）
-            # ①直前が1より小さい（直近が一番大きくなるフラッグ）
-            if sr0 < 0.8:
-                size_comment = "bigbang"
-                order_recommend = "trend"
-                # ■■ラップで傾きを判定
-                if r0 >= 90:
-                    if r1 >= 90:
-                        res_com = "ビッグバン型"
-                    else:
-                        res_com = "ビッグバン型　初期ちょいずれ"
-                else:
-                    if r1 >= 90:
-                        res_com = "ビッグバン型　トレンドに入りそう"
-                    else:
-                        res_com = "ビッグバン型　トレンド"
-            elif 0.8 <= sr0 <= 1.3:
-                size_comment = "semi_flat_from_small"
-                res_com = "semi_flat_from_small"
-                order_recommend = "range"
-            else:
-                size_comment = "中膨れ系(1時間程度の強変動後)"
-                res_com = "中膨れ系（一時間程度の強変動後）"
-                order_recommend = "range"
-        elif sr1 > sr0 + 0.4:
-            # ■収束系
-            # ①直前が1より小さい（直近が一番大きくなるフラッグ）
-            if sr0 < 0.8:
-                size_comment = "中すぼみ系"
-                res_com = "中すぼみ系（一時間程度の強変動）⇒発散？？"
-                order_recommend = "trend"
-            elif 0.8 <= sr0 <= 1.3:
-                size_comment = "semi_flat_from_big"
-                res_com = "semi_flat_from_big"
-                order_recommend = "range"
-            else:
-                size_comment = "flag"
-                # ■■ラップで傾きを判定
-                if r0 >= 95:
-                    if r1 >= 95:
-                        res_com = "フラッグ型　両サイド収束"
-                        order_recommend = "trend"
-                    else:
-                        res_com = "フラッグ型　両サイド収束ちょいずれ"
-                        order_recommend = "trend"
-                else:
-                    if r1 >= 90:
-                        res_com = "フラッグ型　ブレイク気味"
-                        order_recommend = "trend"
-                        # order_recommend = "break"
-                    else:
-                        res_com = "フラッグ型　トレンド"
-                        order_recommend = "trend"
-        print(self.s, "結果", size_comment, str(ts))
-
-
-        # 最終判定
-        if rap_res == 0:  # 結構ラップしている場合(中央の価格は変わっていない⇒後はすぼんでるか広がってるか）
-            pass
-
-        comment_all = res_com + "　:　" + "【" + order_recommend + "】" + str(ts) + ",　" + str(t)
-
-        return {
-            "order_recommend": order_recommend,
-            "comment": res_com,
-            "comment_all": comment_all,
-            "shape_comment": size_comment
-        }
-
-    def first_of_trumpet_analysis(self, df_r, peaks_class, bb_shape):
-        """
-        1時間足だと、トレンドに入ってから13時間程度で安定に移行する傾向がある
-        トレンドに入ったと推測される時刻を求める。
-        """
-        global g_latest_exe_trumpet_turn_time
-        print("13時間判定")
-
-        if not bb_shape == "trumpet":
-            print("トランペット形状ではないため実施しない")
-            return 0
-
-        s = self.s
-        dj_max = 13  # 13時間をレンジトレンドの周期とする
-        m = 2
-        peaks_hard_skip = peaks_class.skipped_peaks_hard
-        # gene.print_arr(peaks_hard_skip)
-
-        latest_peak = peaks_hard_skip[0]
-        latest_time_str = latest_peak['latest_time_jp']
-        latest_time = datetime.strptime(latest_time_str, '%Y/%m/%d %H:%M:%S')
-        turn_peak = peaks_hard_skip[1]
-        turn_time_str = turn_peak['latest_time_jp']
-        turn_time = datetime.strptime(turn_time_str, '%Y/%m/%d %H:%M:%S')
-
-        # 判定
-        if g_latest_exe_trumpet_turn_time != turn_time_str:
-            # 格納済みのTurnTimeと異なる場合
-            pass
+        if bb3_range >= bb2_range >= bb1_range:
+            print(self.s, "完全収束傾向")
+            is_converged = 1
+        elif bb1_range >= bb2_range >= bb3_range:
+            print(self.s, "完全発散傾向")
+            is_converged = -1
         else:
-            self.line_send("トランペット判定において、Turn時刻が同じ", turn_time_str)
-            return 0
+            print(self.s, "収束とも発散とも言えない")
+            is_converged = 0
 
-        gap_latest_turn_time_min = gene.cal_str_time_gap(latest_time_str, turn_time_str)['gap_abs_min']
-        gap_latest_turn_time_hour = round(gap_latest_turn_time_min / 60, 0)
-
-        # 参考用？（何時までトレンドが続くかの時間を求める）
-        dt_plus9 = datetime.strptime(turn_time_str, '%Y/%m/%d %H:%M:%S') + timedelta(hours=dj_max)
-        s_plus9 = dt_plus9.strftime('%Y/%m/%d %H:%M:%S')
-
-        # BBの広がる直前を抜く
-        allowed_range = 0.02
-        df_r = df_r.reset_index(drop=True)  # for分のためにインデックスを振りなおす
-        count = 0
-        bb_start_time_str = ""
-        bb_start_time = 0
-        stop_time_from_bb = 0
-        stop_time_from_bb_str = ""
-        for index, row in df_r.iterrows():
-            if index + 1 >= len(df_r):
-                break
-            this_gap = row['bb_range']
-            next_gap = df_r.iloc[index + 1]['bb_range']
-            # print(row['time_jp'], df_r.iloc[index + 1]['time_jp'])
-            # print(index, row['time_jp'], round(row['bb_range'], 3))
-            ratio = round(next_gap / this_gap, 2)   # 小さくなる（時間的にさかのぼると）前提。＝1以下になるのが前提
-            if 1 >= ratio >= 0.96:
-                count = count + 1
-            else:
-                count = 0
-
-            if count == 2:
-                # 2足以上BBが同じようなサイズだったら、そこがスタート(最初の一つ）
-                bb_start_time_str = row["time_jp"]
-                bb_start_time = datetime.strptime(bb_start_time_str, '%Y/%m/%d %H:%M:%S')
-                stop_time_from_bb = datetime.strptime(bb_start_time_str, '%Y/%m/%d %H:%M:%S') + timedelta(hours=dj_max)
-                stop_time_from_bb_str = stop_time_from_bb.strftime('%Y/%m/%d %H:%M:%S')
-                break
-
-        # 時間差の話
-        turn_diff = (dt_plus9 - latest_time).total_seconds() / 3600
-        bb_start_diff = (stop_time_from_bb - latest_time).total_seconds() / 3600
-        # 近い方・遠い方を判定
-        if abs(turn_diff) < abs(bb_start_diff):
-            near, far = ("time1", turn_diff), ("time2", bb_start_diff)
-        else:
-            near, far = ("time2", bb_start_diff), ("time1", turn_diff)
-        # 結果表示
-        print(s, f"近い方: {near[0]}（現在から {near[1]:.2f} 時間差）", )
-        print(s, f"遠い方: {far[0]}（現在から {far[1]:.2f} 時間差）")
-
-        # オーダーを発行する
-        d = int(latest_peak['direction'])  # ピークの方向（１は上側）
-        latest_price = latest_peak['latest_body_peak_price']
-        # 抵抗線が抵抗する方向（Range）⇒即時発行
-        order_class1 = OCreate.Order({
-            "name": "トランペット13",
-            "current_price": latest_price,
-            "target": 0,
-            "direction": d,
-            "type": "MARKET",
-            "tp": self.ca60.cal_move_ave(1),
-            "lc": turn_peak['latest_body_peak_price'],  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
-            "lc_change": 0,
-            "units": self.units_str,
-            "priority": 7,
-            "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-            "candle_analysis_class": self.ca
-        })
-        # self.add_order_to_this_class(order_class1)
-        # order_class2 = OCreate.Order({
-        #     "name": "Break側（HEDGE）",
-        #     "current_price": self.peaks_class.latest_price,
-        #     "target": gap_latest_turn_peak + self.ca5.cal_move_ave(1.5),
-        #     "direction": d,
-        #     "type": "STOP",
-        #     "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
-        #     "lc": self.base_lc_range,
-        #     "lc_change": self.lc_change_test,
-        #     "units": self.units_hedge,
-        #     "priority": 4,
-        #     "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-        #     "candle_analysis_class": self.ca
-        # })
-        # # self.add_order_to_this_class(order_class2)
-        # # リンケージをたがいに登録する
-        # order_class1.add_linkage(order_class2)
-        # order_class2.add_linkage(order_class1)
-        # オーダーの追加
-        self.add_order_to_this_class(order_class1)
-        # self.add_order_to_this_class(order_class2)
-
-
-
-        # 表示セクション
-        print(s, "現在時刻", latest_time_str, "(ターンより", gap_latest_turn_time_hour, "時間後)")
-        print(s, "ターン時刻", turn_time_str, "単純予測時刻（＋１３）", s_plus9)
-        print(s, "BB発散開始時刻", bb_start_time_str, "BB起点のトレンド終了予測時刻", stop_time_from_bb_str)
-
-        comment = gene.str_merge("現在時刻", latest_time_str, "(ターンより", gap_latest_turn_time_hour, "時間後)\n")
-        comment = gene.str_merge(comment, "ターン時刻", turn_time_str, "単純予測時刻（＋１３）", s_plus9, "\n")
-        comment = gene.str_merge(comment, "BB発散開始時刻", bb_start_time_str, "BB起点のトレンド終了予測時刻", stop_time_from_bb_str)
-        self.line_send(comment)
-
-    def support_line_analysis(self):
-        s = self.s
-        line_mes = ""
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
-
-        # ■■解析セクション　抵抗線の算出
-        turn_info = self.support_line_detect(1)  # turn部分もの（上下かは問わず）
-        flop_info = self.support_line_detect(2)  # flop部分もの（上下かは問わず）
-        if turn_info['same_price_list_till_break_5_total'] >= 15:
-            line_on = True
-            line_mes = line_mes + turn_info['mes']
-        if flop_info['same_price_list_till_break_5_total'] >= 15:
-            line_on = True
-            line_mes = line_mes + flop_info['mes']
-        # 髭分を考慮する（参考）
-        turn = peaks[1]
-        if turn['direction'] == 1:
-            peak_of_peak = turn['highest']  # 髭込みで、そのピークの中での最大値（ピークのところの髭ではなく、最小）
-        else:
-            peak_of_peak = turn['lowest']
-
-        # テスト用の送信
-        if not line_mes == "":
-            print(s, "抵抗線")
-            for i, item in enumerate(turn_info['same_price_list_till_break_5']):
-                print(item)
-            wick_length = abs(float(peak_of_peak) - float(peaks[1]['latest_body_peak_price']))
-            print(s, "ただし髭混みの最低価格は", peaks[1]['latest_wick_peak_price'], "(", wick_length, ")")
-
-            if wick_length >= 0.05:
-                self.send_message_at_last = line_mes + "注意　長いひげあり（髭分は余裕をみたロスカとヘッジオーダーが必要）"
-            # self.line_send(line_mes)
-
-        # ■■オーダーセクション
-        if turn_info['same_price_list_till_break_5_total'] >= 15:
-            d = int(turn_info['d'])  # ピークの方向（１は上側）
-            line_price = turn_info['target_price']
-            ave = self.ca5.cal_move_ave(4)  # 平均の足4個分
-            gap_latest_turn_peak = peaks[0]['gap']
-            # 抵抗線が抵抗する方向（Range）⇒即時発行
-            order_class1 = OCreate.Order({
-                "name": "抵抗される側",
-                "current_price": self.peaks_class.latest_price,
-                "target": 0,
-                "direction": d * -1,
-                "type": "MARKET",
-                "tp": self.ca5.cal_move_ave(2),
-                "lc": gap_latest_turn_peak + self.ca5.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
-                "lc_change": self.lc_change_test,
-                "units": self.units_str,
-                "priority": 4,
-                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                "candle_analysis_class": self.ca
-            })
-            # self.add_order_to_this_class(order_class1)
-            order_class2 = OCreate.Order({
-                "name": "Break側（HEDGE）",
-                "current_price": self.peaks_class.latest_price,
-                "target": gap_latest_turn_peak + self.ca5.cal_move_ave(1.5),
-                "direction": d,
-                "type": "STOP",
-                "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
-                "lc": self.base_lc_range,
-                "lc_change": self.lc_change_test,
-                "units": self.units_hedge,
-                "priority": 4,
-                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                "candle_analysis_class": self.ca
-            })
-            # self.add_order_to_this_class(order_class2)
-            # リンケージをたがいに登録する
-            order_class1.add_linkage(order_class2)
-            order_class2.add_linkage(order_class1)
-            # オーダーの追加
-            self.add_order_to_this_class(order_class1)
-            self.add_order_to_this_class(order_class2)
-
-    def support_line_detect(self, target_no):
-        # ②抵抗線を探す（上側）
-        peaks_with_same_price_list = self.peaks_class.peaks_with_same_price_list
-        # gene.print_arr(peaks_with_same_price_list)
-        if len(peaks_with_same_price_list) == 0:
-            print("同一価格リストサイズ０")
-            return 0
-        # 変数代入＆表示
-        same_price_list = peaks_with_same_price_list[target_no]['same_price_list_till_break']  # ターンが抵抗線かを調べる。（リバーではない）
-        same_price_list_total = sum(d['item']["peak_strength"] for d in same_price_list)
-        same_price_list_till_break_5 = [d for d in peaks_with_same_price_list[target_no]['same_price_list_till_break'] if d["item"]["peak_strength"] >= 5]
-        same_price_list_till_break_5_total = sum(d['item']["peak_strength"] for d in same_price_list_till_break_5)
-        # 方向
-        d = same_price_list[0]['item']['direction']
-        target_price = same_price_list[0]['item']['latest_body_peak_price']
-        # 表示
-        # print("----抵抗線検知  [方向]", d)
-        # print(self.s, "ターンの強度（同一価格数）", len(same_price_list), "total", same_price_list_total)
-        # for i, item in enumerate(same_price_list):
-        #     print("          ",  item['i'], item['item']['latest_time_jp'], item['item']['peak_strength'], item['item']['direction'])
-        # print(self.s, "Breakまでの同一価格(上位ランクのみ） total", same_price_list_till_break_5_total)
-        # for i, item in enumerate(same_price_list_till_break_5):
-        #     print("          ", item['i'], item['item']['latest_time_jp'], item['item']['peak_strength'])
-
-
-        # 判定
-        line_strength = 0
-        if same_price_list_total <= 2:
-            line_strength = 0
-            # print(self.s, "抵抗なし(自身のみの検出）")
-        elif same_price_list_total <= 4:
-            line_strength = 1
-            # print(self.s, "引っ掛かり程度の抵抗線")
-        elif same_price_list_total < 10:  # 12は5が二つと2が一つを想定。
-            if same_price_list_till_break_5_total >= 10:
-                # print(self.s, "準 相当強めの抵抗線", same_price_list_total, same_price_list_till_break_5_total)
-                line_strength = 7
-            elif same_price_list_till_break_5_total >= 5 and len(same_price_list) >= 2:
-                # print(self.s, "軽いダブルトップ抵抗線", same_price_list_total, same_price_list_till_break_5_total)
-                line_strength = 5
-            else:  # =5の場合は、自身のみ
-                # print(self.s, "５自身のみか、複数の２", same_price_list_total, same_price_list_till_break_5_total)
-                line_strength = 3
-        else:
-            # 12以上
-            if same_price_list_till_break_5_total >= 10:
-                # print(self.s, "相当強めの抵抗線", same_price_list_total, same_price_list_till_break_5_total)
-                line_strength = 10
-            else:
-                # print(self.s, "強めの抵抗線", same_price_list_total, same_price_list_till_break_5_total)
-                line_strength = 7
-
-        # 狭い脚判定
-        if len(same_price_list) == 2:
-            latest_time = same_price_list[0]['item']['latest_time_jp']
-            oldest_time = same_price_list[1]['item']['latest_time_jp']
-            ans = gene.cal_str_time_gap(latest_time, oldest_time)
-            # print(self.s, ans['gap_abs']/60, "分", latest_time, oldest_time)
-
-        # 登録
-        if d == 1:
-            self.upper_line = target_price
-        else:
-            self.lower_line = target_price
-        # print(self.s, self.upper_line, "-", self.lower_line)
-
-
-        return {
-            "same_price_list": same_price_list,
-            "same_price_list_total": same_price_list_total,
-            "same_price_list_till_break_5": same_price_list_till_break_5,
-            "same_price_list_till_break_5_total": same_price_list_till_break_5_total,
-            "line_strength": line_strength,
-            "d": d,
-            "target_price": target_price,
-            "mes": "[" + str(d) + "抵抗線]" + str(target_price) + " "
-        }
+        if is_converged == 1:
+            ratio_1_3 = round(bb1_range / bb3_range, 3)
+            if ratio_1_3 <= 0.6:
+                print(self.s, "結構な収束傾向にあり", ratio_1_3)
+            elif ratio_1_3 <= 0.81:
+                print(self.s, "少々な収束傾向", ratio_1_3)
 
     def flag_analysis(self, peaks_with_same_price_list):
         """
@@ -1225,35 +828,23 @@ class TuneAnalysisInformation:
         self.lo_ratio = round(later_peak['gap'] / older_peak['gap'], 3)
 
 
-class predict_turn_analysis:
+class range_analysis:
     def __init__(self, candle_analysis):
-        print("")
-        print(" ★プレディクトターンアナリシス")
-        # ■■■基本情報の取得
-        self.line_send_exe = this_file_line_send
-        self.line_send_mes = ""
         self.s = "    "
         self.oa = candle_analysis.base_oa
+        # test時と本番時で、分岐（本番ではpeaks_classが渡されるが、テストではdfが渡されるため、peaks_classに変換が必要）
         self.ca = candle_analysis
         self.ca5 = self.ca.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
         self.peaks_class = self.ca.peaks_class  # peaks_classだけを抽出
         self.ca60 = self.ca.candle_class_hour
         self.peaks_class_hour = self.ca.peaks_class_hour
 
-        # ■■■基本結果の変数の宣言
+        # 結果として使う大事な変数
         self.take_position_flag = False
         self.exe_order_classes = []
 
-        # ■■■基本情報の表示
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
-        peaks_skip = self.peaks_class.skipped_peaks_hard
-        # print(self.s, "<SKIP前>", )
-        # gene.print_arr(peaks[:10])
-        # print("")
-        # print(self.s, "<SKIP後＞")
-        # gene.print_arr(peaks_skip[:10])
+        self.test_send = ""
 
-        # ■■■■　以下は解析値等
         # BB調査の結果
         self.bb_upper = 0
         self.bb_lower = 0
@@ -1301,33 +892,7 @@ class predict_turn_analysis:
         ]
 
         # ★★★調査実行
-        self.predict_turn_main()
-
-    def line_send(self, *msg):
-        # 関数は可変複数のコンマ区切りの引数を受け付ける
-        message = ""
-        # 複数の引数を一つにする（数字が含まれる場合があるため、STRで文字化しておく）
-        for item in msg:
-            message = message + " " + str(item)
-        # 時刻の表示を作成する
-        now_str = f'{datetime.now():%Y/%m/%d %H:%M:%S}'
-        # メッセージの最後尾に付ける
-        message = message + " (" + now_str[5:10] + "_" + now_str[11:19] + ")"
-        if len(message) >= 2000:
-            print("@@文字オーバー")
-            print(message)
-            message = "Discord受信許容文字数オーバー" + str(len(message))
-        if not self.line_send_exe:
-            print("     [Disc(送付無し)]", message)  # コマンドラインにも表示
-            return 0
-        # ■■■  通常のDiscord送信　■■■　　最悪これ以下だけあればいい
-        data = {"content": "@everyone " + message,
-                "allowed_mentions": {
-                    "parse": ["everyone"]
-                }
-                }
-        requests.post(tk.WEBHOOK_URL_main, json=data)
-        print("     [Disc]", message)  # コマンドラインにも表示
+        self.range_main()
 
     def add_order_to_this_class(self, order_class):
         """
@@ -1338,267 +903,304 @@ class predict_turn_analysis:
         # print("発行したオーダー2↓　(turn255)")
         # print(order_class.exe_order)
 
-    def predict_turn_main(self):
+    def range_main(self):
         """
 
         """
+        # ■基本情報の取得
+        # print("★★TURN　本番用")
+
         # ■実行除外
         # 対象のPeakのサイズを確認（小さすぎる場合、除外）
         peaks = self.peaks_class.peaks_original_marked_hard_skip
+        r = peaks[0]
+        t = peaks[1]
+        f = peaks[2]
+        peaks_skip = self.peaks_class.skipped_peaks_hard
         if peaks[1]['gap'] < 0.04:
             print("対象が小さい", peaks[1]['gap'])
 
-        # ■■■　条件によるオーダー発行
-        self.predict_lines_analysis()
+        if r['count'] != 2:
+            print("★latestのカウントが2以外", r['count'])
+            return 0
 
-    def predict_lines_analysis(self):
+        # ■表示
+        print(" ●RangeAnalysis判定パラメーター一覧●  rCount:", r['count'])
+        print("  平均キャンドル長", )
+
+        # ■■■　条件によるオーダー発行
+        self.support_lines()
+
+        line_mes = ""
+        # ①BBの検証　直近１時間前、２時間前、３時間前のBBの幅の違いを求める
+        res_bb = self.bb_range_analysis(self.ca.d5_df_r)  # self.test_commentに空欄、trend、rangeのいずれかを入れる
+        if res_bb['comment'] == "":  # これが空欄の時は何もない
+            pass
+        else:
+            line_on = True
+            line_mes = res_bb['comment_all']
+            order_recommend = res_bb['order_recommend']
+
+        # ②抵抗線の算出
+        line_on = False
+        turn_info = self.support_line_detect(1)  # turn部分もの（上下かは問わず）
+        flop_info = self.support_line_detect(2)  # flop部分もの（上下かは問わず）
+        if turn_info['same_price_list_till_break_5_total'] >= 15:
+            line_on = True
+            line_mes = line_mes + turn_info['mes']
+        if flop_info['same_price_list_till_break_5_total'] >= 15:
+            line_on = True
+            line_mes = line_mes + flop_info['mes']
+
+        # テスト送信用
+        # if line_mes == "":
+        #     pass
+        # else:
+        #     tk.line_send(line_mes)
+
+        # ②フラッグ検証（最優先）
+        # self.flag_analysis(self.peaks_class.peaks_with_same_price_list)  # いつか分離できるように、引数に明示的に渡しておく
+
+        # ■■■判定
+        # ■上値に関するオーダー（直近のターンピークが強い抵抗線と思われる場合、双方向オーダーともLCは狭めに設定）
+        # if flop_info['same_price_list_till_break_5_total'] >= 15:
+        if turn_info['same_price_list_till_break_5_total'] >= 15:
+            d = int(turn_info['d'])  # ピークの方向（１は上側）
+            line_price = turn_info['target_price']
+            ave = self.ca5.cal_move_ave(4)  # 平均の足4個分
+            gap_latest_turn_peak = peaks[0]['gap']
+            # 抵抗線が抵抗する方向（Range）⇒即時発行
+            order_class1 = OCreate.Order({
+                "name": "抵抗される側",
+                "current_price": self.peaks_class.latest_price,
+                "target": 0,
+                "direction": d * -1,
+                "type": "MARKET",
+                "tp": self.ca5.cal_move_ave(2),
+                "lc": gap_latest_turn_peak + self.ca5.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
+                "lc_change": self.lc_change_test,
+                "units": self.units_str,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_to_this_class(order_class1)
+            order_class2 = OCreate.Order({
+                "name": "Break側（HEDGE）",
+                "current_price": self.peaks_class.latest_price,
+                "target": gap_latest_turn_peak + self.ca5.cal_move_ave(1.5),
+                "direction": d,
+                "type": "STOP",
+                "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
+                "lc": self.base_lc_range,
+                "lc_change": self.lc_change_test,
+                "units": self.units_hedge,
+                "priority": 4,
+                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca
+            })
+            self.add_order_to_this_class(order_class2)
+            # リンケージをたがいに登録する
+            order_class1.add_linkage(order_class2)
+            order_class2.add_linkage(order_class1)
+
+    def support_lines(self):
         """
         現状の価格より上（または下）のピークに対して、同価格リストを算出する。
         """
 
         s = self.s
-        # 5分足
         peaks = self.peaks_class.peaks_original_marked_hard_skip
-        if peaks[0]['count'] != 2:
-            print("★latestのカウントが2以外", peaks[0]['count'])
-            return 0
-        foot5_result = self.predict_lines_detect(self.peaks_class, "5分足")  # 実際の解析
 
-        # 1時間足(5分足がある場合、1時間足を確認）
-        if foot5_result['exist']:
-            foot60_result = self.predict_lines_detect(self.peaks_class_hour, "1h足")
-            comment = gene.str_merge(foot5_result['comment'], "\n　", foot60_result['comment'])
-            self.line_send(comment)
-        # print(" ここまでーーーーーーーーー")
-
-    def predict_lines_detect(self, peaks_class, name):
-        exist = False
-
-        peaks = peaks_class.peaks_original_marked_hard_skip
-        latest_d = peaks[0]['direction']
-        latest_dir_lines = self.predict_lines_detect_each(peaks_class, 1)
-        turn_dir_lines = self.predict_lines_detect_each(peaks_class, -1)
-        comment = ""
-        if not latest_dir_lines['comment'] == "" or not turn_dir_lines['comment'] == "":
-            matome = "Latest側" + str(latest_d) + "\n" + latest_dir_lines['comment_analy'] + "Turn側\n" + turn_dir_lines['comment_analy']
-            # self.line_send(name, "LATEST側 ", latest_dir_lines['comment'], " \nTURN側 ", turn_dir_lines['comment'], "\n まとめ \n", matome)
-            # comment = gene.str_merge(name, "LATEST側 ", latest_dir_lines['comment'], " \nTURN側 ", turn_dir_lines['comment'], "\n まとめ \n", matome)
-            comment = gene.str_merge(name, "\n まとめ \n", matome)
-
-            exist = True  # 抵抗線が存在する場合
-        return {
-            "exist": exist,
-            "comment": comment
-        }
-
-    def predict_lines_detect_each(self, peaks_class, direction):
-        """
-        peaksはself.peaks_classと同等。関数独立の可能性を考えて、できるだけ完結させておく
-        latest_peakの向かう先の抵抗線のリストを、3つの強度で取得する。
-        """
-        # よく使うものを変数化
-        s = self.s
-        peaks = peaks_class.peaks_original_marked_hard_skip
         latest_d = peaks[0]['direction']
         base_price = peaks[0]['latest_body_peak_price']
+
+        # 添え字を、辞書の中に入れておく（なんか他のやり方探したいけど）
         for i, item in enumerate(peaks):
-            item['i'] = i  # 添え字を辞書の中に入れておく（他のやり方ほしいけど）
+            item['i'] = i
 
-        if direction == 1:
-            # latestPeakの向かう先の抵抗線候補を取得する（登りの場合は抵抗線、下りの場合はサポートライン）
-            if latest_d == 1:
-                result = [d for d in peaks if d["direction"] == latest_d and d["latest_body_peak_price"] > base_price]
-                result = sorted(result, key=lambda x: x["latest_body_peak_price"], reverse=False)  # Falseで近い順
-            else:
-                result = [d for d in peaks if d["direction"] == latest_d and d["latest_body_peak_price"] < base_price]
-                result = sorted(result, key=lambda x: x["latest_body_peak_price"], reverse=True)  # Trueで近い順　Falseがもともと
+        # latest_dが1の場合、自身より高い価格で、なおかつdirectionが1のものを探す
+        if latest_d == 1:
+            result = [d for d in peaks if d["direction"] == latest_d and d["latest_body_peak_price"] > base_price]
+            result = sorted(result, key=lambda x: x["latest_body_peak_price"], reverse=True)  # 降順
         else:
-            # latestPeakのとは逆サイドの候補を求める（ターンピークを含んでいる）
-            if latest_d == 1:
-                result = [d for d in peaks if d["direction"] == latest_d * -1 and d["latest_body_peak_price"] < base_price]
-                result = sorted(result, key=lambda x: x["latest_body_peak_price"], reverse=True)  # 降順　True元々
-            else:
-                result = [d for d in peaks if d["direction"] == latest_d * -1 and d["latest_body_peak_price"] > base_price]
-                result = sorted(result, key=lambda x: x["latest_body_peak_price"], reverse=False)  # 昇順　False元々
+            result = [d for d in peaks if d["direction"] == latest_d and d["latest_body_peak_price"] < base_price]
+            result = sorted(result, key=lambda x: x["latest_body_peak_price"], reverse=False)  # 昇順
 
-        # 強さごとに分類する
+        print(s, "SupprtLinesTest")
+        for i, item in enumerate(result):
+            print("リスト", item['latest_time_jp'], item['latest_body_peak_price'])
+        # print(s, "基準", peaks[0]['latest_time_jp'], latest_d, base_price)
+
         very_week_lines = []
         week_lines = []
         strong_lines = []
-        use_list_total = "same_price_list_till_break_total"  # breakか、break無しか
-        use_list = "same_price_list_till_break"
         for i, item in enumerate(result):
-            line_info = self.pickup_same_price_list(peaks_class, item['i'])  # flop部分もの（上下かは問わず）
-            # print(s, "基準", item['latest_time_jp'], item['latest_body_peak_price'], item['i'], line_info['same_price_list_till_break_total'])
-            if line_info[use_list_total] >= 15:
-                strong_lines.append(line_info)
-            elif line_info[use_list_total] >= 7 and len(line_info[use_list]) > 1:
-                strong_lines.append(line_info)
-                # week_lines.append(line_info)
-            elif 5 <= line_info[use_list_total] < 7:
-                very_week_lines.append(line_info)
+            print("基準", item['latest_time_jp'], item['latest_body_peak_price'], item['i'])
+            line_info = self.support_line_detect(item['i'])  # flop部分もの（上下かは問わず）
+            if line_info['same_price_list_till_break_5_total'] >= 15:
+                strong_lines.append(self.support_lines_stock_and_view(i, item, latest_d, "非常に強い"))
+            elif line_info['same_price_list_till_break_5_total'] >= 7 and len(line_info['same_price_list_till_break_5']) > 1:
+                week_lines.append(self.support_lines_stock_and_view(i, item, latest_d, "弱い"))
+            elif 5 <= line_info['same_price_list_till_break_5_total'] < 7:
+                very_week_lines.append(self.support_lines_stock_and_view(i, item, latest_d, "非常に弱い"))
 
-        # マージする
-        merged_strong_lines = self.merge_lines(peaks_class, strong_lines, 0.02)
-        merged_week_lines = self.merge_lines(peaks_class, week_lines, 0.02)
+        # 強いラインの整備
+        new_strong_lines = self.support_lines_marge(strong_lines, "非常に強い")
+        # 弱いラインの整備
+        new_week_lines = self.support_lines_marge(week_lines, "弱い")
 
-        # マージされた物を解析する
-        # 本
+        # 代表の一つを選ぶ
+        request = False
+        memo = ""
+        if len(new_strong_lines['new_merge_lines']) != 0 or len(new_week_lines['new_merge_lines']) != 0:
+            pass
+            tk.line_send(new_strong_lines['memo'], new_week_lines['memo'])
 
-        # メッセージの作成
-        analy_t = ""
-        for i, item in enumerate(merged_strong_lines['merged_line_lists']):
-            # print("テスト用")
-            # print(item['lines_strength'], item['gap_latest_price'])
-            analy_t = (analy_t + str(item['lines_strength']) + ", " + str(item['gap_latest_price'])
-                       + ", " + str(item['item'][0]['item']['latest_body_peak_price'])
-                       + "\n")
-        t = ""
-        if not merged_strong_lines['comment'] == "" or not merged_week_lines['comment'] == "":
-            # print("どっちがあるため表示")
-            t = "現価" + str(base_price) + ":" + peaks[0]['latest_time_jp'] + ":"
-            t = t + "\n「強」" + str(len(merged_strong_lines['merged_line_lists'])) + "\n" + merged_strong_lines['comment']
-            t = t + "\n「弱」" + str(len(merged_week_lines['merged_line_lists'])) + "\n" + merged_week_lines['comment']
-            # print(t)
 
         return {
             "strong_lines": strong_lines,
             "week_lines": week_lines,
             "very_week_lines": very_week_lines,
-            "comment": t,
-            "comment_analy": analy_t
+            "new_strong_lines": new_strong_lines['new_merge_lines'],
+            "new_week_lines": new_week_lines['new_merge_lines'],
         }
 
-    def pickup_same_price_list(self, peaks_class, target_no):
+    def support_lines_stock_and_view(self, i, item, d, com):
         """
-        peaks_class変数の、peaks_with_same_price_listからtarget_no番目の物を取得する
-        その際、少し計算しておく
+        通しでi番目のitemのピークの、same_priceを検討する
         """
+        # print(s, "抵抗線", "基準価格", item['latest_body_peak_price'])
         s = self.s
-        peaks_with_same_price_list = peaks_class.peaks_with_same_price_list
+        line_info = self.support_line_detect(item['i'])  # flop部分もの（上下かは問わず）
+        res = {"line_price": item['latest_body_peak_price'],
+                "line_strength": line_info['same_price_list_till_break_5_total'],
+                "same_peaks": line_info['same_price_list_till_break_5'],
+                "direction": d
+                }
+        print(com)
+        for m, mtem in enumerate(line_info['same_price_list_till_break_5']):
+            temp_gap = round(abs(mtem['item']['latest_body_peak_price'] - item['latest_body_peak_price']), 3)
+            print(s, "  ", mtem['item']['latest_time_jp'], mtem['item']['latest_body_peak_price'],
+                  mtem['item']['peak_strength'], temp_gap, item['latest_body_peak_price'])
+
+        # print(s, com)
+        # for i, res_item in enumerate(res):
+        #     print(s, "  ", res_item['line_price'], res_item['line_strength'])
+        return res
+
+    def support_lines_marge(self, lines, com):
+        """
+        抵抗線が近い場合、少しまとめておく（全部だと多いので）
+        """
+        principal_line = {}
+        memo = ""
+        s = self.s
+        temp_base = 0
+        new_merge_lines = []
+        for i, item in enumerate(lines):
+            """
+            0.02以内の物は同じものとみなす
+            """
+            if i == 0:
+                temp_base = item
+                new_merge_lines.append(item)
+            if abs(item['line_price'] - temp_base['line_price']) <= 0.02:
+                pass
+            else:
+                temp_base = item
+        print(s, "new", com)
+        for i, item in enumerate(new_merge_lines):
+            print(s, "  ", item['line_price'], item['line_strength'])
+
+        # マージする
+        if len(new_merge_lines) != 0:
+            principal_line = new_merge_lines[0]
+            memo = "[" + com + "](" + str(principal_line["direction"]) + ")" + str(principal_line['line_price'])
+
+        return {
+            "new_merge_lines": new_merge_lines,
+            "principal_line": principal_line,
+            "memo": memo
+        }
+
+    def support_line_detect(self, target_no):
+        # ②抵抗線を探す（上側）
+        peaks_with_same_price_list = self.peaks_class.peaks_with_same_price_list
+        # gene.print_arr(peaks_with_same_price_list)
         if len(peaks_with_same_price_list) == 0:
-            print(s, "同一価格リストサイズ０")
+            print("同一価格リストサイズ０")
             return 0
         # 変数代入＆表示
         same_price_list = peaks_with_same_price_list[target_no]['same_price_list_till_break']  # ターンが抵抗線かを調べる。（リバーではない）
         same_price_list_total = sum(d['item']["peak_strength"] for d in same_price_list)
-        same_price_list_till_break = [d for d in peaks_with_same_price_list[target_no]['same_price_list_till_break'] if d["item"]["peak_strength"] >= 5]
-        same_price_list_till_break_total = sum(d['item']["peak_strength"] for d in same_price_list_till_break)
+        same_price_list_till_break_5 = [d for d in peaks_with_same_price_list[target_no]['same_price_list_till_break'] if d["item"]["peak_strength"] >= 5]
+        same_price_list_till_break_5_total = sum(d['item']["peak_strength"] for d in same_price_list_till_break_5)
         # 方向
         d = same_price_list[0]['item']['direction']
+        target_price = same_price_list[0]['item']['latest_body_peak_price']
+        # 表示
+        # print("----抵抗線検知  [方向]", d)
+        # print(self.s, "ターンの強度（同一価格数）", len(same_price_list), "total", same_price_list_total)
+        # for i, item in enumerate(same_price_list):
+        #     print("          ",  item['i'], item['item']['latest_time_jp'], item['item']['peak_strength'], item['item']['direction'])
+        # print(self.s, "Breakまでの同一価格(上位ランクのみ） total", same_price_list_till_break_5_total)
+        # for i, item in enumerate(same_price_list_till_break_5):
+        #     print("          ", item['i'], item['item']['latest_time_jp'], item['item']['peak_strength'])
 
-        # プリント用のメッセージを準備しておく
-        target_price = str(peaks_with_same_price_list[target_no]['latest_body_peak_price'])
-        target_time = str(peaks_with_same_price_list[target_no]['latest_time_jp'])
-        # mes = "●基準:" + target_price + "," + target_time + "," + str(d) + "," + str(len(same_price_list_till_break)) + "個]"
-        # for i, item in enumerate(same_price_list_till_break):
-        #     item_price = str(item['item']['latest_body_peak_price'])
-        #     item_time = str(item['item']['latest_time_jp'])
-        #     mes = mes + "(" + item_price + ":" + item_time + ")"
+
+        # 判定
+        line_strength = 0
+        if same_price_list_total <= 2:
+            line_strength = 0
+            # print(self.s, "抵抗なし(自身のみの検出）")
+        elif same_price_list_total <= 4:
+            line_strength = 1
+            # print(self.s, "引っ掛かり程度の抵抗線")
+        elif same_price_list_total < 10:  # 12は5が二つと2が一つを想定。
+            if same_price_list_till_break_5_total >= 10:
+                # print(self.s, "準 相当強めの抵抗線", same_price_list_total, same_price_list_till_break_5_total)
+                line_strength = 7
+            elif same_price_list_till_break_5_total >= 5 and len(same_price_list) >= 2:
+                # print(self.s, "軽いダブルトップ抵抗線", same_price_list_total, same_price_list_till_break_5_total)
+                line_strength = 5
+            else:  # =5の場合は、自身のみ
+                # print(self.s, "５自身のみか、複数の２", same_price_list_total, same_price_list_till_break_5_total)
+                line_strength = 3
+        else:
+            # 12以上
+            if same_price_list_till_break_5_total >= 10:
+                # print(self.s, "相当強めの抵抗線", same_price_list_total, same_price_list_till_break_5_total)
+                line_strength = 10
+            else:
+                # print(self.s, "強めの抵抗線", same_price_list_total, same_price_list_till_break_5_total)
+                line_strength = 7
+
+        # 狭い脚判定
+        if len(same_price_list) == 2:
+            latest_time = same_price_list[0]['item']['latest_time_jp']
+            oldest_time = same_price_list[1]['item']['latest_time_jp']
+            ans = gene.cal_str_time_gap(latest_time, oldest_time)
+            # print(self.s, ans['gap_abs']/60, "分", latest_time, oldest_time)
+
+        # 登録
+        if d == 1:
+            self.upper_line = target_price
+        else:
+            self.lower_line = target_price
+        # print(self.s, self.upper_line, "-", self.lower_line)
+
 
         return {
             "same_price_list": same_price_list,
             "same_price_list_total": same_price_list_total,
-            "same_price_list_till_break": same_price_list_till_break,
-            "same_price_list_till_break_total": same_price_list_till_break_total,
+            "same_price_list_till_break_5": same_price_list_till_break_5,
+            "same_price_list_till_break_5_total": same_price_list_till_break_5_total,
+            "line_strength": line_strength,
             "d": d,
             "target_price": target_price,
-            # "mes": mes,
+            "mes": "[" + str(d) + "抵抗線]" + str(target_price) + " "
         }
-
-    def merge_lines(self, peaks_class, same_price_lists, same_range):
-        """
-        指定されたレンジで、まとめてしまう
-        """
-        # おきて破りだが、クラス変数を参照
-        peaks = peaks_class.peaks_original_marked_hard_skip
-        latest_price = peaks[0]['latest_body_peak_price']
-
-        # 以下は基本的にクラス変数を使わない
-        same_price_list = [d["same_price_list_till_break"] for d in same_price_lists]
-        f = []
-        if len(same_price_list) == 0:
-            return {
-                "merged_line_lists": [],
-                "comment": ""
-            }
-
-        # print("新しい対象")
-        # gene.print_arr(same_price_list)
-        # gene.print_arr(same_price_list[0])
-
-        for i, item in enumerate(same_price_list):
-            # print("対象", item)
-            same_price_list_head = item[0]['item']
-            if i == 0:
-                # 初回だけばベース価格を入れておく
-                base_price = same_price_list_head['latest_body_peak_price']
-                base_info = item
-                # print("@", same_price_list_head)
-                # print("@", same_price_list_head['latest_body_peak_price'])
-                # print("firstBASE", base_price)
-                # print(base_info)
-            else:
-                # 初回以外は通常処理
-                if abs(base_price - same_price_list_head['latest_body_peak_price']) <= same_range:
-                    # 同一価格が見つかった場合
-                    if base_info == item:
-                        # 全く同じ物があった場合は追加もせずスルーする
-                        pass
-                        # print("同じものだったので棄却", item)
-                    else:
-                        # マージする対象の物を発見
-                        base_info.extend(item)
-                        # print("マージ可能のためマージ", base_price, same_price_list_head['latest_body_peak_price'])
-                else:
-                    # 同一価格ではないところに言った場合、一区切り⇒ベースを入れ替える
-                    f.append(copy.deepcopy(base_info))
-                    base_price = item[0]['item']['latest_body_peak_price']
-                    base_info = item
-                    # print('区切り')
-                    # print("NewBase", base_price)
-                    # print()
-
-            # 最後の場合は、ラップアップしてあげる
-            if i == len(same_price_list) - 1:
-                # print("最後", base_info)
-                f.append(copy.deepcopy(base_info))
-        # print("最終結果")
-        # print(f)
-        final_merged_lists = []
-        com_all = ""
-        for i, item in enumerate(f):
-            # print("まとめられた物：", item)
-            merged_point = sum(d['item']["peak_strength"] for d in item)
-            gap_latest_price = round(abs(latest_price - item[0]['item']['latest_body_peak_price']), 3)
-            com = "GAP:" + str(gap_latest_price) + ", "
-            for m, mtem in enumerate(item):
-                d = int(mtem['item']['direction'])  # LINE送付用に取得（毎回取得するが全部同じなのでいいや）
-                time_jp = gene.str_to_time_short(mtem['item']['latest_time_jp'])
-                com = com + str(mtem['item']['latest_body_peak_price']) + "(" + time_jp + "),"
-            final_merged_lists.append(
-                {
-                    "d": 0,  # 元の慣習
-                    "lines_strength": merged_point,
-                    "gap_latest_price": gap_latest_price,
-                    "item": item,
-                    "comment": com,
-
-                }
-            )
-
-            com_all = com_all + "【" + str(d) + ", " + str(merged_point) + "pt" + ", " + com + "】\n"
-            # gene.print_arr(item)
-
-        # print(com_all)
-        # gene.print_arr(final_merged_lists)
-
-        return {
-            "merged_line_lists": final_merged_lists,
-            "comment": com_all
-        }
-
-
 
     def bb_range_analysis(self, df_r):
         """

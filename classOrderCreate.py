@@ -273,7 +273,7 @@ class Order:
         if 'tp' in order_json:
             # 価格で指定されている場合
             if order_json['tp'] >= self.dependence_price_or_range_criteria:
-                self.tp_range = round(abs(order_json['target_price'] - order_json['tp']), self.u)  # Rangeを算出
+                self.tp_range = round(abs(self.target_price - order_json['tp']), self.u)  # Rangeを算出
                 self.tp_price = round(order_json['tp'], self.u)  # Priceはそのまま代入
             # レンジで指定されている場合
             else:
@@ -288,7 +288,7 @@ class Order:
         if 'lc' in order_json:
             # 価格で指定されている場合
             if order_json['lc'] >= self.dependence_price_or_range_criteria:
-                self.lc_range = round(abs(order_json['target_price'] - order_json['lc']), self.u) # Rangeを算出
+                self.lc_range = round(abs(self.target_price - order_json['lc']), self.u) # Rangeを算出
                 self.lc_price = round(order_json['lc'], self.u)  # Priceはそのまま代入
             # レンジで指定されている場合
             else:

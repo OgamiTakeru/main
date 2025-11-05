@@ -238,7 +238,7 @@ class Inspection:
 
                 self.candleAnalysisClass = ca.candleAnalisysForTest("oa", analysis_df)  # 現在時刻（０）でデータ取得
                 # ■調査実行
-                analysis_result_instance = am.wrap_all_analisys(self.candleAnalysisClass)
+                analysis_result_instance = am.wrap_all_analysis(self.candleAnalysisClass)
                 # ■ オーダー発行
                 if not analysis_result_instance.take_position_flag:
                     # 発注がない場合は、終了 (ポケ除け的な部分）

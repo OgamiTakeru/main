@@ -1,11 +1,12 @@
 import datetime
-
-import classCandleAnalysis as ca
 import fTurnInspection as ti
 import classOrderCreate as OCreate
 import fGeneric as gene
 
-class wrap_all_analisys():
+
+
+
+class wrap_all_analysis():
     def __init__(self, candle_analysis_class):
         # 調査に必要な変数
         # self.df_r = df_r
@@ -25,14 +26,14 @@ class wrap_all_analisys():
             # 表示専用
             print(self.exe_order_classes[i].exe_order)
 
-    def orders_add_this_class_and_flag_on(self, order_classes):
+    def orders_add_this_class(self, order_classes):
         """
 
         """
         self.take_position_flag = True
         self.exe_order_classes.extend(order_classes)
 
-    def orders_replace(self, order_classes):
+    def orders_replace_this_class(self, order_classes):
         """
         オーダーを置き換えるよう（前の検証のオーダーは忘れる漢字）
         """
@@ -45,21 +46,19 @@ class wrap_all_analisys():
         """
 
         # ターン起点のオーダー
-        # turn_analysis_instance = ti.turn_analisys(self.ca)
-        # if turn_analysis_instance.take_position_flag:
-        #     self.orders_add_this_class_and_flag_on(turn_analysis_instance.exe_order_classes)
+        turn_analysis_instance = ti.turn_analisys(self.ca)
+        if turn_analysis_instance.take_position_flag:
+            self.orders_add_this_class(turn_analysis_instance.exe_order_classes)
 
         # テスト用
-        range_analysis_instance = ti.range_analisys(self.ca)
-        # if range_analysis_instance.take_position_flag:
-            # self.orders_add_this_class_and_flag_on2(turn_analysis_instance.exe_order_classes)
+        range_analysis_instance = ti.predict_turn_analysis(self.ca)
+        if range_analysis_instance.take_position_flag:
+            self.orders_add_this_class(range_analysis_instance.exe_order_classes)
 
-        # 時間起点のオーダー（深夜12時～2時前にかけて、下がる傾向がある気がする）
-        time_analysis_instance = time_analysis(self.ca)
-        if time_analysis_instance.take_position_flag:
-            # print("置き換える")
-            # self.orders_add_this_class_and_flag_on(turn_analysis_instance.exe_orders)
-            self.orders_replace(time_analysis_instance.exe_order_classes)
+        # # 時間起点のオーダー（深夜12時～2時前にかけて、下がる傾向がある気がする）
+        # time_analysis_instance = time_analysis(self.ca)
+        # if time_analysis_instance.take_position_flag:
+        #     self.orders_replace_this_class(time_analysis_instance.exe_order_classes)  # オーダー置換
 
 
 class time_analysis():

@@ -398,6 +398,10 @@ class position_control:
             elif main_position.life and main_position.o_state == "PENDING":
                 # print(main_position.name, " まだ自分がオーダー状態(ポジション前）のため、処理しない")
                 continue
+            elif main_position.o_json:  # この条件は、テストモードでおかしなことが起きるために追加した（本番悪影響なら消したい）
+                # print(main_position.o_json)
+                if main_position.o_json['state'] == "PENDING":
+                    continue
 
             # 走査する
             if hasattr(main_position, "order_class"):
@@ -492,6 +496,9 @@ class position_control:
                             left_position.linkage_lc_change(new_lc_price)
 
                             # lc_Change_Candleにする
+                            # print(main_position.t_json)
+                            # gene.print_json(main_position.o_json)
+                            # gene.print_json(main_position.t_json)
                             print("　　　　自身（先に解消したほう）の利益range", main_position.t_json['PLu'])
                             if main_position.t_json['PLu'] >= 0:
                                 print("    自身がプラスの場合、そのプラスを最大限に生かしたLCChangeを行う")

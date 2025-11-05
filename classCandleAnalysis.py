@@ -27,7 +27,7 @@ class candleAnalysis:
         """
         # オアンダクラス
         self.base_oa = base_oa
-        self.need_df_num = 100
+        self.need_df_num = 250
 
         # データ入れる用
         self.d5_df_r = None
@@ -309,7 +309,7 @@ class candleAnalisysForTest(candleAnalysis):
         """
         # オアンダクラス
         self.base_oa = base_oa
-        self.need_df_num = 100
+        self.need_df_num = 250
 
         # データ入れる用
         self.d5_df_r = None

@@ -18,8 +18,8 @@ gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
 
 # 解析パート
 def analysis_part():
-    # analysis_result_instance = am.wrap_all_analisys(gl_candleAnalysisClass)
-    analysis_result_instance = ti.range_analisys(gl_candleAnalysisClass)
+    analysis_result_instance = am.wrap_all_analysis(gl_candleAnalysisClass)
+    # analysis_result_instance = ti.range_analysis(gl_candleAnalysisClass)
 
 
 def main():
@@ -70,7 +70,6 @@ def main():
     df.to_csv(tk.folder_path + 'main_analysis_original_data.csv', index=False, encoding="utf-8")  # 直近保存用
     df_r = df.sort_index(ascending=False)  # 逆順に並び替え（直近が上側に来るように）
     # print("全", len(df_r), "行(test用表示↓")
-    df_r = df_r[:100]
     # print(df_r.head(2))
     # print(df_r.tail(2))
 
@@ -101,7 +100,8 @@ gl_target_time = datetime.datetime(2025, 6, 6, 18, 30, 6)  # 検証時間 (以�
 gl_target_time = datetime.datetime(2024, 10, 2, 0, 5, 6)  #SKIPテスト
 gl_target_time = datetime.datetime(2022, 2, 3, 16, 55, 6)
 gl_target_time = datetime.datetime(2025, 7, 17, 10, 20, 6)
-gl_target_time = datetime.datetime(2025, 10, 22, 17, 35, 6)
+gl_target_time = datetime.datetime(2025, 11, 1, 3, 45, 6)
+gl_target_time = datetime.datetime(2025, 11, 4, 15, 0, 6)
 # gl_target_time = datetime.datetime(2025, 6, 25, 14, 45, 6)
 # gl_target_time = datetime.datetime(2025, 6, 17, 21, 30, 6)
 

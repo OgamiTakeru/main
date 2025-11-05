@@ -24,8 +24,10 @@ class PeaksClass:
         """
 
         # ■■初期値の設定（Peak解析の基準）
+        self.s = "     "
         # ■足の幅によって変わらない値
-        self.max_peak_num = 30  # ピークを最大何個まで求めるか（昔はこれを15で使ってたが、今は時間で切る）。念のために残っている.
+        self.max_peak_num = 60  # 30  # ピークを最大何個まで求めるか（昔はこれを15で使ってたが、今は時間で切る）。念のために残っている.
+        self.analysis_num = 240  # この足の分のデータフレームを処理する
         self.round_keta = 3  # 小数点何桁まで取得するか
         # ピークの強さの指標(点数)の設定（以下、peak_strengthを短縮のためにpsと略する）
         self.ps_default = 5  # ピーク基準値
@@ -52,11 +54,11 @@ class PeaksClass:
             self.check_very_narrow_range_range = 0.07  # 一つの足のサイズが、この閾値以下の場合、小さいレンジの可能性
         elif granularity == "H1":
             # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
-            self.peak_strength_border = 0.03  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
-            self.peak_strength_border_second = 0.07  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
+            self.peak_strength_border = 0.15  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
+            self.peak_strength_border_second = 0.20  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
             # SkipPeaksの際の基準(SkipPeaks関数）
-            self.skip_gap_border = 0.045  # 0.045  # この値以下のGapをもつPeakは、スキップ処理の対象（これ以上の場合は、スキップ対象外）
-            self.skip_gap_border_second = 0.05 #  0.05  # この値以下のGapを持つPeakは、重なり（ラップ）状況でスキップされる
+            self.skip_gap_border = 0.2  # 0.045  # この値以下のGapをもつPeakは、スキップ処理の対象（これ以上の場合は、スキップ対象外）
+            self.skip_gap_border_second = 0.25 #  0.05  # この値以下のGapを持つPeakは、重なり（ラップ）状況でスキップされる
             # 急変動(fluctuation)を検知する基準の設定　cal_move_size関数
             self.recent_fluctuation_range = 0.03  # 最大変動幅の4パーセント程度  # 指定ではなく、計算で算出される。直近N足分以内での最大変動幅（最高値ー最低値）round済み
             self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
@@ -79,7 +81,8 @@ class PeaksClass:
         self.peaks_original_marked_hard_skip = []  # 使ってない？？　peaksとしてはオリジナル同様だが、スキップピークに、フラグが付いている物
         self.latest_resistance_line = {}  # Nullか、情報が入っているかのどちらか（Null＝抵抗線ではない）
         self.latest_price = 0  # 現在価格（場合よっては最新価格）
-        self.latest_peak_price = 0  # 直近のピーク
+        self.latest_peak_price = 0  # 直近の折り返しのピーク(=turnのこと）
+        self.gap_price_and_latest_turn_peak_abs = abs(self.latest_peak_price - self.latest_price)
         # 動きの数値化された情報
         self.is_big_move_peak = False
         self.is_big_move_candle = False
@@ -107,7 +110,7 @@ class PeaksClass:
         # print("直近価格", self.latest_price, original_df.iloc[0]['time_jp'])
 
         self.df_r = original_df_r[1:]  # df_rは先頭は省く（数秒分の足のため）
-        self.df_r = self.df_r[:55]  # 直近4.5時間分(55足分)のデータフレームにする
+        self.df_r = self.df_r[:self.analysis_num]  # 直近4.5時間分(55足分)のデータフレームにする
         # print("API取得したデータ範囲　From", original_df_r.iloc[-1]['time_jp'], "to", original_df_r.iloc[0]['time_jp'])
         # print("調査範囲　From", self.df_r.iloc[-1]['time_jp'], "to", self.df_r.iloc[0]['time_jp'])
         self.peaks_original = self.make_peaks(self.df_r)  # 一番感度のいいPeaks。引数は書くとするなら。self.df_r。
@@ -129,6 +132,7 @@ class PeaksClass:
         # (2) ある程度よく使う値は変数に入れておく
         self.latest_price = original_df_r.iloc[0]['open']
         self.latest_peak_price = self.peaks_original[0]['peak']
+        self.gap_price_and_latest_turn_peak_abs = abs(self.latest_price - self.latest_peak_price)
         # print("直近価格", self.latest_price)
         # print("直近ピーク", self.latest_peak_price)
 
@@ -141,6 +145,7 @@ class PeaksClass:
 
         # (5)samePriceListを、各Peakに付与する
         for i, item in enumerate(self.peaks_original):
+            # print("同価格リストの生成")
             # print(i, item['latest_time_jp'], item['latest_body_peak_price'])
             spl_res = self.make_same_price_list(i, False)
             spl = spl_res['same_price_list']
@@ -162,10 +167,10 @@ class PeaksClass:
         # (4) 表示
         s = "   "
 
-        print(s, "<SKIP前>", )
-        gene.print_arr(peaks_original[:10])
-        print("   |")
-        gene.print_arr(peaks_original[-2:])
+        # print(s, "<SKIP前>", )
+        # gene.print_arr(peaks_original[:10])
+        # print("   |")
+        # gene.print_arr(peaks_original[-2:])
 
         # print("")
         # print(s, "<SKIP後　対象>")
@@ -213,13 +218,13 @@ class PeaksClass:
             "latest_time_jp": 0,  # これがpeakの時刻
             "oldest_time_jp": 0,
             "direction": 1,
-            "peak_strength": self.ps_default,  # この関数では付与されない（単品では判断できない）。make_peaks関数で前後のPeakを加味して付与される
-            "count": 0,  # 最新時刻からスタートして同じ方向が何回続いているか
-            "data_size": len(data_df),  # (注)元のデータサイズ
             "latest_body_peak_price": 0,  # これがpeakの価格
             "oldest_body_peak_price": 0,
             "latest_wick_peak_price": 0,
             "oldest_wick_peak_price": 0,
+            "peak_strength": self.ps_default,  # この関数では付与されない（単品では判断できない）。make_peaks関数で前後のPeakを加味して付与される
+            "count": 0,  # 最新時刻からスタートして同じ方向が何回続いているか
+            "data_size": len(data_df),  # (注)元のデータサイズ
             "latest_price": 0,
             "oldest_price": 0,
             "gap": 0.00000001,
@@ -914,6 +919,7 @@ class PeaksClass:
         ・同一価格のリスト（全区間）
         ・同一価格のリスト（時間内）
         """
+        s = self.s
         # skip = True
         # ■■情報の設定
         if skip:
@@ -926,7 +932,7 @@ class PeaksClass:
         target_peak = peaks[target_num]
         target_price = target_peak['latest_body_peak_price']
         # print("   実行時引数 SKIP：", skip, " TargetNum:", target_num)
-        # print("   ターゲットになるピーク@cp:", target_peak)
+        # print(s, "   ターゲットになるピーク@cp:", target_peak)
 
         # ■■閾値の情報
         # Margin情報
@@ -953,7 +959,7 @@ class PeaksClass:
         break_border = 1  # この数以上のBreakが発生するまでの同一価格リストを求める
         break_border2 = 2  # この数以上のBreakが発生するまでの同一価格リストを求める
         for i, item in enumerate(peaks):
-            # print("     検証対象：", item['time'], item['peak_strength'], base_time)
+            # print(s, "      検証対象：", item['time'], item['peak_strength'], base_time)
             # 既定の裾野の内側にある場合inner=True
             time_gap_sec = abs(datetime.strptime(item['latest_time_jp'], '%Y/%m/%d %H:%M:%S') - base_time)
             if time_gap_sec <= timedelta(minutes=mountain_foot_min):
@@ -982,8 +988,9 @@ class PeaksClass:
                     self.same_price_list_outer.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 continue
             # 除外条件（ターゲットより前の場合)
-            if i < target_num:
-                continue
+            # if i < target_num:
+            #     print("除外（iに比べて、時系列的に未来にあるため）")
+            #     continue
 
             # Breakかを先に判定する
             if target_peak['direction'] == 1:
@@ -1016,9 +1023,8 @@ class PeaksClass:
                 body_wick_gap_abs = arrowed_range + 1  # 確実にarrowed_rangeより大きな値
             else:
                 body_wick_gap_abs = abs(target_price - item['latest_wick_peak_price'])
-            # wick_body_gap_abs = abs(target_peak['latest_wick_peak_price'] - item['peak'])
-            # if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range or wlen(result_same_price_list)ick_body_gap_abs <= arrowed_range:
-            if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range:
+            # if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range:  # 髭も混み
+            if body_gap_abs <= arrowed_range:  # or body_wick_gap_abs <= arrowed_range:
                 # 同一価格とみなせる場合
                 # print("          同一価格：")
                 self.same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})

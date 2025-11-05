@@ -22,7 +22,7 @@ class main():
         # ■変数の宣言
         # 変更なし群
         self.ARROW_SPREAD = 0.011  # 実行を許容するスプレッド　＠ここ以外で変更なし
-        self.NEED_DF_NUM = 100  # 解析に必要な行数（元々５０行だったが、１００にしたほうが、取引回数が多くなりそう）
+        self.NEED_DF_NUM = 250  # 解析に必要な行数（元々５０行だったが、１００にしたほうが、取引回数が多くなりそう）
         # 時刻系
         self.now = 0
         self.now_str = 0
@@ -205,7 +205,7 @@ class main():
             # self.get_df_data()  # データの取得
 
         # ■調査実行
-        analysis_result_instance = am.wrap_all_analisys(self.candleAnalysisClass)
+        analysis_result_instance = am.wrap_all_analysis(self.candleAnalysisClass)
         # ■ オーダー発行
         if not analysis_result_instance.take_position_flag:
             # 発注がない場合は、終了 (ポケ除け的な部分）
