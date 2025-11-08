@@ -121,6 +121,7 @@ class order_information:
         self.lc_change_status = ""
         self.lc_change_exe = True  # 基本的には実施する
         self.lc_change_candle_exe = True  # 基本的には実施する
+        self.lc_change_candle_foot = "M5"  # Candleロスカット底上げを行う場合、どのキャンドルを使うかを指定。
         self.lc_change_candle_exe_at_minus = False  # マイナス域で、キャンドルLC＿Changeを実行する
 
         # アラートライン設定
@@ -150,10 +151,6 @@ class order_information:
         self.step2_keeping_second = 0
         self.step2_filled_time = 0
         self.watching_start_time_limit = 0
-
-        # lc_Changeがおかしいので確認用
-        self.no_lc_change = True
-        self.first_lc_change_time = 0
 
         # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
         self.try_update_limit = 2
@@ -221,6 +218,7 @@ class order_information:
 
         self.lc_change_exe = True  # 基本的には実施する
         self.lc_change_candle_exe = True  # 基本的には実施する
+        self.lc_change_candle_foot = "M5"  # Candleロスカット底上げを行う場合、どのキャンドルを使うかを指定。
         self.lc_change_candle_exe_at_minus = False  # マイナス域で、キャンドルLC＿Changeを実行する
         self.lc_change_candle_done = False
 
@@ -251,10 +249,6 @@ class order_information:
         self.step2_keeping_second = 0
         self.step2_filled_time = 0
         self.watching_start_time_limit = 0
-
-        # lc_Changeがおかしいので確認用
-        self.no_lc_change = True
-        self.first_lc_change_time = 0
 
         # オーダーが、オーダー情報なし、トレード情報なしとなっても、この回数分だけチェックする(時間差がありうるため）
         self.try_update_limit = 2
@@ -329,31 +323,6 @@ class order_information:
             else:
                 tk.line_send(*args)
 
-            # args = ("☆☆練習環境:",) + args
-            # tk.line_send(*args)
-            # if args[1] == "■■■解消:":
-            #     # 中身を編集するため、一度リストに変換
-            #     args_list = list(args)
-            #     args_list[1] = "□□□解消:"  # ぱっとわかりやすいように変更
-            #     tk.line_send(*tuple(args_list))
-            # else:
-            #     print("★★★", args)
-
-    # def get_current_price(self):
-    #     """
-    #     BidかAskをもとに求めるため、オーダーが入っていない状態では取得できない
-    #     """
-    #     temp_current_price = self.oa.NowPrice_exe("USD_JPY")
-    #     if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
-    #         print("API異常で現在価格が取得できず（ポジションクラス）")
-    #         return 0
-    #     else:
-    #         if self.plan_json['direction'] == 1:
-    #             # 注文がBidの場合、現在価格もBidにする
-    #             self.current_price = temp_current_price['data']['bid']
-    #         else:
-    #             self.current_price = temp_current_price['data']['ask']
-    #     return self.current_price
 
     def order_plan_registration(self, order_class):
         """
@@ -1583,21 +1552,6 @@ class order_information:
                                            , "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range)
                 # lc_Changeがおかしいので確認用(初回のLCChange確認なのに、0番目（最初が０とは限らないけど、、）に済がある場合はおかしい
                 diff_seconds = datetime.datetime.now() - item['time_done']
-                seconds = diff_seconds.total_seconds()
-                # 2時間 = 7200 秒以上離れているか判定
-                # if seconds >= 2 * 60 * 60 and self.no_lc_change:
-                #     tk.line_send("LC_CHANGEがうまく発動しない可能性あり[", i, "]過去実行時間,", item['time_done'], self.name,
-                #                  self.first_lc_change_time, self.no_lc_change, "1519行目cPosi")
-                #     gene.print_arr(self.lc_change_dic_arr)
-                #     self.no_lc_change = False  # 念のため
-                # else:
-                #     pass
-                #     # print("  　LCChange　確認用(おかしくない）　最初のLC時刻", self.first_lc_change_time, i)
-                #
-                # if i == 0 and self.no_lc_change:
-                #     tk.line_send("LC_CHANGEがうまく発動しない可能性あり", i, "過去実行時間,", item['time_done'])
-                #     gene.print_arr(self.lc_change_dic_arr)
-                #     self.no_lc_change = False  # 念のため
                 continue
             elif lc_change_till_sec < self.t_time_past_sec < lc_change_waiting_time_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
@@ -1613,8 +1567,6 @@ class order_information:
             # ボーダーラインを超えた場合
             if self.t_pl_u >= lc_trigger_range:
                 # print("　★変更確定")
-                self.no_lc_change = False
-                self.first_lc_change_time = datetime.datetime.now()
                 print(" 　　変更対象", i, "番目のLC_Change", lc_ensure_range, lc_trigger_range, self.t_pl_u)
                 self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
                 # これで配列の中の辞書って変更できるっけ？？
@@ -1653,8 +1605,11 @@ class order_information:
         の場合。
         ⇒LCChangeは、LCChangeを実行してなくてもLinkageなどで強制的にフラグを立てさせられる場合有
         """
+        # 変数たち
+        exe_after_min = 30  # この分数を所持していた場合、ロスカットチェンジが入る
+
         # print("  ★LC＿ChangeFromCandle実行関数", self.name, self.t_state, self.lc_change_candle_exe)
-        if self.t_state != "OPEN" or self.t_time_past_sec < 30:  # 足数×〇分足×秒
+        if self.t_state != "OPEN" or self.t_time_past_sec < exe_after_min:  # 足数×〇分足×秒
             # ポジションがない場合、所持時間が短い場合は実行しない
             # print("       lc_change_candleの実行無", self.t_state, self.t_pl_u, self.t_time_past_sec)
             return 0
@@ -1668,11 +1623,7 @@ class order_information:
             # lc_Change_Candle実行フラグない場合はやらない
             return 0
 
-
-        # LCChangeの実行部分
-        # 定期的にデータフレームを取得する部分（引数で渡してもいいが、この関数で完結したかった）
-        # print("CANDLE LC")
-
+        # 現在時刻や使うデータを取得する
         gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
         time_hour = gl_now.hour  # 現在時刻の「時」のみを取得
         time_min = gl_now.minute  # 現在時刻の「分」のみを取得
@@ -1695,18 +1646,23 @@ class order_information:
                     # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
                     print("Position_lc candle", self.name)
                     candle_ana = ca.candleAnalysis(self.oa, 0)
-                    peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
+                    # peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
                     # peaks_class = cpk.PeaksClass(self.latest_df)
             else:
                 # 30秒以上立っていない場合
                 # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
                 candle_ana = ca.candleAnalysis(self.oa, 0)
-                peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
+                # peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
                 # peaks_class = cpk.PeaksClass(self.latest_df)
         else:
             # 5分（足が新規で完成するタイミングじゃない場合）
             return 0
 
+        # オーダー時、どの足でLCChangeを行うのかの情報があるため、それによって変更する
+        if self.order_class.lc_change_candle_type == "1H":
+            peaks_class = candle_ana.peaks_class_hour  # peaks_classだけを抽出
+        else:
+            peaks_class = candle_ana.peaks_class
 
         # 逆張り注文の際、self.latest_df.iloc[-2]['low']基準だとおかしいくなる。
         # peakを算出し、peaks[0]がカウント２以上ある場合のみ、self.latest_df.iloc[-2]['low']を参照するケースに変更(25/5/17)

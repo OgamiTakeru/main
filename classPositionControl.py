@@ -12,7 +12,8 @@ class position_control:
     """
     ポジションクラスをコントロースするためのもの
     """
-    # is_live = True
+    # 常に最新のデータを取得してクラス変数に入れておく（毎回の取得はしないように工夫する。（してもいい気もするけど））
+
 
     # 履歴ファイル
     def __init__(self, is_live):
@@ -661,6 +662,7 @@ class position_control_for_test(position_control):
         """
         for item in self.position_classes:
             if item.life:
+                print("★★★★★★これ、引数おかしくない？？？")
                 item.update_information(df_row, candleAnalysisClass)
 
         # # 関連オーダーの更新

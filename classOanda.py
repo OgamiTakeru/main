@@ -205,6 +205,7 @@ class Oanda:
             return {"error": 0, "data": data_df}
 
         except Exception as e:
+            print(e)
             e_info = self.error_method("ローソク取得", start_time, e)
             return e_info
 

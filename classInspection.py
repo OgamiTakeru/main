@@ -1,5 +1,6 @@
 import datetime
-from datetime import timedelta
+import pickle
+import hashlib
 from scipy.stats import binomtest
 
 import classOanda
@@ -10,7 +11,6 @@ import math
 import plotly.graph_objects as go
 import pandas as pd
 import classPositionControl as pc
-import classPositionForTest as p
 import classCandleAnalysis as ca
 import fAnalysis_order_Main as am
 import os
@@ -18,8 +18,8 @@ import os
 
 
 class Inspection:
-    def __init__(self, target_func, is_exist_data, target_to_time, m5_data_path, s5_data_path, m5_count, loop, memo,
-                 is_graph, params):
+    def __init__(self, target_func, is_exist_data, target_to_time, h1_data_path, m5_data_path, s5_data_path, m5_count,
+                 loop, memo, is_graph, params, cache_path):
         """
         引数は色々取るが、二パターン
         必ず必要なのは、
@@ -38,6 +38,10 @@ class Inspection:
         # グローバルでの宣言
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
+        # 時間短縮のためのキャッシュファイル
+        self.cache_path = cache_path  # os.path.join(tk.folder_path, "cache.pkl")
+        self.cache = {}
+
         self.candleAnalysisClass = None
         self.target_class = target_func
 
@@ -53,8 +57,9 @@ class Inspection:
         # gl_exist_date = Trueの場合の読み込みファイル
         # ■■■メイン（5分足や30分足）
         self.gl_main_csv_path = m5_data_path  # 大量データ(25)5分
-        # ■■■検証用5秒足
         self.gl_s5_csv_path = s5_data_path  # 大量データ(25)5秒
+        self.gl_h1_csv_path = h1_data_path
+
         # params
         if not params:
             self.params = ""
@@ -64,12 +69,13 @@ class Inspection:
         gl_classes = []
         pd.set_option('display.max_columns', None)
 
-
         # データ取得用
         self.gl_need_to_analysis = 60  # 調査に必要な行数
         self.gl_d5_df = pd.DataFrame()
         self.gl_d5_df_r = pd.DataFrame()
         self.gl_s5_df = pd.DataFrame()
+        self.gl_h1_df = pd.DataFrame()
+        self.gl_h1_df_r = pd.DataFrame()
         self.gl_inspection_base_df = pd.DataFrame()
         self.gl_actual_start_time = 0
         self.gl_actual_end_time = 0
@@ -133,13 +139,20 @@ class Inspection:
             start_s5_time = self.gl_s5_df.iloc[0]['time_jp']
             end_s5_time = self.gl_s5_df.iloc[-1]['time_jp']
             print("検証用データ")
-            print("検証時間の総取得期間は", start_s5_time, "-", end_s5_time, len(self.gl_s5_df), "行")
+            print("5秒足の検証時間の総取得期間は", start_s5_time, "-", end_s5_time, len(self.gl_s5_df), "行")
+            # 既存の1時間足のデータを取得
+            self.gl_h1_df = pd.read_csv(self.gl_h1_csv_path, sep=",", encoding="utf-8")
+            self.gl_h1_df_r = self.gl_h1_df.sort_index(ascending=False)  # 時系列を逆にしたものが解析用！
+            start_h1_time = self.gl_h1_df.iloc[0]['time_jp']
+            end_h1_time = self.gl_h1_df.iloc[-1]['time_jp']
+            print("検証用データ")
+            print("1時間足の検証時間の総取得期間は", start_h1_time, "-", end_h1_time, len(self.gl_h1_df), "行")
 
         else:
-            # 5分足データを新規で取得
+            # 範囲指定の基準となる、5分足データを新規で取得
             euro_time_datetime = self.gl_jp_time - datetime.timedelta(hours=9)
             euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
-            params = {"granularity": self.gl_haba, "count": self.gl_m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
+            params = {"granularity": "M5", "count": self.gl_m5_count, "to": euro_time_datetime_iso}  # コツ　1回のみ実行したい場合は88
             data_response = self.oa.InstrumentsCandles_multi_exe("USD_JPY", params, self.gl_m5_loop)
             self.gl_d5_df = data_response['data']
             self.gl_d5_df_r = self.gl_d5_df.sort_index(ascending=False)  # 時系列を逆にしたものが解析用！
@@ -160,9 +173,11 @@ class Inspection:
             else:
                 over5000judge = 60
 
+            # 5秒足のデータを取得する　
             end_time_euro = self.gl_d5_df_r.iloc[0]['time']  # Toに入れるデータ（これは解析用と一致させたいため、基本固定）
             all_need_row = self.gl_m5_count * 60 * self.gl_m5_loop
-            if self.gl_m5_count * over5000judge > 5000:
+            # if self.gl_m5_count * 60 > 5000:  # 5秒足は、5分足の60倍の行がある
+            if all_need_row > 5000:  # 5秒足は、5分足の60倍の行がある
                 # 5000を超えてしまう場合はループ処理が必要(繰り返しデータで使うため、少し多めに取ってしまう。5000単位をN個の粒度）
                 loop_for_5s = math.ceil(all_need_row / 5000)
                 s5_count = 5000
@@ -171,9 +186,9 @@ class Inspection:
                       5000 * loop_for_5s - all_need_row)
             else:
                 # 5000以下の場合は、一回で取得できる
-                s5_count = self.gl_m5_count * over5000judge  # シンプルに5分足の60倍
+                s5_count = all_need_row  # シンプルに5分足の60倍
                 loop_for_5s = 1  # ループ回数は1回
-                trimming = self.gl_need_to_analysis * over5000judge  # 実際に検証で使う範囲は、解析に必要な分を最初から除いた分。
+                trimming = all_need_row  # 実際に検証で使う範囲は、解析に必要な分を最初から除いた分。
             params = {"granularity": "S5", "count": s5_count, "to": end_time_euro}  # 5秒足で必要な分を取得する
             data_response = self.oa.InstrumentsCandles_multi_exe("USD_JPY", params, loop_for_5s)
             self.gl_s5_df = data_response['data']  # 期間の全5秒足を取得する  (これは解析に利用しないため、時系列を逆にしなくて大丈夫）
@@ -182,7 +197,36 @@ class Inspection:
             self.gl_s5_df.to_csv(tk.folder_path + gene.str_to_filename(start_s5_time) + '_test_s5_df.csv', index=False,
                             encoding="utf-8")
             print("")
-            print("検証時間の総取得期間は", start_s5_time, "-", end_s5_time, len(self.gl_s5_df), "行")
+            print("検証時間の総取得期間(5m)は", start_s5_time, "-", end_s5_time, len(self.gl_s5_df), "行")
+
+            # 1時間足のデータを取得する
+            end_time_euro = self.gl_d5_df_r.iloc[0]['time']  # Toに入れるデータ（これは解析用と一致させたいため、基本固定）
+            all_need_row = math.ceil(self.gl_m5_count / 12 * self.gl_m5_loop)
+            print(all_need_row)
+            print(self.gl_m5_count)
+            if all_need_row > 5000:  # 1時間足は、5分足の12分の１の行がある
+                # 5000を超えてしまう場合はループ処理が必要(繰り返しデータで使うため、少し多めに取ってしまう。5000単位をN個の粒度）
+                loop_for_1h = math.ceil(all_need_row / 5000)
+                h1_count = 5000
+                trimming = (5000 * loop_for_1h - all_need_row) + (self.gl_need_to_analysis * 60)
+                print("   1H検証：必要な行", all_need_row, "5000行のループ数", loop_for_1h, "多く取得できる行数",
+                      5000 * loop_for_1h - all_need_row)
+            else:
+                # 5000以下の場合は、一回で取得できる
+                h1_count = all_need_row  # シンプルに5分足の60倍
+                loop_for_1h = 1  # ループ回数は1回
+                trimming = all_need_row  # 実際に検証で使う範囲は、解析に必要な分を最初から除いた分。
+            params = {"granularity": "H1", "count": h1_count, "to": end_time_euro}  # 5秒足で必要な分を取得する
+            print(params)
+            data_response = self.oa.InstrumentsCandles_multi_exe("USD_JPY", params, loop_for_1h)
+            self.gl_h1_df = data_response['data']  # 期間の全5秒足を取得する  (これは解析に利用しないため、時系列を逆にしなくて大丈夫）
+            self.gl_h1_df_r = data_response['data'].sort_index(ascending=False)  # 時系列を逆にしたものが解析用！
+            start_h1_time = self.gl_h1_df.iloc[0]['time_jp']
+            end_h1_time = self.gl_h1_df.iloc[-1]['time_jp']
+            self.gl_h1_df.to_csv(tk.folder_path + gene.str_to_filename(start_h1_time) + '_test_h1_df.csv', index=False,
+                            encoding="utf-8")
+            print("")
+            print("検証時間の総取得期間1時間足　", start_h1_time, "-", end_h1_time, len(self.gl_h1_df), "行")
 
         # 5秒足のデータが、5分足に対して多めに取れ（5000×Nの単位のため、最大4999の不要行がある。現実的にはなぜかもっと出る）、微笑に無駄なループが発生
         # するため、検証期間の先頭をそろえる　⇒　データフレームを、5秒足を左側（基準）、5分足を右側と考え、左外部結合を行う
@@ -192,6 +236,9 @@ class Inspection:
         first_non_nan_index = self.gl_inspection_base_df['time_y'].first_valid_index()
         # インデックス以降のデータを取得
         self.gl_inspection_base_df = self.gl_inspection_base_df.loc[first_non_nan_index:]
+
+        #1時間足のデータをマージする
+
         # テスト用
         # gl_inspection_base_df = gl_inspection_base_df[1286104:1779590]  # ここでは5秒足の足数になるため、広めでOK（解析機関
         # gl_inspection_base_df = gl_inspection_base_df.reset_index(drop=True)
@@ -209,34 +256,88 @@ class Inspection:
         print("マージされたデータフレームの行数", len(self.gl_inspection_base_df))
         print(self.gl_inspection_base_df.tail(5))
 
+    def get_row_hash(self, row):
+        """各行の内容からハッシュ値を作る（変更検出用）"""
+        return hashlib.sha256(str(tuple(row)).encode()).hexdigest()
+
     def main(self):
         """
         5分足のデータを解析し、オーダーを発行する。
         発行後は別関数で、5秒のデータで検証する
         """
 
+        # キャッシュを読み込み（存在しない場合は空）
+        try:
+            print("キャッシュ読み込み開始")
+            self.cache = pickle.load(open(self.cache_path, "rb"))
+            print("キャッシュ読み込み官僚")
+        except FileNotFoundError:
+            self.cache = {}
+        all_result = []
+
         # ５秒足を１行ずつループし、５分単位で解析を実行する
         for index, row_s5 in self.gl_inspection_base_df.iterrows():
             if index % 1000 == 0:
-                print("■■■検証", row_s5['time_jp'], "■■■", index, "行目/", len(self.gl_inspection_base_df), "中")
-
+                print("■■■★検証", row_s5['time_jp'], "■■■", index, "行目/", len(self.gl_inspection_base_df), "中")
+            print("■■■検証", row_s5['time_jp'], "■■■", index, "行目/", len(self.gl_inspection_base_df), "中")
             if pd.notna(row_s5['time_y']):  # 毎5の倍数分で解析を実行する
                 # 【解析処理】結合した5分足の部分にデータがあれば、解析トライをする   旧（分が5の倍数であれば、解析を実施する）
                 dt = str_to_time(row_s5['time_jp'])  # 時間に変換
-                analysis_df = find_analysis_dataframe(self.gl_d5_df_r, row_s5['time_jp'])  # 解析用の5分足データを取得する
-                if len(analysis_df) < self.gl_need_to_analysis:
+                # 対応する5分足のデータを取得する
+                analysis_df_m5 = find_analysis_dataframe(self.gl_d5_df_r, row_s5['time_jp'])  # 解析用の5分足データを取得する
+                if len(analysis_df_m5) < self.gl_need_to_analysis:
                     # 解析できない行数しかない場合、実施しない（5秒足の飛びや、取得範囲の関係で発生）
-                    print("   解析実施しません", len(analysis_df), "行しかないため（必要行数目安[固定値ではない]",
-                          self.gl_need_to_analysis, "データ数", len(analysis_df), "行数:", index, "行目/",
+                    print("   結果の解析実施しません", len(analysis_df_m5), "行しかないため（必要行数目安[固定値ではない]",
+                          self.gl_need_to_analysis, "データ数", len(analysis_df_m5), "行数:", index, "行目/",
                           len(self.gl_inspection_base_df), "中")
                     continue  # returnではなく、次のループへ
+
+                # 対応する1時間足のデータを取得する（直前の1時間足のデータとする）
+                print("DFtest")
+                print(self.gl_h1_df_r.head(1))
+                analysis_df_h1 = find_analysis_dataframe(self.gl_h1_df_r, row_s5['time_jp'])  # 解析用の5分足データを取得する
+                if analysis_df_h1.empty:
+                    # 当てはまるものがない場合、直前の1時間足の分を取得する
+                    # 文字列をdatetimeに変換
+                    dt = datetime.datetime.strptime(row_s5['time_jp'], "%Y/%m/%d %H:%M:%S")
+                    # 分と秒を0にして、1時間引く
+                    dt_prev_hour = dt.replace(minute=0, second=0, microsecond=0)
+                    # 同じフォーマットで文字列に戻す
+                    result = dt_prev_hour.strftime("%Y/%m/%d %H:%M:%S")
+                    # print("     当てはまるものがないよ", result)
+                    analysis_df_h1 = find_analysis_dataframe(self.gl_h1_df_r, result)
+                if len(analysis_df_h1) < 19:  # BBを18でやってるから
+                    # 解析できない行数しかない場合、実施しない（5秒足の飛びや、取得範囲の関係で発生）
+                    print("   1H 結果の解析実施しません", len(analysis_df_h1), "行しかないため（必要行数目安[固定値ではない]",
+                          self.gl_need_to_analysis, "データ数", len(analysis_df_h1), "行数:", index, "行目/",
+                          len(self.gl_inspection_base_df), "中")
+                    continue  # returnではなく、次のループへ
+
                 # ■■５分ごとの実行分
                 # ★★★ 解析を呼び出す★★★★★
                 # ★★★ 解析を呼び出す★★★★★
-                print("★解析", row_s5['time_jp'], "行数", len(analysis_df), index, "行目/",
-                      len(self.gl_inspection_base_df), "中")
+                print("★解析", row_s5['time_jp'], "行数", len(analysis_df_m5), index, "行目/", len(self.gl_inspection_base_df), "中")
+                print("5分足", len(analysis_df_m5), "行" )
+                print(analysis_df_m5.head(3))
+                print(analysis_df_m5.head(1))
+                print("1時間足", len(analysis_df_h1), "行")
+                print(analysis_df_h1.head(3))
+                print(analysis_df_h1.tail(1))
 
-                self.candleAnalysisClass = ca.candleAnalisysForTest("oa", analysis_df)  # 現在時刻（０）でデータ取得
+                # ★★ピークの算出（重い処理のため、ここだけキャッシュ化）
+                row_hash = self.get_row_hash(row_s5['time_jp'])
+                if row_hash in self.cache:
+                    # 以前の結果を再利用
+                    print("キャッシュの再利用", row_s5['time_jp'])
+                    self.candleAnalysisClass = self.cache[row_hash]
+                else:
+                    # 新規計算
+                    print("キャッシュが、無いため新規でキャンドルアナリシスの実行", row_s5['time_jp'])
+                    self.candleAnalysisClass = ca.candleAnalisysForTest("oa", analysis_df_m5, analysis_df_h1)
+                    self.cache[row_hash] = self.candleAnalysisClass  # キャッシュに保存
+                all_result.append(self.candleAnalysisClass)  # キャッシュを蓄積
+                # self.candleAnalysisClass = ca.candleAnalisysForTest("oa", analysis_df_m5, analysis_df_h1)
+
                 # ■調査実行
                 analysis_result_instance = am.wrap_all_analysis(self.candleAnalysisClass)
                 # ■ オーダー発行
@@ -277,10 +378,15 @@ class Inspection:
             # 無ければ空のデータフレーム
             result_df = pd.DataFrame()
 
+        # 処理　経過時間の算出
+        past_time = datetime.datetime.now() - self.gl_start_time
+        past_time_minute = int(past_time.total_seconds() / 60)  # ← 分単位で取得
+
         # 検証内容をデータフレームに変換
         print(result_df)
         if len(result_df) == 0:
             print("結果無し（０件）")
+            tk.line_send("0件です", past_time_minute, "分で実行")
             return 0
         # result_df = pd.DataFrame(self.gl_results_list)  # 結果の辞書配列をデータフレームに変換
         # 解析に使いそうな情報をつけてしまう（オプショナルでなくてもいいかも）
@@ -316,6 +422,7 @@ class Inspection:
         # 結果表示（共通）
         print("●●検証終了●●", "   クラス数", len(self.gl_classes))
         fin_time = datetime.datetime.now()
+
         # print("●スキップされたオーダー")
         # gene.print_arr(self.gl_not_overwrite_orders)
         # print("●オーダーリスト（約定しなかったものが最下部の結果に表示されないため、オーダーを表示）")
@@ -325,55 +432,67 @@ class Inspection:
         print("●データの範囲", self.gl_5m_start_time, self.gl_5m_end_time)
         print("●実際の解析範囲", self.gl_actual_5m_start_time, "-", self.gl_actual_end_time, "行(5分足換算:",
               round(len(self.gl_inspection_base_df) / 60, 0), ")")
+
         # 結果表示（分岐）
-        if len(result_df) == 0:
-            print("結果０です")
+        # 簡易的な結果表示用
+        plus_df = result_df[result_df["pl_per_units"] >= 0]  # PLがプラスのもの（TPではない。LCでもトレール的な場合プラスになっているため）
+        minus_df = result_df[result_df["pl_per_units"] < 0]
+        # 結果表示部
+        print("●オーダーの個数", len(result_df))  # , "、約定した個数", len(self.gl_results_list))
+        print("●プラスの個数", len(plus_df), ", マイナスの個数", len(minus_df))
+        print("●最終的な合計", round(result_df['res'].sum(), 3), round(result_df['pl_per_units'].sum(), 3))
+        print("●実行時間", past_time_minute, "分", self.gl_start_time, "-", datetime.datetime.now())
+        # LINEを送る
+        inspection_day_gap_sec = gene.cal_str_time_gap(self.gl_actual_start_time, self.gl_actual_end_time)
+        inspection_day_gap = inspection_day_gap_sec['gap_abs'] // (24 * 60 * 60)
+        if inspection_day_gap == 0:
+            inspection_day_gap = 1
+
+        tk.line_send("test fin 【結果】", round(result_df['res'].sum(), 3), ",\n"
+                     , "【検証期間】", self.gl_actual_start_time, "-", self.gl_actual_end_time, "(", inspection_day_gap, "日)", "\n"
+                     # , "【Unit平均】", round(absolute_mean, 0), ",\n"
+                     , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), " 計:", len(plus_df) + len(minus_df), ",\n"
+                     , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":",
+                     round(minus_df['pl_per_units'].mean(), 3), ",\n"
+                     , "【有意】", self.check_skill_difference(len(plus_df), len(minus_df)), ",\n"
+                     , "【回数/日】", round((len(plus_df) + len(minus_df))/inspection_day_gap, 0), ",\n"
+                     , "【条件】", self.memo, ",\n参考:処理開始時刻", self.gl_start_time
+                     , "[", past_time_minute, "分]")
+
+        self.res_p = len(plus_df)
+        self.res_m = len(minus_df)
+        self.res_res = round(self.gl_total, 3)
+
+        # 名前ごとにも集計
+        # nameごとに集約
+        result = result_df.groupby('name').agg(
+            total_pl=('res', 'sum'),
+            positive_count=('res', lambda x: (x > 0).sum()),
+            negative_count=('res', lambda x: (x < 0).sum())
+        ).reset_index()
+        # 並び替え
+        result = result.sort_values('name', ascending=True).reset_index(drop=True)
+
+        # 文字列を生成
+        print(result)
+        output = "検証期間LONG\n"
+        for _, row in result.iterrows():
+            output += (f"【名前】{row['name']}【計】:{round(row['total_pl'], 0)}({row['positive_count']}:{row['negative_count']})"
+                       f"{round((row['positive_count'] / (row['positive_count'] + row['negative_count'])) * 100, 1)}\n\n")
+        print(output)
+        tk.line_send(output, "検証期間LONG")
+
+        # 最後に、キャッシュの保存を行う(既存データを使った場合のみ）
+        if self.gl_exist_data:
+            print(" 既存データ利用のため、キャッシュの上書き保存は実施しない(誤上書き防止）")
         else:
-            # 簡易的な結果表示用
-            plus_df = result_df[result_df["pl_per_units"] >= 0]  # PLがプラスのもの（TPではない。LCでもトレール的な場合プラスになっているため）
-            minus_df = result_df[result_df["pl_per_units"] < 0]
-            # 結果表示部
-            print("●オーダーの個数", len(result_df))  # , "、約定した個数", len(self.gl_results_list))
-            print("●プラスの個数", len(plus_df), ", マイナスの個数", len(minus_df))
-            print("●最終的な合計", round(result_df['res'].sum(), 3), round(result_df['pl_per_units'].sum(), 3))
-            # LINEを送る
-            inspection_day_gap_sec = gene.cal_str_time_gap(self.gl_actual_start_time, self.gl_actual_end_time)
-            inspection_day_gap = inspection_day_gap_sec['gap_abs'] // (24 * 60 * 60)
-            if inspection_day_gap == 0:
-                inspection_day_gap = 1
-            tk.line_send("test fin 【結果】", round(result_df['res'].sum(), 3), ",\n"
-                         , "【検証期間】", self.gl_actual_start_time, "-", self.gl_actual_end_time, "(", inspection_day_gap, "日)", "\n"
-                         # , "【Unit平均】", round(absolute_mean, 0), ",\n"
-                         , "【+域/-域の個数】", len(plus_df), ":", len(minus_df), " 計:", len(plus_df) + len(minus_df), ",\n"
-                         , "【+域/-域の平均値】", round(plus_df['pl_per_units'].mean(), 3), ":",
-                         round(minus_df['pl_per_units'].mean(), 3), ",\n"
-                         , "【有意】", self.check_skill_difference(len(plus_df), len(minus_df)), ",\n"
-                         , "【回数/日】", round((len(plus_df) + len(minus_df))/inspection_day_gap, 0), ",\n"
-                         , "【条件】", self.memo, ",\n参考:処理開始時刻", self.gl_now)
+            cache_start_time = datetime.datetime.now()
+            print("キャッシュ書き込み開始・・・・（まだ処理が終わってません）", cache_start_time)
+            pickle.dump(self.cache, open(self.cache_path, "wb"))  # ■■■キャッシュの保存
+            cache_past_time = datetime.datetime.now() - cache_start_time
+            cache_past_time_minute = int(cache_past_time.total_seconds() / 60)  # ← 分単位で取得
+            print("キャッシュ書き込み完了", datetime.datetime.now(), "キャッシュ保存時間（分）", cache_past_time_minute)
 
-            self.res_p=len(plus_df)
-            self.res_m=len(minus_df)
-            self.res_res=round(self.gl_total, 3)
-
-            # 名前ごとにも集計
-            # nameごとに集約
-            result = result_df.groupby('name').agg(
-                total_pl=('res', 'sum'),
-                positive_count=('res', lambda x: (x > 0).sum()),
-                negative_count=('res', lambda x: (x < 0).sum())
-            ).reset_index()
-            # 並び替え
-            result = result.sort_values('name', ascending=True).reset_index(drop=True)
-
-            # 文字列を生成
-            print(result)
-            output = "検証期間LONG\n"
-            for _, row in result.iterrows():
-                output += (f"【名前】{row['name']}【計】:{round(row['total_pl'], 0)}({row['positive_count']}:{row['negative_count']})"
-                           f"{round((row['positive_count'] / (row['positive_count'] + row['negative_count'])) * 100, 1)}\n\n")
-            print(output)
-            tk.line_send(output, "検証期間LONG")
-        return 1
 
     def check_skill_difference(self, wins, losses):
         total = wins + losses

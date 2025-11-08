@@ -58,6 +58,7 @@ class Order:
         self.order_permission = True
         self.lc_change = {}
         self.linkage_order_classes = []
+        self.lc_change_candle_type = ""
 
         # 色々な情報を受け取っていれば、それを取得する(ただし、エラー防止のため、インスタンス変数で明示的に損z内を示す）
         self.candle_analysis = None
@@ -126,7 +127,8 @@ class Order:
             "tp_price_original": self.tp_price,  # TPは変更される可能性がある（元々の価格を保存するため）
             "for_api_json": self.data,  # 発注API用(classPositionにはexe_orderしか渡さないため、その中に入れておく）
             "lc_change": self.lc_change,
-            "move_ave": self.move_ave  # 参考情報だが追加（無いとLineSendでエラーになるが、オーダーには影響ない）
+            "move_ave": self.move_ave,  # 参考情報だが追加（無いとLineSendでエラーになるが、オーダーには影響ない）
+            "candle_lc_change_type": "5M"  # lc_changeで利用する足
         }
 
         # クラスにある情報を明示しておく（混乱防止用で、冗長な書き方）
@@ -318,6 +320,13 @@ class Order:
             self.order_permission = True  # 即時オーダー発行
         else:
             self.order_permission = False
+
+        # lc_change_candleで利用する足の設定
+        if 'lc_change_candle_type' in order_json:
+            self.lc_change_candle_type = order_json['lc_change_candle_type']
+        else:
+            self.lc_change_candle_type = "M5"
+
 
         # アラート機能
         if "alert" in order_json and "range" in order_json['alert']:

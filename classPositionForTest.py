@@ -71,7 +71,7 @@ class order_information:
         self.linkage_done = False
         # self.reset()
         self.ORDER_TIMEOUT_MIN_DEFAULT = 40  # 分単位で指定
-        self.TRADE_TIMEOUT_MIN_DEFAULT = 2400  # 分単位で指定
+        self.TRADE_TIMEOUT_MIN_DEFAULT = 600  # 分単位で指定
         # 以下リセット対象群
         self.priority = 0  # このポジションのプライオリティ（登録されるプランのプライオリティが、既登録以上の物だったら入れ替え予定）
         self.life = False  # 有効かどうか（オーダー発行からポジションクローズまでがTrue）
@@ -1185,7 +1185,8 @@ class order_information:
         self.lc_change()
         if self.lc_change_num != 0:
             # LC_Changeが執行されている場合は、Candleも有効にする
-            self.lc_change_from_candle(candleAnalysisClass)
+            pass
+            # self.lc_change_from_candle(candleAnalysisClass)
 
         # # アラート
         # if self.alert_watch_exe:
@@ -1729,8 +1730,16 @@ class order_information:
         # else:
         #     # 5分（足が新規で完成するタイミングじゃない場合）
         #     return 0
-        candle_ana = candleAnalysisClass
-        peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
+        print("★★★★", self.order_class.lc_change_candle_type)
+        if self.order_class.lc_change_candle_type == "5M":
+            candle_ana = candleAnalysisClass
+            peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
+        elif self.order_class.lc_change_candle_type == "1H":
+            candle_ana = candleAnalysisClass
+            peaks_class = candle_ana.candle_class_hour  # peaks_classだけを抽出
+        else:
+            candle_ana = candleAnalysisClass
+            peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
 
 
         # 逆張り注文の際、self.latest_df.iloc[-2]['low']基準だとおかしいくなる。

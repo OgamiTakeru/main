@@ -303,7 +303,7 @@ class eachCandleAnalysis:
 
 class candleAnalisysForTest(candleAnalysis):
         # テストモードの場合はtarget_time_jpにデーらフレームが入っている
-    def __init__(self, base_oa, df):
+    def __init__(self, base_oa, df_m5_r, df_h1_r):
         """
         target_time_jpまでの時間を取得する
         """
@@ -312,15 +312,8 @@ class candleAnalisysForTest(candleAnalysis):
         self.need_df_num = 250
 
         # データ入れる用
-        self.d5_df_r = None
-        self.d60_df_r = None
-
-        if isinstance(df, pd.DataFrame):  # a が DataFrame の場合だけ
-            # 既存のDFを利用する
-            # データを移植する（5分足）
-            self.d5_df_r = df
-            # データを移植する（60分足）
-            self.d60_df_r = df
+        self.d5_df_r = df_m5_r
+        self.d60_df_r = df_h1_r
 
         # データを取得する(5分足系）
         granularity = "M5"
