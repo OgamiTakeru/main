@@ -95,7 +95,7 @@ class turn_analisys:
         self.send_message_at_last = ""
 
         # ■■■基本情報の表示
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
         print(self.s, "<SKIP前>", )
         gene.print_arr(peaks[:3])
@@ -104,14 +104,14 @@ class turn_analisys:
         gene.print_arr(peaks_skip[:3])
         print("")
         print(self.s, "<SKIP前 1h足>", )
-        gene.print_arr(self.peaks_class_hour.peaks_original_marked_hard_skip[:3])
+        gene.print_arr(self.peaks_class_hour.peaks_original[:3])
         print("")
         print(self.s, "<SKIP後 1h足＞")
         gene.print_arr(self.peaks_class_hour.skipped_peaks_hard[:3])
 
         # ■■■■　以下は解析値等
         # ■■■簡易的な解析値
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         r = peaks[0]
         t = peaks[1]
         f = peaks[2]
@@ -230,7 +230,7 @@ class turn_analisys:
 
         # ■実行除外
         # 対象のPeakのサイズを確認（小さすぎる場合、除外）
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
         if peaks[1]['gap'] < 0.04:
             print("対象が小さい", peaks[1]['gap'])
@@ -254,7 +254,7 @@ class turn_analisys:
         """
         大きい変動が認められた場合、反発オーダーを順張りで、少し戻った位置で設ける。この場合、LCも入れたいなぁ
         """
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         if peaks[1]['gap'] < 0.04:
             print("対象が小さい", peaks[1]['gap'])
             # return default_return_item
@@ -707,7 +707,7 @@ class turn_analisys:
     def support_line_analysis(self):
         s = self.s
         line_mes = ""
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
 
         # ■■解析セクション　抵抗線の算出
         turn_info = self.support_line_detect(1)  # turn部分もの（上下かは問わず）
@@ -1111,7 +1111,7 @@ class TuneAnalysisInformation:
         # print("  ----TurnAnalysisPrint　　【", name, "】")
         self.name = name
         self.peaks_class = peaks_class
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         later_no = older_no - 1
         older_peak = peaks[older_no]
         later_peak = peaks[later_no]
@@ -1150,7 +1150,7 @@ class TuneAnalysisInformation:
         基本的に１はターン、２はフロップを示す
         """
         # ■情報の元
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         peaks_sk = self.peaks_class.skipped_peaks_hard  # 元々の
         target_peak = peaks[peak_no]  # 基本時間的に古いほうが入る。riverとturnの場合は１(turn)
         if len(peaks_sk) <= peak_no:
@@ -1230,7 +1230,7 @@ class TuneAnalysisInformation:
 
         """
         # ■情報の元
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         peaks_sk = self.peaks_class.skipped_peaks_hard  # 元々の
         target_peak = peaks[peak_no]  # 基本時間的に古いほうが入る。riverとturnの場合は１(turn)
         if len(peaks_sk) <= peak_no:
@@ -1332,7 +1332,7 @@ class predict_turn_analysis:
         self.exe_order_classes = []
 
         # ■■■基本情報の表示
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
         # print(self.s, "<SKIP前>", )
         # gene.print_arr(peaks[:10])
@@ -1350,7 +1350,7 @@ class predict_turn_analysis:
         self.latest_peak_price = 0
 
         # 簡易的な解析値
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         self.current_price = self.peaks_class.latest_price
         r = peaks[0]
         t = peaks[1]
@@ -1431,7 +1431,7 @@ class predict_turn_analysis:
         """
         # ■実行除外
         # 対象のPeakのサイズを確認（小さすぎる場合、除外）
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         if peaks[1]['gap'] < 0.04:
             print("対象が小さい", peaks[1]['gap'])
 
@@ -1445,7 +1445,7 @@ class predict_turn_analysis:
 
         s = self.s
         # 5分足
-        peaks = self.peaks_class.peaks_original_marked_hard_skip
+        peaks = self.peaks_class.peaks_original
         if peaks[0]['count'] != 2:
             print("★latestのカウントが2以外", peaks[0]['count'])
             return 0
@@ -1461,7 +1461,7 @@ class predict_turn_analysis:
     def predict_lines_detect(self, peaks_class, name):
         exist = False
 
-        peaks = peaks_class.peaks_original_marked_hard_skip
+        peaks = peaks_class.peaks_original
         latest_d = peaks[0]['direction']
         latest_dir_lines = self.predict_lines_detect_each(peaks_class, 1)
         turn_dir_lines = self.predict_lines_detect_each(peaks_class, -1)
@@ -1485,7 +1485,7 @@ class predict_turn_analysis:
         """
         # よく使うものを変数化
         s = self.s
-        peaks = peaks_class.peaks_original_marked_hard_skip
+        peaks = peaks_class.peaks_original
         latest_d = peaks[0]['direction']
         base_price = peaks[0]['latest_body_peak_price']
         for i, item in enumerate(peaks):
@@ -1598,7 +1598,7 @@ class predict_turn_analysis:
         指定されたレンジで、まとめてしまう
         """
         # おきて破りだが、クラス変数を参照
-        peaks = peaks_class.peaks_original_marked_hard_skip
+        peaks = peaks_class.peaks_original
         latest_price = peaks[0]['latest_body_peak_price']
 
         # 以下は基本的にクラス変数を使わない

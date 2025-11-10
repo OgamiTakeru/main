@@ -662,8 +662,7 @@ class position_control_for_test(position_control):
         """
         for item in self.position_classes:
             if item.life:
-                print("★★★★★★これ、引数おかしくない？？？")
-                item.update_information(df_row, candleAnalysisClass)
+                item.update_information(df_row)
 
         # # 関連オーダーの更新
         self.linkage_control()

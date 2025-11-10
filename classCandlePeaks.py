@@ -27,7 +27,7 @@ class PeaksClass:
         self.s = "     "
         # ■足の幅によって変わらない値
         self.max_peak_num = 60  # 30  # ピークを最大何個まで求めるか（昔はこれを15で使ってたが、今は時間で切る）。念のために残っている.
-        self.analysis_num = 240  # この足の分のデータフレームを処理する
+        self.analysis_num = 240  # この足の分のデータフレームを処理する（足ごとに設定）
         self.round_keta = 3  # 小数点何桁まで取得するか
         # ピークの強さの指標(点数)の設定（以下、peak_strengthを短縮のためにpsと略する）
         self.ps_default = 5  # ピーク基準値
@@ -38,6 +38,7 @@ class PeaksClass:
         # ■足の幅で変わる値群
         if granularity == "M5":
             # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
+            self.analysis_num = 180  # この足の分のデータフレームを処理する（足ごとに設定）
             self.peak_strength_border = 0.03  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
             self.peak_strength_border_second = 0.07  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
             # SkipPeaksの際の基準(SkipPeaks関数）
@@ -54,6 +55,7 @@ class PeaksClass:
             self.check_very_narrow_range_range = 0.07  # 一つの足のサイズが、この閾値以下の場合、小さいレンジの可能性
         elif granularity == "H1":
             # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
+            self.analysis_num = 240  # この足の分のデータフレームを処理する（足ごとに設定）
             self.peak_strength_border = 0.15  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
             self.peak_strength_border_second = 0.20  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
             # SkipPeaksの際の基準(SkipPeaks関数）
@@ -77,8 +79,8 @@ class PeaksClass:
         self.peaks_original_with_df = []  # 要素にdataとdataFrameを持つ。SKipは結合させたりでめんどいのでやらない。
         self.skipped_peaks = []  # 計算された、スキップありのピーク
         self.skipped_peaks_hard = []  # 計算された、強いスキップありのピーク
-        self.peaks_original_marked_skip = []  # 使ってない？？
-        self.peaks_original_marked_hard_skip = []  # 使ってない？？　peaksとしてはオリジナル同様だが、スキップピークに、フラグが付いている物
+        # self.peaks_original_marked_skip = []  # 使ってない？？
+        # self.peaks_original_marked_hard_skip = []  # 使ってない？？　peaksとしてはオリジナル同様だが、スキップピークに、フラグが付いている物
         self.latest_resistance_line = {}  # Nullか、情報が入っているかのどちらか（Null＝抵抗線ではない）
         self.latest_price = 0  # 現在価格（場合よっては最新価格）
         self.latest_peak_price = 0  # 直近の折り返しのピーク(=turnのこと）
@@ -118,13 +120,6 @@ class PeaksClass:
         # たまに起きる謎のエラー対応
         if len(self.peaks_original) <= 2:
             tk.line_send("データがうまくとれていない。", len(original_df_r), "行のみ")
-            print("おかしなことが起きている originalデータが少なすぎる @peakclass　全", len(original_df_r), "行のみ")
-            gene.print_arr(self.peaks_original)
-            print(self.df_r_original)
-            print("↑", len(self.df_r_original))
-            print(original_df_r)
-            print("↑　originalDf")
-            print("おかしなことの表示")
         self.skipped_peaks = self.skip_peaks()  # スキップピークの算出
         self.skipped_peaks_hard = self.skip_peaks_hard()
         self.recalculation_peak_strength_for_peaks()  # ピークストレングスの算出
@@ -141,7 +136,7 @@ class PeaksClass:
         self.time_hour = time_obj.hour
 
         # (4)追加の機能（直近の数個が承服しすぎているかどうかの確認）
-        self.check_very_narrow_range(self.df_r)
+        # self.check_very_narrow_range(self.df_r)
 
         # (5)samePriceListを、各Peakに付与する
         for i, item in enumerate(self.peaks_original):
@@ -157,12 +152,12 @@ class PeaksClass:
             self.peaks_with_same_price_list.append(item_copy)
 
         # 一番シンプルなpeaks_originalを作成する（長くなる要素を消して、表示がしやすいようにする）
-        peaks_original = copy.deepcopy(self.peaks_original)# 深いコピーを作成
-        for d in peaks_original:# 指定キーを削除
-            d.pop('next', None)
-            d.pop('previous_time_peak', None)
-            d.pop('support_info', None)
-            d.pop('memo_time', None)
+        # peaks_original = copy.deepcopy(self.peaks_original)# 深いコピーを作成
+        # for d in peaks_original:# 指定キーを削除
+        #     d.pop('next', None)
+        #     d.pop('previous_time_peak', None)
+        #     d.pop('support_info', None)
+        #     d.pop('memo_time', None)
 
         # (4) 表示
         s = "   "
@@ -211,7 +206,7 @@ class PeaksClass:
         :return: Dict形式のデータを返伽
         """
         # コピーウォーニングのための入れ替え
-        data_df = df_r.copy()
+        data_df = df_r  # メモリ削減のため.copy()は削除
         temp = self.df_r_original  # Warning回避のため（staticにしろって言われるから）
         # 返却値を設定
         ans_dic = {
@@ -349,7 +344,7 @@ class PeaksClass:
         :return:
         """
         # ■引数の整理
-        df_r = df_r.copy()
+        # df_r = df_r.copy()  # メモリ削減のためコピー削除
 
         # ■処理の開始
         peaks = []  # 結果格納用
@@ -438,11 +433,13 @@ class PeaksClass:
 
     def make_peaks_with_df(self, df_r):
         """
-        リバースされたデータフレーム（直近が上）から、ピークを一覧にして返却する これがメイン
+        リバースされたデータフレーム（直近が上）から、ピークを一覧にして返却する
+        この関数では、対応するデータフレームをつけた状態で返却する。
+        ただし速度の関係で、前後関係を示す情報は所持しない
         :return:
         """
         # ■引数の整理
-        df_r = df_r.copy()
+        # df_r = df_r.copy()  # メモリ削減のためコピー削除
 
         # ■処理の開始
         peaks = []  # 結果格納用
@@ -465,18 +462,18 @@ class PeaksClass:
             if this_peak['time'] == 0:
                 break
 
-            # ■■■■■■■■実処理の追加(前後関係の追加）
-            # peakの簡素化
-            # peakのコピーを生成（PreviousやNextがない状態）
-            this_peak_simple_copy = this_peak.copy()  # 処理的に次（時間的には後）のピークとして保管
-            # 後ピークの追加（時間的に後）
-            this_peak['next'] = next_time_peak
-            next_time_peak = this_peak_simple_copy  # 処理的に次（時間的には後）のピークとして保管
-            # 前関係の追加 (現在処理⇒Peak,ひとつ前の処理（時間的には次）はpeaks[-1])
-            if i != 0:
-                # 先頭以外の時(next_timeはある状態。previousは次の処理で取得される）。先頭の時は実施しない。
-                peaks[-1]['previous_time_peak'] = this_peak_simple_copy  # next_timeのpreviousに今回のpeakを追加
-                peaks[-1]['previous'] = this_peak_simple_copy
+            # # ■■■■■■■■実処理の追加(前後関係の追加）
+            # # peakの簡素化
+            # # peakのコピーを生成（PreviousやNextがない状態）
+            # this_peak_simple_copy = this_peak.copy()  # 処理的に次（時間的には後）のピークとして保管
+            # # 後ピークの追加（時間的に後）
+            # this_peak['next'] = next_time_peak
+            # next_time_peak = this_peak_simple_copy  # 処理的に次（時間的には後）のピークとして保管
+            # # 前関係の追加 (現在処理⇒Peak,ひとつ前の処理（時間的には次）はpeaks[-1])
+            # if i != 0:
+            #     # 先頭以外の時(next_timeはある状態。previousは次の処理で取得される）。先頭の時は実施しない。
+            #     peaks[-1]['previous_time_peak'] = this_peak_simple_copy  # next_timeのpreviousに今回のpeakを追加
+            #     peaks[-1]['previous'] = this_peak_simple_copy
             # 結果を追加
             peaks.append(this_peak)  # 情報の蓄積
 
@@ -529,48 +526,48 @@ class PeaksClass:
 
         return peaks
 
-    def check_very_narrow_range(self, df_r):
-        """
-        与えられたデータの直近数個が、「きわめてレンジ」といえるか。
-        ほとんど動きがないような状態。
-        直近数個の中で、最大の物(8pips以内）を探し、その中に70％以上入っている足の割合が多い
-        """
-        target = 4  # 直近4個分
-        df = df_r[0:target].copy()  # 同方向が続いてる範囲のデータを取得する
-
-        max_gap_row = df.loc[df['body_abs'].idxmax()]
-        max_gap_value = df['body_abs'].max()
-        upper = max_gap_row['inner_high']
-        lower = max_gap_row['inner_low']
-        if max_gap_value >= self.check_very_narrow_range_range:  # 一つの足の幅が７pip以上の場合は動き大き目のため、除外
-            is_mini_range = False
-        else:
-            # 各行の区間長
-            df['range_len'] = (df['inner_low'] - df['inner_high']).abs()
-
-            # 各行の重なり開始と終了
-            overlap_start = df[['inner_low', 'inner_high']].min(axis=1).clip(lower, upper)
-            overlap_end = df[['inner_low', 'inner_high']].max(axis=1).clip(lower, upper)
-
-            # 重なり長さ（負にならないよう0でクリップ）
-            df['overlap_len'] = (overlap_end - overlap_start).clip(lower=0)
-
-            # はみ出し長さと割合
-            df['exceed_len'] = df['range_len'] - df['overlap_len']
-            df['exceed_ratio_with_self'] = df['exceed_len'] / df['range_len']
-            df['exceed_ratio_with_max'] = df['exceed_len'] / max_gap_value
-
-            # 割合（％なら×100）
-            df['overlap_ratio_with_self'] = df['overlap_len'] / df['range_len']
-            df['overlap_ratio_with_max'] = df['overlap_len'] / max_gap_value
-
-            # print("超レンジ可の判定用")
-            # print("最大Body", max_gap_row['time_jp'])
-            # print(df[['time_jp', 'overlap_ratio_with_max','exceed_ratio_with_max']])
-            is_mini_range = ((df['exceed_ratio_with_max'] <= 0.24) & (df['overlap_ratio_with_max'] >= 0.4)).all()
-
-        # print("〇超レンジ判定⇒", is_mini_range)
-        self.hyper_range = is_mini_range
+    # def check_very_narrow_range(self, df_r):
+    #     """
+    #     与えられたデータの直近数個が、「きわめてレンジ」といえるか。
+    #     ほとんど動きがないような状態。
+    #     直近数個の中で、最大の物(8pips以内）を探し、その中に70％以上入っている足の割合が多い
+    #     """
+    #     target = 4  # 直近4個分
+    #     df = df_r[0:target]  # メモリ削減のため.copy()削除  # 同方向が続いてる範囲のデータを取得する
+    #
+    #     max_gap_row = df.loc[df['body_abs'].idxmax()]
+    #     max_gap_value = df['body_abs'].max()
+    #     upper = max_gap_row['inner_high']
+    #     lower = max_gap_row['inner_low']
+    #     if max_gap_value >= self.check_very_narrow_range_range:  # 一つの足の幅が７pip以上の場合は動き大き目のため、除外
+    #         is_mini_range = False
+    #     else:
+    #         # 各行の区間長
+    #         df['range_len'] = (df['inner_low'] - df['inner_high']).abs()
+    #
+    #         # 各行の重なり開始と終了
+    #         overlap_start = df[['inner_low', 'inner_high']].min(axis=1).clip(lower, upper)
+    #         overlap_end = df[['inner_low', 'inner_high']].max(axis=1).clip(lower, upper)
+    #
+    #         # 重なり長さ（負にならないよう0でクリップ）
+    #         df['overlap_len'] = (overlap_end - overlap_start).clip(lower=0)
+    #
+    #         # はみ出し長さと割合
+    #         df['exceed_len'] = df['range_len'] - df['overlap_len']
+    #         df['exceed_ratio_with_self'] = df['exceed_len'] / df['range_len']
+    #         df['exceed_ratio_with_max'] = df['exceed_len'] / max_gap_value
+    #
+    #         # 割合（％なら×100）
+    #         df['overlap_ratio_with_self'] = df['overlap_len'] / df['range_len']
+    #         df['overlap_ratio_with_max'] = df['overlap_len'] / max_gap_value
+    #
+    #         # print("超レンジ可の判定用")
+    #         # print("最大Body", max_gap_row['time_jp'])
+    #         # print(df[['time_jp', 'overlap_ratio_with_max','exceed_ratio_with_max']])
+    #         is_mini_range = ((df['exceed_ratio_with_max'] <= 0.24) & (df['overlap_ratio_with_max'] >= 0.4)).all()
+    #
+    #     # print("〇超レンジ判定⇒", is_mini_range)
+    #     self.hyper_range = is_mini_range
 
     def recalculation_peak_strength_for_peaks(self):
         """
@@ -651,12 +648,11 @@ class PeaksClass:
         # print(s4, "SKIP Peaks")
         adjuster = 0
         peaks = copy.deepcopy(self.peaks_original)  # PeaksClass.peaks_original.copy()では浅いコピーとなる
-        # フラグつけ用
-        self.peaks_original_marked_skip = copy.deepcopy(self.peaks_original)
-        for item in self.peaks_original_marked_skip:
-            item["skipped"] = False
+        # # フラグつけ用
+        # self.peaks_original_marked_skip = copy.deepcopy(self.peaks_original)
+        # for item in self.peaks_original_marked_skip:
+        #     item["skipped"] = False
         skip_counter = 0  # 何個スキップしたかをカウントする（フラグ付けのループの個数調整で利用。）
-
         i = 1
         while i < len(peaks) - 1:  # 中で配列を買い替えるため、for i in peaksは使えない！！
             vanish_num = i + adjuster  # 削除後に、それを起点にもう一度削除処理ができる
@@ -718,8 +714,8 @@ class PeaksClass:
                 if 'previous' in oldest_merged_item:
                     # 最後の一つはやらないため、IF文で最後の手前まで実施する
                     # marked_onlyの方にフラグを付けていく
-                    self.peaks_original_marked_skip[i+skip_counter]['skipped'] = True
-                    self.peaks_original_marked_skip[i+skip_counter + 1]['skipped'] = True
+                    # self.peaks_original_marked_skip[i+skip_counter]['skipped'] = True
+                    # self.peaks_original_marked_skip[i+skip_counter + 1]['skipped'] = True
                     skip_counter = skip_counter + 2  # 2個消すので、2個分インクリメントが必要
 
                     # 消す作業の本番
@@ -761,11 +757,11 @@ class PeaksClass:
         # peaks = copy.deepcopy(self.peaks_original)  # self.peaks_original.copy()では浅いコピーとなる
         peaks = copy.deepcopy(self.skipped_peaks)  # self.peaks_original.copy()では浅いコピーとなる
         # self.peaks_original_marked_hard_skip = copy.deepcopy(self.peaks_original)
-        self.peaks_original_marked_hard_skip = copy.deepcopy(self.peaks_original_marked_skip)
-        for item in self.peaks_original_marked_hard_skip:
-            item["skipped"] = False
-        skip_counter = 0  # 何個スキップしたかをカウントする（フラグ付けのループの個数調整で利用。）
+        # self.peaks_original_marked_hard_skip = copy.deepcopy(self.peaks_original_marked_skip)
+        # for item in self.peaks_original_marked_hard_skip:
+        #     item["skipped"] = False
 
+        skip_counter = 0  # 何個スキップしたかをカウントする（フラグ付けのループの個数調整で利用。）
         i = 1
         while i < len(peaks) -1:  # 中で配列を買い替えるため、for i in peaksは使えない！！
             vanish_num = i + adjuster  # 削除後に、それを起点にもう一度削除処理ができる
@@ -832,8 +828,8 @@ class PeaksClass:
                 if 'previous' in oldest_item:
                     # 最後の一つはやらないため、IF文で最後の手前まで実施する
                     # marked_onlyの方にフラグを付けていく
-                    self.peaks_original_marked_hard_skip[i+skip_counter]['skipped'] = True
-                    self.peaks_original_marked_hard_skip[i+skip_counter + 1]['skipped'] = True
+                    # self.peaks_original_marked_hard_skip[i+skip_counter]['skipped'] = True
+                    # self.peaks_original_marked_hard_skip[i+skip_counter + 1]['skipped'] = True
                     skip_counter = skip_counter + 2  # 2個消すので、2個分インクリメントが必要
 
                     # 消す作業の本番

@@ -18,7 +18,7 @@ loop = [
 mode = 1  # 任意期間　または、　25年半年
 # mode = 2  # 25年ちょっと
 # mode = 4  # ループ
-
+print("test")
 if mode == 1:
     intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
                             ti.turn_analisys,  # インスタンス化前のクラスを渡す
@@ -33,15 +33,14 @@ if mode == 1:
                            #  'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_harf_test_h1_df.csv',
                            #  'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_harf_test_m5_df.csv',
                            #  'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_harf_test_s5_df.csv',
-                'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_long_test_h1_df.csv',
-                'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_long_test_m5_df.csv',
-                'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_long_test_s5_df.csv',
+                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_long_test_h1_df.csv',
+                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_long_test_m5_df.csv',
+                            'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_long_test_s5_df.csv',
                            5000,
-                           16,
+                           3,
                            " テスト" + memo,
                            False,  # グラフの描画あり
-                           "",
-                            os.path.join(tk.folder_path, "cache.pkl")  # キャッシュのPath
+                           ""
                            )
 elif mode == 2:
     tk.line_send("検証期間 ここから連続↓")

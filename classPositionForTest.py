@@ -1024,7 +1024,7 @@ class order_information:
         else:
             return False
 
-    def update_information(self, target_5s_row, candleAnalysisClass):  # orderとpositionを両方更新する
+    def update_information(self, target_5s_row):  # orderとpositionを両方更新する
         """
         検証専用
         """

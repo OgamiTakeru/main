@@ -1,7 +1,11 @@
 import datetime
 import pickle
 import hashlib
-from scipy.stats import binomtest
+import time
+# from scipy.stats import binomtest
+import sys
+import joblib
+import gc
 
 import classOanda
 import pandas as pd
@@ -16,10 +20,10 @@ import fAnalysis_order_Main as am
 import os
 
 
-
+print("kore")
 class Inspection:
     def __init__(self, target_func, is_exist_data, target_to_time, h1_data_path, m5_data_path, s5_data_path, m5_count,
-                 loop, memo, is_graph, params, cache_path):
+                 loop, memo, is_graph, params):
         """
         引数は色々取るが、二パターン
         必ず必要なのは、
@@ -39,7 +43,7 @@ class Inspection:
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
         # 時間短縮のためのキャッシュファイル
-        self.cache_path = cache_path  # os.path.join(tk.folder_path, "cache.pkl")
+        self.cache_path = ""
         self.cache = {}
 
         self.candleAnalysisClass = None
@@ -103,7 +107,7 @@ class Inspection:
         self.positions_control_class = pc.position_control_for_test(True, self.filepath)  # ポジションリストの用意
         # self.positions_control_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
         # self.positions_control_class.reset_all_position()
-
+        print("開始します")
         # 処理
         self.get_data()
         print(" 取得したデータ", len(self.gl_d5_df_r))
@@ -260,21 +264,39 @@ class Inspection:
         """各行の内容からハッシュ値を作る（変更検出用）"""
         return hashlib.sha256(str(tuple(row)).encode()).hexdigest()
 
+    def get_period_id(self, date_str: str) -> str:
+        """
+        日時文字列から2週間ごとの期間IDを返す。
+        例: '2024/10/14 12:07:05' -> '2024_10_h1'
+        """
+        # 日付文字列を日付に変換（共通）
+        dt = datetime.datetime.strptime(date_str, "%Y/%m/%d %H:%M:%S")
+
+        # # 2週間ごとバージョン
+        # half = 1 if dt.day <= 15 else 2
+        # return f"{dt.year}_{dt.month:02d}_half{half}"
+        #
+        # 1週間ごとパターン
+        week = (dt.day - 1) // 7 + 1
+        return f"{dt.year}_{dt.month:02d}_w{week}"
+
+    def get_cache_path(self, str):
+        """年月ごとのキャッシュファイルパスを返す"""
+        # filename = f"cache_{dt.year}_{dt.month:02d}.pkl"
+        # return os.path.join(tk.folder_path, filename)^
+        filename = f"cache_{str}.pkl"
+        return os.path.join(tk.folder_path, filename)
+
+
     def main(self):
         """
         5分足のデータを解析し、オーダーを発行する。
         発行後は別関数で、5秒のデータで検証する
         """
-
-        # キャッシュを読み込み（存在しない場合は空）
-        try:
-            print("キャッシュ読み込み開始")
-            self.cache = pickle.load(open(self.cache_path, "rb"))
-            print("キャッシュ読み込み官僚")
-        except FileNotFoundError:
-            self.cache = {}
+        current_period = None
+        cache = {}
+        cache_path = None
         all_result = []
-
         # ５秒足を１行ずつループし、５分単位で解析を実行する
         for index, row_s5 in self.gl_inspection_base_df.iterrows():
             if index % 1000 == 0:
@@ -317,14 +339,72 @@ class Inspection:
                 # ★★★ 解析を呼び出す★★★★★
                 # ★★★ 解析を呼び出す★★★★★
                 print("★解析", row_s5['time_jp'], "行数", len(analysis_df_m5), index, "行目/", len(self.gl_inspection_base_df), "中")
-                print("5分足", len(analysis_df_m5), "行" )
-                print(analysis_df_m5.head(3))
-                print(analysis_df_m5.head(1))
-                print("1時間足", len(analysis_df_h1), "行")
-                print(analysis_df_h1.head(3))
-                print(analysis_df_h1.tail(1))
+                # print("5分足", len(analysis_df_m5), "行" )
+                # print(analysis_df_m5.head(3))
+                # print(analysis_df_m5.head(1))
+                # print("1時間足", len(analysis_df_h1), "行")
+                # print(analysis_df_h1.head(3))
+                # print(analysis_df_h1.tail(1))
 
                 # ★★ピークの算出（重い処理のため、ここだけキャッシュ化）
+                # 現在の月を求める
+                row_period = self.get_period_id(row_s5['time_jp'])
+                # 月が替わったらキャッシュリセット
+                if current_period is None:
+                    current_period = row_period
+                    cache_path = self.get_cache_path(row_period)
+                    # 過去キャッシュの読み込み
+                    if os.path.exists(cache_path):
+                        print("キャッシュファイル読み込み中", cache_path)
+                        temp = datetime.datetime.now()
+                        self.cache = joblib.load(cache_path)
+                        # with open(cache_path, "rb") as f:
+                        #     self.cache = pickle.load(f)
+                        print(f" {cache_path} を読み込みました", self.cal_passed_minute(temp))
+                        time.sleep(1)  # 2秒間停止
+                    else:
+                        del self.cache  # キャッシュ自体を削除
+                        gc.collect()  # メモリ解放を強制
+                        self.cache = {}
+                        print(f" 新規キャッシュ開始: {cache_path}")
+
+                elif row_period != current_period:
+                    # 現在の月を保存
+                    print("別のピリオドに移行したため、保存", sys.getsizeof(self.cache), cache_path)
+                    temp = datetime.datetime.now()
+                    with open(cache_path, "wb") as f:
+                        joblib.dump(self.cache, f)
+                        # pickle.dump(self.cache, f)
+                    print(f" {cache_path} を保存完了（{len(self.cache)}件）", self.cal_passed_minute(temp))
+                    time.sleep(1)  # 2秒間停止
+
+                    # メモリ解放
+                    print("メモリクリア中")
+                    temp = datetime.datetime.now()
+                    self.cache.clear()
+                    print(f"メモリをクリアしました", self.cal_passed_minute(temp))
+                    time.sleep(1)  # 2秒間停止
+
+                    # 新しい月に切り替え
+                    current_period = row_period
+                    cache_path = self.get_cache_path(row_period)
+
+                    # 新しい月のキャッシュを読み込み
+                    if os.path.exists(cache_path):
+                        temp = datetime.datetime.now()
+                        print("ピリオドが変わったため、新しいキャッシュを読み込みます")
+                        # with open(cache_path, "rb") as f:
+                        #     self.cache = pickle.load(f)
+                        self.cache = joblib.load(cache_path)
+                        print(f" {cache_path} を、月変更タイミングで読み込みました", self.cal_passed_minute(temp))
+                        time.sleep(1)  # 2秒間停止
+                    else:
+                        del self.cache  # キャッシュ自体を削除
+                        gc.collect()  # メモリ解放を強制
+                        self.cache = {}
+                        print(f"新規キャッシュ開始: {cache_path}")
+
+                # ■■キャッシュ対象処理
                 row_hash = self.get_row_hash(row_s5['time_jp'])
                 if row_hash in self.cache:
                     # 以前の結果を再利用
@@ -333,7 +413,9 @@ class Inspection:
                 else:
                     # 新規計算
                     print("キャッシュが、無いため新規でキャンドルアナリシスの実行", row_s5['time_jp'])
+                    print("CandleAnalysisの実行↓")
                     self.candleAnalysisClass = ca.candleAnalisysForTest("oa", analysis_df_m5, analysis_df_h1)
+                    print("キャッシュへの登録", sys.getsizeof(self.cache))
                     self.cache[row_hash] = self.candleAnalysisClass  # キャッシュに保存
                 all_result.append(self.candleAnalysisClass)  # キャッシュを蓄積
                 # self.candleAnalysisClass = ca.candleAnalisysForTest("oa", analysis_df_m5, analysis_df_h1)
@@ -368,6 +450,17 @@ class Inspection:
                 # オーダー以上がある場合。表示用（１分に１回表示させたい）
                 self.positions_control_class.linkage_control()  # positionの更新
 
+        # キャッシュ処理　最後の月を保存
+        if cache_path:
+            with open(cache_path, "wb") as f:
+                joblib.dump(self.cache, f)
+                # pickle.dump(cache, f)
+            print(f" 最後の月を保存完了: {cache_path}")
+
+    def cal_passed_minute(self, start_time):
+        past_time = datetime.datetime.now() - start_time
+        past_time_minute = int(past_time.total_seconds() / 60)  # ← 分単位で取得
+        return past_time_minute
 
     def cal_result_and_send_line(self):
         # ■結果処理
@@ -482,31 +575,19 @@ class Inspection:
         print(output)
         tk.line_send(output, "検証期間LONG")
 
-        # 最後に、キャッシュの保存を行う(既存データを使った場合のみ）
-        if self.gl_exist_data:
-            print(" 既存データ利用のため、キャッシュの上書き保存は実施しない(誤上書き防止）")
-        else:
-            cache_start_time = datetime.datetime.now()
-            print("キャッシュ書き込み開始・・・・（まだ処理が終わってません）", cache_start_time)
-            pickle.dump(self.cache, open(self.cache_path, "wb"))  # ■■■キャッシュの保存
-            cache_past_time = datetime.datetime.now() - cache_start_time
-            cache_past_time_minute = int(cache_past_time.total_seconds() / 60)  # ← 分単位で取得
-            print("キャッシュ書き込み完了", datetime.datetime.now(), "キャッシュ保存時間（分）", cache_past_time_minute)
-
-
     def check_skill_difference(self, wins, losses):
         total = wins + losses
-        result = binomtest(wins, n=total, p=0.5, alternative='two-sided')
-        p = result.pvalue
-        p_percent = round(p * 100, 0)
+        # result = binomtest(wins, n=total, p=0.5, alternative='two-sided')
+        # p = result.pvalue
+        # p_percent = round(p * 100, 0)
+        #
+        # comment = "発生率:" + str(p_percent)
+        # if p < 0.05:
+        #     comment = comment + "(有意差有)"
+        # else:
+        #     comment = comment + "(有意差無)"
 
-        comment = "発生率:" + str(p_percent)
-        if p<0.05:
-            comment = comment + "(有意差有)"
-        else:
-            comment = comment + "(有意差無)"
-
-        return comment
+        return total  # comment
 
     def execute_position_finish(self, cur_class, cur_row, cur_row_index):
         """
