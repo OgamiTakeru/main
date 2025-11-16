@@ -7,6 +7,7 @@ import fGeneric as gene
 import fGeneric as f
 import copy
 import classCandlePeaks as peaksClass
+from pympler import asizeof
 
 
 class candleAnalysis:
@@ -81,6 +82,7 @@ class candleAnalysis:
         # データを取得する(5分足系）
         granularity = "M5"
         self.peaks_class = peaksClass.PeaksClass(self.d5_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        # self.inspect_instance_memory(self.peaks_class)
         self.candle_class = eachCandleAnalysis(self.peaks_class, granularity)
         # データを取得する（60分足）
         granularity = "H1"
@@ -101,6 +103,18 @@ class candleAnalysis:
             candleAnalysis.latest_df_d60_df_r = self.d60_df_r
             candleAnalysis.latest_peaks_class_hour = self.peaks_class_hour  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
             candleAnalysis.latest_candle_class_hour = self.candle_class_hour
+
+    def inspect_instance_memory(self, obj):
+        print(f"== {type(obj).__name__} メモリ使用量 ==")
+        for attr in dir(obj):
+            if attr.startswith("_"):
+                continue  # プライベート属性はスキップ
+            value = getattr(obj, attr)
+            try:
+                size = asizeof.asizeof(value)
+                print(f"{attr:20}: {size / 1024 ** 2:.2f} MB")
+            except:
+                pass
 
     def get_date_df(self, target_time_jp):
         # データを取得する
@@ -187,7 +201,6 @@ class eachCandleAnalysis:
         self.cal_move_size()
         self.current_place()
 
-
     def current_place(self):
         """
         1時間足でメイン。いま動きの中のどのくらいにいるか
@@ -222,7 +235,6 @@ class eachCandleAnalysis:
         #     print("    ", len(item['same_price_list']), item['same_price_list'])
         #     for m, mmm in enumerate(item['same_price_list']):
         #         print("      ", mmm['item']['latest_time_jp'])
-
 
     def cal_move_size(self):
         # ■データフレームの状態で、サイズ感を色々求める
@@ -318,6 +330,7 @@ class candleAnalisysForTest(candleAnalysis):
         # データを取得する(5分足系）
         granularity = "M5"
         self.peaks_class = peaksClass.PeaksClass(self.d5_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        # self.inspect_instance_memory(self.peaks_class)
         self.candle_class = eachCandleAnalysis(self.peaks_class, granularity)
         # データを取得する（60分足）
         granularity = "H1"

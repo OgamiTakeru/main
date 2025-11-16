@@ -24,7 +24,7 @@ class position_control:
         self.oa2 = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
 
         # 最大所持個数の設定
-        self.max_position_num = 5  # 最大でも10個のポジションしかもてないようにする
+        self.max_position_num = 7  # 最大でも10個のポジションしかもてないようにする
         self.middle_priority_num = 2  # ミドルプライオリティ(max_position_numのうち）
         self.high_priority_num = 1  # ハイプライオリティのもの（max_position_numのうち）
 
@@ -524,7 +524,7 @@ class position_control_for_test(position_control):
 
         # 最大所持個数の設定
         self.max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
-        self.middle_priority_num = 2  # ミドルプライオリティ(max_position_numのうち）
+        self.middle_priority_num = 4  # ミドルプライオリティ(max_position_numのうち）
         self.high_priority_num = 1  # ハイプライオリティのもの（max_position_numのうち）
 
         self.high_i_to = self.max_position_num

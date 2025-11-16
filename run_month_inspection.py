@@ -5,21 +5,17 @@ import classInspection as ci
 import fTurnInspection as ti
 import os
 
+import datetime
+import sys
+import fTurnInspection as ti
 
-memo = "25 LONG"
+# main.py からの引数（日付文字列）
+# year = int(sys.argv[1])
+# month = int(sys.argv[2])
+dt_str = sys.argv[1]
 
-loop = [
-    datetime.datetime(2024, 10, 3, 9, 25, 0),  # いいマイナスデータ
-    # datetime.datetime(2024, 10, 10, 9, 25, 0),  # いいマイナスデータ
-    datetime.datetime(2023, 9, 23, 23, 40, 6),  # Break系のいいマイナスデータ
-    # datetime.datetime(2023, 3, 6, 23, 40, 6),  # いいマイナスデータ
-    datetime.datetime(2022, 2, 6, 23, 40, 6),  # いいマイナスデータ
-]
-mode = 1  # 任意期間　または、　25年半年
-# mode = 2  # 25年ちょっと
-# mode = 4  # ループ
-print("test")
-path = "C:/Users/taker/OneDrive/Desktop/oanda_logs/"
+# datetime に変換
+dt = datetime.datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
 
 file_name_head = "25_short"
 file_name_head = "25_harf"
@@ -34,12 +30,10 @@ intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
                         ti.turn_analisys,  # インスタンス化前のクラスを渡す
                         False,
                         # True,
-                       #  datetime.datetime(2023, 9, 10, 23, 40, 6),  # 謎の飛びデータ
-                       #  datetime.datetime(2023, 9, 23, 23, 40, 6),  # Break系のいいマイナスデータ
-                        datetime.datetime(2025, 2, 28, 23, 55, 6),  #ここが最後
-                        path + file_name_head + "_test_h1_df.csv",
-                        path + file_name_head + "_test_m5_df.csv",
-                        path + file_name_head + "_test_s5_df.csv",
+                        dt,  #ここが最後
+                        tk.folder_path + file_name_head + "_test_h1_df.csv",
+                        tk.folder_path + file_name_head + "_test_m5_df.csv",
+                        tk.folder_path + file_name_head + "_test_s5_df.csv",
                        3400,  # 1か月単位でやる場合、ここは3400
                        2,  # 1か月単位でやる場合、ここは2
                        " テスト" + file_name_head,

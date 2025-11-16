@@ -1,44 +1,41 @@
-import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import datetime
-import fAnalysis_order_Main as am
-import classInspection as ci
-import fTurnInspection as ti
-import os
+import subprocess
+import sys
+
+def last_day_of_month(year, month):
+    if month == 12:
+        next_month = datetime.datetime(year + 1, 1, 1)
+    else:
+        next_month = datetime.datetime(year, month + 1, 1)
+
+    return next_month - datetime.timedelta(days=1)
 
 
-memo = "25 LONG"
+# 2024年1月 ～ 2025年12月まで
+start = datetime.datetime(2024, 11, 1)
+end = datetime.datetime(2025, 11, 1)
 
-loop = [
-    datetime.datetime(2024, 10, 3, 9, 25, 0),  # いいマイナスデータ
-    # datetime.datetime(2024, 10, 10, 9, 25, 0),  # いいマイナスデータ
-    datetime.datetime(2023, 9, 23, 23, 40, 6),  # Break系のいいマイナスデータ
-    # datetime.datetime(2023, 3, 6, 23, 40, 6),  # いいマイナスデータ
-    datetime.datetime(2022, 2, 6, 23, 40, 6),  # いいマイナスデータ
-]
-mode = 1  # 任意期間　または、　25年半年
-# mode = 2  # 25年ちょっと
-# mode = 4  # ループ
-print("test")
+current = start
 
-intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
-                        ti.turn_analisys,  # インスタンス化前のクラスを渡す
-                        # True,
-                        True,
-                       #  datetime.datetime(2023, 9, 10, 23, 40, 6),  # 謎の飛びデータ
-                       #  datetime.datetime(2023, 9, 23, 23, 40, 6),  # Break系のいいマイナスデータ
-                        datetime.datetime(2025, 11, 6, 12, 0, 6),  #ここが最後
-                       #  'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_short_test_h1_df.csv',
-                       # 'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_short_test_m5_df.csv',
-                       # 'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_short_test_s5_df.csv',
-                       #  'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_harf_test_h1_df.csv',
-                       #  'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_harf_test_m5_df.csv',
-                       #  'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_harf_test_s5_df.csv',
-                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_long_test_h1_df.csv',
-                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_long_test_m5_df.csv',
-                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/25_long_test_s5_df.csv',
-                       5000,
-                       3,
-                       " テスト" + memo,
-                       False,  # グラフの描画あり
-                       ""
-                       )
+while current <= end:
+
+    # 月末日を取得
+    last_day = last_day_of_month(current.year, current.month)
+
+    # 日付文字列（run_month.py に渡す）
+    dt_str = last_day.strftime("%Y-%m-%d %H:%M:%S")
+
+    print(f"Running: {dt_str}")
+
+    # 別プロセスで実行（メモリ完全にリセットされる）
+    subprocess.run([
+        sys.executable,    # 今の Python をそのまま使う
+        "run_month_inspection.py",    # サブプロセス側のスクリプト
+        dt_str             # 引数として日付を渡す
+    ])
+
+    # 次の月へ進める
+    if current.month == 12:
+        current = current.replace(year=current.year + 1, month=1)
+    else:
+        current = current.replace(month=current.month + 1)
