@@ -41,5 +41,6 @@ intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
                        "",
                         False,  # キャッシュの保存
                         # True  # キャッシュの保存
+                        True  # キャッシュの利用
                        )
 

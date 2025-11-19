@@ -1,6 +1,7 @@
 import datetime
 import subprocess
 import sys
+import tokens as tk
 
 def last_day_of_month(year, month):
     if month == 12:
@@ -21,6 +22,7 @@ while current <= end:
 
     # 月末日を取得
     last_day = last_day_of_month(current.year, current.month)
+    tk.line_send("ループ処理", last_day, "（", current.year, "年", current.month, "月)")
 
     # 日付文字列（run_month.py に渡す）
     dt_str = last_day.strftime("%Y-%m-%d %H:%M:%S")

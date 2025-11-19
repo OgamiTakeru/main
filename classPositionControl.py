@@ -23,8 +23,10 @@ class position_control:
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)
         self.oa2 = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
 
+        self.peaks_class = ""  # クラスアップデートの時に利用する（ポジションクラスに引数として渡すため）
+
         # 最大所持個数の設定
-        self.max_position_num = 7  # 最大でも10個のポジションしかもてないようにする
+        self.max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
         self.middle_priority_num = 2  # ミドルプライオリティ(max_position_numのうち）
         self.high_priority_num = 1  # ハイプライオリティのもの（max_position_numのうち）
 
@@ -62,7 +64,6 @@ class position_control:
         # allowed_position_slot = self.position_classes[self.mid_i_from:self.mid_i_to]
         # for i, item in enumerate(allowed_position_slot):
         #     print(" ", i, "OaMode:", item.oa_mode, "Pno:", item.t_id, ",name:", item.name, ",life:", item.life)
-
 
     def order_class_add(self, order_classes):
         """
@@ -111,7 +112,6 @@ class position_control:
             max_instance = max(alive_classes, key=lambda c: getattr(c, "priority", float("-inf")))
             over_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority > order_max_priority]
             same_n_classes = [c for c in alive_classes if hasattr(c, "priority") and c.priority == order_max_priority]
-
 
         # ■現在のクラスの状況の確認
         print("現在のクラスの状況を確認 (classPositionControl)")
@@ -183,14 +183,14 @@ class position_control:
                         break
         return line_send
 
-    def all_update_information(self):
+    def all_update_information(self, candle_analysis_class = None):
         """
         全ての情報を更新する
         :return:
         """
         for item in self.position_classes:
             if item.life:
-                item.update_information()
+                item.update_information(candle_analysis_class)
 
         # # 関連オーダーの更新
         self.linkage_control()
@@ -655,14 +655,14 @@ class position_control_for_test(position_control):
                 #         break
         return line_send
 
-    def all_update_information(self, df_row, candleAnalysisClass):
+    def all_update_information(self, df_row, candle_analysis_class):
         """
         全ての情報を更新する
         :return:
         """
         for item in self.position_classes:
             if item.life:
-                item.update_information(df_row)
+                item.update_information(df_row, candle_analysis_class)
 
         # # 関連オーダーの更新
         self.linkage_control()

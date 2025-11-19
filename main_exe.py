@@ -227,7 +227,7 @@ class main():
         self.latest_exe_time = datetime.datetime.now().replace(microsecond=0)  # 最終実行時刻を取得しておく
 
     def mode2(self):
-        self.positions_control_class.all_update_information()  # positionの更新
+        self.positions_control_class.all_update_information(self.candleAnalysisClass)  # positionの更新
         life_check_res = self.positions_control_class.life_check()
 
         if life_check_res['life_exist']:

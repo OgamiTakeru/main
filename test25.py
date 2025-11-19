@@ -30,22 +30,24 @@ file_name_head = "25_long"
 # file_name_head = "2025_3_5"
 # file_name_head = "2025_5"
 # file_name_head = "2025_4"
+# file_name_head = "2024_12_1"
 intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
                         ti.turn_analisys,  # インスタンス化前のクラスを渡す
                         False,
                         # True,
                        #  datetime.datetime(2023, 9, 10, 23, 40, 6),  # 謎の飛びデータ
                        #  datetime.datetime(2023, 9, 23, 23, 40, 6),  # Break系のいいマイナスデータ
-                        datetime.datetime(2025, 2, 28, 23, 55, 6),  #ここが最後
+                        datetime.datetime(2024, 12, 31, 23, 24, 55),  #ここが最後
                         path + file_name_head + "_test_h1_df.csv",
                         path + file_name_head + "_test_m5_df.csv",
                         path + file_name_head + "_test_s5_df.csv",
-                       3400,  # 1か月単位でやる場合、ここは3400
+                       3400,  # 1か月単位でやる場合、ここは3400  数日間の場合は750位でいい
                        2,  # 1か月単位でやる場合、ここは2
                        " テスト" + file_name_head,
                        False,  # グラフの描画あり
                        "",
-                        False,  # キャッシュの保存
+                        True,  # キャッシュの保存
                         # True  # キャッシュの保存
+                        False  # キャッシュの利用をするかどうか
                        )
 

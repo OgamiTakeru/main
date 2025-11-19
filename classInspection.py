@@ -24,7 +24,7 @@ from pympler import asizeof
 print("kore")
 class Inspection:
     def __init__(self, target_func, is_exist_data, target_to_time, h1_data_path, m5_data_path, s5_data_path, m5_count,
-                 loop, memo, is_graph, params, save_cache):
+                 loop, memo, is_graph, params, save_cache, cache_use=False):
         """
         引数は色々取るが、二パターン
         必ず必要なのは、
@@ -44,6 +44,7 @@ class Inspection:
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義
 
         # 時間短縮のためのキャッシュファイル
+        self.cache_use = cache_use  # キャッシュを使うかどうか
         self.cache_path = ""
         self.cache = {}
         self.save_cache = save_cache
@@ -366,105 +367,113 @@ class Inspection:
                 # print(analysis_df_h1.tail(1))
 
                 # ★★ピークの算出（重い処理のため、ここだけキャッシュ化）
-                # 現在の月を求める
-                row_period = self.get_period_id(row_s5['time_jp'])
-                # 月が替わったらキャッシュリセット
-                if current_period is None:
-                    current_period = row_period
-                    cache_path = self.get_cache_path(row_period)
-                    # 過去キャッシュの読み込み
-                    if os.path.exists(cache_path):
-                        print("キャッシュファイル読み込み中", cache_path)
+                if self.cache_use:
+                    # 現在の月を求める
+                    row_period = self.get_period_id(row_s5['time_jp'])
+                    # 月が替わったらキャッシュリセット
+                    if current_period is None:
+                        current_period = row_period
+                        cache_path = self.get_cache_path(row_period)
+                        # 過去キャッシュの読み込み
+                        if os.path.exists(cache_path):
+                            print("キャッシュファイル読み込み中", cache_path)
+                            temp = datetime.datetime.now()
+                            self.cache = joblib.load(cache_path)
+                            # with open(cache_path, "rb") as f:
+                            #     self.cache = pickle.load(f)
+                            print(f" {cache_path} を読み込みました", self.cal_passed_minute(temp))
+                            tk.line_send("[検証期間]読み込み時間", self.cal_passed_minute(temp), "分", cache_path)
+                        else:
+                            del self.cache  # キャッシュ自体を削除
+                            self.cache = {}
+                            gc.collect()  # メモリ解放を強制
+                            print(f" 新規キャッシュ開始: {cache_path}")
+
+                    elif row_period != current_period:
+                        # 現在の月を保存
+                        if save_cache_local:
+                            print("別のピリオドに移行したため、保存", sys.getsizeof(self.cache), cache_path, self.save_cache)
+                            if not self.save_cache and save_cache_local:
+                                # ピリオド内で、まだPeaksClassが計算されていないものが一つでもあった場合⇒保存作業
+                                len_of_others = len(self.save_cache_moto)
+                                arr = self.save_cache_moto
+                                if len(arr) > 4:
+                                    result = f"{arr[0]},{arr[1]} / {arr[-2]},{arr[-1]}"
+                                else:
+                                    result = ",".join(str(x) for x in arr)
+                                tk.line_send("[検証期間]このピリオドでまだない物があったと思われる(保存作業発生）", current_period,
+                                             ",", len_of_others, "個の新要素 ", result)
+                                save_cache_local = self.save_cache  # 基準に戻す
+                                self.save_cache_moto = []
+                            temp = datetime.datetime.now()
+                            with open(cache_path, "wb") as f:
+                                joblib.dump(self.cache, f)
+                                # pickle.dump(self.cache, f)
+                            print(f" {cache_path} を保存完了（{len(self.cache)}件）", self.cal_passed_minute(temp))
+                            tk.line_send("[検証期間]保存所要時間", self.cal_passed_minute(temp), "分", cache_path, "row_priodより少し前の時期であればOK")
+                        else:
+                            print("別のピリオドに移行したが、保存せず", sys.getsizeof(self.cache), cache_path, self.save_cache)
+
+                        # メモリ解放
+                        print("メモリクリア中")
                         temp = datetime.datetime.now()
-                        self.cache = joblib.load(cache_path)
-                        # with open(cache_path, "rb") as f:
-                        #     self.cache = pickle.load(f)
-                        print(f" {cache_path} を読み込みました", self.cal_passed_minute(temp))
-                        tk.line_send("[検証期間]読み込み時間", self.cal_passed_minute(temp), "分", cache_path)
-                    else:
+                        self.cache.clear()
                         del self.cache  # キャッシュ自体を削除
                         self.cache = {}
                         gc.collect()  # メモリ解放を強制
-                        print(f" 新規キャッシュ開始: {cache_path}")
+                        print(f"メモリをクリアしました", self.cal_passed_minute(temp))
+                        time.sleep(1)  # 2秒間停止
 
-                elif row_period != current_period:
-                    # 現在の月を保存
-                    if save_cache_local:
-                        print("別のピリオドに移行したため、保存", sys.getsizeof(self.cache), cache_path, self.save_cache)
-                        if not self.save_cache and save_cache_local:
-                            # ピリオド内で、まだPeaksClassが計算されていないものが一つでもあった場合⇒保存作業
-                            len_of_others = len(self.save_cache_moto)
-                            if len_of_others <= 5:
-                                result = "".join(self.save_cache_moto)
-                            else:
-                                result = "".join(self.save_cache_moto[:5])
-                            tk.line_send("[検証期間]このピリオドでまだない物があったと思われる(保存作業発生）", current_period,
-                                         ",", len_of_others, "個の新要素 ", result)
-                            save_cache_local = self.save_cache  # 基準に戻す
-                            self.save_cache_moto = []
-                        temp = datetime.datetime.now()
-                        with open(cache_path, "wb") as f:
-                            joblib.dump(self.cache, f)
-                            # pickle.dump(self.cache, f)
-                        print(f" {cache_path} を保存完了（{len(self.cache)}件）", self.cal_passed_minute(temp))
-                        tk.line_send("[検証期間]保存所要時間", self.cal_passed_minute(temp), "分", cache_path, "row_priodより少し前の時期であればOK")
+                        # 新しい月に切り替え
+                        current_period = row_period
+                        cache_path = self.get_cache_path(row_period)
+
+                        # 新しい月のキャッシュを読み込み
+                        if os.path.exists(cache_path):
+                            temp = datetime.datetime.now()
+                            print("ピリオドが変わったため、新しいキャッシュを読み込みます", cache_path)
+                            # with open(cache_path, "rb") as f:
+                            #     self.cache = pickle.load(f)
+                            self.cache = joblib.load(cache_path)
+                            print(f" {cache_path} を、月変更タイミングで読み込みました", self.cal_passed_minute(temp))
+                            tk.line_send("[検証期間]読み込み時間", self.cal_passed_minute(temp), "分", cache_path)
+                            # time.sleep(1)  # 2秒間停止
+                        else:
+                            del self.cache  # キャッシュ自体を削除
+                            gc.collect()  # メモリ解放を強制
+                            self.cache = {}
+                            print(f"新規キャッシュ開始: {cache_path}")
+
+                    # ■■キャッシュ対象処理
+                    row_hash = self.get_row_hash(row_s5['time_jp'])
+                    if row_hash in self.cache:
+                        # 以前の結果を再利用
+                        print("キャッシュの再利用", row_s5['time_jp'])
+                        self.candleAnalysisClass = self.cache[row_hash]
                     else:
-                        print("別のピリオドに移行したが、保存せず", sys.getsizeof(self.cache), cache_path, self.save_cache)
+                        # 新規計算
+                        save_cache_local = True
+                        self.save_cache_moto.append(row_s5['time_jp'])
+                        print("キャッシュが、無いため新規でキャンドルアナリシスの実行", row_s5['time_jp'])
+                        print("CandleAnalysisの実行↓")
+                        print("行数", len(analysis_df_m5), len(analysis_df_h1), sys.getsizeof(analysis_df_m5), sys.getsizeof(analysis_df_h1))
+                        print("5分足")
+                        print(analysis_df_m5.head(2))
+                        print(analysis_df_m5.tail(2))
+                        print("1時間足")
+                        print(analysis_df_h1.head(2))
+                        print(analysis_df_h1.tail(2))
+                        self.candleAnalysisClass = ca.candleAnalisysForTest("oa", analysis_df_m5, analysis_df_h1)
+                        # self.inspect_instance_memory(self.candleAnalysisClass)
+                        print("キャッシュへの登録", sys.getsizeof(self.cache))
+                        self.cache[row_hash] = self.candleAnalysisClass  # キャッシュに保存
+                    all_result.append(self.candleAnalysisClass)  # キャッシュを蓄積
 
-                    # メモリ解放
-                    print("メモリクリア中")
-                    temp = datetime.datetime.now()
-                    self.cache.clear()
-                    del self.cache  # キャッシュ自体を削除
-                    self.cache = {}
-                    gc.collect()  # メモリ解放を強制
-                    print(f"メモリをクリアしました", self.cal_passed_minute(temp))
-                    time.sleep(1)  # 2秒間停止
-
-                    # 新しい月に切り替え
-                    current_period = row_period
-                    cache_path = self.get_cache_path(row_period)
-
-                    # 新しい月のキャッシュを読み込み
-                    if os.path.exists(cache_path):
-                        temp = datetime.datetime.now()
-                        print("ピリオドが変わったため、新しいキャッシュを読み込みます", cache_path)
-                        # with open(cache_path, "rb") as f:
-                        #     self.cache = pickle.load(f)
-                        self.cache = joblib.load(cache_path)
-                        print(f" {cache_path} を、月変更タイミングで読み込みました", self.cal_passed_minute(temp))
-                        tk.line_send("[検証期間]読み込み時間", self.cal_passed_minute(temp), "分", cache_path)
-                        # time.sleep(1)  # 2秒間停止
-                    else:
-                        del self.cache  # キャッシュ自体を削除
-                        gc.collect()  # メモリ解放を強制
-                        self.cache = {}
-                        print(f"新規キャッシュ開始: {cache_path}")
-
-                # ■■キャッシュ対象処理
-                row_hash = self.get_row_hash(row_s5['time_jp'])
-                if row_hash in self.cache:
-                    # 以前の結果を再利用
-                    print("キャッシュの再利用", row_s5['time_jp'])
-                    self.candleAnalysisClass = self.cache[row_hash]
                 else:
-                    # 新規計算
-                    save_cache_local = True
-                    self.save_cache_moto.append(row_s5['time_jp'])
-                    print("キャッシュが、無いため新規でキャンドルアナリシスの実行", row_s5['time_jp'])
-                    print("CandleAnalysisの実行↓")
-                    print("行数", len(analysis_df_m5), len(analysis_df_h1), sys.getsizeof(analysis_df_m5), sys.getsizeof(analysis_df_h1))
-                    print("5分足")
-                    print(analysis_df_m5.head(2))
-                    print(analysis_df_m5.tail(2))
-                    print("1時間足")
-                    print(analysis_df_h1.head(2))
-                    print(analysis_df_h1.tail(2))
+                    # 通常の実行（キャッシュを使わない
                     self.candleAnalysisClass = ca.candleAnalisysForTest("oa", analysis_df_m5, analysis_df_h1)
-                    # self.inspect_instance_memory(self.candleAnalysisClass)
-                    print("キャッシュへの登録", sys.getsizeof(self.cache))
-                    self.cache[row_hash] = self.candleAnalysisClass  # キャッシュに保存
-                all_result.append(self.candleAnalysisClass)  # キャッシュを蓄積
+                    # print("H1があるかの確認")
+                    # print(analysis_df_h1[:1])
 
                 # ■調査実行
                 analysis_result_instance = am.wrap_all_analysis(self.candleAnalysisClass)

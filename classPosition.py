@@ -162,7 +162,7 @@ class order_information:
 
         # 調査結果も保有する
         self.ca = None  # CandleAnalysisの格納
-        self.send_line_exe = False  # いるか不明（Trueの場合は一部の情報についてLINE送信頻度増）
+        self.send_line_exe = True  # いるか不明（Trueの場合は一部の情報についてLINE送信頻度増）
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
@@ -878,7 +878,7 @@ class order_information:
         #                            self.win_max_plu, self.t_pl_u)
         #             self.close_trade(None)
 
-    def update_information(self):  # orderとpositionを両方更新する
+    def update_information(self, candle_analysis_class = None):  # orderとpositionを両方更新する
         """
         この関数では最新の状態を取得する（インスタンス変数を更新する）
         ただし、orderやTradeのステータスはこの関数では変更しない。
@@ -1031,11 +1031,14 @@ class order_information:
         self.updateWinLoseTime(trade_latest['PLu'])  # PLU(realizePL / Unit)の推移を記録する
         # ひっかけるようjなマイナス値を検出し、早期のロスカットを行う
         # self.lc_change_less_minus()
-        # LCの変更を検討する(プラス域にいった場合のTP底上げ≒トレールに近い）
+
+        # LCの変更を検討する(プラス域にいった場合のTP底上げ≒トレールに近い）.CandleAnalysisが渡されたときのみ実行する！（reset等ではやらない）
+        if candle_analysis_class is None:
+            return 0  # 初期値でforcedOrderを入れた場合、起こりうるかも（それ以外は基本起きない）
         self.lc_change()
         if self.lc_change_num != 0:
             # LC_Changeが執行されている場合は、Candleも有効にする
-            self.lc_change_from_candle()
+            self.lc_change_from_candle(candle_analysis_class)
 
         # # アラート
         # if self.alert_watch_exe:
@@ -1590,7 +1593,7 @@ class order_information:
                 break
         self.lc_change_status = status_res
 
-    def lc_change_from_candle(self):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
+    def lc_change_from_candle(self, candle_analysis_class):  # ポジションのLC底上げを実施 (基本的にはUpdateで平行してする形が多いかと）
         """
         ロスカット底上げを実施する。セルフとレールに近い
         ひとつ前のローソクの最高値や最低値までをLC底上げする関数。
@@ -1623,63 +1626,48 @@ class order_information:
             # lc_Change_Candle実行フラグない場合はやらない
             return 0
 
+        # 利用するピーククラスを選択
+        if self.lc_change_candle_foot == "M5":
+            # print("       5分足でのCandleLcChange")
+            peaks_class = candle_analysis_class.peaks_class
+            df_r = candle_analysis_class.peaks_class.df_r_original[:5]  # 直近のデータフレームの最初の5行
+        elif self.lc_change_candle_foot == "H1":
+            # print("       1時間足でのCandleLcChange")
+            peaks_class = candle_analysis_class.peaks_class_hour
+            df_r = candle_analysis_class.peaks_class_hour.df_r_original[:5]  # 直近のデータフレームの最初の5行
+        else:
+            # print("       (その他）5分足でのCandleLcChange")
+            peaks_class = candle_analysis_class.peaks_class
+            df_r = candle_analysis_class.peaks_class.df_r_original[:5]  # 直近のデータフレームの最初の5行
+
         # 現在時刻や使うデータを取得する
         gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
         time_hour = gl_now.hour  # 現在時刻の「時」のみを取得
         time_min = gl_now.minute  # 現在時刻の「分」のみを取得
         time_sec = gl_now.second  # 現在時刻の「秒」のみを取得
         if time_min % 5 == 0 and 6 <= time_sec < 30:
-            # ５分毎か初回で実行
-            now = datetime.datetime.now().replace(microsecond=0)
-            time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
-            seconds_difference = abs(time_difference.total_seconds())
-            if seconds_difference >= 30:
-                d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": self.lc_change_candle_num},
-                                                             1)  # 時間昇順(直近が最後尾）
-                if d5_df['error'] == -1:
-                    print("error Candle")
-                    return -1
-                else:
-                    self.latest_df = d5_df['data']
-                    self.latest_df_r = self.latest_df.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
-                    self.latest_df_get_time = datetime.datetime.now().replace(microsecond=0)
-                    # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
-                    print("Position_lc candle", self.name)
-                    candle_ana = ca.candleAnalysis(self.oa, 0)
-                    # peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
-                    # peaks_class = cpk.PeaksClass(self.latest_df)
-            else:
-                # 30秒以上立っていない場合
-                # candle_ana = ca.candleAnalysis(self.latest_df_r, self.oa)  # CandleAnalysisインスタンスの生成
-                candle_ana = ca.candleAnalysis(self.oa, 0)
-                # peaks_class = candle_ana.peaks_class  # peaks_classだけを抽出
-                # peaks_class = cpk.PeaksClass(self.latest_df)
+            # ５分毎か初回で実行 (昔はここでデータを取得していたが、引数で渡されるcandle_analysis_classを利用することに変更）
+            pass
         else:
             # 5分（足が新規で完成するタイミングじゃない場合）
             return 0
-
-        # オーダー時、どの足でLCChangeを行うのかの情報があるため、それによって変更する
-        if self.order_class.lc_change_candle_type == "1H":
-            peaks_class = candle_ana.peaks_class_hour  # peaks_classだけを抽出
-        else:
-            peaks_class = candle_ana.peaks_class
 
         # 逆張り注文の際、self.latest_df.iloc[-2]['low']基準だとおかしいくなる。
         # peakを算出し、peaks[0]がカウント２以上ある場合のみ、self.latest_df.iloc[-2]['low']を参照するケースに変更(25/5/17)
         peaks = peaks_class.peaks_original
         # print("CANDLE:" ,self.name)
-        # print("CANDLE LC:", self.latest_df.iloc[-2]['low'])
+        # print("CANDLE LC:", df_r.iloc[1]['low'])
         # print("CANDLE LC::", peaks[0]['latest_time_jp'], peaks[0]['count'])
 
         # 直近のピークが3カウント以上の場合、かつ、ポジションと同じ方向（利益が増える方向）時に実行（ひとつ前のキャンドルを参照するため）
         if peaks[0]['count'] >= 3 and peaks[0]['direction'] == self.plan_json['direction']:
-            # self.latest_df.iloc[-2]['low']の-2が選択できる状態であれば、実行する
+            # df_r.iloc[1]['low']の-2が選択できる状態であれば、実行する
             if self.plan_json['direction'] > 0:
                 # 買い方向の場合、ひとつ前のローソクのLowの値をLC価格に
-                lc_price_temp = float(self.latest_df.iloc[-2]['low']) - order_information.add_margin
+                lc_price_temp = float(df_r.iloc[1]['low']) - order_information.add_margin
             else:
                 # 売り方向の場合、ひとつ前のローソクのHighの値をLC価格に
-                lc_price_temp = float(self.latest_df.iloc[-2]['high']) + order_information.add_margin
+                lc_price_temp = float(df_r.iloc[1]['high']) + order_information.add_margin
             # print("LCcandleChangeにて、直近peakカウント:", peaks[0]['count'], "変更基準ローソク時間:", self.latest_df.iloc[-2]['time_jp'])
         else:
             # self.latest_df.iloc[-2]['low']は逆張りの時におかしくなる
@@ -1949,8 +1937,6 @@ class order_information:
         if self.send_line_exe:
             self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(tr / 2, 3), "確保", round(tr, 3))
         self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(tr / 2, 3), "確保", round(tr, 3))
-
-
 
 
 def position_check_no_args():
