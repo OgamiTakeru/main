@@ -1656,33 +1656,38 @@ class order_information:
         # peakを算出し、peaks[0]がカウント２以上ある場合のみ、self.latest_df.iloc[-2]['low']を参照するケースに変更(25/5/17)
         peaks = peaks_class.peaks_original
         # print("CANDLE:" ,self.name)
-        # print("CANDLE LC:", df_r.iloc[1]['low'])
+        # print("CANDLE LC:", df_r.iloc[soeji]['low'])
         # print("CANDLE LC::", peaks[0]['latest_time_jp'], peaks[0]['count'])
 
         # 直近のピークが3カウント以上の場合、かつ、ポジションと同じ方向（利益が増える方向）時に実行（ひとつ前のキャンドルを参照するため）
+        soeji = 1
         if peaks[0]['count'] >= 3 and peaks[0]['direction'] == self.plan_json['direction']:
             # df_r.iloc[1]['low']の-2が選択できる状態であれば、実行する
             if self.plan_json['direction'] > 0:
                 # 買い方向の場合、ひとつ前のローソクのLowの値をLC価格に
-                lc_price_temp = float(df_r.iloc[1]['low']) - order_information.add_margin
+                lc_price_temp = float(df_r.iloc[soeji]['low']) - order_information.add_margin
             else:
                 # 売り方向の場合、ひとつ前のローソクのHighの値をLC価格に
-                lc_price_temp = float(df_r.iloc[1]['high']) + order_information.add_margin
-            # print("LCcandleChangeにて、直近peakカウント:", peaks[0]['count'], "変更基準ローソク時間:", self.latest_df.iloc[-2]['time_jp'])
+                lc_price_temp = float(df_r.iloc[soeji]['high']) + order_information.add_margin
+            # print("LCChangeCandle用DF ")
+            # print("0", df_r.iloc[0]['time_jp'])
+            # print("1", df_r.iloc[1]['time_jp'])
+            # print("-1", df_r.iloc[-1]['time_jp'])
+            print("LCcandleChangeにて、直近peakカウント:", peaks[0]['count'], "変更基準ローソク時間:", df_r.iloc[soeji]['time_jp'], self.name)
         else:
-            # self.latest_df.iloc[-2]['low']は逆張りの時におかしくなる
+            # self.latest_df.iloc[soeji]['low']は逆張りの時におかしくなる
             # print("LCcandleChange中断　直近peakカウント:", peaks[0]['count'], "間違えたローソク時間:", self.latest_df.iloc[-2]['time_jp'])
             return -1
 
         if self.lc_change_from_candle_lc_price == lc_price_temp:
-            # print(" 既にこの価格のLCとなっているため、変更処理は実施せず")
+            print(" 既にこの価格のLCとなっているため、変更処理は実施せず")
             return 0
 
         # ポジション取得から５分経過、かつ、temp_lc_priceがマイナス域でなく、利益が1pips以上確約できる場合、LCをlc_price_tempに移動する
         take_position_price = float(self.t_json['price'])
         lc_ensure_range = abs(take_position_price - lc_price_temp)
         if lc_ensure_range <= 0.01:
-            # print(" 確保できる利益幅が0.01以下のため、変更なし")
+            print(" 確保できる利益幅が0.01以下のため、変更なし")
             return 0
 
         # マイナス域の場合は、処理しない
@@ -1715,7 +1720,9 @@ class order_information:
         if self.send_line_exe:
             self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "新LC価格⇒", new_lc_price,
                            "保証", lc_range, "約定価格", self.t_execution_price,
-                           "予定価格", self.plan_json['target_price'])
+                           "予定価格", self.plan_json['target_price'],  # )
+                           "参考にされた時間", df_r.iloc[soeji]['time_jp'], "添え字", soeji,
+                           "オープン:", df_r.iloc[soeji]['open'], "クローズ:", df_r.iloc[soeji]['close'])
         # LC Priceの入れ替え
         self.plan_json['lc_price'] = new_lc_price
 

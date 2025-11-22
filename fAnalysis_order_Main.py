@@ -52,9 +52,9 @@ class wrap_all_analysis():
             self.orders_add_this_class(turn_analysis_instance.exe_order_classes)
 
         # テスト用
-        range_analysis_instance = ti.predict_turn_analysis(self.ca)
-        if range_analysis_instance.take_position_flag:
-            self.orders_add_this_class(range_analysis_instance.exe_order_classes)
+        # range_analysis_instance = ti.predict_turn_analysis(self.ca)
+        # if range_analysis_instance.take_position_flag:
+        #     self.orders_add_this_class(range_analysis_instance.exe_order_classes)
 
         # # 時間起点のオーダー（深夜12時～2時前にかけて、下がる傾向がある気がする）
         # time_analysis_instance = time_analysis(self.ca)
