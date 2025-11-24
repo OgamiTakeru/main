@@ -323,7 +323,6 @@ class order_information:
             else:
                 tk.line_send(*args)
 
-
     def order_plan_registration(self, order_class):
         """
         【最重要】
@@ -1556,7 +1555,7 @@ class order_information:
                 # lc_Changeがおかしいので確認用(初回のLCChange確認なのに、0番目（最初が０とは限らないけど、、）に済がある場合はおかしい
                 diff_seconds = datetime.datetime.now() - item['time_done']
                 continue
-            elif lc_change_till_sec < self.t_time_past_sec < lc_change_waiting_time_sec:
+            elif self.t_time_past_sec < lc_change_waiting_time_sec or self.t_time_past_sec < lc_change_till_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
                 status_res = status_res + gene.str_merge("[", i, "] 時間未達",  "lc_exe:", lc_exe,
                                                          "時間", lc_change_waiting_time_sec, "～", lc_change_till_sec,
@@ -1570,7 +1569,8 @@ class order_information:
             # ボーダーラインを超えた場合
             if self.t_pl_u >= lc_trigger_range:
                 # print("　★変更確定")
-                print(" 　　変更対象", i, "番目のLC_Change", lc_ensure_range, lc_trigger_range, self.t_pl_u)
+                print(" 　　変更対象", i, "番目のLC_Change", lc_ensure_range, lc_trigger_range, self.t_pl_u,
+                      "指定経過秒", lc_change_waiting_time_sec, "現在ポジ経過秒", self.t_time_past_sec)
                 self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
                 # これで配列の中の辞書って変更できるっけ？？
                 item['done'] = True

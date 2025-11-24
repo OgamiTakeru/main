@@ -224,7 +224,7 @@ class turn_analisys:
                     base_dic = [
                         # {"exe": True, "time_after": 0, "trigger": 0.01,
                         #  "ensure": -1},
-                        {"exe": True, "time_after": 1500, "trigger": -1, "ensure": ca.cal_move_ave(1)},  # ほぼLC
+                        {"exe": True, "time_after": 1500, "trigger": -1, "ensure": -1 * ca.cal_move_ave(1)},  # ほぼLC
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(1.7), "ensure": ca.cal_move_ave(1.5)},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(2.3), "ensure": ca.cal_move_ave(2)},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(3.3), "ensure": ca.cal_move_ave(3)},
@@ -677,7 +677,7 @@ class turn_analisys:
                 "priority": 7,
                 "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
                 "candle_analysis_class": self.ca,
-                "lc_change_candle_type": "H1",
+                "lc_change_candle_type": "M5",
             })
             # オーダーの追加
             self.add_order_to_this_class(order_class1)

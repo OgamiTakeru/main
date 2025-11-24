@@ -630,7 +630,7 @@ class Inspection:
         output = "検証期間LONG\n"
         for _, row in result.iterrows():
             output += (f"【名前】{row['name']}【計】:{round(row['total_pl'], 0)}({row['positive_count']}:{row['negative_count']})"
-                       f"{round((row['positive_count'] / (row['positive_count'] + row['negative_count'])) * 100, 1)}\n\n")
+                       f"{round((row['positive_count'] / (row['positive_count'] + row['negative_count'])) * 100, 1)}\n")
         print(output)
         tk.line_send(output, "検証期間LONG")
 
