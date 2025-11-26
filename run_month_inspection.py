@@ -27,7 +27,7 @@ file_name_head = "25_long"
 # file_name_head = "2025_5"
 # file_name_head = "2025_4"
 intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
-                        ti.turn_analisys,  # インスタンス化前のクラスを渡す
+                        ti.MainAnalysis,  # インスタンス化前のクラスを渡す
                         False,
                         # True,
                         dt,  #ここが最後

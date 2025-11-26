@@ -88,6 +88,9 @@ class candleAnalysis:
         granularity = "H1"
         self.peaks_class_hour = peaksClass.PeaksClass(self.d60_df_r, granularity)  # ★★peaks_classインスタンスの生成
         self.candle_class_hour = eachCandleAnalysis(self.peaks_class_hour, granularity)
+        if self.d60_df_r is not None:
+            h1_df = self.d60_df_r.iloc[0]
+            print("データ取得の確認！！！！！！", h1_df['time_jp'], h1_df['close'])
 
         # ■■重複作業防止用に、クラス変数に5分足の最初と最後の情報、今回算出した情報を入れておく
         if self.d5_df_r is None:

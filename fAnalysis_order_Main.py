@@ -7,24 +7,25 @@ import fGeneric as gene
 
 
 class wrap_all_analysis():
-    def __init__(self, candle_analysis_class):
+    def __init__(self, candle_analysis_class, mode="inspection"):
         # 調査に必要な変数
         # self.df_r = df_r
         # self.oa = oa
         self.ca = candle_analysis_class  # CandleAnalysisインスタンスの生成
+        self.mode = mode  # Liveとアナリシスでは微妙に扱いが異なる場所がある
 
         # 結果を格納するための変数（大事）
         self.take_position_flag = False
         self.exe_order_classes = []
 
         # 実行
-        self.wrap_all_inspections()
+        self.wrap_all_inspections(mode)
 
         # 最終的なオーダー
         print("最終的なオーダー")
-        for i in range(len(self.exe_order_classes)):
-            # 表示専用
-            print(self.exe_order_classes[i].exe_order)
+        for exe_order_class in self.exe_order_classes:
+            print(exe_order_class.exe_order)
+
 
     def orders_add_this_class(self, order_classes):
         """
@@ -38,15 +39,19 @@ class wrap_all_analysis():
         オーダーを置き換えるよう（前の検証のオーダーは忘れる漢字）
         """
         self.take_position_flag = True
-        self.exe_order_classes = order_classes
+        if isinstance(order_class, (list, tuple)):
+            self.exe_order_classes.extend(order_class)
+        else:
+            self.exe_order_classes.append(order_class)
+        # self.exe_order_classes.extend(order_class)
 
-    def wrap_all_inspections(self):
+    def wrap_all_inspections(self, mode="inspection"):
         """
         クラスをたくさん用いがケース
         """
 
         # ターン起点のオーダー
-        turn_analysis_instance = ti.turn_analisys(self.ca)
+        turn_analysis_instance = ti.MainAnalysis(self.ca, mode)
         # turn_analysis_instance = ti.BbAnalysis(self.ca)
         if turn_analysis_instance.take_position_flag:
             self.orders_add_this_class(turn_analysis_instance.exe_order_classes)

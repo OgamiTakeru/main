@@ -10,7 +10,7 @@ memo = "大量22_23LONG"
 
 intest = ci.Inspection(
                         # pred.wrap_predict_turn_inspection_test,
-                       ti.turn_analisys,
+                       ti.MainAnalysis,
                        True,
                        datetime.datetime(2025, 5, 22, 15, 55, 0),
                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv',

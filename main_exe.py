@@ -205,7 +205,7 @@ class main():
             # self.get_df_data()  # データの取得
 
         # ■調査実行
-        analysis_result_instance = am.wrap_all_analysis(self.candleAnalysisClass)
+        analysis_result_instance = am.wrap_all_analysis(self.candleAnalysisClass, "live")
         # ■ オーダー発行
         if not analysis_result_instance.take_position_flag:
             # 発注がない場合は、終了 (ポケ除け的な部分）

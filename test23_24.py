@@ -33,7 +33,7 @@ file_name_head = "25_long"
 file_name_head = "2024_9_4"
 # file_name_head = "2025_4_11"
 intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
-                        ti.turn_analisys,  # インスタンス化前のクラスを渡す
+                        ti.MainAnalysis,  # インスタンス化前のクラスを渡す
                         # False,
                         True,
                        #  datetime.datetime(2023, 9, 10, 23, 40, 6),  # 謎の飛びデータ
