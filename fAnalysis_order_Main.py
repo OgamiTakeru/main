@@ -32,17 +32,20 @@ class wrap_all_analysis():
 
         """
         self.take_position_flag = True
-        self.exe_order_classes.extend(order_classes)
+        if isinstance(order_classes, (list, tuple)):
+            self.exe_order_classes.extend(order_classes)
+        else:
+            self.exe_order_classes.append(order_classes)
 
     def orders_replace_this_class(self, order_classes):
         """
         オーダーを置き換えるよう（前の検証のオーダーは忘れる漢字）
         """
         self.take_position_flag = True
-        if isinstance(order_class, (list, tuple)):
-            self.exe_order_classes.extend(order_class)
+        if isinstance(order_classes, (list, tuple)):
+            self.exe_order_classes.extend(order_classes)
         else:
-            self.exe_order_classes.append(order_class)
+            self.exe_order_classes.append(order_classes)
         # self.exe_order_classes.extend(order_class)
 
     def wrap_all_inspections(self, mode="inspection"):

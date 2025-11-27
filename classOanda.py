@@ -249,7 +249,8 @@ class Oanda:
             # print(res_json)
             if 'orderCancelTransaction' in res_json:
                 print("   ■■■OrderCANCELあり(エラーによるorderReject)")
-                # print(res_json)
+                print(res_json)
+                tk.line_send("オーダーエラー", res_json)
                 canceled = True
                 order_id = 0
                 order_time = 0

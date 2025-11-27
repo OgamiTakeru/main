@@ -24,15 +24,14 @@ path = "C:/Users/taker/OneDrive/Desktop/oanda_logs/"
 file_name_head = "25_short"
 file_name_head = "25_harf"
 file_name_head = "25_long"
-# file_name_head = "2025_10"
-file_name_head = "2025_9"
+file_name_head = "2025_10"
+# file_name_head = "2025_9"
 # file_name_head = "2025_6_7"
 # file_name_head = "2025_3_5"
 # file_name_head = "2025_5"
 # file_name_head = "2025_4"
 # file_name_head = "2024_12_1"
-# file_name_head = "2024_9_4"
-# file_name_head = "2025_4_11"
+file_name_head = "2025_4_11"
 intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
                         ti.MainAnalysis,  # インスタンス化前のクラスを渡す
                         # False,

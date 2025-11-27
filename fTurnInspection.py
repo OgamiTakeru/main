@@ -85,7 +85,6 @@ class BbAnalysis:
         self.foot = foot
         self.ca = candle_analysis
         self.latest_time = candle_analysis.d5_df_r.iloc[0]['time_jp']  # 5分足で判断(0行目を利用）
-        self.latest_price = candle_analysis.d5_df_r.iloc[0]['close']
         latest_time_datetime = datetime.strptime(self.latest_time, "%Y/%m/%d %H:%M:%S")
         self.latest_time_60 = candle_analysis.d60_df_r.iloc[0]['time_jp']  # オーダー重複防止に利用
 
@@ -112,11 +111,17 @@ class BbAnalysis:
 
         # データフレームを取得　足ごとで異なる
         if mode == "live":
-            from_i = 0
-            print(self.s, "本番のため常に更新されるデータフレームの先頭行を使う")
+            if foot == "H1":
+                from_i = from_i_price = 0
+                print(self.s, "本番は、1時間足が5分ごとに更新されるため、データフレームの先頭行を使う")
+            else:
+                from_i = 1
+                from_i_price = 0
+                print(self.s, "本番でも、5分足は０最初に取得以降更新されないため、iloc[1]から使う")
         else:
             print(self.s, "BBを先頭行は無視して検証する")
-            from_i = 1  # データフレームの先頭行は、本番の時は０で常に変動を使うが、検証の時は１にしないと未来になってしまう。
+            from_i = from_i_price = 1  # データフレームの先頭行は、本番の時は０で常に変動を使うが、検証の時は１にしないと未来になってしまう。
+
         if foot == "H1":
             # 1時間足の場合
             print(" 1時間足のBB検討")
@@ -133,14 +138,15 @@ class BbAnalysis:
             self.peaks_class = self.ca.peaks_class
         else:
             # 該当しない場合、5分足を入れておく
-            print(" 5分足のBB検討")
+            print(" 5分足のBB検討2")
             self.df_r = candle_analysis.d5_df_r[from_i:]
             self.ave = candle_analysis.candle_class
             self.df_r_include0 = candle_analysis.d5_df_r
             self.peaks_class = self.ca.peaks_class
-
-        self.bb_shape_analysis()
-        print("BB形状アナリシスここまで")
+        # ↓このタイミングで実施する必要がある（検証時はdf_r.iloc[0]が完成済なのでcloseは未来になる。Liveかでcloseが常に更新して使いたい。）
+        self.latest_price = candle_analysis.d5_df_r[from_i_price:].iloc[0]['close']  # 必ず5分足のデータでやる(df_rだと1時間足の場合おかしくなる）
+        print("latest_priceの確認 (Bb)", self.latest_price, self.latest_time)
+        self.bb_shape_main()
 
     def add_order_to_this_class(self, order_class):
         """
@@ -211,7 +217,7 @@ class BbAnalysis:
         else:
             return dic + base_dic
 
-    def bb_shape_analysis(self):
+    def bb_shape_main(self):
         """
         いくつかの関数の結果をラップアップする
         """
@@ -285,7 +291,7 @@ class BbAnalysis:
 
         return bb_latest_position_in_bb
 
-    def bb_glass_analysis(self, df_r_10, do_print):
+    def bb_glass_analysis(self, df_r, do_print):
         """
         固定された行ではなく、最初のN行の中で、形状を判定する
         （固定された行を使う関数は、S,N,M行の３点を固定し、形状を判定する）
@@ -301,8 +307,8 @@ class BbAnalysis:
         foot = self.foot
 
         # 最後まで処理を実施しない場合
-        if pd.isna(df_r_10.iloc[-1]['bb_range']):
-            print("最終行のbb_rangeがNaNのため対象外。（大量データでの検証時に起こりうる）", df_r_10.iloc[-1]['time_jp'])
+        if pd.isna(df_r.iloc[-1]['bb_range']):
+            print("最終行のbb_rangeがNaNのため対象外。（大量データでの検証時に起こりうる）", df_r.iloc[-1]['time_jp'])
             return {
                 "is_ordered": False,  # オーダーが起きたもの（
                 "is_glass_shape": False,  # longであろうと、通常であろうと、とにかく砂時計型かどうか
@@ -315,9 +321,9 @@ class BbAnalysis:
             # return {"bb_shape": ""}  # Noneのまま進むとエラーになるので、ここで終了（リターン）
 
         # 本処理
-        min_idx = df_r_10["bb_range"].idxmin()  # 最小値の場所を取得
-        min_val = df_r_10.loc[min_idx, "bb_range"]  # 最小値の値を取得
-        if df_r_10.loc[min_idx]['time_jp'] == df_r_10.iloc[0]['time_jp']:
+        min_idx = df_r["bb_range"].idxmin()  # 最小値の場所を取得
+        min_val = df_r.loc[min_idx, "bb_range"]  # 最小値の値を取得
+        if df_r.loc[min_idx]['time_jp'] == df_r.iloc[0]['time_jp']:
             # print(s, "先頭が一番小さい⇒これは対象外")
             head_is_minimum = True
         else:
@@ -325,10 +331,10 @@ class BbAnalysis:
 
         # 判定
         # ② 最小値より前(時系列的には直近側）で1.5倍以上のRangeがある行
-        before_rows = df_r_10.loc[:min_idx - 1]
+        before_rows = df_r.loc[:min_idx - 1]
         before_cond_rows = before_rows[before_rows["bb_range"] >= min_val * 1.23]  # データフレームのミスに気が付く前は1.25
         # ③ 最小値より後で1.4倍以上のRangeがある行
-        after_rows = df_r_10.loc[min_idx + 1:]
+        after_rows = df_r.loc[min_idx + 1:]
         after_cond_rows = after_rows[after_rows["bb_range"] >= min_val * 1.4]
 
         # 条件を満たすか？
@@ -396,13 +402,13 @@ class BbAnalysis:
                 })
                 is_ordered = True
         if do_print:
-            print("　★BBアナリシス(Flex）")
-            print(s, "直近の対象時間", df_r_10.iloc[0]['time_jp'])
-            print(s, "最古の対象時間", df_r_10.iloc[-1]['time_jp'])
+            print("　 --BBアナリシス(Flex）")
+            print(s, "直近の対象時間", df_r.iloc[0]['time_jp'])
+            print(s, "最古の対象時間", df_r.iloc[-1]['time_jp'])
             # print(s, "元々のデータフレーム")
             # print(df_r)
             print(s, "結果:", result, before_cond, after_cond, )
-            print(s, "最小Range:", min_val, "(index:", min_idx, ")", df_r_10.loc[min_idx]['time_jp'])
+            print(s, "最小Range:", min_val, "(index:", min_idx, ")", df_r.loc[min_idx]['time_jp'])
             print(s, "前の数（1の場合は初めて膨らんだところ）", len(before_cond_rows))
             print(s, "前(直近)の条件を満たす行:", len(before_cond_rows), "行")  # before_cond_rows['time_jp'])
             print(s, "後の条件を満たす行:", len(after_cond_rows), "行")  # after_cond_rows['time_jp'])
@@ -422,7 +428,7 @@ class BbAnalysis:
             "is_shape": is_glass_shape  # まとめ用の変数 返却先で使いやすいように
         }
 
-    def bb_trumpet_analysis(self, df_r_10, do_print):
+    def bb_trumpet_analysis(self, df_r, do_print):
         """
         トランペット形状
         """
@@ -442,8 +448,8 @@ class BbAnalysis:
         is_first = False
         order_class = None
 
-        bb_trumpet = self.bb_shape_with_fixed_row_analysis(0, df_r_10,  do_print)  # 現在での成立を検討する
-        bb_trumpet_older = self.bb_shape_with_fixed_row_analysis(1, df_r_10, do_print)  # 一つ昔の条件で実施(重複防止)
+        bb_trumpet = self.bb_shape_with_fixed_row_analysis(0, df_r, do_print)  # 現在での成立を検討する
+        bb_trumpet_older = self.bb_shape_with_fixed_row_analysis(1, df_r, do_print)  # 一つ昔の条件で実施(重複防止)
 
         if bb_trumpet['bb_shape'] == "trumpet":
             if bb_trumpet['bb_shape'] == bb_trumpet_older['bb_shape']:
@@ -451,7 +457,7 @@ class BbAnalysis:
                 is_first = False
                 # print(s, "直近でも成立しているが、その前でも成立する⇒今回はオーダーなし")
             else:
-                print(s, "★★トランペットの初回成立")
+                print(s, "トランペットの初回成立")
                 is_trumpet = True
                 is_first = True
 
@@ -482,7 +488,7 @@ class BbAnalysis:
             "is_shape": is_trumpet,
         }
 
-    def bb_shape_with_fixed_row_analysis(self, slicer, df_r_10, do_print):
+    def bb_shape_with_fixed_row_analysis(self, slicer, df_r, do_print):
         """
         BBの形状を見る。
         slicerは、固定する行数を底上げする（ひとつ前の足での成立を確認し、重複でのオーダーを避けたい）
@@ -499,7 +505,7 @@ class BbAnalysis:
         foot = self.foot
 
         # 最後まで処理を実施しない場合
-        if pd.isna(df_r_10.iloc[-1]['bb_range']):
+        if pd.isna(df_r.iloc[-1]['bb_range']):
             print("最終行のbb_rangeがNaNのため対象外。（大量データでの検証時に起こりうる）@")
             return {"bb_shape": ""}  # Noneのまま進むとエラーになるので、ここで終了（リターン）
 
@@ -508,9 +514,9 @@ class BbAnalysis:
         check_point1 = 0 + slicer  # 直近
         check_point2 = 7 + slicer  # 12足前
         check_point3 = 11 + slicer  # 24足前 ⇒ここはトランペット特化にするため18に
-        bb1 = df_r_10.iloc[check_point1]
-        bb2 = df_r_10.iloc[check_point2]
-        bb3 = df_r_10.iloc[check_point3]
+        bb1 = df_r.iloc[check_point1]
+        bb2 = df_r.iloc[check_point2]
+        bb3 = df_r.iloc[check_point3]
 
         # BBの広さと、現在の価格の位置関係を抑える
         bb_range = bb1['bb_range']
@@ -705,9 +711,9 @@ class BbAnalysis:
 
         if do_print:
             if slicer == 0:
-                print("　★BBアナリシス(Fixed）")
+                print("　--BBアナリシス(Fixed）")
                 # 重複の表示は重くなるので、初回分だけ表示。
-                print(s, "ベースとなる直近のBB幅", base_len)
+                print(s, "ベースとなる直近のBB幅", base_len, "open:", df_r.iloc[0]['open'], df_r.iloc[0]['close'])
                 for r in results:
                     print(s, r)
                 print(self.s, bb1['time_jp'], bb1['bb_range'], bb1['bb_upper'])
@@ -726,10 +732,15 @@ class BbAnalysis:
 
 class MainAnalysis:
     def __init__(self, candle_analysis, mode="inspection"):
-        print(" ")
-        print(" ★★メインアナリシス", mode)
+        print(" ■メインアナリシス", mode)
 
         # ■■■基本情報の取得
+        if mode == "live":
+            from_i = 0
+            from_i_price = 0  #
+        else:
+            from_i = 1
+            from_i_price = 1
         self.line_send_exe = this_file_line_send
         self.line_send_mes = ""
         self.s = "    "
@@ -737,13 +748,14 @@ class MainAnalysis:
         self.ca = candle_analysis
         self.ca5 = candle_analysis.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
         self.peaks_class = candle_analysis.peaks_class  # peaks_classだけを抽出
-        self.df_r_m5 = candle_analysis.d5_df_r
+        self.df_r_m5 = candle_analysis.d5_df_r[from_i:]
         self.ca60 = candle_analysis.candle_class_hour
         self.peaks_class_hour = candle_analysis.peaks_class_hour
-        self.df_r_h1 = candle_analysis.d60_df_r
+        self.df_r_h1 = candle_analysis.d60_df_r[from_i:]
         self.latest_time = candle_analysis.d5_df_r.iloc[0]['time_jp']  # 5分足で判断(0行目を利用）
-        self.latest_price = candle_analysis.d5_df_r.iloc[0]['close']
+        self.latest_price = candle_analysis.d5_df_r.iloc[from_i_price]['close']  # iloc[1]
         self.mode = mode
+        print("latest_priceの確認(main_analysis)", self.latest_price)
         # BB関係
         self.latest_exe_bb_h1_row = None
         self.bb_h1_class = None
@@ -823,7 +835,7 @@ class MainAnalysis:
         ]
 
         # ★★★調査実行
-        self.turn_main()
+        self.main()
 
     def make_lc_change_dic(self, foot=None, dic=None):
         """
@@ -929,7 +941,7 @@ class MainAnalysis:
         # print("発行したオーダー2↓　(turn255)")
         # print(order_class.exe_order)
 
-    def turn_main(self):
+    def main(self):
         """
         ターン直後での判断。
         """
@@ -939,7 +951,7 @@ class MainAnalysis:
         global gl_previous_bb_h1_class
 
         s = self.s
-        df_r = self.df_r_m5  # 0が消されているdf_r
+        df_r = self.df_r_m5  # 場合によって0が消されているdf_r
         candle_analysis = self.ca
         peaks = self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
@@ -952,23 +964,20 @@ class MainAnalysis:
         # ■途中終了判定
         if peaks[1]['gap'] < 0.04:
             print("対象が小さい", peaks[1]['gap'])
-        if peaks[0]['count'] != 2:
-            print("直近カウントが２以外", peaks[0]['count'])
 
         # ■■■BBの形状の調査
         # (1)主に1時間足での調査
-        bb_m5_class = BbAnalysis(candle_analysis, "M5", mode)  # 5分足は必ず実施
-        self.bb_m5_class = bb_m5_class
+        self.bb_m5_class = BbAnalysis(candle_analysis, "M5", mode)  # 5分足は必ず実施
         is_same = (gl_previous_exe_df60_row is not None) and df_h1_row.equals(gl_previous_exe_df60_row)
         if is_same:
             pass
             print("1時間足のデータが同じだった ⇒ これは5分毎で値の変わらない検証で多く起こる")
-            self.bb_h1_class = gl_previous_bb_h1_class
+            self.bb_h1_class = gl_previous_bb_h1_class  # クラスは新規生成されるため、グローバル変数で記録しておく
         else:
             print("データが異なるので調査対象")
             if gl_previous_exe_df60_order_time != candle_analysis.d60_df_r.iloc[0]['time_jp']:
                 print("まだオーダーをしていない時間のため調査対象", gl_previous_exe_df60_order_time, candle_analysis.d60_df_r.iloc[0]['time_jp'])
-                gl_previous_bb_h1_class = BbAnalysis(candle_analysis, "H1", mode)
+                gl_previous_bb_h1_class = BbAnalysis(candle_analysis, "H1", mode)  # クラスは新規生成されるため、グローバル変数で記録しておく
                 self.bb_h1_class = gl_previous_bb_h1_class
                 gl_previous_exe_df60_row = candle_analysis.d60_df_r.iloc[0]
                 if gl_previous_bb_h1_class.take_position_flag:
@@ -978,12 +987,10 @@ class MainAnalysis:
                 print("オーダー済みの時刻", gl_previous_exe_df60_order_time, candle_analysis.d60_df_r.iloc[0]['time_jp'])
 
         # (2)5分足での調査
-        print("test", self.bb_h1_class.is_previous)
         self.bb_cross_analysis(candle_analysis, mode)
 
         # (3)ターン起点
-
-
+        self.turn_analysis()
 
     def big_move_r_direction_order(self):
         """
@@ -1004,7 +1011,7 @@ class MainAnalysis:
         # target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
         # order_class1 = OCreate.Order({
         #     "name": comment,
-        #     "current_price": self.peaks_class.latest_price,
+        #     "current_price": self.peaks_class.です！,
         #     "target": self.ca5.cal_move_ave(0.5),  # target_price,
         #     "direction": r['direction'],
         #     "type": "STOP",  # "MARKET",
@@ -1262,120 +1269,41 @@ class MainAnalysis:
             order_class1.add_linkage(order_class2)
             order_class2.add_linkage(order_class1)
 
-    def simple_bb_turn_analysis(self):
-        """
-        シンプルBBターン
-        """
-        print("simpleBBターン")
-        return 0
-        # (1)変数化
-        # 0 引数候補
-        is_order = False
-        # 1 共通
-        s = self.s
-        target_df = self.ca.d5_df_r[:15]  # 直近から15行（15時間分が範囲）
-        latest_time = self.ca.d5_df_r.iloc[0]['time_jp']
-        # peaksの取得
-        peaks = self.peaks_class.peaks_original
-        peaks_skip = self.peaks_class.skipped_peaks_hard
-        latest_price = peaks[0]['latest_body_peak_price']
-
-        # 折り返し時にのみ実施する
-        # if peaks[0]['count'] != 2:
-        #     print(s, "5分足が2カウント以外のため実施せず", peaks[0]['count'])
-        #     return 0
-
-        bb_shape_trend = self.bb_shape_analysis("M5", False, False)
-        if bb_shape_trend['is_trend']:
-            print(s, "5分足のBB形状がトレンドか？", bb_shape_trend['is_trend'], bb_shape_trend['is_order'])
-        else:
-            print(s, "5分足ではトレンドを認めず")
-
-        # 折り返しの価格が、BBの上限（または下限）5パーセント以内にいる場合は、そのまま取得する
-        turn_price = peaks[1]['latest_body_peak_price']
-        turn_time = peaks[1]['latest_time_jp']
-        row = target_df.loc[target_df["time_jp"] == turn_time]
-        if row.empty:
-            return None, None  # 見つからなかった場合
-        bb_upper = row["bb_upper"].iloc[0]
-        bb_lower = row["bb_lower"].iloc[0]
-
-        # turn Priceの場所を求める
-        width = bb_upper - bb_lower
-        pos = (turn_price - bb_lower) / width
-        # 下端5%以内 → pos <= 0.05
-        # 上端5%以内 → pos >= 0.95
-        flag = (pos <= 0.10) or (pos >= 0.90)
-        side = "lower" if abs(pos - 0) < abs(pos - 1) else "upper"
-        width_judge = width >= 0.15  # BB幅が狭すぎてもやりたくない
-        print(s, "simpleBBターン", turn_time, pos, side, "BBに寄っているかどうか？", flag)
-        if flag and width_judge:
-            if side == "lower":
-                # 下限に近い　＝　買い方向
-                dir = 1
-                gap_to_bb = bb_upper - latest_price  # 向かう先のupperとLatestPriceとの差分
-            else:
-                dir = -1
-                gap_to_bb = latest_price - bb_lower  # LatestPriceと向かう先のlowerとの差分
-
-            if gap_to_bb <= self.ca5.cal_move_ave(1.2):
-                add_name = "移動代少な目"
-            else:
-                add_name = ""
-
-            if bb_shape_trend['is_order']:
-                print(s, "トレンド入った最初のPeak。既にTurnPeakのカウントが7程度あればターン弱まる？")
-
-            # 注文を入れる
-            order_class1 = OCreate.Order({
-                "name": "シンプルBBターン" + add_name,
-                "current_price": latest_price,
-                "target": 0,
-                "direction": dir,
-                "type": "MARKET",
-                "tp": gap_to_bb * 0.7,  # idth * 0.8,
-                "lc": width,
-                "lc_change": self.make_lc_change_dic("M5"),
-                "units": self.units_str * 1.2,
-                "priority": 7,
-                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                "candle_analysis_class": self.ca,
-                "lc_change_candle_type": "M5",
-            })
-            # オーダーの追加
-            self.add_order_to_this_class(order_class1)
-
     def bb_cross_analysis(self, candle_analysis, mode):
         """
         BBと交わっている（越えそう）なものが何個連続しているかを検討する
         """
-        print("BB Crossターン")
+        print("■BB Crossターン")
 
         # (1)変数化
         # 0 引数候補
-        if mode == "live":
-            from_i = 0
-            print(self.s, "本番のため常に更新されるデータフレームの先頭行を使う")
-        else:
-            print(self.s, "BBを先頭行は無視して検証する")
-            from_i = 1  # データフレームの先頭行は、本番の時は０で常に変動を使うが、検証の時は１にしないと未来になってしまう。
-
         # 1 共通
         s = self.s
-        target_df = candle_analysis.d5_df_r[from_i:15]  # 直近から15行（15時間分が範囲）
-        latest_time = candle_analysis.d5_df_r.iloc[0]['time_jp']
-        latest_price = candle_analysis.d5_df_r.iloc[0]['close']
+        target_df = self.df_r_m5[:15]  # LiveとInspectionで分別済みのデータフレーム
+        latest_time = self.latest_time
+        latest_price = self.latest_price
         ave = self.ca5
         bb_m5 = self.bb_m5_class  # 5分足のBBの情報
         bb_latest_position_in_bb5 = self.bb_m5_class.latest_price_position_in_bb
         bb_h1_class = self.bb_h1_class
-        print("5分足での調査（短期スパン） 1時間足13時間前の有無", bb_h1_class.is_previous, ",方向", self.bb_h1_class.latest_price_position_in_bb)
+        peaks = self.peaks_class.peaks_original
+        print(s, "5分足での調査（短期スパン） 1時間足13時間前の有無", bb_h1_class.is_previous, ",方向", self.bb_h1_class.latest_price_position_in_bb)
         print(s, "BBの張り付き方向(5分足）", bb_latest_position_in_bb5)
 
         # (0)実行しない場合
         # 1時間足のトレンド開始が13時間以内、かつ、５分足トレンドと1時間足トレンドが異なる場合（1時間足を優先）
-        if bb_h1_class.is_previous and (self.bb_h1_class.latest_price_position_in_bb != bb_latest_position_in_bb5):
-            print("1時間足のトレンドの向きとは異なるためNG", self.bb_h1_class.latest_price_position_in_bb)
+        if bb_h1_class.is_previous and (bb_h1_class.latest_price_position_in_bb != bb_latest_position_in_bb5):
+            print(s, "1時間足のトレンドの向きとは異なるため、BBCross無し", bb_h1_class.latest_price_position_in_bb)
+            return 0
+        # (1-2)終了条件
+        # print("BBcross確認", target_df.iloc[0]['time_jp'], target_df.iloc[0]['moves'])
+        if mode == "live":
+            if float(target_df.iloc[0]['moves']) <= 0.025:
+                print(s, "liveの0行目（直近）で、足が始まった直後ため、BBCross無し", round(float(target_df.iloc[0]['moves']),3))
+                return 0
+        # (1-3)終了条件 (move条件の後に書く）
+        if peaks[0]['count'] == 2:
+            print(s, "折り返し直後（直近カウントが２）のため、BBCross無し", peaks[0]['count'])
             return 0
 
         # (1)BB跨ぎの確認
@@ -1431,7 +1359,7 @@ class MainAnalysis:
             order_class1 = OCreate.Order({
                 "name": "シンプルBB M5",
                 "current_price": latest_price,
-                "target": ave.cal_move_ave(0.5),
+                "target": 0.013,  #  ave.cal_move_ave(0.25),
                 "direction": bb_latest_position_in_bb5,
                 "type": "LIMIT",  # "MARKET",
                 "tp": 0.1,  # ave.cal_move_ave(3),  ,
@@ -1446,809 +1374,72 @@ class MainAnalysis:
             # オーダーの追加
             self.add_order_to_this_class(order_class1)
 
-    # def bb_shape_analysis(self, foot, do_order, do_print):
-    #     """
-    #     BB Shape調査の入口。受け取るデータフレームは、範囲を調整された状態で渡してほしい
-    #     基本的に、「トレンドの入口」を見つける
-    #     """
-    #     print(self.s, "BB形状アナリシス", foot, do_order, do_print)
-    #     # (1) 変数化
-    #     # 0 引数候補
-    #     foot = foot
-    #     do_print = do_print  # コマンドラインへのprintを許容するかどうか(関数呼び出し時にも利用する）
-    #     do_order = do_order  # オーダーまで実施するか（この関数で利用する）
-    #     order_class = None
-    #     # 1 共通
-    #     s = self.s
-    #     shape_type = ""
-    #     is_order = False  # 形状がトレンド、かつ、オーダーを入れる場合
-    #     is_previous = False
-    #     is_trend = False  # 形状がトレンドの場合（初回じゃない等で、オーダーを入れない場合）
-    #     bb_latest_position_in_bb = 1  # 念のために入れとく、、
-    #     latest_time = self.ca.d5_df_r.iloc[0]['time_jp']  # 5分足で判断
-    #     latest_time_datetime = datetime.strptime(latest_time, "%Y/%m/%d %H:%M:%S")
-    #     # 2 足ごとに異なるもの
-    #     if foot == "H1":
-    #         # 1時間足の場合
-    #         df_r = self.ca.d60_df_r[1:]  # 先頭行は生成されたばかりのもの（だが検証時は未来になってしまう）
-    #         ave = self.ca60
-    #         is_hour = latest_time_datetime.minute >= 57 or latest_time_datetime.minute <= 4  # 1時間おきか？
-    #     elif foot == "M5":
-    #         # 5分足の場合
-    #         df_r = self.ca.d5_df_r[1:]
-    #         ave = self.ca5
-    #         is_hour = True  # 基本的に実施
-    #     else:
-    #         # 該当しない場合、5分足を入れておく
-    #         df_r = self.ca.d5_df_r[1:]
-    #         ave = self.ca5
-    #         is_hour = True  # 基本的に実施
-    #     target_df = df_r[:15]  # 直近から15行（15時間分が範囲）
-    #
-    #     # 実処理（1時間足の場合、1時間ごと。）
-    #     if is_hour:
-    #         # (1)現在の価格がBBのどこら辺にあるかを確認する(オーダーの方向を決める）
-    #         big = df_r.iloc[0]['bb_upper']
-    #         small = df_r.iloc[0]['bb_lower']
-    #         N = df_r.iloc[0]['close']
-    #         diff_big = abs(big - N)
-    #         diff_small = abs(N - small)
-    #         # 判定
-    #         if diff_big < diff_small:
-    #             self.bb_latest_position_in_bb = 1  # 大きいほうに近い
-    #         else:
-    #             self.bb_latest_position_in_bb = -1  # 小さいほうに近い
-    #         # print(self.ca.d60_df_r.iloc[0]['time_jp'])
-    #         # print("大きいほう", big, "小さいほう", small)
-    #         # print(f"N={N}, 大きい差={diff_big}, 小さい差={diff_small}, 判定結果={self.bb_latest_position_in_bb}")
-    #
-    #         # (2)砂時計型の発見 ⇒ 発見次第オーダー発行
-    #         bb_glass = self.bb_shape_with_flex_row_analysis(target_df, do_order, do_print)  # 直近から15足分だけ渡す
-    #
-    #         if bb_glass['is_glass_shape']:
-    #             if bb_glass['is_first_glass_shape']:
-    #                 # 砂時計形状かつオーダーする（最新の成立）
-    #                 shape_type = "glass"
-    #                 is_trend = True
-    #                 is_order = True
-    #                 order_class = bb_glass['order_class']
-    #             else:
-    #                 # 砂時計形状だが、オーダーとならないもの（最新の成立ではない）
-    #                 shape_type = "glass"
-    #                 is_trend = True
-    #                 is_order = False
-    #                 order_class = ""
-    #
-    #         # (3)BBの形状を色々分割する（現在使っているのはトランペット型の検出のみ）⇒発見次第オーダー発行
-    #         if not is_trend and not is_order:
-    #             bb_trumpet = self.bb_trumpet_analysis(target_df, do_order, do_print)
-    #             is_trend = bb_trumpet['is_trend']
-    #             is_order = bb_trumpet['is_order']  # trendがOKでも、初回ではない場合はorderはFalseになる
-    #             if is_trend and is_order:
-    #                 # print(s, "トランペットオーダー")
-    #                 order_class = bb_trumpet['order_class']
-    #         # bb_trumpet = self.bb_shape_with_fixed_row_analysis(target_df, 0, do_order, do_print)  # 現在での成立を検討する
-    #         # bb_trumpet_older = self.bb_shape_with_fixed_row_analysis(target_df, 1, do_order, do_print)  # 一つ昔の条件で実施(重複防止)
-    #         # if bb_trumpet['bb_shape'] == "trumpet":
-    #         #     if bb_trumpet['bb_shape'] == bb_trumpet_older['bb_shape']:
-    #         #         is_trend = True
-    #         #         is_order = False
-    #         #         # print(s, "直近でも成立しているが、その前でも成立する⇒今回はオーダーなし")
-    #         #     else:
-    #         #         print(s, "★★トランペットの初回成立")
-    #         #         shape_type = "trumpet"
-    #         #         is_trend = True
-    #         #         is_order = True
-    #
-    #         # (5)13時間以内に、砂時計やトランペット型があったかどうか？
-    #         is_previous = False
-    #         trend_range_hour = 13
-    #         for i in range(1, trend_range_hour + 1):  # 1からスタートする（０はすでにやっているため）
-    #             # ①砂時計型の確認
-    #             target_df = df_r[i:i + 15]  # 直近から15行（15時間分が範囲）
-    #             if latest_time_datetime.minute >= 57 or latest_time_datetime.minute <= 4:
-    #                 bb_glass = self.bb_shape_with_flex_row_analysis(target_df, False, False)  # 直近から15足分だけ渡す
-    #                 if bb_glass['bb_shape'] == "glass" and bb_glass['is_first_glass_shape']:
-    #                     # print("glassが13時間以内にあり", df_r.loc[i]['time_jp'])
-    #                     is_previous = True
-    #             else:
-    #                 pass
-    #                 # print("1時間足のBB形状判定の実行時間外", latest_time_datetime.minute)
-    #             # ②トランペット型の確認
-    #             # bb_trumpet = self.bb_shape_with_fixed_row_analysis(target_df, 0, False)  # 現在での成立を検討する
-    #             # bb_trumpet_older = self.bb_shape_with_fixed_row_analysis(target_df, 1, False)  # 一つ昔の条件で実施(重複防止)
-    #             # if bb_trumpet['bb_shape'] == "trumpet":
-    #             #     if bb_trumpet['bb_shape'] == bb_trumpet_older['bb_shape']:
-    #             #         # print(s, "直近でも成立しているが、その前でも成立する⇒今回はオーダーなし")
-    #             #         pass
-    #             #     else:
-    #             #         # print(s, "★★トランペットの初回成立(13時間以内の)", i)
-    #             #         is_previous = True
-    #             bb_trumpet = self.bb_trumpet_analysis(target_df, False, False)
-    #             if bb_trumpet['is_order'] and bb_trumpet['is_order']:
-    #                 is_previous = True
-    #     else:
-    #         # print("1時間足のBB形状判定の実行時間外", latest_time_datetime.minute)
-    #         is_order = False
-    #
-    #     print("オーダーの状況", foot, is_order, "trend？:", is_trend, is_previous)
-    #     is_previous = False
-    #     if do_order:
-    #         # オーダー処理がありの場合、判定後にオーダーを生成＆登録
-    #         if is_order and not is_previous:  # トレンド移行フラグあり、かつ、13足以内でのトレンド移行がない ⇒ オーダー
-    #             # オーダーを発行する
-    #             if order_class is None:
-    #                 print("おかしなことが起きている")
-    #             self.add_order_to_this_class(order_class)
-    #             # peaks_hard_skip = self.peaks_class.skipped_peaks_hard
-    #             # latest_peak = peaks_hard_skip[0]
-    #             # d = int(latest_peak['direction'])  # ピークの方向（１は上側）
-    #             # latest_price = latest_peak['latest_body_peak_price']
-    #             # order_class1 = OCreate.Order({
-    #             #     "name": "トレンド" + str(shape_type),
-    #             #     "current_price": latest_price,
-    #             #     "target": 0,
-    #             #     "direction": self.bb_latest_position_in_bb,
-    #             #     "type": "MARKET",
-    #             #     "tp": ave.cal_move_ave(5),  # self.ca60.cal_move_ave(1),
-    #             #     "lc": ave.cal_move_ave(3),  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
-    #             #     "lc_change": self.make_lc_change_dic("H1"),
-    #             #     "units": self.units_str * 1,
-    #             #     "priority": 11,
-    #             #     "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-    #             #     "candle_analysis_class": self.ca,
-    #             #     "lc_change_candle_type": "H1",
-    #             # })
-    #             # self.add_order_to_this_class(order_class1)
-    #
-    #     return {
-    #         "is_order": is_order,
-    #         "is_trend": is_trend,
-    #         "bb_shape": shape_type,
-    #         "bb_latest_position_in_bb": self.bb_latest_position_in_bb,  # 1か-1を返す（上限に近い＝オーダーを買いに入れる場合は１）
-    #         "is_previous": is_previous,  # 13時間前の状態
-    #     }
-
-    def bb_shape_with_flex_row_analysis(self, df_r, do_order, do_print=True):
+    def turn_analysis(self):
         """
-        固定された行ではなく、最初のN行の中で、形状を判定する
-        （固定された行を使う関数は、S,N,M行の３点を固定し、形状を判定する）
+        ターンを起点とするオーダー
         """
+        print("■ターン起点のオーダー", self.latest_price)
+        # 変数化
         s = self.s
-        df_r_10 = copy.deepcopy(df_r[:15])
-        ave = self.ca60  # self.ca5
-        is_ordered = False
+        peaks = self.peaks_class.peaks_original
+        peaks_skip = self.peaks_class.skipped_peaks_hard
+        latest_price = self.latest_price  # self.ca = candle_analysis
+        ave = self.ca.candle_class_hour
+        latest_time = self.latest_time
+        bb_h1_class = self.bb_h1_class  # この結果が必須！
 
-        # 最後まで処理を実施しない場合
-        if pd.isna(df_r_10.iloc[-1]['bb_range']):
-            print("最終行のbb_rangeがNaNのため対象外。（大量データでの検証時に起こりうる）@@")
-            return {
-                "is_ordered": False,  # オーダーが起きたもの（
-                "is_glass_shape": False,  # longであろうと、通常であろうと、とにかく砂時計型かどうか
-                "is_glass_shape_long": False,  # longの場合
-                "bb_shape": "",
-                "is_first_glass_shape": False,
-                "order_class": None
-            }
-            # return {"bb_shape": ""}  # Noneのまま進むとエラーになるので、ここで終了（リターン）
+        # 途中終了の場合
+        if peaks[1]['gap'] < 0.04:
+            print("対象が小さい", peaks[1]['gap'])
+        if peaks[0]['count'] != 2:
+            print("直近カウントが２以外", peaks[0]['count'])
+            return 0
+        if bb_h1_class.is_previous and (bb_h1_class.latest_price_position_in_bb != peaks[0]['direction']):
+            print(s, "1時間足のトレンドとlatestの向きが異なるため、抵抗線オーダー無し", bb_h1_class.latest_price_position_in_bb)
+            return 0
+        if self.take_position_flag:
+            print(s, "既にオーダーがあるため、抵抗線オーダーは行わない。")
+            return 0
 
-        min_idx = df_r_10["bb_range"].idxmin()  # 最小値の場所を取得
-        min_val = df_r_10.loc[min_idx, "bb_range"]  # 最小値の値を取得
-        if df_r_10.loc[min_idx]['time_jp'] == df_r_10.iloc[0]['time_jp']:
-            # print(s, "先頭が一番小さい⇒これは対象外")
-            head_is_minimum = True
-        else:
-            head_is_minimum = False
+        # ■解析
+        # (1)ターンが抵抗線かを確認
+        turn_line_info = self.support_line_detect(1)  # turnの抵抗線度合い
+        flop_line_info = self.support_line_detect(2)  # turnの抵抗線度合い
+        print(s, "SamePriceList", turn_line_info['same_price_list_till_break_5_total'], "turn=", peaks[1])
+        gene.print_arr(turn_line_info['same_price_list'])
+        # 狭すぎるレンジでは実行しない
+        if (turn_line_info['same_price_list_till_break_5_total'] >= 10 and
+                flop_line_info['same_price_list_till_break_5_total'] >= 10 and
+                abs(peaks[1]['latest_body_peak_price'] - peaks[0]['latest_body_peak_price']) <= 0.1):
+            print(s, "turn抵抗線とflop抵抗線が強く、その幅が狭い（極めて狭いレンジ）のでNG) ",
+                  turn_line_info['same_price_list_till_break_5_total'],
+                  flop_line_info['same_price_list_till_break_5_total'],
+                  abs(peaks[1]['latest_body_peak_price'] - peaks[0]['latest_body_peak_price']))
+            return 0
 
-        # 判定
-        # ② 最小値より前(時系列的には直近側）で1.5倍以上のRangeがある行
-        before_rows = df_r_10.loc[:min_idx - 1]
-        before_cond_rows = before_rows[before_rows["bb_range"] >= min_val * 1.23]  # データフレームのミスに気が付く前は1.25
-        # ③ 最小値より後で1.4倍以上のRangeがある行
-        after_rows = df_r_10.loc[min_idx + 1:]
-        after_cond_rows = after_rows[after_rows["bb_range"] >= min_val * 1.4]
-
-        # 条件を満たすか？
-        peaks_hour_skip = self.peaks_class_hour.skipped_peaks
-        before_cond = not before_cond_rows.empty
-        after_cond = not after_cond_rows.empty
-        # 両方を満たす場合True
-        result = before_cond and after_cond
-        # 最終のカウント
-        latest_count = peaks_hour_skip[0]['count']
-        if result and not head_is_minimum:
-            # 砂時計型にも2種類
-            if latest_count <= 4:
-                is_glass_shape = True
-                is_glass_shape_long = False
-            else:
-                is_glass_shape = True
-                is_glass_shape_long = True
-            # 初回の砂時計型か？
-            if len(before_cond_rows) == 1:
-                is_first_glass_shape = True  # 形が砂時計、かつ、最新
-            else:
-                is_first_glass_shape = False  # 形は砂時計だが、最新の砂時計ではない
-        else:
-            is_glass_shape = False
-            is_glass_shape_long = False
-            is_first_glass_shape = False  # 形も違う
-
-        if do_print:
-            print("　★BBアナリシス(Flex）")
-            print(s, "直近の対象時間", df_r_10.iloc[0]['time_jp'])
-            print(s, "最古の対象時間", df_r_10.iloc[-1]['time_jp'])
-            # print(s, "元々のデータフレーム")
-            # print(df_r)
-            print(s, "結果:", result, before_cond, after_cond, )
-            print(s, "最小Range:", min_val, "(index:", min_idx, ")", df_r_10.loc[min_idx]['time_jp'])
-            print(s, "前の数（1の場合は初めて膨らんだところ）", len(before_cond_rows))
-            print(s, "前(直近)の条件を満たす行:", len(before_cond_rows), "行")  # before_cond_rows['time_jp'])
-            print(s, "後の条件を満たす行:", len(after_cond_rows), "行")  # after_cond_rows['time_jp'])
-            print(s, "latestPeakのカウント", peaks_hour_skip[0]['count'], peaks_hour_skip[0]['latest_time_jp'])
-            print(s, "先頭が最小か？", head_is_minimum)
-            print(s, "オーダー判定条件", result, latest_count, "←4より小さいこと", len(before_cond_rows), head_is_minimum, is_first_glass_shape)
-            # if is_glass_shape:
-            #     print(s, "オーダーあり", result, latest_count, "←4より小さいこと", len(before_cond_rows), head_is_minimum)
-            # else:
-            #     print(s, "オーダーなし", result, latest_count, "←4より小さいこと", len(before_cond_rows), head_is_minimum)
-
-        order_class = None
-        if is_first_glass_shape:
-            if is_glass_shape and not is_glass_shape_long:
-                # 従来の型（turn　Countが4個以内のもの）
-                peaks_hard_skip = self.peaks_class.skipped_peaks_hard
-                latest_peak = peaks_hard_skip[0]
-                d = int(latest_peak['direction'])  # ピークの方向（１は上側）
-                latest_price = latest_peak['latest_body_peak_price']
-                order_class1 = OCreate.Order({
-                    "name": "トレンド 砂時計通常",
-                    "current_price": latest_price,
-                    "target": 0,
-                    "direction": self.bb_latest_position_in_bb,
-                    "type": "MARKET",
-                    "tp": ave.cal_move_ave(5),  # self.ca60.cal_move_ave(1),
-                    "lc": ave.cal_move_ave(3),  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
-                    "lc_change": self.make_lc_change_dic("H1"),
-                    "units": self.units_str * 1,
-                    "priority": 11,
-                    "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca,
-                    "lc_change_candle_type": "H1",
-                })
-                # self.add_order_to_this_class(order_class1)
-                order_class = order_class1
-                is_ordered = True
-            elif is_glass_shape and is_glass_shape_long:
-                # 従来の型ではないが、検証する（長いトレンドの後）
-                peaks_hard_skip = self.peaks_class.skipped_peaks_hard
-                latest_peak = peaks_hard_skip[0]
-                d = int(latest_peak['direction'])  # ピークの方向（１は上側）
-                latest_price = latest_peak['latest_body_peak_price']
-                order_class1 = OCreate.Order({
-                    "name": "トレンド 砂時計Long",
-                    "current_price": latest_price,
-                    "target": 0,
-                    "direction": self.bb_latest_position_in_bb,
-                    "type": "MARKET",
-                    "tp": ave.cal_move_ave(5),  # self.ca60.cal_move_ave(1),
-                    "lc": ave.cal_move_ave(3),  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
-                    "lc_change": self.make_lc_change_dic("H1"),
-                    "units": self.units_str * 1,
-                    "priority": 11,
-                    "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca,
-                    "lc_change_candle_type": "H1",
-                })
-                # self.add_order_to_this_class(order_class1)
-                order_class = order_class1
-                is_ordered = True
-
-        return {
-            "is_ordered": is_ordered,  # オーダーが起きたもの（
-            "is_glass_shape": is_glass_shape,  # longであろうと、通常であろうと、とにかく砂時計型かどうか
-            "is_glass_shape_long": is_glass_shape_long,  # longの場合
-            "bb_shape": "glass",
-            "is_first_glass_shape": is_first_glass_shape,
-            "order_class": order_class
-        }
-
-    def bb_trumpet_analysis(self, target_df, do_order, do_print):
-        s = self.s
-        ave = self.ca60  # self.ca5
-        is_trend = False
-        is_order = False
-        is_ordered = False
-        order_class = None
-
-        bb_trumpet = self.bb_shape_with_fixed_row_analysis(target_df, 0, do_print)  # 現在での成立を検討する
-        bb_trumpet_older = self.bb_shape_with_fixed_row_analysis(target_df, 1, do_print)  # 一つ昔の条件で実施(重複防止)
-
-        if bb_trumpet['bb_shape'] == "trumpet":
-            if bb_trumpet['bb_shape'] == bb_trumpet_older['bb_shape']:
-                is_trend = True
-                is_order = False
-                # print(s, "直近でも成立しているが、その前でも成立する⇒今回はオーダーなし")
-            else:
-                print(s, "★★トランペットの初回成立")
-                shape_type = "trumpet"
-                is_trend = True
-                is_order = True
-
-        if is_trend and is_order:
-            peaks_hard_skip = self.peaks_class.skipped_peaks_hard
-            latest_peak = peaks_hard_skip[0]
-            d = int(latest_peak['direction'])  # ピークの方向（１は上側）
-            latest_price = latest_peak['latest_body_peak_price']
+        if turn_line_info['same_price_list_till_break_5_total'] >= 13:
+            print(s, "シンプルターンのオーダーをしたい！", latest_price)
             order_class1 = OCreate.Order({
-                "name": "トレンドtrumpet",
+                "name": "抵抗線形成ターン(抵抗される方向）",
                 "current_price": latest_price,
-                "target": 0,
-                "direction": self.bb_latest_position_in_bb,
-                "type": "MARKET",
-                "tp": ave.cal_move_ave(5),  # self.ca60.cal_move_ave(1),
-                "lc": ave.cal_move_ave(3),  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
-                "lc_change": self.make_lc_change_dic("H1"),
-                "units": self.units_str * 1,
-                "priority": 11,
+                "target": ave.cal_move_ave(0.1),
+                "direction":  peaks[0]['direction'],
+                "type": "STOP",  # "MARKET",
+                "tp": 0.1,  # ave.cal_move_ave(3),  ,
+                "lc": ave.cal_move_ave(1.6),  # width,
+                "lc_change": self.make_lc_change_dic("M5"),
+                "units": self.units_str * 1.2,
+                "priority": 7,
                 "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
                 "candle_analysis_class": self.ca,
-                "lc_change_candle_type": "H1",
+                "lc_change_candle_type": "M5",
             })
-            order_class = order_class1
+            # オーダーの追加
+            self.add_order_to_this_class(order_class1)
 
-        return{
-            "order_class": order_class,
-            "is_trend": is_trend,
-            "is_order": is_order
-        }
-
-    def bb_shape_with_fixed_row_analysis(self, df_r, slicer, do_print=True):
-        """
-        BBの形状を見る。
-        slicerは、固定する行数を底上げする（ひとつ前の足での成立を確認し、重複でのオーダーを避けたい）
-        """
-        # (0)共通で利用する変数
-        s = self.s
-        df_r_10 = copy.deepcopy(df_r[:15])
-        ave = self.ca60  # self.ca5
-        is_ordered = False
-
-        # 最後まで処理を実施しない場合
-        if pd.isna(df_r_10.iloc[-1]['bb_range']):
-            print("最終行のbb_rangeがNaNのため対象外。（大量データでの検証時に起こりうる）@@@")
-            return {"bb_shape": ""}  # Noneのまま進むとエラーになるので、ここで終了（リターン）
-
-        # （1）平行型の調査　データフレームの固定された行を利用する
-        allowed_ratio = 0.8  # 2割程度のサイズの違いは同等とみなす
-        check_point1 = 0 + slicer  # 直近
-        check_point2 = 7 + slicer  # 12足前
-        check_point3 = 11 + slicer  # 24足前 ⇒ここはトランペット特化にするため18に
-        bb1 = df_r_10.iloc[check_point1]
-        bb2 = df_r_10.iloc[check_point2]
-        bb3 = df_r_10.iloc[check_point3]
-
-        # BBの広さと、現在の価格の位置関係を抑える
-        self.bb_range = bb1['bb_range']
-        self.bb_upper = bb1['bb_upper']
-        self.bb_lower = bb1['bb_lower']
-        self.bb_current_ratio = 100 * (self.bb_upper - self.current_price) / (self.bb_upper - self.bb_lower)
-        # 現在の位置関係
-        C = self.current_price
-        C = self.latest_peak_price
-        dist_to_A = abs(C - self.bb_upper)
-        dist_to_B = abs(C - self.bb_lower)
-        # 基準を選択（等距離ならA）
-        if dist_to_A <= dist_to_B:
-            base = "UPPER"
-            percent = 100 * (self.bb_upper - C) / (self.bb_upper - self.bb_lower)
-        else:
-            base = "LOWER"
-            percent = 100 * (C - self.bb_lower) / (self.bb_upper - self.bb_lower)
-        bb_latest_peak_ratio = 100 * (self.bb_upper - self.latest_peak_price) / (self.bb_upper - self.bb_lower)
-
-        # 幅が同じでも、移動している場合があるため、三つのラップ率を算出する（直近のBBに対して、何割ラップしているか）
-        pairs = [(bb1['bb_lower'], bb1['bb_upper']),
-                 (bb2['bb_lower'], bb2['bb_upper']),
-                 (bb3['bb_lower'], bb3['bb_upper'])]
-        base_start, base_end = pairs[0]
-        base_len = base_end - base_start
-        results = []
-        for i, (start, end) in enumerate(pairs[1:], start=2):
-            # 重なり計算
-            overlap_start = max(base_start, start)
-            overlap_end = min(base_end, end)
-            overlap = max(0, overlap_end - overlap_start)
-
-            # 基準区間に対する重なり率（0〜1）
-            overlap_rate = overlap / (base_end - base_start)
-
-            # サイズ比（自身 / 基準
-            length = end - start
-            size_ratio = length / base_len
-
-            # タグ判定
-            lower_out = start < base_start
-            upper_out = end > base_end
-            if lower_out and upper_out:
-                tag = "両方に外れている"
-            elif lower_out:
-                tag = "下に外れている"
-            elif upper_out:
-                tag = "上に外れている"
-            else:
-                tag = "内側"
-
-            results.append({
-                "index": i,
-                "range": round(abs(length), 3),
-                "rap_ratio": round(overlap_rate * 100, 1),  # %
-                "size_ratio": round(size_ratio, 2),  # 直近を基準にした、各々のサイズ比率（BBなので2倍くらいなら同じとみなすかも）
-                "tag": tag,
-                "kukan": f"{start}-{end}"
-            })
-
-        # 重なり判定
-        r0 = results[0]['rap_ratio']  # ０とついているが、直近を含めない、一番最初という意味
-        r1 = results[1]['rap_ratio']
-        rap_res = 0
-        rap_comment = ""
-        t = str(r0) + "," + str(r1)
-        sr0 = results[0]['size_ratio']  # ０とついているが、直近を含めない、一番最初という意味
-        sr1 = results[1]['size_ratio']
-        ts = str(sr0) + "," + str(sr1)
-        # サイズ感の処理
-        size_res = 0
-        bb_shape = ""
-
-        bb_shape_jpn_detail = ""
-        bb_trend = ""
-        if abs(sr0 - sr1) < 0.3:
-            # ■残り二つが同じサイズ
-            # ①完全平行系
-            if 0.73 <= sr0 <= 1.23 and 0.73 <= sr0 <= 1.23:
-                bb_shape = "parallel"
-                # ■■ラップ率で傾きを判断
-                # if r0 >= 88 and r1 >= 88:
-                b = 70
-                if r0 >= b and r1 >= b:
-                    bb_shape_jpn_detail = "フラット"
-                    bb_trend = "range"
-                elif r0 >= b and r1 < b:
-                    bb_shape_jpn_detail = "直近トレンド（平行折り返し後）"
-                    bb_trend = "range"
-                elif r0 < b and r1 < b-10 and r0 > r1:
-                    bb_shape_jpn_detail = "平行移動のトレンド"
-                    bb_trend = "parallel_trend"
-                    if bb3['bb_upper'] > bb2['bb_upper']:
-                        print("右肩下がり")
-                        bb_trend = bb_trend + "get_low"
-                    else:
-                        print("右肩上がり")
-                        bb_trend = bb_trend + "get_high"
-                else:
-                    bb_shape_jpn_detail = "平行移動のトレンドっぽいが微妙に違う"
-
-            # ②前側平行系(ラッパ型）
-            # elif sr0 < 0.73 and sr1 < 0.73:
-            elif sr0 < 0.73 and sr1 < 0.73:
-                bb_shape = "trumpet"
-                # ■■ラップで傾きを判定
-                if r0 >= 90 and r1 >= 90:
-                    bb_shape_jpn_detail = "ラッパ型トレンドからの発散系"
-                    bb_trend = "trend"
-                elif r0 < 85:
-                    if r1 <= 60:
-                        bb_shape_jpn_detail = "ラッパ型トレンド"
-                        bb_trend = "trend"
-                    else:
-                        bb_shape_jpn_detail = "ラッパ型トレンド（前ラップ大）"
-                        bb_trend = "trend"
-                else:
-                    bb_shape_jpn_detail = "ラッパ型中途半端"
-            # ③後側平衡系（収束系）
-            elif sr0 > 1.3 and sr1 > 1.3:
-                bb_shape = "re-trumpet"
-                bb_trend = "range"
-                # ■■ラップで傾きを判定
-                if r0 >= 85:
-                    if r1 >= 95:
-                        bb_shape_jpn_detail = "逆トランペット"
-                    elif r1 <= 70:
-                        bb_shape_jpn_detail = "逆トランペット＿変動後の収束"
-                    else:
-                        bb_shape_jpn_detail = "逆トランぺット中途半端１"
-                elif r0 < 85:
-                    if r1 <= 70:
-                        bb_shape_jpn_detail = "逆トランペット＿変動後の収束２"
-                    else:
-                        bb_shape_jpn_detail = "逆トランペット中途半端２"
-            else:
-                bb_shape = "UnKnown"
-        elif sr0 > sr1 + 0.4:
-            # ■発散系（直前が最初より明らかに大きい）
-            # ①直前が1より小さい（直近が一番大きくなるフラッグ）
-            if sr0 < 0.8:
-                bb_shape = "bigbang"
-                bb_trend = "trend"
-                # ■■ラップで傾きを判定
-                if r0 >= 90:
-                    if r1 >= 90:
-                        bb_shape_jpn_detail = "ビッグバン型"
-                    else:
-                        bb_shape_jpn_detail = "ビッグバン型　初期ちょいずれ"
-                else:
-                    if r1 >= 90:
-                        bb_shape_jpn_detail = "ビッグバン型　トレンドに入りそう"
-                    else:
-                        bb_shape_jpn_detail = "ビッグバン型　トレンド"
-            elif 0.8 <= sr0 <= 1.3:
-                bb_shape = "semi_flat_from_small"
-                bb_shape_jpn_detail = "semi_flat_from_small"
-                bb_trend = "range"
-            else:
-                bb_shape = "中膨れ系(1時間程度の強変動後)"
-                bb_shape_jpn_detail = "中膨れ系（一時間程度の強変動後）"
-                bb_trend = "range"
-        elif sr1 > sr0 + 0.4:
-            # ■収束系
-            # ①直前が1より小さい（直近が一番大きくなるフラッグ）
-            if sr0 < 0.8:
-                bb_shape = "中すぼみ系"
-                bb_shape_jpn_detail = "中すぼみ系（一時間程度の強変動）⇒発散？？"
-                bb_trend = "trend"
-            elif 0.8 <= sr0 <= 1.3:
-                bb_shape = "semi_flat_from_big"
-                bb_shape_jpn_detail = "semi_flat_from_big"
-                bb_trend = "range"
-            else:
-                bb_shape = "flag"
-                # ■■ラップで傾きを判定
-                if r0 >= 95:
-                    if r1 >= 95:
-                        bb_shape_jpn_detail = "フラッグ型　両サイド収束"
-                        bb_trend = "trend"
-                    else:
-                        bb_shape_jpn_detail = "フラッグ型　両サイド収束ちょいずれ"
-                        bb_trend = "trend"
-                else:
-                    if r1 >= 90:
-                        bb_shape_jpn_detail = "フラッグ型　ブレイク気味"
-                        bb_trend = "trend"
-                        # bb_trend = "break"
-                    else:
-                        bb_shape_jpn_detail = "フラッグ型　トレンド"
-                        bb_trend = "trend"
-
-
-        if do_print:
-            if slicer == 0:
-                print("　★BBアナリシス(Fixed）")
-                # 重複の表示は重くなるので、初回分だけ表示。
-                print(s, "ベースとなる直近のBB幅", base_len)
-                for r in results:
-                    print(s, r)
-                print(self.s, bb1['time_jp'], bb1['bb_range'], bb1['bb_upper'])
-                print(self.s, bb2['time_jp'], bb2['bb_range'], bb2['bb_upper'])
-                print(self.s, bb3['time_jp'], bb3['bb_range'], bb3['bb_upper'])
-                print(self.s, "【BB形状元々】結果", bb_shape, str(ts), bb_shape_jpn_detail)
-                self.line_comment_add("BB形状結果", "【" + bb_trend + "】" + str(ts) + ",　" + str(t))
-
-        return {
-            "bb_shape": bb_shape,  # 実際はサイズのみで判断（ずれは使っていない）
-            "bb_shape_jpn_detail": bb_shape_jpn_detail,
-            "bb_trend": bb_trend,
-            "shape_comment": bb_shape,
-            "bb_time": bb1["time_jp"]
-        }
-
-    # def first_of_trumpet_analysis(self, df_r, peaks_class, bb_shape, hour_glass_shape, hour_glass_shape_min_time):
-    #     """
-    #     1時間足だと、トレンドに入ってから13時間程度で安定に移行する傾向がある
-    #     トレンドに入ったと推測される時刻を求める。
-    #     """
-    #     print("13時間判定", bb_shape, hour_glass_shape)
-    #     s = self.s
-    #     dj_max = 13  # 13時間をレンジトレンドの周期とする
-    #     peaks_hard_skip = peaks_class.skipped_peaks_hard
-    #
-    #     if bb_shape == "trumpet":
-    #         latest_peak = peaks_hard_skip[0]
-    #         latest_time_str = latest_peak['latest_time_jp']
-    #         latest_time = datetime.strptime(latest_time_str, '%Y/%m/%d %H:%M:%S')
-    #         turn_peak = peaks_hard_skip[1]
-    #         turn_time_str = turn_peak['latest_time_jp']
-    #         turn_time = datetime.strptime(turn_time_str, '%Y/%m/%d %H:%M:%S')
-    #
-    #
-    #         gap_latest_turn_time_min = gene.cal_str_time_gap(latest_time_str, turn_time_str)['gap_abs_min']
-    #         gap_latest_turn_time_hour = round(gap_latest_turn_time_min / 60, 0)
-    #
-    #         # 参考用？（何時までトレンドが続くかの時間を求める）
-    #         plus_time_from_turn = datetime.strptime(turn_time_str, '%Y/%m/%d %H:%M:%S') + timedelta(hours=dj_max)
-    #         plus_time_from_turn_str = plus_time_from_turn.strftime('%Y/%m/%d %H:%M:%S')
-    #
-    #         # BBの広がる直前を抜く
-    #         allowed_range = 0.02
-    #         df_r = df_r.reset_index(drop=True)  # for分のためにインデックスを振りなおす
-    #         count = 0
-    #         bb_start_time_str = ""
-    #         bb_start_time = 0
-    #         stop_time_from_bb = 0
-    #         stop_time_from_bb_str = ""
-    #         # print("korekore")
-    #         # print(df_r.head(2))
-    #         # print(df_r.tail(1))
-    #         for index, row in df_r.iterrows():
-    #             if index + 1 >= len(df_r):
-    #                 break
-    #             this_gap = row['bb_range']
-    #             next_gap = df_r.iloc[index + 1]['bb_range']
-    #             # print(row['time_jp'], df_r.iloc[index + 1]['time_jp'])
-    #             # print(index, row['time_jp'], round(row['bb_range'], 3))
-    #             ratio = round(next_gap / this_gap, 2)   # 小さくなる（時間的にさかのぼると）前提。＝1以下になるのが前提
-    #             if 1 >= ratio >= 0.96:
-    #                 count = count + 1
-    #             else:
-    #                 count = 0
-    #
-    #             if count == 2:
-    #                 # 2足以上BBが同じようなサイズだったら、そこがスタート(最初の一つ）
-    #                 bb_start_time_str = row["time_jp"]
-    #                 bb_start_time = datetime.strptime(bb_start_time_str, '%Y/%m/%d %H:%M:%S')
-    #                 stop_time_from_bb = datetime.strptime(bb_start_time_str, '%Y/%m/%d %H:%M:%S') + timedelta(hours=dj_max)
-    #                 stop_time_from_bb_str = stop_time_from_bb.strftime('%Y/%m/%d %H:%M:%S')
-    #                 break
-    #
-    #         # 時間差の話
-    #         # print("test用", stop_time_from_bb, latest_time, count)
-    #         if stop_time_from_bb == 0:
-    #             return 0
-    #         turn_diff = (plus_time_from_turn - latest_time).total_seconds() / 3600
-    #         bb_start_diff = (stop_time_from_bb - latest_time).total_seconds() / 3600
-    #         # 近い方・遠い方を判定
-    #         if abs(turn_diff) < abs(bb_start_diff):
-    #             near, far = ("time1", turn_diff), ("time2", bb_start_diff)
-    #         else:
-    #             near, far = ("time2", bb_start_diff), ("time1", turn_diff)
-    #         # 結果表示
-    #         print(s, f"近い方: {near[0]}（現在から {near[1]:.2f} 時間差）", )
-    #         print(s, f"遠い方: {far[0]}（現在から {far[1]:.2f} 時間差）")
-    #
-    #         # オーダーを発行する
-    #         d = int(latest_peak['direction'])  # ピークの方向（１は上側）
-    #         latest_price = latest_peak['latest_body_peak_price']
-    #         # 抵抗線が抵抗する方向（Range）⇒即時発行
-    #         order_class1 = OCreate.Order({
-    #             "name": "トランペット13" + str(hour_glass_shape),
-    #             "current_price": latest_price,
-    #             "target": 0,
-    #             "direction": d,
-    #             "type": "MARKET",
-    #             "tp": self.ca60.cal_move_ave(1.5),  # self.ca60.cal_move_ave(1),
-    #             "lc": self.ca60.cal_move_ave(1.5),  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
-    #             "lc_change": self.make_lc_change_dic("H1"),
-    #             "units": self.units_str,
-    #             "priority": 7,
-    #             "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-    #             "candle_analysis_class": self.ca,
-    #             "lc_change_candle_type": "H1",
-    #         })
-    #         # self.add_order_to_this_class(order_class1)
-    #         # order_class2 = OCreate.Order({
-    #         #     "name": "Break側（HEDGE）",
-    #         #     "current_price": self.peaks_class.latest_price,
-    #         #     "target": gap_latest_turn_peak + self.ca5.cal_move_ave(1.5),
-    #         #     "direction": d,
-    #         #     "type": "STOP",
-    #         #     "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
-    #         #     "lc": self.base_lc_range,
-    #         #     "lc_change": self.make_lc_change_dic("H1"),
-    #         #     "units": self.units_hedge,
-    #         #     "priority": 4,
-    #         #     "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-    #         #     "candle_analysis_class": self.ca,
-    #         #     "lc_change_candle_type": "H1"
-    #         # })
-    #         # # self.add_order_to_this_class(order_class2)
-    #         # # リンケージをたがいに登録する
-    #         # order_class1.add_linkage(order_class2)
-    #         # order_class2.add_linkage(order_class1)
-    #         # オーダーの追加
-    #         self.add_order_to_this_class(order_class1)
-    #         # self.add_order_to_this_class(order_class2)
-    #
-    #         # 表示セクション
-    #         print(s, "現在時刻", latest_time_str, "(ターンより", gap_latest_turn_time_hour, "時間後)")
-    #         print(s, "ターン時刻", turn_time_str, "単純予測時刻（＋１３）", plus_time_from_turn_str)
-    #         print(s, "BB発散開始時刻", bb_start_time_str, "BB起点のトレンド終了予測時刻", stop_time_from_bb_str)
-    #
-    #         comment = gene.str_merge("現在時刻", latest_time_str, "(ターンより", gap_latest_turn_time_hour, "時間後)\n")
-    #         comment = gene.str_merge(comment, "ターン時刻", turn_time_str, "単純予測時刻（＋１３）", plus_time_from_turn_str, "\n")
-    #         comment = gene.str_merge(comment, "BB発散開始時刻", bb_start_time_str, "BB起点のトレンド終了予測時刻", stop_time_from_bb_str)
-    #         self.line_send(comment)
-    #         self.line_comment_add("BB形状結果(13H判定)", comment)
-    #     elif hour_glass_shape:
-    #         latest_peak = peaks_hard_skip[0]
-    #         latest_time_str = latest_peak['latest_time_jp']
-    #         latest_time = datetime.strptime(latest_time_str, '%Y/%m/%d %H:%M:%S')
-    #         turn_peak = peaks_hard_skip[1]
-    #         turn_time_str = turn_peak['latest_time_jp']
-    #         turn_time = datetime.strptime(turn_time_str, '%Y/%m/%d %H:%M:%S')
-    #
-    #         # ターン基準の13時間後
-    #         plus_time_from_turn = datetime.strptime(turn_time_str, '%Y/%m/%d %H:%M:%S') + timedelta(hours=dj_max)
-    #         plus_time_from_turn_str = plus_time_from_turn.strftime('%Y/%m/%d %H:%M:%S')
-    #
-    #         # BBの一番細いところの起点
-    #         bb_start_time_str = hour_glass_shape_min_time
-    #         bb_start_time = datetime.strptime(bb_start_time_str, '%Y/%m/%d %H:%M:%S')
-    #         stop_time_from_bb = datetime.strptime(bb_start_time_str, '%Y/%m/%d %H:%M:%S') + timedelta(hours=dj_max)
-    #         stop_time_from_bb_str = stop_time_from_bb.strftime('%Y/%m/%d %H:%M:%S')
-    #
-    #         if stop_time_from_bb == 0:
-    #             return 0
-    #         turn_diff = (plus_time_from_turn - latest_time).total_seconds() / 3600
-    #         bb_start_diff = (stop_time_from_bb - latest_time).total_seconds() / 3600
-    #         # 近い方・遠い方を判定
-    #         if abs(turn_diff) < abs(bb_start_diff):
-    #             near, far = ("time1", turn_diff), ("time2", bb_start_diff)
-    #         else:
-    #             near, far = ("time2", bb_start_diff), ("time1", turn_diff)
-    #         # 結果表示
-    #         print(s, "現在", latest_time_str, "BB細い部分", bb_start_time_str, "Turn", turn_time_str)
-    #         print(s, f"近い方: {near[0]}（現在から {near[1]:.2f} 時間差）", )
-    #         print(s, f"遠い方: {far[0]}（現在から {far[1]:.2f} 時間差）")
-    #
-    #         # 近いほうも1時間以上あれば、取得する
-    #         if near[1] >= 1:
-    #             print(s, "1時間以上あるので取得します")
-    #         else:
-    #             print(s, "1時間いないなので、もうこれ以上伸びないと判定")
-    #
-    #         # オーダーを発行する
-    #         d = int(latest_peak['direction'])  # ピークの方向（１は上側）
-    #         latest_price = latest_peak['latest_body_peak_price']
-    #         order_class1 = OCreate.Order({
-    #             "name": "砂時計型",
-    #             "current_price": latest_price,
-    #             "target": 0,
-    #             "direction": d,
-    #             "type": "MARKET",
-    #             "tp": self.ca60.cal_move_ave(1.5),  # self.ca60.cal_move_ave(1),
-    #             "lc": self.ca60.cal_move_ave(1.5),  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
-    #             "lc_change": self.make_lc_change_dic("H1"),
-    #             "units": self.units_str,
-    #             "priority": 11,
-    #             "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-    #             "candle_analysis_class": self.ca,
-    #             "lc_change_candle_type": "H1",
-    #         })
-    #         # self.add_order_to_this_class(order_class1)
-    #         # order_class2 = OCreate.Order({
-    #         #     "name": "Break側（HEDGE）",
-    #         #     "current_price": self.peaks_class.latest_price,
-    #         #     "target": gap_latest_turn_peak + self.ca5.cal_move_ave(1.5),
-    #         #     "direction": d,
-    #         #     "type": "STOP",
-    #         #     "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
-    #         #     "lc": self.base_lc_range,
-    #         #     "lc_change": self.make_lc_change_dic("M5"),
-    #         #     "units": self.units_hedge,
-    #         #     "priority": 4,
-    #         #     "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-    #         #     "candle_analysis_class": self.ca,
-    #         #     "lc_change_candle_type": "H1"
-    #         # })
-    #         # # self.add_order_to_this_class(order_class2)
-    #         # # リンケージをたがいに登録する
-    #         # order_class1.add_linkage(order_class2)
-    #         # order_class2.add_linkage(order_class1)
-    #         # オーダーの追加
-    #         self.add_order_to_this_class(order_class1)
 
     def support_line_analysis(self):
-        print("サポートラインアナリシス")
+        print("　　■サポートラインアナリシス")
         s = self.s
         line_mes = ""
         peaks = self.peaks_class.peaks_original
@@ -2284,52 +1475,6 @@ class MainAnalysis:
         print(" ターン抵抗線の向きと強さと価格", turn['latest_time_jp'], turn['direction'], turn['latest_body_peak_price'],
               turn_info['same_price_list_till_break_5_total'])
         gene.print_arr(turn_info['same_price_list'])
-
-        # ■■オーダーセクション
-        # if turn_info['same_price_list_till_break_5_total'] >= 15:
-        #     d = int(turn_info['d'])  # ピークの方向（１は上側）
-        #     line_price = turn_info['target_price']
-        #     ave = self.ca5.cal_move_ave(4)  # 平均の足4個分
-        #     gap_latest_turn_peak = peaks[0]['gap']
-        #     # 抵抗線が抵抗する方向（Range）⇒即時発行
-        #     order_class1 = OCreate.Order({
-        #         "name": "抵抗される側",
-        #         "current_price": self.peaks_class.latest_price,
-        #         "target": 0,
-        #         "direction": d * -1,
-        #         "type": "MARKET",
-        #         "tp": self.ca5.cal_move_ave(2),
-        #         "lc": gap_latest_turn_peak + self.ca5.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
-        #         "lc_change": self.lc_change_test,
-        #         "units": self.units_str,
-        #         "priority": 4,
-        #         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-        #         "candle_analysis_class": self.ca,
-        #         "lc_change_candle_type": "M5",  # M5の場合は、order_classで自動補完されるが、念のため
-        #     })
-        #     # self.add_order_to_this_class(order_class1)
-        #     order_class2 = OCreate.Order({
-        #         "name": "Break側（HEDGE）",
-        #         "current_price": self.peaks_class.latest_price,
-        #         "target": gap_latest_turn_peak + self.ca5.cal_move_ave(1.5),
-        #         "direction": d,
-        #         "type": "STOP",
-        #         "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
-        #         "lc": self.base_lc_range,
-        #         "lc_change": self.lc_change_test,
-        #         "units": self.units_hedge,
-        #         "priority": 4,
-        #         "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-        #         "candle_analysis_class": self.ca,
-        #         "lc_change_candle_type": "M5",  # M5の場合は、order_classで自動補完されるが、念のため
-        #     })
-        #     # self.add_order_to_this_class(order_class2)
-        #     # リンケージをたがいに登録する
-        #     order_class1.add_linkage(order_class2)
-        #     order_class2.add_linkage(order_class1)
-        #     # オーダーの追加
-        #     self.add_order_to_this_class(order_class1)
-        #     self.add_order_to_this_class(order_class2)
 
     def support_line_detect(self, target_no):
         # ②抵抗線を探す（上側）
