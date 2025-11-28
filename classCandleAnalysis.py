@@ -36,6 +36,7 @@ class candleAnalysis:
 
         # # ■■　重複でAPIを打つことを避けたい
         if candleAnalysis.latest_df_d5_df_r is None:
+            print("データ取得せず（同じデータがないため、新規で取得）")
             t1 = 0
             pass
         else:
@@ -46,9 +47,10 @@ class candleAnalysis:
                     t1.day == t2.day and
                     t1.hour == t2.hour and
                     t1.minute == t2.minute)
-            # print("既存のDataFrameと同じかどうか？", same)
+            print("既存のデータのfrom", candleAnalysis.latest_df_d5_df_r.iloc[0]['time_jp'])
+            print("既存のDataFrameと同じかどうか？", same, t1, t2)
             if same:
-                # print("同じデータのため、データ新規取得＆Peaks生成は呼ばず(主にcandleLCChangeで発生)  既存:", t1, ",現時刻:", t2)
+                print("同じデータのため、データ新規取得＆Peaks生成は呼ばず(主にcandleLCChangeで発生)  既存:", t1, ",現時刻:", t2)
                 # データを移植する（5分足）
                 self.d5_df_r = candleAnalysis.latest_df_d5_df_r
                 self.peaks_class = candleAnalysis.latest_peaks_class
@@ -60,8 +62,13 @@ class candleAnalysis:
                 return
 
         # ■■データ取得
-        print("データ取得＆Peaks生成", t1, datetime.datetime.now())
         self.get_date_df(target_time_jp)  # self.d5_df_rとself.d60_df_rを取得
+        if self.d5_df_r is None:
+            print("データ取得＆Peaks生成 失敗？？")
+        else:
+            print("現在時刻（本番時のみ意味あり）", datetime.datetime.now())
+            print("データ取得＆Peaks生成  データfrom", self.d5_df_r.iloc[0]['time_jp'], "to", self.d5_df_r.iloc[-1]['time_jp'])
+
         # ■■処理続行判定
         # 重複作業防止用に、クラス変数に5分足の最初と最後の情報を入れておく
         if self.d5_df_r is None:

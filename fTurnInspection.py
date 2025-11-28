@@ -1420,9 +1420,9 @@ class MainAnalysis:
         if turn_line_info['same_price_list_till_break_5_total'] >= 13:
             print(s, "シンプルターンのオーダーをしたい！", latest_price)
             order_class1 = OCreate.Order({
-                "name": "抵抗線形成ターン(抵抗される方向）",
+                "name": "抵抗線形成ターン(抵抗される方向）" + str(latest_price),
                 "current_price": latest_price,
-                "target": ave.cal_move_ave(0.1),
+                "target": 0.01,  #ave.cal_move_ave(0.1),
                 "direction":  peaks[0]['direction'],
                 "type": "STOP",  # "MARKET",
                 "tp": 0.1,  # ave.cal_move_ave(3),  ,
