@@ -44,7 +44,7 @@ intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
                         path + file_name_head + "_test_s5_df.csv",
                        500,  # 1か月単位でやる場合、ここは3400  数日間の場合は750位でいい
                        1,  # 1か月単位でやる場合、ここは2
-                       " テスト" + file_name_head,
+                       " テスト 砂時計にLCchangeミニ" + file_name_head,
                        False,  # グラフの描画あり
                        "",
                         True,  # キャッシュの保存

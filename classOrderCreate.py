@@ -21,7 +21,7 @@ class Order:
         # 色々なオーダーに必要になる初期値
         self.instrument = "USD_JPY"
         self.base_oa_mode = 2  # デフォルトの口座は2(両建て用）
-        self.basic_unit = 100
+        self.basic_unit = 10000
         self.basic_lc_range = 1  # 1円
         self.trade_timeout_min_base = 240
         self.order_timeout_min_base = 60
