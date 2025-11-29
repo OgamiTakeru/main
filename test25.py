@@ -34,8 +34,8 @@ file_name_head = "2025_10"
 file_name_head = "2025_4_11"
 intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
                         ti.MainAnalysis,  # インスタンス化前のクラスを渡す
-                        False,
-                        # True,
+                        # False,
+                        True,
                         # datetime.datetime(2023, 9, 10, 23, 40, 6),  # 謎の飛びデータ
                        #  datetime.datetime(2023, 9, 23, 23, 40, 6),  # Break系のいいマイナスデータ
                         datetime.datetime(2025, 11, 21, 18, 0, 55),  #ここが最後

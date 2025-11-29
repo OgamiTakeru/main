@@ -242,20 +242,26 @@ class BbAnalysis:
         # (4)13時間以内に砂時計かトランペットがあったかどうか
         trend_range_hour = 13
         is_previous = False
-        for i in range(1, trend_range_hour + 1):  # 1からスタートする（０はすでにやっているため）
+        previous_time = ""
+        gap_min = ""
+        for i in range(trend_range_hour + 1, 1, -1):  # 1からスタートする（０はすでにやっているため）
             # ①砂時計型の確認
             target_df = df_r[i:i + 15]  # 直近から15行（15時間分が範囲）
             loop_glass_res = self.bb_glass_analysis(target_df, False)
             loop_trumpet_res = self.bb_trumpet_analysis(target_df, False)
             if loop_glass_res['is_ordered'] or loop_trumpet_res['is_ordered']:
                 is_previous = True
-                print(s, "トレンド開始点あり", target_df.iloc[0]['time_jp'], "glass", loop_glass_res['is_ordered'],
-                      ", trumpet", loop_trumpet_res['is_ordered'])
+                previous_time = target_df.iloc[0]['time_jp']
                 break  # 13時間以内で見つけたら終了
             else:
                 is_previous = False
         self.is_previous = is_previous
-        print("13足以内のトレンド", is_previous)
+        # 表示用（発見されたトレンドの開始点が今より何分前か）
+        if previous_time != "":
+            gap_min = gene.cal_str_time_gap(previous_time, self.latest_time)['gap_abs_min']
+        else:
+            gap_min = 0
+        print("13足以内のトレンド", is_previous, previous_time, ",", gap_min)
 
         # (5)オーダーを入れる
         if foot == "H1":
@@ -374,7 +380,7 @@ class BbAnalysis:
                     "direction": latest_price_position_in_bb,
                     "type": "MARKET",
                     "tp": ave.cal_move_ave(5),  # self.ca60.cal_move_ave(1),
-                    "lc": ave.cal_move_ave(3),  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
+                    "lc": ave.cal_move_ave(1.7),  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
                     "lc_change": self.make_lc_change_dic(),
                     "units": self.units_str * 1,
                     "priority": 11,
@@ -392,7 +398,7 @@ class BbAnalysis:
                     "direction": latest_price_position_in_bb,
                     "type": "MARKET",
                     "tp": ave.cal_move_ave(5),  # self.ca60.cal_move_ave(1),
-                    "lc": ave.cal_move_ave(3),  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
+                    "lc": ave.cal_move_ave(1.7),  # + self.ca60.cal_move_ave(1),  # self.ca5.cal_move_ave(2.5),
                     "lc_change": self.make_lc_change_dic(),
                     "units": self.units_str * 1,
                     "priority": 11,
@@ -873,6 +879,7 @@ class MainAnalysis:
                         # {"exe": True, "time_after": 0, "trigger": 0.01,
                         #  "ensure": -1},
                         # {"exe": True, "time_after": 1500, "trigger": -1, "ensure": -1 * ca.cal_move_ave(1)},  # ほぼLC
+                        {"exe": True, "time_after": 600, "trigger": 0.098, "ensure": 0.11},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(1.7), "ensure": ca.cal_move_ave(1.5)},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(2.3), "ensure": ca.cal_move_ave(2)},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(3.3), "ensure": ca.cal_move_ave(3)},
@@ -1387,6 +1394,7 @@ class MainAnalysis:
         ave = self.ca.candle_class_hour
         latest_time = self.latest_time
         bb_h1_class = self.bb_h1_class  # この結果が必須！
+        bb_m5_class = self.bb_m5_class  # この結果も必須”
 
         # 途中終了の場合
         if peaks[1]['gap'] < 0.04:
@@ -1400,6 +1408,9 @@ class MainAnalysis:
         if self.take_position_flag:
             print(s, "既にオーダーがあるため、抵抗線オーダーは行わない。")
             return 0
+        # if bb_m5_class.is_previous:
+        #     print(s, "5分足でのトレンド直後のため、抵抗線オーダーは行わない")
+        #     return 0
 
         # ■解析
         # (1)ターンが抵抗線かを確認
@@ -1420,13 +1431,13 @@ class MainAnalysis:
         if turn_line_info['same_price_list_till_break_5_total'] >= 13:
             print(s, "シンプルターンのオーダーをしたい！", latest_price)
             order_class1 = OCreate.Order({
-                "name": "抵抗線形成ターン(抵抗される方向）" + str(latest_price),
+                "name": "抵抗線形成ターン(抵抗される方向）",
                 "current_price": latest_price,
                 "target": 0.01,  #ave.cal_move_ave(0.1),
-                "direction":  peaks[0]['direction'],
-                "type": "STOP",  # "MARKET",
-                "tp": 0.1,  # ave.cal_move_ave(3),  ,
-                "lc": ave.cal_move_ave(1.6),  # width,
+                "direction": peaks[0]['direction'],
+                "type": "LIMIT",  # "STOP",  # "MARKET",
+                "tp": 0.2,  # ave.cal_move_ave(3),  ,
+                "lc": 0.15,  # ave.cal_move_ave(1.6),  # width,
                 "lc_change": self.make_lc_change_dic("M5"),
                 "units": self.units_str * 1.2,
                 "priority": 7,
@@ -2007,6 +2018,7 @@ class TuneAnalysisInformation:
         """
         # rt_ratio_sk = round(r_sk['gap'] / t_sk['gap'], 3)
         self.lo_ratio = round(later_peak['gap'] / older_peak['gap'], 3)
+
 
 class predict_turn_analysis:
     def __init__(self, candle_analysis):
