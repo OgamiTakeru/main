@@ -18,6 +18,7 @@ class position_control:
     # 履歴ファイル
     def __init__(self, is_live):
         # 変数の宣言
+        self.u = 3
         self.position_classes = []
         self.count_true = 0
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)
@@ -26,8 +27,8 @@ class position_control:
         self.peaks_class = ""  # クラスアップデートの時に利用する（ポジションクラスに引数として渡すため）
 
         # 最大所持個数の設定
-        self.max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
-        self.middle_priority_num = 2  # ミドルプライオリティ(max_position_numのうち）
+        self.max_position_num = 15  # 最大でも10個のポジションしかもてないようにする
+        self.middle_priority_num = 8  # ミドルプライオリティ(max_position_numのうち）
         self.high_priority_num = 1  # ハイプライオリティのもの（max_position_numのうち）
 
         self.high_i_to = self.max_position_num
@@ -153,14 +154,14 @@ class position_control:
                         # print(res_dic['order_name'])
                         # print(res_dic)
                         line_send = line_send + "◆【" + str(res_dic['order_name']) + "】を即時ポジションなしで発行" + \
-                                    "指定価格:【" + str(round(res_dic['order_result']['price'], 3)) + "】" + \
+                                    "指定価格:【" + str(round(res_dic['order_result']['price'], self.u)) + "】" + \
                                     ",DIR:" + str(res_dic['order_result']['direction']) + \
                                     ", 数量:" + str(res_dic['order_result']['units']) + \
-                                    ", TP:" + str(round(res_dic['order_result']['tp_price'], 3)) + \
-                                    "(" + str(round(res_dic['order_result']['tp_range'], 3)) + ")" + \
-                                    ", LC:" + str(round(res_dic['order_result']['lc_price'], 3)) + \
-                                    "(" + str(round(res_dic['order_result']['lc_range'], 3)) + ")" + \
-                                    ", AveMove:" + str(round(res_dic['ref']['move_ave'], 3)) + \
+                                    ", TP:" + str(round(res_dic['order_result']['tp_price'], self.u)) + \
+                                    "(" + str(round(res_dic['order_result']['tp_range'], self.u)) + ")" + \
+                                    ", LC:" + str(round(res_dic['order_result']['lc_price'], self.u)) + \
+                                    "(" + str(round(res_dic['order_result']['lc_range'], self.u)) + ")" + \
+                                    ", AveMove:" + str(round(res_dic['ref']['move_ave'], self.u)) + \
                                     "[システム]classNo:" + str(class_index) + ",\n"
                         break
                     else:
@@ -173,10 +174,10 @@ class position_control:
                                     ", 数量:" + str(o_trans['units']) + \
                                     ", タイプ:" + order_class.ls_type + \
                                     ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
-                                    "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
+                                    "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), self.u)) + ")" + \
                                     ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
-                                    "(" + str(round(abs(float(o_trans['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), 3)) + ")" + \
-                                    ", AveMove:" + str(round(res_dic['ref']['move_ave'], 3)) + \
+                                    "(" + str(round(abs(float(o_trans['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), self.u)) + ")" + \
+                                    ", AveMove:" + str(round(res_dic['ref']['move_ave'], self.u)) + \
                                     ", OrderID:" + str(res_dic['order_id']) + \
                                     ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "[システム]classNo:" + str(class_index) + ",\n"
                                     # "\n"
@@ -387,6 +388,9 @@ class position_control:
         """
         終わってしまったポジションから、残っているポジションを変えに行く、という方向。
         """
+        margin = 0.01
+        lc_range = 0.03
+
         # print("PositionControlのリンケージセクション", len(self.position_classes))
         for main_position in self.position_classes:
             # print("★★", main_position.name, "のリンケージ残存を確認")
@@ -446,7 +450,7 @@ class position_control:
                             pass
                         else:
                             # 残されたオーダーがマイナス域の場合（こっちがメインのケース）
-                            new_lc_range = abs(0.03) + 0.01
+                            new_lc_range = abs(lc_range) + margin
                             dir = int(left_position.plan_json['direction'])
                             # tk.line_send("    LC変更kakumin", main_position.lose_max_plu, left_position.t_pl_u, bigger_minus)
                             print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
@@ -488,7 +492,7 @@ class position_control:
                         else:
                             # 残されたオーダーがマイナス域の場合（こっちがメインのケース）
                             bigger_minus = min(float(main_position.lose_max_plu), float(left_position.t_pl_u))
-                            new_lc_range = abs(bigger_minus) + 0.01
+                            new_lc_range = abs(bigger_minus) + margin
                             dir = int(left_position.plan_json['direction'])
                             # tk.line_send("    LC変更kakumin", main_position.lose_max_plu, left_position.t_pl_u, bigger_minus)
                             print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
@@ -523,8 +527,8 @@ class position_control_for_test(position_control):
         # self.temp_file_name = memo
 
         # 最大所持個数の設定
-        self.max_position_num = 10  # 最大でも10個のポジションしかもてないようにする
-        self.middle_priority_num = 4  # ミドルプライオリティ(max_position_numのうち）
+        self.max_position_num = 15  # 最大でも10個のポジションしかもてないようにする
+        self.middle_priority_num = 8  # ミドルプライオリティ(max_position_numのうち）
         self.high_priority_num = 1  # ハイプライオリティのもの（max_position_numのうち）
 
         self.high_i_to = self.max_position_num

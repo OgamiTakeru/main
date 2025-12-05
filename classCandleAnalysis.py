@@ -191,9 +191,11 @@ class eachCandleAnalysis:
         # データ入れる用
         self.df_r = peaks_class.df_r_original
         self.peaks_class = peaks_class
+        self.u = 3
         # 初期値
         self.ave_move = 0
         self.ave_move_for_lc = 0
+        self.dependence_large_body_criteria = 0.1
 
         # データを取得する(5分足系）
         if granularity == "M5":
@@ -252,7 +254,7 @@ class eachCandleAnalysis:
         sorted_df = filtered_df.sort_values(by='body_abs', ascending=False)
         max_high = sorted_df["inner_high"].max()
         min_low = sorted_df['inner_low'].min()
-        self.recent_fluctuation_range = round(max_high - min_low, 3)
+        self.recent_fluctuation_range = round(max_high - min_low, self.u)
         self.ave_move = filtered_df.head(5)["highlow"].mean()
         self.ave_move_for_lc = self.ave_move * 1.6
         # print("   ＜稼働範囲サマリ＞")
@@ -306,7 +308,7 @@ class eachCandleAnalysis:
         filtered_df = self.peaks_class.df_r_original[:5]  # 直近4時間の場合、12×4 48
         sorted_df = filtered_df.sort_values(by='body_abs', ascending=False)
         max_body = sorted_df["body_abs"].max()
-        if max_body >= 0.1:
+        if max_body >= self.dependence_large_body_criteria:
             self.is_big_move_candle = True
         else:
             self.is_big_move_candle = False

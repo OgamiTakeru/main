@@ -109,7 +109,7 @@ class Order:
             "decision_time": self.decision_time,
             "units": self.units,
             "direction": self.direction,
-            "target_price": round(self.target_price, 3),
+            "target_price": round(self.target_price, self.u),
             "lc_price": self.lc_price,  # 途中で変更される可能性あり（常に最新のLC価格を保持する物）
             "lc_range": self.lc_range,
             "tp_price": self.tp_price,  # 途中で変更される可能性あり（常に最新のTP価格を保持する物）
@@ -331,9 +331,9 @@ class Order:
         # アラート機能
         if "alert" in order_json and "range" in order_json['alert']:
             # if isinstance(plan['alert']['range'], int)
-            temp_range = round(order_json['alert']['range'], 3)
+            temp_range = round(order_json['alert']['range'], self.u)
             temp_price = round(order_json['target_price'] - (
-                        order_json['alert']['range'] * order_json['direction']), 3)
+                        order_json['alert']['range'] * order_json['direction']), self.u)
             # 改めて入れなおしてしまう（別に上書きでもいいんだけど）
             order_json['alert'] = {"range": temp_range, "alert_price": temp_price, "time": 0}
         else:
@@ -358,20 +358,27 @@ class Order:
         # self.finalized_order['lc_change'] = [] # 初期化
         # print("lc_change order create 324")
         # print(self.order_json)
+
         if "lc_change" not in order_json:
             # typeしていない場合はノーマルを追加
-            self.add_lc_change_defence()
+            print("ディフェンスLCチェンジ")
+            # self.add_lc_change_defence()
+            self.add_lc_change_start_with_dic(order_json['lc_change'])
         else:
             if isinstance(order_json['lc_change'], int):
                 # print("処理A: int型です", order_json['lc_change_type'])
                 # 指定されている場合は、指定のLC_Change処理へ
                 if order_json['lc_change'] == 1:
+                    print("ディフェンスLCチェンジ")
                     self.add_lc_change_defence()
                 elif order_json['lc_change'] == 0:
+                    print("Noチェンジ")
                     self.add_lc_change_no_change()
                 elif order_json['lc_change'] == 3:
+                    print("オッフェンスLCチェンジ")
                     self.add_lc_change_offence()
             else:
+                print("スタートLCチェンジ")
                 self.add_lc_change_start_with_dic(order_json['lc_change'])
 
     def add_lc_change_no_change(self):
@@ -427,15 +434,15 @@ class Order:
             # {"exe": True, "time_after": 0, "trigger": 0.15, "ensure": 0.1},
             # {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
             # {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
+            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 4.00, "ensure": 4},
         ]
         # print("   渡されたLcChange", dic_arr)
         # print("　　最終的なLcChange", add)
-        self.lc_change = dic_arr + add
+        self.lc_change = dic_arr
 
     def add_lc_change_defence(self):
         """

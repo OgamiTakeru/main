@@ -69,6 +69,8 @@ class order_information:
         self.order_class = None
         self.linkage_order_classes = []
         self.linkage_done = False
+        self.u = 3
+        self.lc_ensure_range_border = 0.01  # lc_changeで確保できる利益が、この値以下の場合は、実施しない。
         # self.reset()
         self.ORDER_TIMEOUT_MIN_DEFAULT = 40  # 分単位で指定
         self.TRADE_TIMEOUT_MIN_DEFAULT = 2400  # 分単位で指定
@@ -439,7 +441,7 @@ class order_information:
                 }}  # 返り値を揃えるため、強引だが辞書型を入れておく
 
         return {"order_name": self.name, "order_id": order_res['order_id'], "order_result": order_res['order_result']
-                , "ref": {"move_ave": round(plan['move_ave'], 3)}}
+                , "ref": {"move_ave": round(plan['move_ave'], self.u)}}
 
     def make_order(self):
         """
@@ -510,7 +512,7 @@ class order_information:
             elif order_information.total_yen < order_information.total_yen_min:
                 order_information.total_yen_min = order_information.total_yen
             # TotalのPLuを求める
-            order_information.total_PLu = round(order_information.total_PLu + trade_latest['PLu'], 3)
+            order_information.total_PLu = round(order_information.total_PLu + trade_latest['PLu'], self.u)
             if order_information.total_PLu > order_information.total_PLu_max:
                 order_information.total_PLu_max = order_information.total_PLu
             elif order_information.total_PLu < order_information.total_PLu_min:
@@ -523,7 +525,7 @@ class order_information:
         else:
             # 価格情報の更新
             order_information.total_yen = round(order_information.total_yen + float(trade_latest['unrealizedPL']), 2)
-            order_information.total_PLu = round(order_information.total_PLu + trade_latest['PLu'], 3)
+            order_information.total_PLu = round(order_information.total_PLu + trade_latest['PLu'], self.u)
             # 計算する（回数）
             if float(trade_latest['unrealizedPL']) <= 0:
                 order_information.minus_yen_position_num = order_information.minus_yen_position_num + 1
@@ -833,8 +835,6 @@ class order_information:
             self.close_order()
 
     def trade_update_and_close(self):
-        dependence_win_max_plu_max = 0.05
-        dependence_t_pl_u_max = 0.03
         trade_latest = self.t_json  # とりあえず入れ替え（update関数で取得した最新の情報）
         # print("こっちでも", trade_latest)
         # トレード情報の更新
@@ -990,7 +990,7 @@ class order_information:
                         transaction_info['transactions'][0]['requestedUnits'])  # 暫定的に相殺した分に置き換え
                     trade_latest['state'] = "CLOSE"
                     trade_latest['PLu'] = round(float(trade_latest['unrealizedPL']) / abs(
-                        float(transaction_info['transactions'][0]['requestedUnits'])), 3)
+                        float(transaction_info['transactions'][0]['requestedUnits'])), 2)
                     self.t_json = trade_latest  # Json自体も格納
                     # ★この場合に限り、このオーダーは存在しなくなるため、Close処理を実施する
                     self.life_set(False)
@@ -1060,14 +1060,14 @@ class order_information:
                         ", 数量:" + str(o_trans['units']) + \
                         ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
                         "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(self.plan_json['target_price'])),
-                                        3)) + ")" + \
+                                        self.u)) + ")" + \
                         ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
                         "(" + str(
                 round(abs(float(o_trans['stopLossOnFill']['price']) - float(self.plan_json['target_price'])),
-                      3)) + ")" + \
+                      self.u)) + ")" + \
                         ", OrderID:" + str(order_res['order_id']) + \
                         ", Alert:" + str(self.alert_range) + \
-                        "(" + str(round(self.alert_price, 3)) + ")" + \
+                        "(" + str(round(self.alert_price, self.u)) + ")" + \
                         ", 取得価格:" + str(
                 order_res['order_result']['execution_price']) + ",\n"
             tk.line_send(line_send)
@@ -1112,7 +1112,7 @@ class order_information:
             if (round(self.step1_keeping_second, 0) % 15 == 0 and round(self.step1_keeping_second, 0) != 0) or 1 <= round(self.step1_keeping_second, 0) <= 2:
                 pass
                 # print(" ウォッチング内容（STOP）", self.step1_filled, "発行時:", gene.time_to_str(self.step1_filled_time),
-                #       round(self.step1_filled_over_price, 3), "円",
+                #       round(self.step1_filled_over_price, self.u), "円",
                 #       round(self.step1_keeping_second, 0),
                 #       "bordertime", self.step1_keeping_time_border,
                 #       "ウォッチ開始時間(0は無効中）", self.step1_filled_time)
@@ -1535,11 +1535,14 @@ class order_information:
             lc_ensure_range = item['ensure']
             lc_trigger_range = item['trigger']
             lc_change_waiting_time_sec = item['time_after']
+            # print("       ", lc_exe, "trigger", lc_trigger_range, "t_pl_u", self.t_pl_u, lc_change_waiting_time_sec)
+
             if "time_till" in item:
                 # 指定の時間まで実行
                 lc_change_till_sec = item['time_till']
             else:
                 lc_change_till_sec = 100000  #
+            # print("         ", self.t_pl_u >= lc_trigger_range, "待機指定時間", lc_change_waiting_time_sec, lc_change_till_sec)
 
             # このループで実行しない場合（フラグオフの場合、DoneがTrueの場合^
             # if not lc_exe or 'done' in item or self.t_time_past_sec < lc_change_waiting_time_sec:
@@ -1555,8 +1558,9 @@ class order_information:
                 # lc_Changeがおかしいので確認用(初回のLCChange確認なのに、0番目（最初が０とは限らないけど、、）に済がある場合はおかしい
                 diff_seconds = datetime.datetime.now() - item['time_done']
                 continue
-            elif self.t_time_past_sec < lc_change_waiting_time_sec or self.t_time_past_sec < lc_change_till_sec:
-                # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
+            elif self.t_time_past_sec < lc_change_waiting_time_sec or self.t_time_past_sec > lc_change_till_sec:
+                # 経過時間(past_sec)が既定の待ち時間に達していない（以下）、または、経過時間が指定の時間以上だった場合、実行しない。
+                # print("         時間未達", self.t_time_past_sec < lc_change_waiting_time_sec, self.t_time_past_sec < lc_change_till_sec)
                 status_res = status_res + gene.str_merge("[", i, "] 時間未達",  "lc_exe:", lc_exe,
                                                          "時間", lc_change_waiting_time_sec, "～", lc_change_till_sec,
                                                          "現pl" + str(self.t_pl_u), ",指定Trigger", lc_trigger_range,
@@ -1575,7 +1579,7 @@ class order_information:
                 # これで配列の中の辞書って変更できるっけ？？
                 item['done'] = True
                 item['time_done'] = datetime.datetime.now()
-                new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan_json['direction']), 3)
+                new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan_json['direction']), self.u)
                 data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
                 res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
                 if res['error'] == -1:
@@ -1584,10 +1588,10 @@ class order_information:
                 item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
                 # ★注意　self.plan["lc_price"]は更新しない！（元の価格をもとに、決めているため）⇒いや、変えてもいい・・？
                 if self.send_line_exe:
-                    self.send_line("　(LC底上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3), "⇒", new_lc_price,
-                                   "Border:", round(lc_trigger_range, 3), "保証", round(lc_ensure_range, 3), "Posiprice",
+                    self.send_line("　(LC底上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], self.u), "⇒", new_lc_price,
+                                   "Border:", round(lc_trigger_range, self.u), "保証", round(lc_ensure_range, self.u), "Posiprice",
                                    self.t_execution_price,
-                                   "予定価格", round(self.plan_json['target_price'], 3))
+                                   "予定価格", round(self.plan_json['target_price'], self.u))
                 # LC Priceの入れ替え
                 self.plan_json['lc_price'] = new_lc_price
                 break
@@ -1686,8 +1690,8 @@ class order_information:
         # ポジション取得から５分経過、かつ、temp_lc_priceがマイナス域でなく、利益が1pips以上確約できる場合、LCをlc_price_tempに移動する
         take_position_price = float(self.t_json['price'])
         lc_ensure_range = abs(take_position_price - lc_price_temp)
-        if lc_ensure_range <= 0.01:
-            print(" 確保できる利益幅が0.01以下のため、変更なし")
+        if lc_ensure_range <= self.lc_ensure_range_border:
+            print(" 確保できる利益幅が", self.lc_ensure_range_border, "以下のため、変更なし")
             return 0
 
         # マイナス域の場合は、処理しない
@@ -1702,20 +1706,16 @@ class order_information:
             # print("lc_priceにしたい価格", lc_price_temp, "　が取得価格", take_position_price, "より大きいためプラス確保のLCにならずNG")
             return 0
 
-        # レンジ換算の時、大きすぎないかを確認
-        if lc_ensure_range >= 0.08:
-            print("range換算で大きすぎる・・・？", lc_ensure_range)
-
         # LCチェンジ執行
         self.lc_change_candle_done = True  # このクラス自体にLCChangeを実行した後をつけておく（各LCChange条件ではなく）
-        new_lc_price = round(lc_price_temp, 3)
+        new_lc_price = round(lc_price_temp, self.u)
         data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
         res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
         if res['error'] == -1:
             self.send_line("    LC変更ミス＠lc_change")
             return 0  # APIエラー時は終了
         self.lc_change_from_candle_lc_price = lc_price_temp  # ロスカット価格の保存
-        lc_range = round(abs(float(lc_price_temp) - float(self.t_execution_price)), 5)
+        lc_range = round(abs(float(lc_price_temp) - float(self.t_execution_price)), self.u)
         self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
         if self.send_line_exe:
             self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "新LC価格⇒", new_lc_price,
@@ -1726,54 +1726,54 @@ class order_information:
         # LC Priceの入れ替え
         self.plan_json['lc_price'] = new_lc_price
 
-    def tuning_by_history_break(self):
-        """
-        検討中
-        呼びもとで過去１回分の結果を参照し、それが大きなLCだった場合は、この関数を呼ぶ。
-        この関数は、リスクをとってそのLCと同額をTPとする。
-        """
-
-        tp_up_border_minus = -0.045  # これ以上のマイナスの場合、取り返しに行く。
-        # 過去の履歴を確認する
-        if len(order_information.history_plus_minus) == 1:
-            # 過去の履歴が一つだけの場合
-            latest_plu = order_information.history_plus_minus[-1]
-            # print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", order_information.history_plus_minus[-1])
-        else:
-            # 過去の履歴が二つ以上の場合、直近の二つの合計で判断する
-            latest_plu = order_information.history_plus_minus[-1] + order_information.history_plus_minus[-2]  # 変数化(短縮用)
-            # print("  直近の勝敗pips", latest_plu, "詳細(直近)", order_information.history_plus_minus[-1],
-            #       order_information.history_plus_minus[-2])
-        # 最大でも現実的な10pips程度のTPに収める
-        # if abs(latest_plu) >= 0.01:
-        #     latest_plu = 0.01
-
-        # 値を調整する
-        # print("tuning @ classPosition1283, ", latest_plu, "<=", tp_up_border_minus)
-        if latest_plu == 0:
-            print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
-            # 通常環境の場合
-            is_previous_lose = False
-            tp_range = 0.5
-            lc_change_type = 3
-        else:
-            if latest_plu <= tp_up_border_minus:
-                is_previous_lose = True
-                print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）", latest_plu * 0.8)
-                # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
-                tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
-                lc_change_type = 4  # LCchangeの設定なし
-                # tk.line_send("取り返し調整発生")
-            else:
-                # 直近がプラスの場合プラスの場合、普通。
-                print("  ★前回プラスのため、通常TP設定")
-                is_previous_lose = False
-                tp_range = 0.5
-                lc_change_type = 3  # LCchangeの設定なし
-
-        return {"is_previous_lose": is_previous_lose,
-                "tuned_tp_range": tp_range,
-                "tuned_lc_change_type": lc_change_type}
+    # def tuning_by_history_break(self):
+    #     """
+    #     検討中
+    #     呼びもとで過去１回分の結果を参照し、それが大きなLCだった場合は、この関数を呼ぶ。
+    #     この関数は、リスクをとってそのLCと同額をTPとする。
+    #     """
+    #
+    #     tp_up_border_minus = -0.045  # これ以上のマイナスの場合、取り返しに行く。
+    #     # 過去の履歴を確認する
+    #     if len(order_information.history_plus_minus) == 1:
+    #         # 過去の履歴が一つだけの場合
+    #         latest_plu = order_information.history_plus_minus[-1]
+    #         # print("  直近の勝敗pips", latest_plu, "詳細(直近1つ)", order_information.history_plus_minus[-1])
+    #     else:
+    #         # 過去の履歴が二つ以上の場合、直近の二つの合計で判断する
+    #         latest_plu = order_information.history_plus_minus[-1] + order_information.history_plus_minus[-2]  # 変数化(短縮用)
+    #         # print("  直近の勝敗pips", latest_plu, "詳細(直近)", order_information.history_plus_minus[-1],
+    #         #       order_information.history_plus_minus[-2])
+    #     # 最大でも現実的な10pips程度のTPに収める
+    #     # if abs(latest_plu) >= 0.01:
+    #     #     latest_plu = 0.01
+    #
+    #     # 値を調整する
+    #     # print("tuning @ classPosition1283, ", latest_plu, "<=", tp_up_border_minus)
+    #     if latest_plu == 0:
+    #         print("  初回(本番)かAnalysisでのTP調整執行⇒特に何もしない（TPの設定等は行う）")
+    #         # 通常環境の場合
+    #         is_previous_lose = False
+    #         tp_range = 0.5
+    #         lc_change_type = 3
+    #     else:
+    #         if latest_plu <= tp_up_border_minus:
+    #             is_previous_lose = True
+    #             print("  ★マイナスが大きいため、取り返し調整（TPを短縮し、確実なプラスを狙いに行く）", latest_plu * 0.8)
+    #             # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
+    #             tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
+    #             lc_change_type = 4  # LCchangeの設定なし
+    #             # tk.line_send("取り返し調整発生")
+    #         else:
+    #             # 直近がプラスの場合プラスの場合、普通。
+    #             print("  ★前回プラスのため、通常TP設定")
+    #             is_previous_lose = False
+    #             tp_range = 0.5
+    #             lc_change_type = 3  # LCchangeの設定なし
+    #
+    #     return {"is_previous_lose": is_previous_lose,
+    #             "tuned_tp_range": tp_range,
+    #             "tuned_lc_change_type": lc_change_type}
 
     def catch_exist_position(self, name, oa_mode, priority, json):
         """
@@ -1854,6 +1854,7 @@ class order_information:
             # {"exe": True, "time_after": min10, "trigger": 0.025, "ensure": 0.01},
             # {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": 0.004},  # -0.02が強い
             # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
+            # {"exe": True, "time_after": min10, "trigger": -0.05, "ensure": -1},
             {"exe": True, "time_after": min10, "trigger": 0.05, "ensure": 0.012},
             {"exe": True, "time_after": min10, "trigger": 0.08, "ensure": 0.044},
             {"exe": True, "time_after": min10, "trigger": 0.20, "ensure": 0.15},
@@ -1880,14 +1881,14 @@ class order_information:
             return 0  # APIエラー時は終了
         self.linkage_done_func()
         if self.send_line_exe:
-            self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3),
+            self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], self.u),
                            "⇒", new_lc_price,
                            self.t_execution_price,
-                           "予定価格", round(self.plan_json['target_price'], 3))
-        self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], 3),
+                           "予定価格", round(self.plan_json['target_price'], self.u))
+        self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], self.u),
                        "⇒", new_lc_price,
                        self.t_execution_price,
-                       "予定価格", round(self.plan_json['target_price'], 3))
+                       "予定価格", round(self.plan_json['target_price'], self.u))
         self.plan_json['lc_price'] = new_lc_price
 
     def linkage_tp_change(self, new_tp_price):
@@ -1902,14 +1903,14 @@ class order_information:
             return 0  # APIエラー時は終了
         self.linkage_done_func()
         if self.send_line_exe:
-            self.send_line("　(LinkageTP上げ)", self.name, self.t_pl_u, round(self.plan_json['TP_price'], 3),
+            self.send_line("　(LinkageTP上げ)", self.name, self.t_pl_u, round(self.plan_json['TP_price'], self.u),
                            "⇒", new_tp_price,
                            self.t_execution_price,
-                           "予定価格", round(self.plan_json['target_price'], 3))
-            self.send_line("　(LinkageTP上げ)", self.name, self.t_pl_u, round(self.plan_json['TP_price'], 3),
+                           "予定価格", round(self.plan_json['target_price'], self.u))
+            self.send_line("　(LinkageTP上げ)", self.name, self.t_pl_u, round(self.plan_json['TP_price'], self.u),
                            "⇒", new_tp_price,
                            self.t_execution_price,
-                           "予定価格", round(self.plan_json['target_price'], 3))
+                           "予定価格", round(self.plan_json['target_price'], self.u))
             self.plan_json['tp_price'] = new_tp_price
 
     def linkage_forced_lc_change_setting(self, main_plu, pl_u):
@@ -1938,12 +1939,12 @@ class order_information:
         tr = main_plu * -1  # 想定されているのはマイナス域で、どれだけマイナスを減らすか。
 
         self.lc_change_dic_arr = [
-            {"exe": True, "time_after": 0, "trigger": round(tr / 2, 3), "ensure": round(tr, 3)},  # 負けの半分まで行ったら、、
-            {"exe": True, "time_after": 0, "trigger": round(tr / 3, 3), "ensure": round((tr / 3) * 2, 3)},
+            {"exe": True, "time_after": 0, "trigger": round(tr / 2, self.u), "ensure": round(tr, self.u)},  # 負けの半分まで行ったら、、
+            {"exe": True, "time_after": 0, "trigger": round(tr / 3, self.u), "ensure": round((tr / 3) * 2, self.u)},
         ]
         if self.send_line_exe:
-            self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(tr / 2, 3), "確保", round(tr, 3))
-        self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(tr / 2, 3), "確保", round(tr, 3))
+            self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(tr / 2, self.u), "確保", round(tr, self.u))
+        self.send_line("　(Linkage　マイナス域用LcChangeへ)", self.name, "トリガ", round(tr / 2, self.u), "確保", round(tr, self.u))
 
 
 def position_check_no_args():

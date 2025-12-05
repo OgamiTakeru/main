@@ -341,7 +341,6 @@ class order_information:
             else:
                 tk.line_send(*args)
 
-
     def order_plan_registration(self, order_class):
         """
         【最重要】
@@ -753,7 +752,6 @@ class order_information:
         # pivot_str = "\n".join(lines)
         # print(pivot_str)
         # tk.line_send("■■■:", "\n", pivot_str)
-
 
     def update_dataframe(self, new_data_dic):
         """
@@ -1624,7 +1622,8 @@ class order_information:
                 #     gene.print_arr(self.lc_change_dic_arr)
                 #     self.no_lc_change = False  # 念のため
                 continue
-            elif lc_change_till_sec < self.t_time_past_sec < lc_change_waiting_time_sec:
+            # elif lc_change_till_sec < self.t_time_past_sec < lc_change_waiting_time_sec:  # ←この条件の時、一番プラスがピークだったけれども。。。。
+            elif self.t_time_past_sec < lc_change_waiting_time_sec or self.t_time_past_sec > lc_change_till_sec:
                 # エクゼフラグがFalse、または、done(この項目は実行した時にのみ作成される)が存在している場合、「実行しない」
                 status_res = status_res + gene.str_merge("[", i, "] 時間未達",  "lc_exe:", lc_exe,
                                                          "時間", lc_change_waiting_time_sec, "～", lc_change_till_sec,
@@ -1646,7 +1645,7 @@ class order_information:
                 item['done'] = True
                 item['time_done'] = datetime.datetime.now()
                 new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan_json['direction']), 3)
-                self.lc_kind = "LC_Change"
+                self.lc_kind = "LC_Change" + str(i)
                 # data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
                 # res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
                 # if res['error'] == -1:
@@ -1737,7 +1736,7 @@ class order_information:
                 lc_price_temp = float(df_r.iloc[1]['low']) - order_information.add_margin  # 本番用は並び替え前のため[-2]
             else:
                 # 売り方向の場合、ひとつ前のローソクのHighの値をLC価格に
-                lc_price_temp = float(df_r.iloc[1]['high']) + order_information.add_margin # 本番用は並び替え前のため[-2]
+                lc_price_temp = float(df_r.iloc[1]['high']) + order_information.add_margin  # 本番用は並び替え前のため[-2]
             print("LCcandleChangeにて、直近peakカウント:", peaks[0]['count'], "変更基準ローソク時間:", df_r.iloc[1]['time_jp'])
         else:
             # self.latest_df.iloc[-2]['low']は逆張りの時におかしくなる

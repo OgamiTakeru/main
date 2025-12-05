@@ -49,6 +49,8 @@ class Inspection:
         self.cache = {}
         self.save_cache = save_cache
         self.save_cache_moto = []  # どの時間が足りなかったのかを保存して送付とかするよう（参考用）
+        self.spread = 0.004
+        self.prot_margin = 0.02 # プロットするとき、少しずらす（下が見える世に）
 
         self.analysis_num_m5 = 180  # この足の分のデータフレームを処理する（足ごとに設定）
         self.analysis_num_h1 = 240  # この足の分のデータフレームを処理する（足ごとに設定）
@@ -662,7 +664,7 @@ class Inspection:
         pl = 0  # 念のための初期値だが、このままの場合は異常発生時
         comment = ""
         # スプレッドを考慮した、アジャスターを用意(買いの場合は、売り価格で終了する（-0.004 = スプレッド÷2)。売りの場合はその逆）
-        adjuster = -0.004 if cur_class.direction == 1 else 0.004
+        adjuster = -1*self.spread if cur_class.direction == 1 else self.spread
 
         # 価格による判定
         if cur_row['low'] + adjuster < lc_price < cur_row["high"] + adjuster:
@@ -810,7 +812,7 @@ class Inspection:
             if "PredictLineOrder" in row.get("name", ""):
                 fig.add_trace(go.Scatter(
                     x=[row["order_time"]],
-                    y=[row["take_price"] + 0.2],
+                    y=[row["take_price"] + self.prot_margin],
                     mode="markers",
                     marker=dict(
                         symbol="star",
@@ -916,7 +918,8 @@ def update_order_information_and_take_position(cur_order_class, cur_5s_row, cur_
     引数は対象のクラス(CurrentClass)と、検証対象のデータ行(CurrentRow)と、そのデータ行のインデックス
     """
     # スプレッドを考慮した、アジャスターを用意(買いの場合は、買い価格で開始する（0.004 = スプレッド÷2)。売りの場合はその逆）
-    adjuster = 0.004 if cur_order_class.direction == 1 else -0.004
+    spread = 0.0004
+    adjuster = spread * -1 if cur_order_class.direction == 1 else spread
 
     # watching系
     # cur_order_class.watch_for_order_exe = False
@@ -972,6 +975,7 @@ def update_position_information(cur_class, cur_row, cur_row_index):
     """
     ポジションの情報を更新し（ポジションある状態での実行が前提）、必要に応じてクラスに反映する。
     """
+    spread = 0.004
     # (1)情報の整理
     # ポジションの最高プラスかマイナスを更新する(ロスカットかどうかはとりあえず加味しない）
     upper_gap = cur_row['high'] - cur_class.target_price  # 買いポジの場合はプラス域
@@ -982,7 +986,7 @@ def update_position_information(cur_class, cur_row, cur_row_index):
 
     # PLを計算する(幅があるため、基本はClose価格で計算した損益を使用するが、最大（最もプラスにとらえた）PLや最低PLも取得しておく
     # スプレッドを考慮した、アジャスターを用意(買いの場合は、売り価格で終了する（-0.004 = スプレッド÷2)。売りの場合はその逆）
-    adjuster = -0.004 if cur_class.direction == 1 else 0.004
+    adjuster = spread * -1 if cur_class.direction == 1 else spread
     now_price = cur_row['close']  # 暫定としてクローズ価格を現在価格とする ★NowPriceで考えるため、LCやTP priceとは誤差が出る。
     # 現価＞ターゲットだと現価-ターゲットは正の値。買いポジの場合は＋）
     pl_use_close = round((cur_row['close'] + adjuster - cur_class.target_price) * cur_class.direction,

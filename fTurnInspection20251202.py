@@ -199,7 +199,7 @@ class BbAnalysis:
                     base_dic = [
                         # {"exe": True, "time_after": 0, "trigger": 0.01,
                         #  "ensure": -1},
-                        # {"exe": True, "time_after": 0, "trigger": -1, "ensure": -1 * ave.cal_move_ave(1)},  # ほぼLC
+                        # {"exe": True, "time_after": 1500, "trigger": -1, "ensure": -1 * ca.cal_move_ave(1)},  # ほぼLC
                         {"exe": True, "time_after": 600, "trigger": ave.cal_move_ave(1.7), "ensure": ave.cal_move_ave(1.5)},
                         {"exe": True, "time_after": 600, "trigger": ave.cal_move_ave(2.3), "ensure": ave.cal_move_ave(2)},
                         {"exe": True, "time_after": 600, "trigger": ave.cal_move_ave(3.3), "ensure": ave.cal_move_ave(3)},
@@ -208,7 +208,8 @@ class BbAnalysis:
                 elif foot == "H1":
                     print(s, s, "foot指定有 H1@lc_change")
                     base_dic = [
-                        # {"exe": True, "time_after": 0, "trigger": -1, "ensure": -1 * ave.cal_move_ave(1)},  # ほぼLC
+                        # {"exe": True, "time_after": 0, "trigger": 0.01,
+                        #  "ensure": -1},
                         {"exe": True, "time_after": 600, "trigger": 0.07, "ensure": 0.12},
                         {"exe": True, "time_after": 600, "trigger": ave.cal_move_ave(1.8), "ensure": ave.cal_move_ave(1.2)},
                         {"exe": True, "time_after": 600, "trigger": ave.cal_move_ave(2.5), "ensure": ave.cal_move_ave(1.8)},
@@ -505,7 +506,6 @@ class BbAnalysis:
             "is_first": is_first,
             "is_ordered": is_ordered,
             "is_shape": is_trumpet,
-            "bb_shape": bb_trumpet['bb_shape']
         }
 
     def bb_shape_with_fixed_row_analysis(self, slicer, df_r, do_print):
@@ -530,15 +530,10 @@ class BbAnalysis:
             return {"bb_shape": ""}  # Noneのまま進むとエラーになるので、ここで終了（リターン）
 
         # （1）平行型の調査　データフレームの固定された行を利用する
-        if foot == "H1":
-            check_point1 = 0 + slicer  # 直近
-            check_point2 = 7 + slicer  # 12足前
-            check_point3 = 11 + slicer  # 24足前 ⇒ここはトランペット特化にするため18に
-        else:
-            # M5の場合(逆トランペットを探したい）
-            check_point1 = 0 + slicer  # 直近
-            check_point2 = 4 + slicer  # 12足前
-            check_point3 = 11 + slicer  # 24足前 ⇒ここはトランペット特化にするため18に
+        allowed_ratio = 0.8  # 2割程度のサイズの違いは同等とみなす
+        check_point1 = 0 + slicer  # 直近
+        check_point2 = 7 + slicer  # 12足前
+        check_point3 = 11 + slicer  # 24足前 ⇒ここはトランペット特化にするため18に
         bb1 = df_r.iloc[check_point1]
         bb2 = df_r.iloc[check_point2]
         bb3 = df_r.iloc[check_point3]
@@ -660,26 +655,26 @@ class BbAnalysis:
                         bb_trend = "trend"
                 else:
                     bb_shape_jpn_detail = "ラッパ型中途半端"
-            # # ③後側平衡系（収束系）
-            # elif sr0 > 1.3 and sr1 > 1.3:
-            #     bb_shape = "re-trumpet"
-            #     bb_trend = "range"
-            #     # ■■ラップで傾きを判定
-            #     if r0 >= 85:
-            #         if r1 >= 95:
-            #             bb_shape_jpn_detail = "逆トランペット"
-            #         elif r1 <= 70:
-            #             bb_shape_jpn_detail = "逆トランペット＿変動後の収束"
-            #         else:
-            #             bb_shape_jpn_detail = "逆トランぺット中途半端１"
-            #     elif r0 < 85:
-            #         if r1 <= 70:
-            #             bb_shape_jpn_detail = "逆トランペット＿変動後の収束２"
-            #         else:
-            #             bb_shape_jpn_detail = "逆トランペット中途半端２"
+            # ③後側平衡系（収束系）
+            elif sr0 > 1.3 and sr1 > 1.3:
+                bb_shape = "re-trumpet"
+                bb_trend = "range"
+                # ■■ラップで傾きを判定
+                if r0 >= 85:
+                    if r1 >= 95:
+                        bb_shape_jpn_detail = "逆トランペット"
+                    elif r1 <= 70:
+                        bb_shape_jpn_detail = "逆トランペット＿変動後の収束"
+                    else:
+                        bb_shape_jpn_detail = "逆トランぺット中途半端１"
+                elif r0 < 85:
+                    if r1 <= 70:
+                        bb_shape_jpn_detail = "逆トランペット＿変動後の収束２"
+                    else:
+                        bb_shape_jpn_detail = "逆トランペット中途半端２"
             else:
                 bb_shape = "UnKnown"
-        elif sr0 > sr1 + 0.35:
+        elif sr0 > sr1 + 0.4:
             # ■発散系（直前が最初より明らかに大きい）
             # ①直前が1より小さい（直近が一番大きくなるフラッグ）
             if sr0 < 0.8:
@@ -704,7 +699,7 @@ class BbAnalysis:
                 bb_shape = "中膨れ系(1時間程度の強変動後)"
                 bb_shape_jpn_detail = "中膨れ系（一時間程度の強変動後）"
                 bb_trend = "range"
-        elif sr1 > sr0 + 0.35:
+        elif sr1 > sr0 + 0.4:
             # ■収束系
             # ①直前が1より小さい（直近が一番大きくなるフラッグ）
             if sr0 < 0.8:
@@ -712,7 +707,7 @@ class BbAnalysis:
                 bb_shape_jpn_detail = "中すぼみ系（一時間程度の強変動）⇒発散？？"
                 bb_trend = "trend"
             elif 0.8 <= sr0 <= 1.3:
-                bb_shape = "re-trumpet"
+                bb_shape = "semi_flat_from_big"
                 bb_shape_jpn_detail = "semi_flat_from_big"
                 bb_trend = "range"
             else:
@@ -875,9 +870,10 @@ class MainAnalysis:
                     print(s, s, "foot指定有　5M@lc_change")
                     ca = self.ca5
                     base_dic = [
-                        # {"exe": True, "time_after": 600, "trigger": 0.05, "ensure": 0.11},
-                        # {"exe": True, "time_after": 0, "trigger": -1, "ensure": -1 * ca.cal_move_ave(1)},  # ほぼLC
-                        {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(1), "ensure": ca.cal_move_ave(1) * -1},
+                        # {"exe": True, "time_after": 0, "trigger": 0.01,
+                        #  "ensure": -1},
+                        # {"exe": True, "time_after": 1500, "trigger": -1, "ensure": -1 * ca.cal_move_ave(1)},  # ほぼLC
+                        {"exe": True, "time_after": 600, "trigger": 0.05, "ensure": 0.11},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(1.8), "ensure": ca.cal_move_ave(1.2)},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(2.5), "ensure": ca.cal_move_ave(1.8)},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(3.3), "ensure": ca.cal_move_ave(2.6)},
@@ -889,7 +885,8 @@ class MainAnalysis:
                     print(s, s, "foot指定有 H1@lc_change")
                     ca = self.ca60
                     base_dic = [
-                        # {"exe": True, "time_after": 0, "trigger": -1, "ensure": -1 * ca.cal_move_ave(1)},  # ほぼLC
+                        # {"exe": True, "time_after": 0, "trigger": 0.01,
+                        #  "ensure": -1},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(1.7), "ensure": ca.cal_move_ave(1.5)},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(2.3), "ensure": ca.cal_move_ave(2)},
                         {"exe": True, "time_after": 600, "trigger": ca.cal_move_ave(3.3), "ensure": ca.cal_move_ave(3)},
@@ -998,174 +995,6 @@ class MainAnalysis:
         # (3)ターン起点
         self.predict_registance_turn_analysis()
 
-        # 前負けていたものが、ちゃんと負けるかの確認
-        if self.mode == "inspection":
-            # peaks = self.peaks_class.peaks_original_marked_hard_skip
-            peaks = self.peaks_class.peaks_original
-            r = peaks[0]
-            t = peaks[1]
-            f = peaks[2]
-            if peaks[1]['gap'] < 0.04:
-                print("対象が小さい", peaks[1]['gap'])
-            # ②フラッグ検証（最優先）
-            self.flag_analysis(self.peaks_class.peaks_with_same_price_list)  # いつか分離できるように、引数に明示的に渡しておく
-            if self.take_position_flag:
-                # この時点でフラッグがTrueになっている場合、続きはやらない
-                return 0
-
-            # ③形状の検証
-            # 　-1 BigMoveの場合 (そこそこ優先度高）
-            if r['count'] == 2 and t['include_large']:
-                print("BIG_MOVEテスト")
-                print(t["latest_time_jp"], t['include_large'])
-                self.big_move_r_direction_order()
-                return 0
-            # 　-2 ローソク形状による
-            # 基本的にRiverがTurnより短いもの、かつ、riverカウントが2の物（折り返し直後）が対象。
-            pat = 0
-            comment = ""
-            if self.rt.lo_ratio <= 0.4 and r['count'] == 2:
-                if 0.8 <= self.tf.lo_ratio <= 1.2:
-                    comment = "ftで山形成⇒レンジへ"
-                    pat = 1
-                elif self.tf.lo_ratio <= 0.4:
-                    comment = "ジグザグ⇒ブレイクへ"
-                    pat = 2
-                else:
-                    comment = "中途半端⇒レンジ"
-                    pat = 1
-            elif self.rt.lo_ratio <= 0.9 and r['count'] == 2:
-                comment = "すぐTPしたい"
-                pat = 3
-            else:
-                pass
-
-            if pat == 0:
-                return 0
-            elif pat == 1:
-                # レンジメイン
-                # ■■オーダーを作成＆発行
-                order_class1 = OCreate.Order({
-                    "name": comment,
-                    "current_price": self.peaks_class.latest_price,
-                    "target": 0,
-                    "direction": t['direction'],
-                    "type": "MARKET",
-                    "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
-                    "lc": self.base_lc_range,
-                    "lc_change": self.lc_change_test,
-                    "units": self.units_str,
-                    "priority": 4,
-                    "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca
-                })
-                self.add_order_to_this_class(order_class1)
-                order_class2 = OCreate.Order({
-                    "name": comment + "HEDGE",
-                    "current_price": self.peaks_class.latest_price,
-                    "target": self.ca5.cal_move_ave(1.5),
-                    "direction": r['direction'],
-                    "type": "STOP",
-                    "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
-                    "lc": self.base_lc_range,
-                    "lc_change": self.lc_change_test,
-                    "units": self.units_str,
-                    "priority": 4,
-                    "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca
-                })
-                self.add_order_to_this_class(order_class2)
-                # リンケージをたがいに登録する
-                order_class1.add_linkage(order_class2)
-                order_class2.add_linkage(order_class1)
-            elif pat == 1.5:
-                # レンジメイン(Hedgeなし！）
-                order_class1 = OCreate.Order({
-                    "name": comment,
-                    "current_price": self.peaks_class.latest_price,
-                    "target": 0,
-                    "direction": t['direction'],
-                    "type": "MARKET",
-                    "tp": self.ca5.cal_move_ave(2),  # self.ca5.cal_move_ave(5),
-                    "lc": self.ca5.cal_move_ave(2),  # self.base_lc_range,
-                    "lc_change": self.lc_change_test,
-                    "units": self.units_str,
-                    "priority": 4,
-                    "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca
-                })
-                self.add_order_to_this_class(order_class1)
-            elif pat == 2:
-                # ブレイクメイン
-                order_class1 = OCreate.Order({
-                    "name": comment,
-                    "current_price": self.peaks_class.latest_price,
-                    "target": 0,
-                    "direction": r['direction'],
-                    "type": "MARKET",
-                    "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
-                    "lc": self.base_lc_range,
-                    "lc_change": self.lc_change_test,
-                    "units": self.units_str,
-                    "priority": 4,
-                    "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca
-                })
-                self.add_order_to_this_class(order_class1)
-                order_class2 = OCreate.Order({
-                    "name": comment + "HEDGE",
-                    "current_price": self.peaks_class.latest_price,
-                    "target": self.ca5.cal_move_ave(1.5),
-                    "direction": t['direction'],
-                    "type": "STOP",
-                    "tp": self.base_tp_range,  # self.ca5.cal_move_ave(5),
-                    "lc": self.base_lc_range,
-                    "lc_change": self.lc_change_test,
-                    "units": self.units_str,
-                    "priority": 4,
-                    "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca
-                })
-                self.add_order_to_this_class(order_class2)
-                # リンケージをたがいに登録する
-                order_class1.add_linkage(order_class2)
-                order_class2.add_linkage(order_class1)
-            elif pat == 3:
-                # 動きが少なそうなので、すぐTP狙い
-                order_class1 = OCreate.Order({
-                    "name": comment,
-                    "current_price": self.peaks_class.latest_price,
-                    "target": 0,
-                    "direction": r['direction'],
-                    "type": "MARKET",
-                    "tp": self.ca5.cal_move_ave(2),
-                    "lc": self.ca5.cal_move_ave(2),
-                    "lc_change": self.lc_change_test,
-                    "units": self.units_str,
-                    "priority": 4,
-                    "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca
-                })
-                self.add_order_to_this_class(order_class1)
-                order_class2 = OCreate.Order({
-                    "name": comment + "HEDGE",
-                    "current_price": self.peaks_class.latest_price,
-                    "target": self.ca5.cal_move_ave(1.5),
-                    "direction": t['direction'],
-                    "type": "STOP",
-                    "tp": self.ca5.cal_move_ave(2),  # self.base_tp_range,  # self.ca5.cal_move_ave(5),
-                    "lc": self.ca5.cal_move_ave(2),  # self.base_lc_range,
-                    "lc_change": self.lc_change_test,
-                    "units": self.units_str,
-                    "priority": 4,
-                    "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca
-                })
-                self.add_order_to_this_class(order_class2)
-                # リンケージをたがいに登録する
-                order_class1.add_linkage(order_class2)
-                order_class2.add_linkage(order_class1)
-
     def big_move_r_direction_order(self):
         """
         大きい変動が認められた場合、反発オーダーを順張りで、少し戻った位置で設ける。この場合、LCも入れたいなぁ
@@ -1261,8 +1090,6 @@ class MainAnalysis:
         # (1)BB跨ぎの確認
         # BBを越えていのおカウント
         count = 0
-        is_latest_out = False
-        i = 0
         for idx, row in target_df[:4].iterrows():
             #
             max_val = row['high']
@@ -1301,50 +1128,26 @@ class MainAnalysis:
                 # 下側外れ（完全にBBの外側）（1以上）
                 if low > b:
                     res = 1 + (low - b) / width
-            print(s, row['time_jp'], res, "idx", idx)
+            print(s, row['time_jp'], res)
             print(s, s, "  ", b, high, low)
 
             # 結果のカウント
             if res >= 0.40:
                 count = count + 1
-            if res >= 0.4 and i == 0:
-                is_latest_out = True  # 直近が越えている
-                print(s, "直近もBB越えている")
-            # カウンター作動
-            i = i + 1
         print(s, "BB40パーセント越え数", count)
 
-        if count == 3 and is_latest_out:  # 3の場合のみ。
+        if count == 3:  # 3の場合のみ。
             order_class1 = OCreate.Order({
                 "name": "シンプルBB M5",
                 "current_price": latest_price,
                 "target": 0.013,  #  ave.cal_move_ave(0.25),
                 "direction": bb_latest_position_in_bb5,
                 "type": "LIMIT",  # "MARKET",
-                "tp": 0.25,  # ave.cal_move_ave(3),  ,
+                "tp": 0.1,  # ave.cal_move_ave(3),  ,
                 "lc": ave.cal_move_ave(2),  # width,
                 "lc_change": self.make_lc_change_dic("M5"),
                 "units": self.units_str * 1.2,
-                "priority": 11,
-                "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                "candle_analysis_class": self.ca,
-                "lc_change_candle_type": "M5",
-            })
-            # オーダーの追加
-            self.add_order_to_this_class(order_class1)
-        elif count == 3 and not is_latest_out:
-            print(s, "これはもしかして折り返しが強いかも！！？")
-            order_class1 = OCreate.Order({
-                "name": "シンプルBB 戻し M5",
-                "current_price": latest_price,
-                "target": 0.015,  #  ave.cal_move_ave(0.25),
-                "direction": bb_latest_position_in_bb5 * -1,
-                "type": "STOP",  # "MARKET",
-                "tp": 0.25,  # ave.cal_move_ave(3),  ,
-                "lc": ave.cal_move_ave(2),  # width,
-                "lc_change": self.make_lc_change_dic("M5"),
-                "units": self.units_str * 1.2,
-                "priority": 11,
+                "priority": 7,
                 "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
                 "candle_analysis_class": self.ca,
                 "lc_change_candle_type": "M5",
@@ -1356,7 +1159,7 @@ class MainAnalysis:
         """
         ターンを起点とするオーダー
         """
-        print("■ターン予測のオーダー", self.latest_price)
+        print("■ターン起点のオーダー", self.latest_price)
         # 変数化
         s = self.s
         peaks = self.peaks_class.peaks_original
@@ -1370,36 +1173,12 @@ class MainAnalysis:
         # 途中終了の場合
         if peaks[1]['gap'] < 0.04:
             print("対象が小さい", peaks[1]['gap'])
-        if peaks[0]['count'] != 3:
-            print("直近カウントが3以外(ターン予測位置）", peaks[0]['count'], self.mode)
-            # if peaks[0]['count'] == 2 and self.mode == "inspection":
-            if peaks[0]['count'] == 2:
-                order_class1 = OCreate.Order({
-                    "name": "ちゃんと負けてるかテスト",
-                    "current_price": latest_price,
-                    "target": 0.01,
-                    "direction": peaks[0]['direction'],
-                    "type": "STOP",  # "STOP",  # "MARKET",
-                    "tp": 0.2,  # ave.cal_move_ave(3),  ,
-                    "lc": 0.15,  # ave.cal_move_ave(1.6),  # width,
-                    "lc_change": self.make_lc_change_dic("M5"),
-                    "units": self.units_str,  # 100,
-                    "priority": 5,
-                    "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca,
-                    "lc_change_candle_type": "M5",
-                })
-                self.add_order_to_this_class(order_class1)
+        if peaks[0]['count'] != 2:
+            print("直近カウントが２以外", peaks[0]['count'])
             return 0
-
         # if bb_h1_class.is_previous and (bb_h1_class.latest_price_position_in_bb != peaks[0]['direction']):
         #     print(s, "1時間足のトレンドとlatestの向きが異なるため、抵抗線オーダー無し", bb_h1_class.latest_price_position_in_bb)
         #     return 0
-        if bb_m5_class.trumpet_res['bb_shape'] == "re-trumpet":
-            print("5分足で逆トランペットを発見！")
-            is_re_trumpet = True
-        else:
-            is_re_trumpet = False
         if self.take_position_flag:
             print(s, "既にオーダーがあるため、抵抗線オーダーは行わない。")
             return 0
@@ -1413,24 +1192,32 @@ class MainAnalysis:
         flop_line_info = self.support_line_detect(2)  # turnの抵抗線度合い
         print(s, "SamePriceList", turn_line_info['same_price_list_till_break_5_total'], "turn=", peaks[1])
         gene.print_arr(turn_line_info['same_price_list'])
+        # 狭すぎるレンジでは実行しない
+        if (turn_line_info['same_price_list_till_break_5_total'] >= 10 and
+                flop_line_info['same_price_list_till_break_5_total'] >= 10 and
+                abs(peaks[1]['latest_body_peak_price'] - peaks[0]['latest_body_peak_price']) <= 0.1):
+            print(s, "turn抵抗線とflop抵抗線が強く、その幅が狭い（極めて狭いレンジ）のでNG) ",
+                  turn_line_info['same_price_list_till_break_5_total'],
+                  flop_line_info['same_price_list_till_break_5_total'],
+                  abs(peaks[1]['latest_body_peak_price'] - peaks[0]['latest_body_peak_price']))
+            return 0
 
-        if turn_line_info['same_price_list_till_break_5_total'] >= 10 and is_re_trumpet:  # 理想は13以上？
+        if turn_line_info['same_price_list_till_break_5_total'] >= 13:
             print(s, "シンプルターンのオーダーをしたい！", latest_price)
             order_class1 = OCreate.Order({
-                "name": "抵抗線ターン予測(逆張り）",
+                "name": "抵抗線形成ターン(抵抗される方向）",
                 "current_price": latest_price,
-                "target": peaks[1]['latest_body_peak_price'] + (0.01 * peaks[1]['direction'] * -1),
-                "direction": peaks[1]['direction'] * -1,
+                "target": 0.01,  #ave.cal_move_ave(0.1),
+                "direction": peaks[0]['direction'],
                 "type": "LIMIT",  # "STOP",  # "MARKET",
                 "tp": 0.2,  # ave.cal_move_ave(3),  ,
                 "lc": 0.15,  # ave.cal_move_ave(1.6),  # width,
                 "lc_change": self.make_lc_change_dic("M5"),
                 "units": self.units_str * 1.2,
-                "priority": 11,
+                "priority": 7,
                 "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
                 "candle_analysis_class": self.ca,
                 "lc_change_candle_type": "M5",
-                # "order_timeout_min": 40
             })
             # オーダーの追加
             self.add_order_to_this_class(order_class1)

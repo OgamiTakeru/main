@@ -35,6 +35,7 @@ class PeaksClass:
         self.ps_most_min = 2  # 弱いピークに付与する値
         self.ps_min = 4  # 若干弱いピークに付与する値
         self.ps_most_max = 8  # 強いピークとみなす（直近数時間で最も高い（または低い）ピークの場合)　
+        self.minimum = 0.0000001
 
         # ■足の幅で変わる値群
         if granularity == "M5":
@@ -54,6 +55,9 @@ class PeaksClass:
             self.arrowed_break_gap = 0.04  # 抵抗線を探す時、これ以上越えていると、Breakしてると判断する範囲
             # 狭いレンジの期間の判定用の閾値
             self.check_very_narrow_range_range = 0.07  # 一つの足のサイズが、この閾値以下の場合、小さいレンジの可能性
+            # 大きな動きのクライテリア
+            self.dependence_very_large_body_criteria = 0.2
+            self.dependence_large_body_criteria = 0.1
         elif granularity == "H1":
             # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
             self.analysis_num = 240  # この足の分のデータフレームを処理する（足ごとに設定）
@@ -71,6 +75,8 @@ class PeaksClass:
             self.arrowed_break_gap = 0.04  # 抵抗線を探す時、これ以上越えていると、Breakしてると判断する範囲
             # 狭いレンジの期間の判定用の閾値
             self.check_very_narrow_range_range = 0.07  # 一つの足のサイズが、この閾値以下の場合、小さいレンジの可能性
+            self.dependence_very_large_body_criteria = 0.2
+            self.dependence_large_body_criteria = 0.1
 
         # ■■保存用の変数群（元々クラス変数だったものを、インスタンス変数に変更）
         # 基本となるデータフレーム
@@ -236,11 +242,11 @@ class PeaksClass:
             "data_size": len(data_df),  # (注)元のデータサイズ
             "latest_price": 0,
             "oldest_price": 0,
-            "gap": 0.00000001,
-            "gap_high_low": 0.00000001,
-            "gap_close": 0.00000001,
-            "body_ave": 0.00000001,
-            "move_abs": 0.00000001,
+            "gap": self.minimum,
+            "gap_high_low": self.minimum,
+            "gap_close": self.minimum,
+            "body_ave": self.minimum,
+            "move_abs": self.minimum,
             "memo_time": 0,
             "data": data_df,  # 対象となるデータフレーム（元のデータフレームではない）
             "data_remain": data_df,  # 対象以外の残りのデータフレーム
@@ -267,7 +273,7 @@ class PeaksClass:
         for i in range(len(data_df) - 1):
             tilt = data_df.iloc[i]['middle_price'] - data_df.iloc[i + 1]['middle_price']
             if tilt == 0:
-                tilt = 0.00000001
+                tilt = self.minimum
             tilt_direction = round(tilt / abs(tilt), 0)  # 方向のみ（念のためラウンドしておく）
             # ■初回の場合の設定。１行目と２行目の変化率に関する情報を取得、セットする
             if counter == 0:
@@ -312,19 +318,19 @@ class PeaksClass:
         # gap = round(abs(latest_body_price - oldest_body_price), 3)  # MAXのサイズ感
         gap_close = round(abs(latest_body_price - ans_df.iloc[-1]["close"]), self.round_keta)  # 直近の価格（クローズの価格&向き不問）
         if gap_close == 0:
-            gap_close = 0.00000001
+            gap_close = self.minimum
         else:
             gap_close = gap_close
 
         gap = round(abs(latest_body_price - oldest_body_price), self.round_keta)  # 直近の価格（クローズの価格&向き不問）
         if gap == 0:
-            gap = 0.00000001
+            gap = self.minimum
         else:
             gap = gap
 
         gap_high_low = round(abs(latest_wick_price - oldest_wick_price), self.round_keta)  # 直近の価格（クローズの価格&向き不問）
         if gap_high_low == 0:
-            gap_high_low = 0.00000001
+            gap_high_low = self.minimum
         else:
             gap_high_low = gap_high_low
 
@@ -354,10 +360,10 @@ class PeaksClass:
         ans_dic["memo_time"] = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
             ans_df.iloc[0]["time_jp"])  # 表示に利用する時刻表示用
         # 追加項目
-        ans_dic['include_large'] = check_large_body_in_peak(ans_dic)['include_large']
-        ans_dic['include_very_large'] = check_large_body_in_peak(ans_dic)['include_very_large']
-        ans_dic['highest'] = check_large_body_in_peak(ans_dic)['highest']
-        ans_dic['lowest'] = check_large_body_in_peak(ans_dic)['lowest']
+        ans_dic['include_large'] = self.check_large_body_in_peak(ans_dic)['include_large']
+        ans_dic['include_very_large'] = self.check_large_body_in_peak(ans_dic)['include_very_large']
+        ans_dic['highest'] = self.check_large_body_in_peak(ans_dic)['highest']
+        ans_dic['lowest'] = self.check_large_body_in_peak(ans_dic)['lowest']
         # 互換性確保のため、データとしては重複するが、名前を変えて所持しているもの達（いつか消したいけど)
         ans_dic["time"] = ans_dic["latest_time_jp"]  # ピーク時刻（Latest）
         ans_dic["peak"] = ans_dic["latest_body_peak_price"]  # ピークのボディ価格（Latest。方向ごと）
@@ -1121,6 +1127,61 @@ class PeaksClass:
             "opposite_peaks": self.opposite_peaks
         }
 
+    def check_large_body_in_peak(self, block_ans):
+        """
+        対象となる範囲のデータフレームをループし（ブロックを探すのと並行してやるので、二回ループ作業してることになるが）
+        突発を含むかを判定する
+        ついでに、HighLowのプライスも取得する
+        """
+        # 大きい順に並べる
+        s6 = "      "
+
+        # 足や通過に依存する数字
+        # 情報を取得する
+        sorted_df_by_body_size = block_ans['data'].sort_values(by='body_abs', ascending=False)
+        max_body_in_block = sorted_df_by_body_size["body_abs"].max()
+
+        # ■極大の変動を含むブロックかの確認
+        include_very_large = False
+        for index, row in sorted_df_by_body_size.iterrows():
+            if row['body'] >= self.dependence_very_large_body_criteria:
+                include_very_large = True
+                break
+            else:
+                include_very_large = False
+
+        # ■突発的な変動を含むか判断する（大き目サイズがたくさんあるのか、数個だけあるのか＝突発）
+        counter = 0
+        for index, row in sorted_df_by_body_size.iterrows():
+            # 自分自身が、絶対的に見て0.13以上と大きく、他の物より約2倍ある物を探す。（自分だけが大きければ、突然の伸び＝戻る可能性大）
+            # 自分自身を、未達カウントするため注意が必要
+            smaller_body = row['body_abs'] if row['body_abs'] != 0 else self.minimum
+            if max_body_in_block > self.dependence_large_body_criteria:
+                counter = counter + 1
+                # if max_body_in_block / smaller_body > 1.8:  # > 0.561:
+                #     # print(s6, "Baseが大きめといえる", smaller_body / max_body_in_block , "size", smaller_body, max_body_in_block, row['time_jp'])
+                #     counter = counter + 1
+                # else:
+                #     pass
+                # print(s6, "自身より大き目（比率）", smaller_body / max_body_in_block, row['time_jp'])
+            else:
+                pass
+                # print(s6, "baseBodyがそもそも小さい")
+        if counter / (len(sorted_df_by_body_size)) >= 0.65:
+            # 突発の伸びがあったと推定（急伸は戻る可能性大）　平均的に全部大きい場合は除く（大きくないものが75％以下の場合）
+            # print(s6, "急伸の足を含む", counter / (len(sorted_df_by_body_size)), block_ans['data'].iloc[0]['time_jp'])
+            include_large = True
+        else:
+            # print(s6, "急伸とみなさない")
+            include_large = False
+
+        return {
+            "include_large": include_large,
+            "include_very_large": include_very_large,
+            "highest": sorted_df_by_body_size['high'].max(),
+            "lowest": sorted_df_by_body_size['low'].min()
+        }
+
 
 def judge_peak_is_belong_peak_group(peaks, target_peak):
     """
@@ -1148,61 +1209,5 @@ def judge_peak_is_belong_peak_group(peaks, target_peak):
     return ans
 
 
-def check_large_body_in_peak(block_ans):
-    """
-    対象となる範囲のデータフレームをループし（ブロックを探すのと並行してやるので、二回ループ作業してることになるが）
-    突発を含むかを判定する
-    ついでに、HighLowのプライスも取得する
-    """
-    # 大きい順に並べる
-    s6 = "      "
 
-    # 足や通過に依存する数字
-    dependence_very_large_body_criteria = 0.2
-    dependence_large_body_criteria = 0.1
-
-    # 情報を取得する
-    sorted_df_by_body_size = block_ans['data'].sort_values(by='body_abs', ascending=False)
-    max_body_in_block = sorted_df_by_body_size["body_abs"].max()
-
-    # ■極大の変動を含むブロックかの確認
-    include_very_large = False
-    for index, row in sorted_df_by_body_size.iterrows():
-        if row['body'] >= dependence_very_large_body_criteria:
-            include_very_large = True
-            break
-        else:
-            include_very_large = False
-
-    # ■突発的な変動を含むか判断する（大き目サイズがたくさんあるのか、数個だけあるのか＝突発）
-    counter = 0
-    for index, row in sorted_df_by_body_size.iterrows():
-        # 自分自身が、絶対的に見て0.13以上と大きく、他の物より約2倍ある物を探す。（自分だけが大きければ、突然の伸び＝戻る可能性大）
-        # 自分自身を、未達カウントするため注意が必要
-        smaller_body = row['body_abs'] if row['body_abs'] != 0 else 0.00000001
-        if max_body_in_block > dependence_large_body_criteria:
-            counter = counter + 1
-            # if max_body_in_block / smaller_body > 1.8:  # > 0.561:
-            #     # print(s6, "Baseが大きめといえる", smaller_body / max_body_in_block , "size", smaller_body, max_body_in_block, row['time_jp'])
-            #     counter = counter + 1
-            # else:
-            #     pass
-                # print(s6, "自身より大き目（比率）", smaller_body / max_body_in_block, row['time_jp'])
-        else:
-            pass
-            # print(s6, "baseBodyがそもそも小さい")
-    if counter / (len(sorted_df_by_body_size)) >= 0.65:
-        # 突発の伸びがあったと推定（急伸は戻る可能性大）　平均的に全部大きい場合は除く（大きくないものが75％以下の場合）
-        # print(s6, "急伸の足を含む", counter / (len(sorted_df_by_body_size)), block_ans['data'].iloc[0]['time_jp'])
-        include_large = True
-    else:
-        # print(s6, "急伸とみなさない")
-        include_large = False
-
-    return {
-        "include_large": include_large,
-        "include_very_large": include_very_large,
-        "highest": sorted_df_by_body_size['high'].max(),
-        "lowest": sorted_df_by_body_size['low'].min()
-    }
 

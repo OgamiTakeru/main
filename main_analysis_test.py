@@ -18,7 +18,7 @@ gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
 
 # 解析パート
 def analysis_part():
-    analysis_result_instance = am.wrap_all_analysis(gl_candleAnalysisClass, "analysis")
+    analysis_result_instance = am.wrap_all_analysis(gl_candleAnalysisClass, "inspection")
     # analysis_result_instance = ti.range_analysis(gl_candleAnalysisClass)
 
 
@@ -101,7 +101,7 @@ gl_target_time = datetime.datetime(2024, 10, 2, 0, 5, 6)  #SKIPテスト
 gl_target_time = datetime.datetime(2022, 2, 3, 16, 55, 6)
 gl_target_time = datetime.datetime(2025, 7, 17, 10, 20, 6)
 gl_target_time = datetime.datetime(2025, 11, 1, 3, 45, 6)
-gl_target_time = datetime.datetime(2025, 11, 28, 22, 0, 6)
+gl_target_time = datetime.datetime(2025, 12, 3, 15, 40, 6)
 # gl_target_time = datetime.datetime(2025, 6, 25, 14, 45, 6)
 # gl_target_time = datetime.datetime(2025, 6, 17, 21, 30, 6)
 
