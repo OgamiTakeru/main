@@ -975,7 +975,7 @@ def update_position_information(cur_class, cur_row, cur_row_index):
     """
     ポジションの情報を更新し（ポジションある状態での実行が前提）、必要に応じてクラスに反映する。
     """
-    spread = 0.004
+    spread = 0.005
     # (1)情報の整理
     # ポジションの最高プラスかマイナスを更新する(ロスカットかどうかはとりあえず加味しない）
     upper_gap = cur_row['high'] - cur_class.target_price  # 買いポジの場合はプラス域

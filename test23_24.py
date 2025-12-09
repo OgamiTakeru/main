@@ -31,14 +31,13 @@ file_name_head = "25_long"
 # file_name_head = "2025_4"
 file_name_head = "2024_12_1"
 file_name_head = "2024_9_4"
-# file_name_head = "2025_4_11"
 intest = ci.Inspection(#pred.wrap_predict_turn_inspection_test,
                         ti.MainAnalysis,  # インスタンス化前のクラスを渡す
                         # False,
                         True,
                        #  datetime.datetime(2023, 9, 10, 23, 40, 6),  # 謎の飛びデータ
                        #  datetime.datetime(2023, 9, 23, 23, 40, 6),  # Break系のいいマイナスデータ
-                        datetime.datetime(2025, 4, 30, 0, 0, 55),  #ここが最後
+                        datetime.datetime(2024, 2, 28, 0, 0, 55),  #ここが最後
                         path + file_name_head + "_test_h1_df.csv",
                         path + file_name_head + "_test_m5_df.csv",
                         path + file_name_head + "_test_s5_df.csv",

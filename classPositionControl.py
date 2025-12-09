@@ -527,7 +527,7 @@ class position_control_for_test(position_control):
         # self.temp_file_name = memo
 
         # 最大所持個数の設定
-        self.max_position_num = 15  # 最大でも10個のポジションしかもてないようにする
+        self.max_position_num = 25  # 最大でも10個のポジションしかもてないようにする
         self.middle_priority_num = 8  # ミドルプライオリティ(max_position_numのうち）
         self.high_priority_num = 1  # ハイプライオリティのもの（max_position_numのうち）
 

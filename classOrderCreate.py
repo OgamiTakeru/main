@@ -66,6 +66,7 @@ class Order:
         if "candle_analysis_class" in order_json:
             # print("candle_analysis_classがあるよ", round(order_json['candle_analysis_class'].candle_class.cal_move_ave(1), 3))
             self.move_ave = order_json['candle_analysis_class'].candle_class.cal_move_ave(1)
+            self.candle_analysis = order_json['candle_analysis_class']
         else:
             tk.line_send("【注意】キャンドルアナリシスが添付されていない注文が発生")
             print("candle_analysis_classがない")

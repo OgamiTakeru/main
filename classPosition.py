@@ -82,6 +82,9 @@ class order_information:
         self.order_register_time = 0
         self.plan_json = {}
         self.for_api_json = {}
+        self.candle_analysis_class = None
+        self.move_ave5 = 0
+        self.move_ave60 = 0
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_json = {}
         self.o_id = 0
@@ -182,6 +185,7 @@ class order_information:
         self.order_class = None
         self.linkage_order_classes = []
         self.linkage_done = False
+        self.candle_analysis_class = None
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_id = 0
         self.o_time = 0
@@ -395,6 +399,15 @@ class order_information:
         if "win_lose_border_range" in plan:
             self.win_lose_border_range = plan['win_lose_border_range']
 
+        # (8)キャンドルアナリシスクラスの有無
+        if hasattr(self, "candle_analysis_class"):
+            self.candle_analysis_class = self.order_class.candle_analysis
+            self.move_ave5 = round(self.candle_analysis_class.candle_class.cal_move_ave(1), self.u)
+            self.move_ave60 = round(self.candle_analysis_class.candle_class_hour.cal_move_ave(1), self.u)
+            print("オーダーのキャンドル情報追加", self.move_ave5, self.move_ave60)
+        else:
+            print("オーダーにcandle_analysis_classがない！")
+
         # (9)アラート関係
         # {"range": 0, "time": 0}
         if "alert" in plan and "range" in plan['alert']:
@@ -591,6 +604,8 @@ class order_information:
                 "position_keep_time": str(trade_latest['time_past']),
                 "name_ymdhms": self.name_ymdhms,
                 "tp_price_original_plan": self.plan_json['tp_price_original'],
+                "move_ave5": self.move_ave5,
+                "move_ave60": self.move_ave60,
             }
             order_information.result_dic_arr.append(result_dic)
         else:
@@ -636,6 +651,8 @@ class order_information:
                 "position_keep_time": str(trade_latest['time_past']),
                 "name_ymdhms": self.name_ymdhms,
                 "tp_price_original_plan": self.plan_json['tp_price_original'],
+                "move_ave5": self.move_ave5,
+                "move_ave60": self.move_ave60,
             }
             order_information.result_dic_arr.append(result_dic)
 
@@ -1677,14 +1694,14 @@ class order_information:
             # print("0", df_r.iloc[0]['time_jp'])
             # print("1", df_r.iloc[1]['time_jp'])
             # print("-1", df_r.iloc[-1]['time_jp'])
-            print("LCcandleChangeにて、直近peakカウント:", peaks[0]['count'], "変更基準ローソク時間:", df_r.iloc[soeji]['time_jp'], self.name)
+            # print("LCcandleChangeにて、直近peakカウント:", peaks[0]['count'], "変更基準ローソク時間:", df_r.iloc[soeji]['time_jp'], self.name)
         else:
             # self.latest_df.iloc[soeji]['low']は逆張りの時におかしくなる
             # print("LCcandleChange中断　直近peakカウント:", peaks[0]['count'], "間違えたローソク時間:", self.latest_df.iloc[-2]['time_jp'])
             return -1
 
         if self.lc_change_from_candle_lc_price == lc_price_temp:
-            print(" 既にこの価格のLCとなっているため、変更処理は実施せず")
+            # print(" 既にこの価格のLCとなっているため、変更処理は実施せず")
             return 0
 
         # ポジション取得から５分経過、かつ、temp_lc_priceがマイナス域でなく、利益が1pips以上確約できる場合、LCをlc_price_tempに移動する
