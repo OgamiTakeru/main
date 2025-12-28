@@ -7,12 +7,13 @@ import fGeneric as gene
 
 
 class wrap_all_analysis():
-    def __init__(self, candle_analysis_class, mode="inspection"):
+    def __init__(self, candle_analysis_class, position_control_class=None, mode="inspection"):
         # 調査に必要な変数
         # self.df_r = df_r
         # self.oa = oa
         self.ca = candle_analysis_class  # CandleAnalysisインスタンスの生成
         self.mode = mode  # Liveとアナリシスでは微妙に扱いが異なる場所がある
+        self.position_control_class = position_control_class
 
         # 結果を格納するための変数（大事）
         self.take_position_flag = False
@@ -52,9 +53,10 @@ class wrap_all_analysis():
         """
         クラスをたくさん用いがケース
         """
+        position_control_class = self.position_control_class
 
         # ターン起点のオーダー
-        turn_analysis_instance = ti.MainAnalysis(self.ca, mode)
+        turn_analysis_instance = ti.MainAnalysis(self.ca, position_control_class, mode)
         # turn_analysis_instance = ti.BbAnalysis(self.ca)
         if turn_analysis_instance.take_position_flag:
             self.orders_add_this_class(turn_analysis_instance.exe_order_classes)

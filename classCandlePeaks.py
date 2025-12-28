@@ -51,7 +51,7 @@ class PeaksClass:
             self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
             self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
             # 抵抗線関係の値　cal_big_mountain関数
-            self.arrowed_gap = 0.0245  # 抵抗線を探す時、ずれていてもいい許容値
+            self.arrowed_gap = 0.017  # 0.0245  # 抵抗線を探す時、ずれていてもいい許容値
             self.arrowed_break_gap = 0.04  # 抵抗線を探す時、これ以上越えていると、Breakしてると判断する範囲
             # 狭いレンジの期間の判定用の閾値
             self.check_very_narrow_range_range = 0.07  # 一つの足のサイズが、この閾値以下の場合、小さいレンジの可能性
@@ -161,7 +161,7 @@ class PeaksClass:
         # (5)samePriceListを、各Peakに付与する
         for i, item in enumerate(self.peaks_original):
             # print("同価格リストの生成")
-            # print(i, item['latest_time_jp'], item['latest_body_peak_price'])
+            # print(self.s, i, item['latest_time_jp'], item['latest_body_peak_price'])
             spl_res = self.make_same_price_list(i, False)
             spl = spl_res['same_price_list']
             # print(" ", len(spl))
@@ -991,6 +991,8 @@ class PeaksClass:
         # target_num = 2
         target_peak = peaks[target_num]
         target_price = target_peak['latest_body_peak_price']
+        # 範囲はその時点の過去のみ
+        peaks = peaks[target_num:]
         # print("   実行時引数 SKIP：", skip, " TargetNum:", target_num)
         # print(s, "   ターゲットになるピーク@cp:", target_peak)
 
@@ -1033,12 +1035,13 @@ class PeaksClass:
                     pass
                 else:
                     self.opposite_peaks.append({"i": i, "item": item, "time_gap": time_gap_sec})
-                    # print("反対側")
+                    # print("             反対側")
                 continue
 
             # 最初の一つは確保する（自分自身はたとえ強度が低くても、確保する）
-            if i == target_num:
-                # print("          FIRST：", item['time'], item['peak_strength'])
+            # if i == target_num:
+            if i == 0:  # 時系列的に過去のもののみがPeaksにある場合はこっち。
+                # print("             FIRST：", item['time'], item['peak_strength'])
                 self.same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 self.same_price_list_till_break.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 self.same_price_list_till_break2.append({"i": i, "item": item, "time_gap": time_gap_sec})
@@ -1086,14 +1089,14 @@ class PeaksClass:
             # if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range:  # 髭も混み
             if body_gap_abs <= arrowed_range:  # or body_wick_gap_abs <= arrowed_range:
                 # 同一価格とみなせる場合
-                # print("          同一価格：")
+                # print("             同一価格：")
                 self.same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 # 同一価格とみなせる場合で、さらに時間いないかどうかを検証する
                 if is_inner:
-                    # print("         　 　　　　inner：")
+                    # print("               inner：")
                     self.same_price_list_inner.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 else:
-                    # print("         　 　　　　outer：")
+                    # print("               outer：")
                     self.same_price_list_outer.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 # BreakがN個以下までの同一価格
                 if break_num <= break_border:
@@ -1103,7 +1106,7 @@ class PeaksClass:
                 # 共通
                 same_price_num = same_price_num + 1
             else:
-                # print("          Not：", body_gap_abs, arrowed_range, body_wick_gap_abs, abs(1))
+                # print("             Not：", body_gap_abs, arrowed_range, body_wick_gap_abs, abs(1))
                 self.result_not_same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})
         # 表示用
         # print("同一価格一覧 @cp")

@@ -1153,11 +1153,15 @@ class order_information:
                         "id": 2,
                         "initialUnits": self.plan_json['for_api_json']['order']['units'],
                         "currentUnits": self.plan_json['for_api_json']['order']['units'],
+                        "averageClosePrice": self.plan_json['tp_price'],  # 追加
                         "openTime": self.t_time,
+                        "closeTime": target_5s_row['time_jp'],  # 追加
                         "price": self.plan_json['target_price'],
                         "time_past": t_gap_time_abs,
                         "unrealizedPL": pl,  # 途中では出せない
-                        "PLu": plu
+                        "realizedPL": pl,  # 追加
+                        "PLu": plu,
+                        "res_tplc": "継続(途中クローズの可能性)"
                     }
 
             else:

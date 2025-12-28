@@ -545,7 +545,7 @@ class order_information:
             elif float(trade_latest['unrealizedPL']) > 0:
                 order_information.plus_yen_position_num = order_information.plus_yen_position_num + 1
 
-        # 直前の結果を保存しておく
+        # 次回に参照される、「直前の結果として」を保存しておく
         order_information.before_latest_plu = trade_latest['PLu']
         order_information.before_latest_name = self.name
         order_information.history_plus_minus.append(trade_latest['PLu'])
@@ -583,24 +583,24 @@ class order_information:
             # print("書き込みエラー確認用")
             # print(trade_latest)
             result_dic = {
-                "order_time": self.o_time,
+                "name": self.name,
                 "res": str(trade_latest['realizedPL']),
+                "pl_per_units": str(trade_latest['PLu']),  # 以下追加
+                "units": str(units_for_view * direction),
+                "max_plus": str(self.win_max_plu),
+                "max_minus": str(self.lose_max_plu),
+                "order_time": self.o_time,
                 "take_time": self.t_time,
                 "take_price": str(trade_latest['price']),
                 "end_time": datetime.datetime.now(),
                 "end_price": str(trade_latest['averageClosePrice']),
-                "orderID": str(self.o_id),
-                "tradeID": str(self.t_id),
-                "name": self.name,
-                "name_only": self.name[:-5],
-                "units": str(units_for_view * direction),
-                "pl_per_units": str(trade_latest['PLu']),  # 以下追加
                 "lc_price": self.plan_json['lc_price'],
                 "lc_price_original_plan": self.plan_json['lc_price_original'],
                 "tp_price": self.plan_json['tp_price'],
+                "orderID": str(self.o_id),
+                "tradeID": str(self.t_id),
+                "name_only": self.name[:-5],
                 "plus_minus": 1 if float(trade_latest['realizedPL']) > 0 else -1,
-                "max_plus": str(self.win_max_plu),
-                "max_minus": str(self.lose_max_plu),
                 "position_keep_time": str(trade_latest['time_past']),
                 "name_ymdhms": self.name_ymdhms,
                 "tp_price_original_plan": self.plan_json['tp_price_original'],
@@ -630,24 +630,24 @@ class order_information:
                            position_check_no_args()['name_list'])
 
             result_dic = {
-                "order_time": self.o_time,
+                "name": self.name,
                 "res": str(trade_latest['unrealizedPL']),  # 上と違う部分
+                "pl_per_units": str(trade_latest['PLu']),  # 以下追加
+                "units": str(units_for_view * direction),
+                "max_plus": str(self.win_max_plu),
+                "max_minus": str(self.lose_max_plu),
+                "order_time": self.o_time,
                 "take_time": self.t_time,
                 "take_price": str(trade_latest['price']),
                 "end_time": datetime.datetime.now(),
                 "end_price": str(self.current_price),  #str(trade_latest['averageClosePrice']),
-                "orderID": str(self.o_id),
-                "tradeID": str(self.t_id),
-                "name": self.name,
-                "name_only": self.name[:-5],
-                "units": str(units_for_view * direction),
-                "pl_per_units": str(trade_latest['PLu']),  # 以下追加
                 "lc_price": self.plan_json['lc_price'],
                 "lc_price_original_plan": self.plan_json['lc_price_original'],
                 "tp_price": self.plan_json['tp_price'],
+                "orderID": str(self.o_id),
+                "tradeID": str(self.t_id),
+                "name_only": self.name[:-5],
                 "plus_minus": 1 if float(trade_latest['unrealizedPL']) > 0 else -1,
-                "max_plus": str(self.win_max_plu),
-                "max_minus": str(self.lose_max_plu),
                 "position_keep_time": str(trade_latest['time_past']),
                 "name_ymdhms": self.name_ymdhms,
                 "tp_price_original_plan": self.plan_json['tp_price_original'],
@@ -656,25 +656,33 @@ class order_information:
             }
             order_information.result_dic_arr.append(result_dic)
 
+        # # linkageトレードへの波及  positionClassで実施されていた
+        # if len(self.linkage_order_classes) != 0:
+        #     target_order = self.linkage_order_classes[0]
+        #     if "_r_" in self.name and self.t_realize_pl >= 0:
+        #         tk.line_send("rがプラスで終わったので、ポジションリンケージ先を解消", self.t_realize_pl, "解消先",
+        #                      target_order)
+        #         target_position_class =
+
         # 共通処理
         # ①共通処理（ファイルへの書き込み）
-        path = tk.folder_path + 'history.csv'
+        history_path = tk.history_folder_path + 'history.csv'
         try:
             # ファイル書き込み
-            if not os.path.exists(path):
+            if not os.path.exists(history_path):
                 # ファイルが存在しない場合、新規作成
                 df = pd.DataFrame(order_information.result_dic_arr)
-                df.to_csv(path, index=False)
+                df.to_csv(history_path, index=False)
             else:
                 # ファイルが存在する場合、追記処理
                 df = pd.DataFrame([result_dic])
-                df.to_csv(path, mode='a', header=False, index=False)
+                df.to_csv(history_path, mode='a', header=False, index=False)
 
         except (OSError, PermissionError, IOError) as e:
             print(f"ファイルにアクセスできませんでした: {e}")
 
         # ②集計値の送信(一覧）
-        temp = pd.read_csv(path)
+        temp = pd.read_csv(history_path)
         df_part = temp.tail(order_information.result_row)
         lines = []
         a_sum = sum(int(x) for x in df_part['res'])
@@ -682,7 +690,10 @@ class order_information:
         for _, row in df_part.iterrows():
             # res_val = int(row['res']) if isinstance(row['res'], (int, float)) else row['res']
             res_val = f"{int(row['res']):>{max_width}}"
-            uni_val = int(row['units'] / abs(int(row['units'])))
+            if row['units'] == 0:  # devide 0 対策
+                uni_val = int(row['units'] / 0.00000000001)
+            else:
+                uni_val = int(row['units'] / abs(int(row['units'])))
             hh_mm = ":".join(gene.str_to_time_hms(row['end_time']).split(":")[:2])
             if uni_val == 1:
                 uni_str = "L"  # 買い（ドルを）
@@ -696,7 +707,7 @@ class order_information:
         # tk.line_send("■■■:", "\n", output_str)
 
         # ③ピボット結果の送信
-        temp = pd.read_csv(path)
+        temp = pd.read_csv(history_path)
         df_part = temp.tail(order_information.result_row)
         summary = df_part.groupby("name_only").agg(
             res_sum=("res", lambda x: int(x.sum())),
@@ -712,7 +723,7 @@ class order_information:
         print(pivot_str)
         # tk.line_send("■■■:", "\n", pivot_str)
 
-    def close_trade(self, units):
+    def close_trade(self, units=None):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
         # クローズ後は、AfterCloseFunctionに移行し、情報の送信等を行う
         if not self.life:
@@ -1053,6 +1064,7 @@ class order_information:
             return 0  # 初期値でforcedOrderを入れた場合、起こりうるかも（それ以外は基本起きない）
         self.lc_change()
         if self.lc_change_num != 0:
+            pass
             # LC_Changeが執行されている場合は、Candleも有効にする
             self.lc_change_from_candle(candle_analysis_class)
 
@@ -1885,6 +1897,7 @@ class order_information:
 
     def linkage_done_func(self):
         self.linkage_done = True
+
 
     def linkage_lc_change(self, new_lc_price):
         """

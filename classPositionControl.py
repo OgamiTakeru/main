@@ -403,10 +403,21 @@ class position_control:
             elif main_position.life and main_position.o_state == "PENDING":
                 # print(main_position.name, " まだ自分がオーダー状態(ポジション前）のため、処理しない")
                 continue
+            elif not main_position.life and main_position.t_state == "":
+                continue
             elif main_position.o_json:  # この条件は、テストモードでおかしなことが起きるために追加した（本番悪影響なら消したい）
                 # print(main_position.o_json)
                 if main_position.o_json['state'] == "PENDING":
                     continue
+
+            #　自身がの勝敗によって、Linkageをするかどうか
+            # print("       確認用position control", main_position.t_realize_pl)
+            if float(main_position.t_realize_pl) >= 0:
+                pass
+                # print("自身はプラス", main_position.name, main_position.t_realize_pl)
+            else:
+                # print("自身はマイナス", main_position.name, main_position.t_realize_pl)
+                continue
 
             # 走査する
             if hasattr(main_position, "order_class"):
@@ -428,28 +439,48 @@ class position_control:
                         # tk.line_send("リンケージ先がない物があった.", linkage_class.name, "のリンケージ", linkage_class.name)
                         main_position.linkage_done_func()  # 自身のリンケージも終了
                         continue
-
-                    if left_position.t_state == "" and left_position.o_state == "PENDING":
-                        # print(" まだlinage先のポジションが成立していないため、オーダー解除")
-                        left_position.close_order()
-                        main_position.linkage_done_func()  # 自身のリンケージも終了
-                        continue
-
                     # 自分自身はポジションあるが、相手がクローズしてしまっている場合
-
                     if left_position.linkage_done:
                         # 既に残された側が、
                         # print("     ", left_position.name, " 既にリンケージ調整され済み", )
                         continue
 
-                    if main_position.o_state == "CANCELLED":
-                        main_position.linkage_done_func()
-                        left_pl_u = float(left_position.t_pl_u)  # 現在のプラマイ
-                        if left_pl_u >= 0:
-                            # 残されたオーダーがプラス域の場合（ほとんどないが、０の場合はOrder時間切れキャンセルの可能性←やられた）
-                            pass
+                    # メインの種類によって、場合分け？？
+                    # (1)メインが、ヘッジ用（負けるか確認のやつ）の場合
+                    if "_r_" in main_position.name:
+                        if float(main_position.t_realize_pl) >= 0:
+                            # プラス域の場合は、問答無用で相手をキャンセルする。
+
+                            # 相手がまだオーダーの場合、オーダーをクローズする (自分の利確の分をLCにして継続するのもありかも）
+                            if left_position.t_state == "" and left_position.o_state == "PENDING":
+                                # print(" まだlinage先のポジションが成立していないため、オーダー解除")
+                                left_position.close_order()
+                                main_position.linkage_done_func()  # 自身のリンケージも終了
+                                continue
+
+                            # 相手がポジションの場合、クローズする
+                            if left_position.life and left_position.t_state == "OPEN":
+                                # 相方のポジションがまだある場合（毎なるポジションが想定される）
+                                main_position.linkage_done_func()
+                                left_position.close_trade(None)
+                                continue
                         else:
-                            # 残されたオーダーがマイナス域の場合（こっちがメインのケース）
+                            continue
+                            # 相手がまだオーダーの場合、オーダーをクローズする (自分の利確の分をLCにして継続するのもありかも）
+                            if left_position.t_state == "" and left_position.o_state == "PENDING":
+                                # print(" まだlinage先のポジションが成立していないため、オーダー解除")
+                                left_position.close_order()
+                                main_position.linkage_done_func()  # 自身のリンケージも終了
+                                continue
+
+                            # 相手がポジションの場合、クローズする
+                            if left_position.life and left_position.t_state == "OPEN":
+                                # 相方のポジションがまだある場合（毎なるポジションが想定される）
+                                main_position.linkage_done_func()
+                                left_position.close_trade(None)
+                                continue
+
+                            # マイナス域の場合、相手もマイナスにならないようにしたい
                             new_lc_range = abs(lc_range) + margin
                             dir = int(left_position.plan_json['direction'])
                             # tk.line_send("    LC変更kakumin", main_position.lose_max_plu, left_position.t_pl_u, bigger_minus)
@@ -457,59 +488,81 @@ class position_control:
                             new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
                             print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
                             left_position.linkage_lc_change(new_lc_price)
-                            # tk.line_send("オーダー時間切れキャンセル発生＆Linkage先あり@", main_position.name, new_lc_price, left_position.name)
+                            tk.line_send("rがマイナス終了。本チャンも削減")
 
-                    if left_position.life and left_position.t_state == "OPEN":
-                        main_position.linkage_done_func()  # リンケージが単数前提の場合、ここでリンケージ機能をクローズしてしまう
-                        # print("      相手のPL情報", left_position.t_pl_u)
-                        # print("      自分の現在の状況", main_position.t_pl_u, main_position.plan_json['lc_price'])
-                        # print("         ", main_position.t_execution_price)
-                        # new_lc_range = abs(float(left_position.t_pl_u)) + 0.02
-                        # dir = int(left_position.plan_json['direction'])
-                        # print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
-                        # new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
-                        # print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
-                        # left_position.linkage_lc_change(new_lc_price)
-                        #
-                        # # TPも変更する？プラス域であきらめ？(memo)
-                        # new_tp_range = abs(float(left_position.t_pl_u)) * 0.5  # 半分
-                        # current_price = float(left_position.t_execution_price) + float(left_position.t_pl_u)
-                        # price = current_price  # 現在価格基準を利用する場合、これをコメントイン(現マイナスの半分、等の指定がしやすい
-                        # # price = left_position.t_execution_price  # 約定価格を利用する場合これをコメントイン
-                        # if left_position.plan_json['direction'] == 1:
-                        #     # 約定価格を基にした、利確価格変更
-                        #     new_tp_price = price + new_tp_range
-                        # else:
-                        #     new_tp_price = price - new_tp_range
-                        # print("       TP:計算要素", new_tp_range, float(left_position.t_pl_u), new_tp_price)
-                        # left_position.linkage_tp_change(new_tp_price)
 
-                        # プラス域かマイナス域で判定を変更する
-                        left_pl_u = float(left_position.t_pl_u)  # 現在のプラマイ
-                        if left_pl_u >= 0:
-                            # 残されたオーダーがプラス域の場合（ほとんどないが、０の場合はOrder時間切れキャンセルの可能性←やられた）
-                            pass
-                        else:
-                            # 残されたオーダーがマイナス域の場合（こっちがメインのケース）
-                            bigger_minus = min(float(main_position.lose_max_plu), float(left_position.t_pl_u))
-                            new_lc_range = abs(bigger_minus) + margin
-                            dir = int(left_position.plan_json['direction'])
-                            # tk.line_send("    LC変更kakumin", main_position.lose_max_plu, left_position.t_pl_u, bigger_minus)
-                            print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
-                            new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
-                            print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
-                            left_position.linkage_lc_change(new_lc_price)
 
-                            # lc_Change_Candleにする
-                            # print(main_position.t_json)
-                            # gene.print_json(main_position.o_json)
-                            # gene.print_json(main_position.t_json)
-                            print("　　　　自身（先に解消したほう）の利益range", main_position.t_json['PLu'])
-                            if main_position.t_json['PLu'] >= 0:
-                                print("    自身がプラスの場合、そのプラスを最大限に生かしたLCChangeを行う")
-                                left_position.linkage_forced_lc_change_setting(main_position.t_json['PLu'], left_pl_u)
-                            else:
-                                print("     自身がマイナス終了のため、どうしようか考える")
+
+                    # if main_position.o_state == "CANCELLED":
+                    #     # オーダーが時間切れ等でキャンセルした場合。
+                    #     main_position.linkage_done_func()
+                    #     left_pl_u = float(left_position.t_pl_u)  # 現在のプラマイ
+                    #     if left_pl_u >= 0:
+                    #         # 残されたオーダーがプラス域の場合（ほとんどないが、０の場合はOrder時間切れキャンセルの可能性←やられた）
+                    #         pass
+                    #     else:
+                    #         # 残されたオーダーがマイナス域の場合（こっちがメインのケース）
+                    #         new_lc_range = abs(lc_range) + margin
+                    #         dir = int(left_position.plan_json['direction'])
+                    #         # tk.line_send("    LC変更kakumin", main_position.lose_max_plu, left_position.t_pl_u, bigger_minus)
+                    #         print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
+                    #         new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
+                    #         print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
+                    #         left_position.linkage_lc_change(new_lc_price)
+                    #         # tk.line_send("オーダー時間切れキャンセル発生＆Linkage先あり@", main_position.name, new_lc_price, left_position.name)
+                    #
+                    # # パート２　ここからは下はいったん無視(同条件で、上にContinueあり）、、かな
+                    # if left_position.life and left_position.t_state == "OPEN":
+                    #     main_position.linkage_done_func()  # リンケージが単数前提の場合、ここでリンケージ機能をクローズしてしまう
+                    #     # print("      相手のPL情報", left_position.t_pl_u)
+                    #     # print("      自分の現在の状況", main_position.t_pl_u, main_position.plan_json['lc_price'])
+                    #     # print("         ", main_position.t_execution_price)
+                    #     # new_lc_range = abs(float(left_position.t_pl_u)) + 0.02
+                    #     # dir = int(left_position.plan_json['direction'])
+                    #     # print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
+                    #     # new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
+                    #     # print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
+                    #     # left_position.linkage_lc_change(new_lc_price)
+                    #     #
+                    #     # # TPも変更する？プラス域であきらめ？(memo)
+                    #     # new_tp_range = abs(float(left_position.t_pl_u)) * 0.5  # 半分
+                    #     # current_price = float(left_position.t_execution_price) + float(left_position.t_pl_u)
+                    #     # price = current_price  # 現在価格基準を利用する場合、これをコメントイン(現マイナスの半分、等の指定がしやすい
+                    #     # # price = left_position.t_execution_price  # 約定価格を利用する場合これをコメントイン
+                    #     # if left_position.plan_json['direction'] == 1:
+                    #     #     # 約定価格を基にした、利確価格変更
+                    #     #     new_tp_price = price + new_tp_range
+                    #     # else:
+                    #     #     new_tp_price = price - new_tp_range
+                    #     # print("       TP:計算要素", new_tp_range, float(left_position.t_pl_u), new_tp_price)
+                    #     # left_position.linkage_tp_change(new_tp_price)
+                    #
+                    #     # プラス域かマイナス域で判定を変更する
+                    #     left_pl_u = float(left_position.t_pl_u)  # 現在のプラマイ
+                    #     if left_pl_u >= 0:
+                    #         # 残されたオーダーがプラス域の場合（ほとんどないが、０の場合はOrder時間切れキャンセルの可能性←やられた）
+                    #         pass
+                    #     else:
+                    #         # 残されたオーダーがマイナス域の場合（こっちがメインのケース）
+                    #         bigger_minus = min(float(main_position.lose_max_plu), float(left_position.t_pl_u))
+                    #         new_lc_range = abs(bigger_minus) + margin
+                    #         dir = int(left_position.plan_json['direction'])
+                    #         # tk.line_send("    LC変更kakumin", main_position.lose_max_plu, left_position.t_pl_u, bigger_minus)
+                    #         print("       計算要素", dir, new_lc_range, float(left_position.t_pl_u))
+                    #         new_lc_price = float(left_position.t_execution_price) - (dir * new_lc_range)
+                    #         print("       new_lc_price", new_lc_price, float(left_position.t_execution_price))
+                    #         left_position.linkage_lc_change(new_lc_price)
+                    #
+                    #         # lc_Change_Candleにする
+                    #         # print(main_position.t_json)
+                    #         # gene.print_json(main_position.o_json)
+                    #         # gene.print_json(main_position.t_json)
+                    #         print("　　　　自身（先に解消したほう）の利益range", main_position.t_json['PLu'])
+                    #         if main_position.t_json['PLu'] >= 0:
+                    #             print("    自身がプラスの場合、そのプラスを最大限に生かしたLCChangeを行う")
+                    #             left_position.linkage_forced_lc_change_setting(main_position.t_json['PLu'], left_pl_u)
+                    #         else:
+                    #             print("     自身がマイナス終了のため、どうしようか考える")
             else:
                 pass
                 # print("オーダークラスがない！！！⇒未発行とかそこらへん")

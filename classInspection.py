@@ -123,6 +123,7 @@ class Inspection:
         self.main()
         ans = self.cal_result_and_send_line()  # １は通常終了 0は異常終了
         self.res_send()
+        print("グラフ化の有無", is_graph, ans)
         if ans == 1:
             if is_graph:
                 self.draw_graph()
@@ -478,7 +479,7 @@ class Inspection:
                     # print(analysis_df_h1[:1])
 
                 # ■調査実行
-                analysis_result_instance = am.wrap_all_analysis(self.candleAnalysisClass)
+                analysis_result_instance = am.wrap_all_analysis(self.candleAnalysisClass, self.positions_control_class)
                 # ■ オーダー発行
                 if not analysis_result_instance.take_position_flag:
                     # 発注がない場合は、終了 (ポケ除け的な部分）
@@ -492,7 +493,7 @@ class Inspection:
                 pass
 
             # 5秒沖の処理
-            print("■■■■■■MAIN----", row_s5['time_jp'])
+            print("■５秒起きの処理----", row_s5['time_jp'])
             # dt = datetime.datetime.strptime(row_s5['time_jp'], "%Y/%m/%d %H:%M:%S")
             # minute = dt.minute - (dt.minute % 5)  # 分を5の倍数に切り下げ
             # rounded = dt.replace(minute=minute, second=0, microsecond=0)
@@ -635,6 +636,7 @@ class Inspection:
                        f"{round((row['positive_count'] / (row['positive_count'] + row['negative_count'])) * 100, 1)}\n")
         print(output)
         tk.line_send(output, "検証期間LONG")
+        return 1
 
     def check_skill_difference(self, wins, losses):
         total = wins + losses
