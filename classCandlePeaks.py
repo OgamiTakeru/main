@@ -32,6 +32,7 @@ class PeaksClass:
         self.data_hold_peaks = 3  # 容量の関係で、直近のNピーク分のみ、データフレームも持つ。
         # ピークの強さの指標(点数)の設定（以下、peak_strengthを短縮のためにpsと略する）
         self.ps_default = 5  # ピーク基準値
+        self.ps_most_most_min = 1  # 弱いピークに付与する値
         self.ps_most_min = 2  # 弱いピークに付与する値
         self.ps_min = 4  # 若干弱いピークに付与する値
         self.ps_most_max = 8  # 強いピークとみなす（直近数時間で最も高い（または低い）ピークの場合)　
@@ -41,6 +42,7 @@ class PeaksClass:
         if granularity == "M5":
             # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
             self.analysis_num = 180  # この足の分のデータフレームを処理する（足ごとに設定）
+            self.peak_strength_border_min = 0.01
             self.peak_strength_border = 0.03  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
             self.peak_strength_border_second = 0.07  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
             # SkipPeaksの際の基準(SkipPeaks関数）
@@ -61,6 +63,7 @@ class PeaksClass:
         elif granularity == "H1":
             # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
             self.analysis_num = 240  # この足の分のデータフレームを処理する（足ごとに設定）
+            self.peak_strength_border_min = 0.05
             self.peak_strength_border = 0.15  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
             self.peak_strength_border_second = 0.20  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
             # SkipPeaksの際の基準(SkipPeaks関数）
@@ -272,6 +275,7 @@ class PeaksClass:
         counter = 0
         for i in range(len(data_df) - 1):
             tilt = data_df.iloc[i]['middle_price'] - data_df.iloc[i + 1]['middle_price']
+            # tilt = data_df.iloc[i]['middle_price_wick'] - data_df.iloc[i + 1]['middle_price_wick']
             if tilt == 0:
                 tilt = self.minimum
             tilt_direction = round(tilt / abs(tilt), 0)  # 方向のみ（念のためラウンドしておく）
@@ -460,6 +464,12 @@ class PeaksClass:
             count_border = 2
             if (item['gap'] <= self.peak_strength_border or
                     (item['gap'] <= self.peak_strength_border_second and item['count'] <= count_border)):
+                if item['gap'] <= self.peak_strength_border_min:
+                    # ほぼ見えないレベルの折り返しは点数を最も低くする
+                    item['peak_strength'] = self.ps_most_most_min  # これで元データ入れ替えられるんだ？！
+                    peaks[i + 1]['peak_strength'] = self.ps_most_most_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
+                    print("peaks test1", item['latest_time_jp'], item['gap'])
+                    continue
                 # このアイテムのGapが小さい場合、直前も低くなる事に注意
                 item['peak_strength'] = self.ps_most_min  # これで元データ入れ替えられるんだ？！
                 peaks[i + 1]['peak_strength'] = self.ps_most_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
@@ -479,6 +489,7 @@ class PeaksClass:
                 # print("Peak現象判定(直古との比率）", item_oldest_ratio,)
                 item['peak_strength'] = self.ps_most_min  # これで元データ入れ替えられるんだ？！
                 peaks[i + 1]['peak_strength'] = self.ps_most_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
+                print("peaks test", item['latest_time_jp'], item['gap'])
             elif item_latest_ratio <= overlap_ratio and item_oldest_ratio <= overlap_ratio:
                 # print("ラップ率が両サイドに比べてそこそこ低め⇒多少スキップの可能性が上がる）
                 # print("", item['time'], latest_item['time'], oldest_merged_item['time'])
@@ -1018,6 +1029,7 @@ class PeaksClass:
         # ■■同一価格の探索
         break_num = 0  #
         same_price_num = 0
+        strength_border = 1  # この点数以下のストレングスはカウントしない（１点はしない）
         break_border = 1  # この数以上のBreakが発生するまでの同一価格リストを求める
         break_border2 = 2  # この数以上のBreakが発生するまでの同一価格リストを求める
         for i, item in enumerate(peaks):
@@ -1050,6 +1062,10 @@ class PeaksClass:
                 else:
                     self.same_price_list_outer.append({"i": i, "item": item, "time_gap": time_gap_sec})
                 continue
+            # i=0の場合、最低１つは入れるが、それを確保した後は、ピークが弱いものは除外
+            if item['peak_strength'] <= strength_border:
+                continue
+
             # 除外条件（ターゲットより前の場合)
             # if i < target_num:
             #     print("除外（iに比べて、時系列的に未来にあるため）")

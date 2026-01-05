@@ -200,8 +200,9 @@ class main():
             # 初回は、manageで取得したデータで実行する
             pass
         else:
-            self.positions_control_class.all_update_information()  # positionの更新
-            self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, 0)  # 現在時刻（０）でデータ取得
+            self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, 0)  # Watchingがある場合、キャンドルを先にやる
+            self.positions_control_class.all_update_information(self.candleAnalysisClass)  # positionの更新
+            # self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, 0)  # 現在時刻（０）でデータ取得　←もともとupdateの後にキャンドル
             # self.get_df_data()  # データの取得
 
         # ■調査実行
@@ -227,6 +228,7 @@ class main():
         self.latest_exe_time = datetime.datetime.now().replace(microsecond=0)  # 最終実行時刻を取得しておく
 
     def mode2(self):
+        self.candleAnalysisClass.update_s5_df(0)  # 5秒足のデータフレーム更新
         self.positions_control_class.all_update_information(self.candleAnalysisClass)  # positionの更新
         life_check_res = self.positions_control_class.life_check()
 
@@ -247,7 +249,10 @@ class main():
                         rpl = item["t_time_past_sec"]
                         pl = item['pl']
                         if len(current_positions['watching_list']) > 0:
-                            w = ", ".join(["|".join(map(str, d.values())) for d in current_positions['watching_list'][i]])
+                            # print("warcknglisi kakunin")
+                            # print(current_positions['watching_list'])
+                            # w = ", ".join(["|".join(map(str, d.values())) for d in current_positions['watching_list'][i]])
+                            w = ", ".join(d['name'] for d in current_positions['watching_list'])
                         else:
                             w = ""
                         c = c + "   " + name + "(priority:" + str(pr) + ",t_pass_sec:" + str(rpl) + ",pl:" + str(pl) + ",w:" + w + ")"

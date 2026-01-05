@@ -142,6 +142,71 @@ class Order:
         # 他に対外的に使うやつ
         # self.linkage_classes = self.linkage_classes  # 覚書
 
+    def update_plan(self, order_json):
+        self.order_json_original = order_json  # オーダー用json
+        self.order_json = self.order_json_original
+
+        # ■■
+        # 色々なオーダーに必要になる初期値
+        self.instrument = "USD_JPY"
+        self.base_oa_mode = 2  # デフォルトの口座は2(両建て用）
+        self.basic_unit = 10000
+        self.basic_lc_range = 1  # 1円
+        self.trade_timeout_min_base = 240
+        self.order_timeout_min_base = 60
+        self.lc_change_base = 3  # ベースは０（LCchangeなし）
+        # 判定に利用する、初期値
+        self.u = 3  # round時の有効桁数
+        self.dependence_price_or_range_criteria = 80  # ドル円の場合、80以上は価格とみなし、それ以下はrangeとみなす
+        self.dependence_tp_lc_margin = 0.01  # targetとTP/LCとの間が極端に狭いときはウォーニングを出す（すぐ決済になってしまうため）
+
+        # ■■
+        # OandaAPI用のにはこのJsonを送信することでオーダーを発行可能
+        self.data = {}
+        self.exe_order = {}
+        # オーダーを管理するための情報群（デフォルト値付）
+        self.oa_mode = 2
+        self.target = 0  # 正の値で記載。margin または　target_priceが渡される（引数のコピー）
+        self.target_price = 0  # targetから抽出されたtarget_price
+        self.margin = 0  # targetから抽出されたmargin(現在価格とtarget_priceの差分）
+        self.direction = 0
+        self.ls_type = ""
+        self.units = 0
+        self.units_adj = 0.1
+        self.decision_time = 0  # 決心時の時間
+        self.current_price = 0  # 現在価格（＝決心価格。現在価格はAPIで取得しない⇒大規模トライでもこのクラスを使うため）
+        self.priority = 0
+        self.tp_price = 0
+        self.tp_range = 0  # 正の値で記載
+        self.lc_price = 0
+        self.lc_range = 0  # 正の値で起債
+        self.name = "name"
+        self.name_ymdhms = "name_for_test"  # 大量処理のテストで1年を通じて同じ名前が発生しないように、年月日をくっつけたものも準備
+        self.trade_timeout_min = 0
+        self.order_timeout_min = 0
+        self.order_permission = True
+        self.lc_change = {}
+        self.linkage_order_classes = []
+        self.lc_change_candle_type = ""
+
+        # 色々な情報を受け取っていれば、それを取得する(ただし、エラー防止のため、インスタンス変数で明示的に損z内を示す）
+        self.candle_analysis = None
+        self.move_ave = 0
+        if "candle_analysis_class" in order_json:
+            # print("candle_analysis_classがあるよ", round(order_json['candle_analysis_class'].candle_class.cal_move_ave(1), 3))
+            self.move_ave = order_json['candle_analysis_class'].candle_class.cal_move_ave(1)
+            self.candle_analysis = order_json['candle_analysis_class']
+        else:
+            tk.line_send("【注意】キャンドルアナリシスが添付されていない注文が発生 in updatePlan")
+            print("candle_analysis_classがない")
+            print(order_json)
+
+        # ■■処理
+        self.check_order_json()  # 渡された引数に、必要項目の抜けがある場合、ここで表示
+        self.order_finalize_new()  # 管理に必要な情報を、計算で補完する。
+        self.lc_change_control()  # lc_changeを付与する。
+        self.make_json_from_instance()  # オーダー可能な情報を生成する。
+
     def check_order_json(self):
         """
         オーダーの中身を確認し、オーダーに必要な情報が足りているかを確認する
@@ -318,9 +383,9 @@ class Order:
         # オーダーの特殊な設定達
         # オーダーパーミッション
         if 'order_permission' in order_json:
-            self.order_permission = True  # 即時オーダー発行
+            self.order_permission = order_json['order_permission']  # 指定ある場合は指定に従う。
         else:
-            self.order_permission = False
+            self.order_permission = True  # 指定がなければ即時オーダーが基本
 
         # lc_change_candleで利用する足の設定
         if 'lc_change_candle_type' in order_json:
@@ -330,15 +395,15 @@ class Order:
 
 
         # アラート機能
-        if "alert" in order_json and "range" in order_json['alert']:
-            # if isinstance(plan['alert']['range'], int)
-            temp_range = round(order_json['alert']['range'], self.u)
-            temp_price = round(order_json['target_price'] - (
-                        order_json['alert']['range'] * order_json['direction']), self.u)
-            # 改めて入れなおしてしまう（別に上書きでもいいんだけど）
-            order_json['alert'] = {"range": temp_range, "alert_price": temp_price, "time": 0}
-        else:
-            order_json['alert'] = {"range": 0, "time": 0, "alert_price": 0}
+        # if "alert" in order_json and "range" in order_json['alert']:
+        #     # if isinstance(plan['alert']['range'], int)
+        #     temp_range = round(order_json['alert']['range'], self.u)
+        #     temp_price = round(order_json['target_price'] - (
+        #                 order_json['alert']['range'] * order_json['direction']), self.u)
+        #     # 改めて入れなおしてしまう（別に上書きでもいいんだけど）
+        #     order_json['alert'] = {"range": temp_range, "alert_price": temp_price, "time": 0}
+        # else:
+        #     order_json['alert'] = {"range": 0, "time": 0, "alert_price": 0}
 
         # ref(無いと、検証の時にエラーになる)
         if "ref" in order_json:

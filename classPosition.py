@@ -374,14 +374,18 @@ class order_information:
         self.name_ymdhms = plan['name_ymdhms']
         # (2)各フラグを指定しておく
         # オーダ―パーミッションは、plan内でwatchingPrice指定なし、または０指定でパーミッションはTrue(即時取得）。
-        if "watching_price" in plan:
-            # 指定有
-            if plan['watching_price'] == 0:
-                self.order_permission = True  # 即時
-            else:
-                self.order_permission = False  # 待機
+        # if "watching_price" in plan:
+        #     # 指定有
+        #     if plan['watching_price'] == 0:
+        #         self.order_permission = True  # 即時
+        #     else:
+        #         self.order_permission = False  # 待機
+        # else:
+        #     # 指定なし
+        #     self.order_permission = True
+        if 'order_permission' in plan:  # していない場合は初期値50分
+            self.order_permission = plan['order_permission']
         else:
-            # 指定なし
             self.order_permission = True
         # print("    オーダーパーミッション確認用", self.order_permission)
         # self.order_permission = plan['order_permission']  # 即時のオーダー判断に利用する
@@ -905,7 +909,7 @@ class order_information:
         #                            self.win_max_plu, self.t_pl_u)
         #             self.close_trade(None)
 
-    def update_information(self, candle_analysis_class = None):  # orderとpositionを両方更新する
+    def update_information(self, candle_analysis_class=None):  # orderとpositionを両方更新する
         """
         この関数では最新の状態を取得する（インスタンス変数を更新する）
         ただし、orderやTradeのステータスはこの関数では変更しない。
@@ -916,11 +920,6 @@ class order_information:
         """
         if not self.life:
             return 0  # LifeがFalse（＝オーダーが発行されていない状態）では実行しない
-
-        # [分岐]初期にオーダー確定しない場合は、life=Trueだがオーダー等がない。
-        if self.waiting_order:
-            self.watching_for_position()
-            return 0
 
         # (0)現在価格の取得
         temp_current_price = self.oa.NowPrice_exe("USD_JPY")
@@ -933,6 +932,19 @@ class order_information:
                 self.current_price = temp_current_price['data']['bid']
             else:
                 self.current_price = temp_current_price['data']['ask']
+        # df空の価格の場合
+        # peaks_class = candle_analysis_class.peaks_class
+        # now_price = candle_analysis_class.s5_df_r.iloc[0]['open']
+        # now_time = candle_analysis_class.s5_df_r.iloc[0]['time_jp']
+        # print("現在価格の比較 API:", self.current_price, "df_price", now_price, "現在の時刻(API)", datetime.datetime.now(),
+        # "現在の時刻df", now_time)
+
+        # [分岐]初期にオーダー確定しない場合は、life=Trueだがオーダー等がない。
+        if self.waiting_order:
+            if candle_analysis_class is None:
+                tk.line_send("waitingにキャンドルが渡されていない")
+            self.watching_for_position(candle_analysis_class)
+            return 0
 
         # (1) OrderDetail,TradeDetailの取得（orderId,tradeIdの確保）
         if self.o_id == -1:
@@ -1076,6 +1088,13 @@ class order_information:
         """
         watching for position から呼ばれる、オーダー発行関数
         """
+        # オーダーのアップデート（必要に応じて）
+        plan_dic = self.order_class.order_json
+        plan_dic['type'] = "LIMIT"
+        plan_dic['name'] = plan_dic['name'] + "@"
+        self.order_class.update_plan(plan_dic)  # オーダーの再構築
+        self.order_plan_registration(self.order_class)  # オーダーの再登録
+
         # オーダー発行
         order_res = self.make_order()
         self.waiting_order = False  # 超大事
@@ -1106,7 +1125,7 @@ class order_information:
         return {"order_name": self.name, "order_id": order_res['order_id'],
                 "name_ymdhms": self.name_ymdhms, "order_result": order_res['order_result']}
 
-    def watching_for_position(self):
+    def watching_for_position(self, candle_analysis_class):
         """
         規定価格を●秒間越えていら、正式にオーダーが発行される仕組み.
         一瞬だけひっかけるような動きでのロスを防止したい。特に、「順張りを目指す場合」
@@ -1119,6 +1138,8 @@ class order_information:
             return 0
 
         # ■【共通処理】現在価格等の更新
+        # peaks_class = candle_analysis_class.peaks_class
+        # now_price = candle_analysis_class.peaks_class.df_r_original.iloc[0]['open']
         now_time = datetime.datetime.now()
         o_dir = self.plan_json['direction']
         if o_dir == 1:
@@ -1222,7 +1243,8 @@ class order_information:
                     exe_order = True
             # ■状態通知用
             if not self.watching_position_done_send_line:
-                tk.line_send("初回のポジションウォッチング状態(STOP):", self.name)
+                tk.line_send("初回のポジションウォッチング状態(STOP):", self.name, self.plan_json['direction'],
+                             self.plan_json['target_price'], self.current_price)
                 self.watching_position_done_send_line = True
             # ■実行
             if exe_order:
@@ -1915,10 +1937,6 @@ class order_information:
                            "⇒", new_lc_price,
                            self.t_execution_price,
                            "予定価格", round(self.plan_json['target_price'], self.u))
-        self.send_line("　(LinkageLC上げ)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], self.u),
-                       "⇒", new_lc_price,
-                       self.t_execution_price,
-                       "予定価格", round(self.plan_json['target_price'], self.u))
         self.plan_json['lc_price'] = new_lc_price
 
     def linkage_tp_change(self, new_tp_price):

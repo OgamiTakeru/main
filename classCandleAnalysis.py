@@ -33,6 +33,7 @@ class candleAnalysis:
         # データ入れる用
         self.d5_df_r = None
         self.d60_df_r = None
+        self.s5_df_r = None
 
         # # ■■　重複でAPIを打つことを避けたい
         if candleAnalysis.latest_df_d5_df_r is None:
@@ -126,6 +127,39 @@ class candleAnalysis:
             except:
                 pass
 
+    def update_s5_df(self, target_time_jp=0):
+        if target_time_jp == 0:
+            # nowでやる場合（通常）
+            # 5秒足で
+            s5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+                                                                  {"granularity": "S5", "count": 5},
+                                                                  1)  # 時間昇順(直近が最後尾）
+            if s5_df_res['error'] == -1:
+                print("error Candle")
+                tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                return -1
+            else:
+                s5_df_latest_bottom = s5_df_res['data']
+            self.s5_df_r = s5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+
+        else:
+            # 指定の時刻でやる場合
+            jp_time = target_time_jp
+            euro_time_datetime = jp_time - datetime.timedelta(hours=9)
+            euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
+
+            # 最短の５秒足も取得しておく
+            param = {"granularity": "S5", "count": 5, "to": euro_time_datetime_iso}
+            s5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間昇順(直近が最後尾）
+            if s5_df_res['error'] == -1:
+                print("error Candle")
+                tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                return -1
+            else:
+                s5_df_latest_bottom = s5_df_res['data']
+            self.s5_df_r = s5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+
+
     def get_date_df(self, target_time_jp):
         # データを取得する
         if target_time_jp == 0:
@@ -153,6 +187,18 @@ class candleAnalysis:
             else:
                 d60_df_latest_bottom = d60_df_res['data']
             self.d60_df_r = d60_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+
+            # 5秒足で
+            s5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+                                                                  {"granularity": "S5", "count": 5},
+                                                                  1)  # 時間昇順(直近が最後尾）
+            if s5_df_res['error'] == -1:
+                print("error Candle")
+                tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                return -1
+            else:
+                s5_df_latest_bottom = s5_df_res['data']
+            self.s5_df_r = s5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
         else:
             # 指定の時刻でやる場合
@@ -182,6 +228,16 @@ class candleAnalysis:
                 d60_df_latest_bottom = d60_df_res['data']
             self.d60_df_r = d60_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
+            # 最短の５秒足も取得しておく
+            param = {"granularity": "S5", "count": 5, "to": euro_time_datetime_iso}
+            s5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間昇順(直近が最後尾）
+            if s5_df_res['error'] == -1:
+                print("error Candle")
+                tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                return -1
+            else:
+                s5_df_latest_bottom = s5_df_res['data']
+            self.s5_df_r = s5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
 class eachCandleAnalysis:
     def __init__(self, peaks_class, granularity):

@@ -656,6 +656,7 @@ class order_information:
             result_dic = {
                 "order_time": self.o_time,
                 "res": str(trade_latest['unrealizedPL']),  # 上と違う部分
+                "res_tp_lc": 0,
                 "take_time": self.t_time,
                 "take_price": str(trade_latest['price']),
                 "end_time": trade_latest['closeTime'],
