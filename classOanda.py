@@ -276,7 +276,7 @@ class Oanda:
                           "cancel": canceled,
                           "order_id": order_id,
                           "order_time": order_time,
-                          "json": res_json,
+                          "json": res_json,  # Oanda空の返却
                           }
             return {"error": 0, "data": order_info}
 

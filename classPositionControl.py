@@ -140,6 +140,12 @@ class position_control:
 
                 # Falseのとこで実行する
                 res_dic = position_slot.order_plan_registration(order_class)
+                lc_change_str = ""
+                for i, item in enumerate(order_class.lc_change):
+                    if i == 2:
+                        break
+                    lc_change_str = lc_change_str + ",(" + str(item['trigger']) + "-" + str(item['ensure']) + ")"
+
                 if res_dic['order_id'] == 0:
                     print("オーダー失敗している（大量オーダー等）")
                     line_send = line_send + "オーダー失敗(" + str(order_i) + ")" + "\n"
@@ -148,39 +154,43 @@ class position_control:
                     if res_dic['order_id'] == -1:
                         # ウォッチオーダー
                         print("オーダー通知")
-                        # print(res_dic)
-                        # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
-                        # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
-                        # print(res_dic['order_name'])
-                        # print(res_dic)
-                        line_send = line_send + "◆【" + str(res_dic['order_name']) + "】を即時ポジションなしで発行" + \
-                                    "指定価格:【" + str(round(res_dic['order_result']['price'], self.u)) + "】" + \
-                                    ",DIR:" + str(res_dic['order_result']['direction']) + \
-                                    ", 数量:" + str(res_dic['order_result']['units']) + \
-                                    ", TP:" + str(round(res_dic['order_result']['tp_price'], self.u)) + \
-                                    "(" + str(round(res_dic['order_result']['tp_range'], self.u)) + ")" + \
-                                    ", LC:" + str(round(res_dic['order_result']['lc_price'], self.u)) + \
-                                    "(" + str(round(res_dic['order_result']['lc_range'], self.u)) + ")" + \
-                                    ", AveMove:" + str(round(res_dic['ref']['move_ave'], self.u)) + \
-                                    "[システム]classNo:" + str(class_index) + ",\n"
+                        # line_send = line_send + "◆【" + str(res_dic['order_name']) + "】を即時ポジションなしで発行" + \
+                        #             "指定価格:【" + str(round(res_dic['order_result']['price'], self.u)) + "】" + \
+                        #             ",DIR:" + str(res_dic['order_result']['direction']) + \
+                        #             ", 数量:" + str(res_dic['order_result']['units']) + \
+                        #             ", TP:" + str(round(res_dic['order_result']['tp_price'], self.u)) + \
+                        #             "(" + str(round(res_dic['order_result']['tp_range'], self.u)) + ")" + \
+                        #             ", LC:" + str(round(res_dic['order_result']['lc_price'], self.u)) + \
+                        #             "(" + str(round(res_dic['order_result']['lc_range'], self.u)) + ")" + \
+                        #             ", AveMove:" + str(round(res_dic['ref']['move_ave'], self.u)) + \
+                        #             "[システム]classNo:" + str(class_index) + ",\n" + \
+                        #             ", memo:" + str(order_class.memo) + \
+                        #             ",lc_change" + str(lc_change_str)
+
+                        # new
+                        line_send = line_send + position_slot.for_line_send + "[システム]classNo:" + str(class_index) + "\n"
                         break
                     else:
                         # オーダーの生成完了をLINE通知する
                         print("オーダー通知", res_dic['order_name'])
-                        print(res_dic)
-                        o_trans = res_dic['order_result']['json']['orderCreateTransaction']  # 短縮のための変数化
-                        line_send = line_send + "【" + str(res_dic['order_name']) + "】,\n" +\
-                                    "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
-                                    ", 数量:" + str(o_trans['units']) + \
-                                    ", タイプ:" + order_class.ls_type + \
-                                    ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
-                                    "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), self.u)) + ")" + \
-                                    ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
-                                    "(" + str(round(abs(float(o_trans['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), self.u)) + ")" + \
-                                    ", AveMove:" + str(round(res_dic['ref']['move_ave'], self.u)) + \
-                                    ", OrderID:" + str(res_dic['order_id']) + \
-                                    ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "[システム]classNo:" + str(class_index) + ",\n"
-                                    # "\n"
+                        # print(res_dic)
+                        # o_trans = res_dic['order_result']['json']['orderCreateTransaction']  # 短縮のための変数化
+                        # line_send = line_send + "【" + str(res_dic['order_name']) + "】,\n" +\
+                        #             "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
+                        #             ", 数量:" + str(o_trans['units']) + \
+                        #             ", タイプ:" + order_class.ls_type + \
+                        #             ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
+                        #             "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), self.u)) + ")" + \
+                        #             ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
+                        #             "(" + str(round(abs(float(o_trans['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), self.u)) + ")" + \
+                        #             ", AveMove:" + str(round(res_dic['ref']['move_ave'], self.u)) + \
+                        #             ", OrderID:" + str(res_dic['order_id']) + \
+                        #             ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "[システム]classNo:" + str(class_index) + ",\n" + \
+                        #             ", memo:" + str(order_class.memo) + \
+                        #             ",lc_change" + str(lc_change_str)
+
+                        # new
+                        line_send = line_send + position_slot.for_line_send + "[システム]classNo:" + str(class_index) + "\n"
                         break
         return line_send
 
@@ -189,11 +199,45 @@ class position_control:
         全ての情報を更新する
         :return:
         """
+        #  ### Update作業
+        # update前
+        old_S = [obj.life for obj in self.position_classes]   # 更新前
+        # update作業
         for item in self.position_classes:
             if item.life:
                 item.update_information(candle_analysis_class)
+        # update後
+        changed = [
+            obj
+            for obj, old_s in zip(self.position_classes, old_S)
+            if old_s is True and obj.life is False
+        ]  # クラスのリスト
 
-        # # 関連オーダーの更新
+        #  ## 変化に伴う作業
+        if changed:
+            avg = sum(obj.t_pl_u for obj in changed) / len(changed)
+        else:
+            avg = 0  # もしくは None
+        if avg < 0:
+            # 負けっぽくなっている時は、持っているポジションのどれかのTPをそれにする
+            if any(obj.life for obj in self.position_classes):  # 一つでもTrueでもある場合
+                remain_classes = [obj for obj in self.position_classes if obj.life is True]
+                remain_class_num = len(remain_classes)  # これで割れたら・・？
+                for i, item in enumerate(remain_classes):
+                    if item.t_state == "OPEN":
+                        # できれば解消したポジションと逆の方向のポジションのTPを変更したい。
+                        # ただ同時に複数のポジションを解消する可能性もあり、どうしよう
+                        tk.line_send("一部負けが確定したので、所持しているポジションを利確に持っていく")
+                        item.change_tp(abs(avg))  #TP変更
+                        item.del_lc_change()
+                        break  # 1つ変更したら終了
+            else:
+                pass
+        else:
+            # プラス終了の場合
+            pass
+
+        #  #関連オーダーの更新
         self.linkage_control()
 
     def life_check(self):

@@ -56,9 +56,10 @@ class Order:
         self.trade_timeout_min = 0
         self.order_timeout_min = 0
         self.order_permission = True
-        self.lc_change = {}
+        self.lc_change = []
         self.linkage_order_classes = []
         self.lc_change_candle_type = ""
+        self.memo = ""
 
         # 色々な情報を受け取っていれば、それを取得する(ただし、エラー防止のため、インスタンス変数で明示的に損z内を示す）
         self.candle_analysis = None
@@ -185,7 +186,7 @@ class Order:
         self.trade_timeout_min = 0
         self.order_timeout_min = 0
         self.order_permission = True
-        self.lc_change = {}
+        self.lc_change = []
         self.linkage_order_classes = []
         self.lc_change_candle_type = ""
 
@@ -392,6 +393,12 @@ class Order:
             self.lc_change_candle_type = order_json['lc_change_candle_type']
         else:
             self.lc_change_candle_type = "M5"
+
+        # メモ
+        if 'memo' in order_json:
+            self.memo = order_json['memo']
+        else:
+            self.memo = ""
 
 
         # アラート機能
