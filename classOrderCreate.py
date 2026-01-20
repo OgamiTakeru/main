@@ -76,7 +76,7 @@ class Order:
         # ■■処理
         self.check_order_json()  # 渡された引数に、必要項目の抜けがある場合、ここで表示
         self.order_finalize_new()  # 管理に必要な情報を、計算で補完する。
-        self.lc_change_control()  # lc_changeを付与する。
+        # self.lc_change_control()  # lc_changeを付与する。
         self.make_json_from_instance()  # オーダー可能な情報を生成する。
 
     def make_json_from_instance(self):
@@ -387,6 +387,16 @@ class Order:
             self.order_permission = order_json['order_permission']  # 指定ある場合は指定に従う。
         else:
             self.order_permission = True  # 指定がなければ即時オーダーが基本
+
+        # lc_change_candleで利用する足の設定
+        if 'lc_change' in order_json:
+            if order_json['lc_change'] is None:
+                # ほぼ無効の物を入れておく
+                self.lc_change = [{"exe": False, "time_after": 605, "trigger": 1, "ensure": 1 * 0.8}]
+            else:
+                self.lc_change = order_json['lc_change']
+        else:
+            self.lc_change = [{"exe": False, "time_after": 605, "trigger": 1, "ensure": 1 * 0.8}]
 
         # lc_change_candleで利用する足の設定
         if 'lc_change_candle_type' in order_json:

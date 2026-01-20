@@ -1053,7 +1053,7 @@ class MainAnalysis:
                 print("オーダー済みの時刻", gl_previous_exe_df60_order_time, candle_analysis.d60_df_r.iloc[0]['time_jp'])
 
         # (2)5分足での調査
-        # self.bb_cross_analysis(0, mode)  # ０は引数。スタート地点
+        self.bb_cross_analysis(0, mode)  # ０は引数。スタート地点
 
         # (3)ターン起点
         self.predict_registance_turn_analysis()
@@ -1325,13 +1325,7 @@ class MainAnalysis:
         far_price = 0 if latest_peak['direction'] == 1 else 999
         price_list = "same_price_list"
         price_target_total = "same_price_list_total"
-        print(s, "対象のピークス", peaks[1]['latest_time_jp'], "-", peaks[-1]['latest_time_jp'])
-        test = self.support_line_detect(2)
-        print("SamePriceList")
-        gene.print_arr(test["same_price_list"])
-        print("SamePriceList NoBreak")
-        gene.print_arr(test["same_price_list0"])
-
+        print(s, "対象のピークス", peaks[0]['latest_time_jp'], "-", peaks[-1]['latest_time_jp'])
         for i, item in enumerate(peaks):
             if i >= 2 and latest_peak['direction'] == item['direction']:
                 if latest_peak['direction'] == 1:
@@ -1425,10 +1419,40 @@ class MainAnalysis:
         lc_range2 = round(abs(target_price - wick_peak_price_lc), self.round_digit)
         print(s, "LC候補", wick_peak_price_lc, "target", target_price, "lc_range", lc_range2)
 
+        # # 最高、最低到達点の確認。また
+        # highest_price = 0
+        # lowest_price = 999
+        # for i, item in enumerate(target_line[price_list]):
+        #     if item['item']['highest'] > highest_price:
+        #         highest_price = item['item']['highest']
+        #     if item['item']['lowest'] < lowest_price:
+        #         lowest_price = item['item']['lowest']
+        # if peaks[0]['direction'] * -1 == 1:  # ポジション予定の方向が買いの場合、最低価格をLC価格候補にする
+        #     lc_price_temp = lowest_price
+        # else:
+        #     lc_price_temp = highest_price
+        # print(s, "該当区間の最高価格と最低価格", highest_price, lowest_price, "LC候補価格", lc_price_temp)
+        # # ターゲット価格の設定
+        # m = 0  # 0.01  # mはプラスの値で取得しにくい方向へ
+        # if peaks[0]['direction'] == 1:
+        #     # 直近がプラスの場合は、逆張り-1のポジションを狙う。その為、一番上で売りを入れたいので、highがターゲット
+        #     target_line_price = peaks[target_i]['highest']
+        #     target_price = round(target_line_price + m, self.round_digit)  # +の値で、取得しにくい方向へ
+        # else:
+        #     target_line_price = peaks[target_i]['lowest']
+        #     target_price = round(target_line_price - m, self.round_digit)  # -の値で、取得しにくい方向へ
+        #
+        # # lcの設定
+        # if abs(lc_price_temp - target_price) <= 0.04:
+        #     # lc候補まで距離が短い場合
+        #     lc_price_temp = 0.06  # レンジで指定
+        # else:
+        #     lc_price_temp = lc_price_temp  # 価格で指定
+
         # ターゲット価格がすぐ近く過ぎる場合⇒オーダーを逆にする
         order_current_gap_border = 0.037
         if abs(self.current_price - target_price) <= order_current_gap_border:
-            print(s, "オーダー価格と現在価格が近すぎるため、オーダーを回避 target:", target_price, " current:", self.current_price, abs(self.current_price - target_price))
+            print(s, "オーダー価格と現在価格が近すぎるため、オーダーを回避 target:", target_price, " current:", self.current_price, "line", peaks[target_i]['latest_body_peak_price'])
             print(s, "flop4点基準の場合、これは逆に突破する前兆？？（今まで抵抗でマイナスが多かったので） ")
             print(s, "ただそれでもいい場合もあるので、高得点の場合は、LCを短くしてトライするのもあり")
             pattern = 1
@@ -1451,31 +1475,8 @@ class MainAnalysis:
             pattern = 0
             # return 0
 
-        # 埋もれてる系の抵抗線かを確認
-
-        # 深いバスタブ型を確認
-        print(s, "バスタブ型確認 (２点、最寄りの１つが30分以内、もう一つが５時間以上前、かつ　全部で３個以内")
-        if len(flop_line_info['same_price_list']) >= 2:
-            l_peak = flop_line_info['same_price_list'][0]['item']
-            o_peak = flop_line_info['same_price_list'][1]['item']
-            l_peak_time_gap = gene.cal_str_time_gap(l_peak['latest_time_jp'], self.latest_time)['gap_abs_min']
-            o_peak_time_gap = gene.cal_str_time_gap(o_peak['latest_time_jp'], self.latest_time)['gap_abs_min']
-            if l_peak_time_gap <= 20 and o_peak_time_gap >= 360:  # フロップが30分以内　かつ、その前が６時間以上前
-                if len(flop_line_info[price_list]) <= 3:  # 全部で３個以内の抵抗線
-                    print(s, "深いバスタブと判定", l_peak_time_gap, o_peak_time_gap)
-                    pattern = 1
-                else:
-                    print(s, "バスタブNG　直近のflop、その前のギャップが", l_peak_time_gap, o_peak_time_gap)
-
         # 直近（Flop）が１０越えていた場合はflopを採用。10越えていない場合、過去25足で一番大きな抵抗線を採用する。
         if target_line[price_target_total] >= strong_border and len(target_line[price_list]) >= 2:  # 理想は13以上？
-
-            # # 負けが込んでるので、逆転を試す。2026/1/15 15:30
-            # if pattern == 1:
-            #     pattern = 0
-            # else:
-            #     pattern = 1
-
             if pattern == 0:
                 print(s, "予測ターンオーダーをしたい！ target:", target_price)
                 order_class1 = OCreate.Order({
@@ -1492,7 +1493,6 @@ class MainAnalysis:
                     "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
                     "candle_analysis_class": self.ca,
                     "lc_change_candle_type": "M5",
-                    "memo": ""
                     # "order_timeout_min": 40
                 })
                 # オーダーの追加
@@ -1514,10 +1514,384 @@ class MainAnalysis:
                     "candle_analysis_class": self.ca,
                     "lc_change_candle_type": "M5",
                     # "order_timeout_min": 40
-                    "memo": ""
                 })
                 # オーダーの追加
                 self.add_order_to_this_class(order_class1)
+
+    # def simple_turn_analysis_bef(self):
+    #     print("■シンプルターンオーダー", self.latest_price)
+    #     # 変数化
+    #     s = self.s
+    #     peaks = self.peaks_class.peaks_original
+    #     peaks_skip = self.peaks_class.skipped_peaks_hard
+    #     latest_price = self.latest_price  # self.ca = candle_analysis
+    #     ave = self.ca.candle_class_hour
+    #     latest_time = self.latest_time
+    #     bb_h1_class = self.bb_h1_class  # この結果が必須！
+    #     bb_m5_class = self.bb_m5_class  # この結果も必須”
+    #     mode = self.mode
+    #     ave5 = self.ca5
+    #     df = self.peaks_class.df_r_original
+    #     big_move_criteria = 0.1  # 個以上動いたら、5分１足にしては大きい
+    #     u = self.round_digit
+    #     pattern = 0  # 通常では0
+    #     allowed_gap_to_bb = 0.02  # 現在価格と近いBBまでの距離（近い場合＋レンジの場合は伸びないはず）
+    #     latest_dir = peaks[0]['direction']
+    #
+    #     # 途中終了の場合
+    #     if peaks[1]['gap'] < 0.04:
+    #         print(s, "対象が小さい", peaks[1]['gap'])
+    #     if peaks[0]['count'] != 2:  # and self.mode == "inspection"
+    #         print(s, "カウントが２以外", peaks[0]['count'])
+    #         return 0
+    #
+    #     # 数字に調整が入る場合
+    #     if df.iloc[1]['moves'] >= big_move_criteria or df.iloc[2]['moves'] >= big_move_criteria:
+    #         print(s, "ビッグムーブのため、LCを少し広げておく")
+    #     else:
+    #         print(s, "ビッグムーブなし", df.iloc[1]['time_jp'],  df.iloc[1]['moves'],  df.iloc[2]['time_jp'],  df.iloc[1]['moves'])
+    #
+    #     # peaks[0]の足の大きさの比較
+    #     df1 = df.iloc[1]
+    #     df2 = df.iloc[2]
+    #     a1 = df1['inner_low']
+    #     b1 = df1['inner_high']
+    #     a2 = df2['inner_low']
+    #     b2 = df2['inner_high']
+    #     size1 = b1 - a1
+    #     size2 = b2 - a2
+    #     base_size = max(size1, size2)
+    #     overlap = max(0, min(b1, b2) - max(a1, a2))
+    #     overlap_rate = overlap / base_size if base_size > 0 else 0
+    #     print(s, "df_test", df.iloc[1]['time_jp'], df.iloc[2]['time_jp'])
+    #     print(s, df.iloc[1]['time_jp'], a1, b1)
+    #     print(s, df.iloc[2]['time_jp'], a2, b2)
+    #     print(s, "df_test", overlap_rate, )
+    #     if overlap_rate >= 0.8:
+    #         print(s, "直近のラップが大きいため、読みにくい")
+    #         # return 0
+    #
+    #     # 瞬間の価格変動は？
+    #     if mode == "live":
+    #         # 変動が大きいときは、ローソクの終わり値と、現在価格がずれる。ずれている時はちょっと警戒！
+    #         latest_price_from_df = df.iloc[1]['close']  # iloc[1]
+    #         price_dic = self.oa.NowPrice_exe(self.pair)  # US/JPY
+    #         latest_price = price_dic['data']['mid']  # mid価格でいいや
+    #     else:
+    #         latest_price_from_df = df.iloc[1]['close']  # iloc[1]
+    #         latest_price = latest_price_from_df  # 検証の場合、どうしようもないので一致
+    #     gap_of_second = round(abs(latest_price_from_df - latest_price), u)
+    #     print(s, "  価格差の検証 API価格:", latest_price, " DF価格:", latest_price_from_df, "差", gap_of_second)
+    #     if gap_of_second >= 0.02:
+    #         print(s, "瞬間的に移動が大きい⇒見送り？LimitかStopの変更？")
+    #         if mode == "live":
+    #             tk.line_send("瞬間的な価格変動が大きい？ API価格", latest_price, "DF価格", latest_price_from_df)
+    #
+    #     # riverの最後の足が長い場合は、おかしいことになる？
+    #     latest_foot = df.iloc[1]  # peaksを作ったきっかけの足
+    #     if latest_dir == 1:
+    #         target_bb_price = round(df.iloc[1]['bb_upper'], self.round_digit)  # [0]のほうが良い？
+    #     else:
+    #         target_bb_price = round(df.iloc[1]['bb_lower'], self.round_digit)
+    #     gap_bb_to = round(abs(latest_price-target_bb_price), self.round_digit)  # 狭ければNG？
+    #     print(s, "  直近の足", latest_foot['time_jp'])
+    #     print(s, "  抵抗線の発見有無", self.exist_strong_line)
+    #     print(s, "  現在価格とBBと距離", latest_price, target_bb_price, gap_bb_to)
+    #     # latestとturnの比率
+    #     # rt = TuneAnalysisInformation(self.peaks_class, 1, "rt")  # peak情報源生成
+    #     rt_ratio = round(peaks[0]['gap'] / peaks[1]['gap'], 3)
+    #     print(s, "  rt比率", rt_ratio)  # riverの方が大きい場合、1を超える
+    #
+    #     if rt_ratio >= 1.2:
+    #         print(s, "  riverがturnより大きい（riverとは逆に戻ってきそう。）", rt_ratio)
+    #         if gap_bb_to <= 0.03:
+    #             print("BBの近くに価格が迫っている", gap_bb_to)
+    #     else:
+    #         print(s, "river小さめ　BBまでの距離有　REV??", rt_ratio, gap_bb_to)
+    #
+    #     # latestの戻り幅が大きい（turnが3カウント以上あり、3カウントを越える戻りの場合。1.2よりこっちのほうが現実的？）
+    #     body_total = 0
+    #     count = 0
+    #     for i in range(2, 4):  # 最大2回（4-2)、ただしturnのカウント以下
+    #         print(s, "  dfの時間：", df.iloc[i]['time_jp'], i, count, df.iloc[i]['body'])
+    #         body_total = body_total + abs(df.iloc[i]['body'])
+    #         count = count + 1
+    #         if count == peaks[1]['count']:
+    #             break
+    #     print(s, "  ターン直近2個の合計", body_total, "(参考)ターンカウント", peaks[1]['gap'], "count", peaks[1]['count'])
+    #     rt_ratio_new = round(peaks[0]['gap'] / body_total, 3)
+    #     print(s, "  body_totalとの比率", rt_ratio_new, "latestのgap", peaks[0]['gap'])
+    #     if peaks[0]['gap'] >= 0.05:
+    #         if rt_ratio_new >= 1.1:
+    #             print(s, "latestが大きく、rtの比率も大きく、戻りが強いと判断？ gap", peaks[0]['gap'], "rt", rt_ratio_new)
+    #             pattern = 1
+    #
+    #     # 小さな繰り返しの時
+    #     p1_gap = peaks[1]['gap']
+    #     p1_count = peaks[1]['count']
+    #     p2_gap = peaks[2]['gap']
+    #     p2_count = peaks[2]['count']
+    #     gap_criteria = 0.045
+    #     count_criteria = 3
+    #     if p1_gap <= gap_criteria or p1_count <= count_criteria:
+    #         # 二回連続でギャップが小さいとき
+    #         if p2_gap <= gap_criteria or p2_count <= count_criteria:
+    #             # カウントも少ないとき
+    #             print(s, "強いレンジと思われるため、微妙, 直近", peaks[1]['latest_time_jp'], p1_gap, p1_count, "P2", peaks[2]['latest_time_jp'], p2_gap, p2_count)
+    #             # return 0
+    #
+    #     # BBとの関係性の調査(ジグザグトレンドの判定）
+    #     peaks = self.peaks_class.peaks_original
+    #     latest = peaks[0]
+    #     latest_df = df[:latest['count']+1]
+    #     river = peaks[1]
+    #     river_df = df[latest['count']:latest['count']+river['count']]
+    #     turn = peaks[2]
+    #     turn_df = df[latest['count']+river['count']-1:latest['count']+river['count']+turn['count']-1]
+    #     flop = peaks[3]
+    #     flop_df = df[latest['count']+river['count']+turn['count']-2:latest['count'] + river['count'] + turn['count']+flop['count']-2]
+    #     print(s, "----------------")
+    #     print(s, "latest", latest['latest_time_jp'], "river", river['latest_time_jp'], "turn", turn['latest_time_jp'])
+    #     # BBとクロスしているかを確認する
+    #     print(s, "latest_df", latest_df.iloc[0]['time_jp'], latest_df.iloc[-1]['time_jp'])
+    #     print(s, " river_df", river_df.iloc[0]['time_jp'], river_df.iloc[-1]['time_jp'])
+    #     print(s, "  turn_df", turn_df.iloc[0]['time_jp'], turn_df.iloc[-1]['time_jp'])
+    #     print(s, "  flop_df", flop_df.iloc[0]['time_jp'], flop_df.iloc[-1]['time_jp'])
+    #     river_cross_count = self.sub_bb_cross(river_df, river)
+    #     turn_cross_count = self.sub_bb_cross(turn_df, turn)
+    #     print(s, "river cross", river_cross_count)
+    #     print(s, "turn_cross", turn_cross_count)
+    #
+    #     if river_cross_count >= 2 and river['count'] >= 3:
+    #         print(s, "riverがBB突破傾向⇒ジグザグの可能性？", river_cross_count)
+    #         r_flag = True
+    #         target_peak_bb = river
+    #     elif turn_cross_count >= 2 and river['count'] <= 3:
+    #         print(s, "TurnがBB突破傾向＆riverが短い⇒ジグザグの可能性？")
+    #         tk.line_send("参考　TurnがBB突破傾向＆riverが短い⇒ジグザグの可能性？")
+    #         return 0
+    #         # r_flag = True
+    #         # target_peak_bb = turn
+    #     else:
+    #         r_flag = False
+    #         target_peak_bb = turn  # 使うことはないが、黄色線が後で出るために入れておく
+    #
+    #     # ★★★オーダー
+    #     if not r_flag:
+    #         # 当初の予定通り、戻りきるという前提
+    #         # (1)オーダー準備
+    #         print(s, "オーダー準備")
+    #         river = peaks[1]
+    #         latest = peaks[0]
+    #         # マージンの設定
+    #         real_margin = 0.004  # マイナス値で、順張りの場合、取得しにくい方向へ
+    #         # 順張り方向準備
+    #         s_dir = peaks[0]['direction']
+    #         if s_dir == 1:
+    #             s_target_price = latest['latest_wick_peak_price']  # latest['highest']と比較してもいいかも？？
+    #             s_lc_price = river['lowest']
+    #             s_target_price = s_target_price + real_margin
+    #         else:
+    #             s_target_price = latest['latest_wick_peak_price']
+    #             s_lc_price = river['highest']
+    #             s_target_price = s_target_price - real_margin
+    #         target_margin = round(abs(s_target_price - self.latest_price), self.round_digit)
+    #         s_lc_range = round(abs(s_lc_price - s_target_price), self.round_digit)  # 計算用
+    #         s_for_lc_change = {"exe": True, "time_after": 0, "trigger": s_lc_range + 0.01, "ensure": s_lc_range * 0.5}
+    #         if s_lc_range >= 0.09:  # lcが大きすぎる場合は、補正する(機能の準備のみ）
+    #             arrowed_lc_range = 0.09
+    #             if s_dir == 1:
+    #                 print(s, "LCrangeが広すぎるので修正", s_dir, s_target_price - arrowed_lc_range)
+    #             else:
+    #                 print(s, "LCrangeが広すぎるので修正", s_dir, s_target_price + arrowed_lc_range)
+    #
+    #         # r方向準備
+    #         r_dir = peaks[0]['direction'] * -1
+    #         target_margin_for_r = gene.cal_at_least(0.024, target_margin)
+    #         lc_range_r = target_margin_for_r * 3  # 初期予定するLCレンジ（ただし、最低でもturnのhighかを知りたい ）
+    #         if r_dir == 1:
+    #             # r_target_price = river['highest']  # ここは突破しにくいラインで、うまくいかなかった
+    #             r_target_price = self.latest_price + target_margin_for_r  # ＋正の値で取得しにくい方向へ
+    #             lc_range_r_hl = abs(r_target_price - peaks[1]['highest'])  # 最低でもこの分のLCrangeは確保したい
+    #             if lc_range_r_hl < lc_range_r:
+    #                 lc_r = peaks[1]['highest']  # 価格で指定
+    #                 print(s, "LCrを価格で指定(r_dir1)", lc_r)
+    #             else:
+    #                 lc_r = lc_range_r  # レンジで指定
+    #                 print(s, "LCrを幅で指定(r_dir1)", lc_r)
+    #         else:
+    #             # r_target_price = river['lowest']
+    #             r_target_price = self.latest_price - target_margin_for_r  # -正の値で取得しにくい方向へ
+    #             lc_range_r_hl = abs(r_target_price - peaks[1]['lowest'])
+    #             if lc_range_r_hl < lc_range_r:
+    #                 lc_r = peaks[1]['lowest']  # 価格で指定
+    #                 print(s, "LCrを価格で指定(r_dir　-1)", lc_r)
+    #             else:
+    #                 lc_r = lc_range_r  # レンジで指定
+    #                 print(s, "LCrを幅で指定(r_dir　-1)", lc_r)
+    #         print(s, "現在価格", self.latest_price)
+    #         print(s, "オーダー準備(r)", r_target_price)
+    #         print(s, "オーダー準備(s)", s_target_price, s_lc_price, s_lc_range, r_dir, target_margin_for_r)
+    #         # ここからオーダー
+    #         print(s, "  ５分足トレンドについて is_previous", bb_m5_class.is_previous, "向き",bb_m5_class.latest_price_position_in_bb)
+    #         print(s, "  BBCrossの有無(0=無し,1=あり,2=戻り)", self.bb5_cross_pattern)
+    #         print(s, "  分足のトレンドがあり、latestの向きが異なるため、逆張り", bb_m5_class.latest_price_position_in_bb)
+    #
+    #         order_class = OCreate.Order({
+    #             "name": "シンプルターン",
+    #             "current_price": latest_price,
+    #             "target": s_target_price,
+    #             "direction": s_dir,
+    #             "type": "STOP",  # "STOP",  # "MARKET",
+    #             "tp": 0.25,  # ave5.cal_move_ave(2),  # 0.2,  # ave5.cal_move_ave(3),  ,
+    #             "lc": round(abs(s_target_price - r_target_price) * 1.1, self.round_digit),  # _rと重複するように,
+    #             "lc_change": self.make_lc_change_dic("M5", s_for_lc_change, "offence"),
+    #             "units": self.units_str * 1.01,  # 100,
+    #             "priority": 5,
+    #             "decision_time": df.iloc[0]['time_jp'],
+    #             "candle_analysis_class": self.ca,
+    #             "lc_change_candle_type": "M5",
+    #             # "order_permission": False,
+    #         })
+    #         # self.add_order_to_this_class(order_class)
+    #
+    #         order_class_r = OCreate.Order({
+    #             "name": "シンプルターン_r",
+    #             "current_price": latest_price,
+    #             "target": r_target_price,
+    #             "direction": r_dir,
+    #             "type": "STOP",  # "MARKET",
+    #             "tp": 0.025,  # ave5.cal_move_ave(3),  ,
+    #             "lc": target_margin_for_r * 2.5,  # 0.03,  # ave5.cal_move_ave(1),  # width,
+    #             "lc_change": self.make_lc_change_dic("M5", None, "safety"),
+    #             "units": self.units_str,  # 100,
+    #             "priority": 5,
+    #             "decision_time": df.iloc[0]['time_jp'],
+    #             "candle_analysis_class": self.ca,
+    #             "lc_change_candle_type": "M5",
+    #             "order_permission": False,
+    #             # "order_timeout_min": 15,
+    #         })
+    #         # self.add_order_to_this_class(order_class_r)
+    #
+    #         order_class_r.add_linkage(order_class)
+    #         order_class.add_linkage(order_class_r)
+    #         self.add_order_to_this_class(order_class)
+    #         self.add_order_to_this_class(order_class_r)
+    #         return 0
+    #     else:
+    #         # rフラグがTrueの場合、ジグトレ等の可能性がある
+    #         # (1)オーダー準備
+    #         print(s, "オーダー準備(r)")
+    #         river = peaks[1]
+    #         latest = peaks[0]
+    #         # マージンの設定
+    #         real_margin = -0.004  # プラス値で、順張りの場合、取得しにくい方向へ
+    #         # latestとは逆方向方向準備
+    #         s_dir = peaks[0]['direction'] * -1
+    #         arrowed_gap = 0.012
+    #         if s_dir == 1:
+    #             s_target_price = df.iloc[1]['inner_high']
+    #             temp_gap = abs(s_target_price - self.latest_price)
+    #             if temp_gap <= arrowed_gap:
+    #                 print(s, "r　ターゲットが近すぎる", s_dir, temp_gap, s_target_price, self.latest_price)
+    #                 s_target_price = self.latest_price + arrowed_gap
+    #             s_lc_price = s_target_price - 0.11
+    #             s_target_price = s_target_price + real_margin
+    #         else:
+    #             s_target_price = df.iloc[1]['inner_low']
+    #             temp_gap = abs(s_target_price - self.latest_price)
+    #             if temp_gap <= arrowed_gap:
+    #                 print(s, "r　ターゲットが近すぎる", s_dir, temp_gap, s_target_price, self.latest_price)
+    #                 s_target_price = self.latest_price - arrowed_gap
+    #             s_lc_price = s_target_price + 0.11
+    #             s_target_price = s_target_price - real_margin
+    #         target_margin = round(abs(s_target_price - self.latest_price), self.round_digit)
+    #         s_lc_range = round(abs(s_lc_price - s_target_price), self.round_digit)  # 計算用
+    #         s_for_lc_change = {"exe": True, "time_after": 0, "trigger": s_lc_range + 0.01, "ensure": s_lc_range * 0.5}
+    #         if s_lc_range >= 0.09:  # lcが大きすぎる場合は、補正する(機能の準備のみ）
+    #             arrowed_lc_range = 0.09
+    #             if s_dir == 1:
+    #                 print(s, "LCrangeが広すぎるので修正", s_dir, s_target_price - arrowed_lc_range)
+    #             else:
+    #                 print(s, "LCrangeが広すぎるので修正", s_dir, s_target_price + arrowed_lc_range)
+    #
+    #         # r方向準備
+    #         r_dir = peaks[0]['direction']
+    #         target_margin_for_r = gene.cal_at_least(0.024, target_margin)
+    #         lc_range_r = target_margin_for_r * 3  # 初期予定するLCレンジ（ただし、最低でもturnのhighかを知りたい ）
+    #         if r_dir == 1:
+    #             # r_target_price = river['highest']  # ここは突破しにくいラインで、うまくいかなかった
+    #             r_target_price = self.latest_price + 0.02  #target_margin_for_r  # ＋正の値で取得しにくい方向へ
+    #             # lc_range_r_hl = abs(r_target_price - peaks[1]['highest'])  # 最低でもこの分のLCrangeは確保したい
+    #             # if lc_range_r_hl < lc_range_r:
+    #             #     lc_r = peaks[1]['highest']  # 価格で指定
+    #             #     print(s, "LCrを価格で指定(r_dir1)", lc_r)
+    #             # else:
+    #             #     lc_r = lc_range_r  # レンジで指定
+    #             #     print(s, "LCrを幅で指定(r_dir1)", lc_r)
+    #         else:
+    #             # r_target_price = river['lowest']
+    #             r_target_price = self.latest_price - 0.02  # target_margin_for_r  # -正の値で取得しにくい方向へ
+    #             # lc_range_r_hl = abs(r_target_price - peaks[1]['lowest'])
+    #             # if lc_range_r_hl < lc_range_r:
+    #             #     lc_r = peaks[1]['lowest']  # 価格で指定
+    #             #     print(s, "LCrを価格で指定(r_dir　-1)", lc_r)
+    #             # else:
+    #             #     lc_r = lc_range_r  # レンジで指定
+    #             #     print(s, "LCrを幅で指定(r_dir　-1)", lc_r)
+    #         print(s, "現在価格", self.latest_price)
+    #         print(s, "オーダー準備(r)", r_target_price)
+    #         print(s, "オーダー準備(s)", s_target_price, s_lc_price, s_lc_range, r_dir, target_margin_for_r)
+    #         # ここからオーダー
+    #         print(s, "  ５分足トレンドについて is_previous", bb_m5_class.is_previous, "向き",
+    #               bb_m5_class.latest_price_position_in_bb)
+    #         print(s, "  BBCrossの有無(0=無し,1=あり,2=戻り)", self.bb5_cross_pattern)
+    #         print(s, "  分足のトレンドがあり、latestの向きが異なるため、逆張り", bb_m5_class.latest_price_position_in_bb)
+    #
+    #         order_class = OCreate.Order({
+    #             "name": "rシンプルターン",
+    #             "current_price": latest_price,
+    #             "target": s_target_price,
+    #             "direction": s_dir,
+    #             "type": "STOP",  # "STOP",  # "MARKET",
+    #             "tp": 0.25,  # ave5.cal_move_ave(2),  # 0.2,  # ave5.cal_move_ave(3),  ,
+    #             "lc": s_lc_price,  # _rと重複するように,
+    #             "lc_change": self.make_lc_change_dic("M5", s_for_lc_change, "offence"),
+    #             "units": self.units_str * 1.55,  # 100,
+    #             "priority": 5,
+    #             "decision_time": df.iloc[0]['time_jp'],
+    #             "candle_analysis_class": self.ca,
+    #             "lc_change_candle_type": "M5",
+    #             # "order_permission": False,
+    #         })
+    #         # self.add_order_to_this_class(order_class)
+    #
+    #         # 基本的にこちらは勝ちを目指さない
+    #         order_class_r = OCreate.Order({
+    #             "name": "rシンプルターン_r",
+    #             "current_price": latest_price,
+    #             "target": r_target_price,
+    #             "direction": r_dir,
+    #             "type": "STOP",  # "MARKET",
+    #             "tp": s_lc_price,  # sのLC価格を採用
+    #             "lc": target_peak_bb["latest_wick_peak_price"],
+    #             "lc_change": self.make_lc_change_dic("M5", None, "hedge"),
+    #             "units": self.units_str*1.5,  # 100,
+    #             "priority": 5,
+    #             "decision_time": df.iloc[0]['time_jp'],
+    #             "candle_analysis_class": self.ca,
+    #             "lc_change_candle_type": "M5",
+    #             "order_permission": False,
+    #             # "order_timeout_min": 15,
+    #         })
+    #         # self.add_order_to_this_class(order_class_r)
+    #
+    #         order_class_r.add_linkage(order_class)
+    #         order_class.add_linkage(order_class_r)
+    #         self.add_order_to_this_class(order_class)
+    #         self.add_order_to_this_class(order_class_r)
+    #         return 0
 
     def simple_turn_analysis(self):
         print("■シンプルターンオーダー2", self.latest_price)
@@ -1539,19 +1913,15 @@ class MainAnalysis:
         allowed_gap_to_bb = 0.02  # 現在価格と近いBBまでの距離（近い場合＋レンジの場合は伸びないはず）
         latest_dir = peaks[0]['direction']
 
-        # 直近の取引の勝ち負けを取得する
         border = 0.65
         lc_base = 0.55
         total = 0
-        latest_res = 0
         if self.position_control_class is None:
             # analysisの場合コントロールクラスがないので注意
             total = 0
-            latest_res = 0.05
         else:
             positions = self.position_control_class
             position1 = positions.position_classes[-1]
-            latest_res = position1.history_plus_minus[-1]
             print(position1.history_plus_minus)
             for i, x in enumerate(reversed(position1.history_plus_minus)):
                 if i >= 5:  # 最大5個まで
@@ -1559,11 +1929,6 @@ class MainAnalysis:
                 total = round(total + x, self.round_digit)
                 if total > border:  # 0.65 を超えたら終了
                     break
-            # テスト：過去五回の名前と結果を出力
-            print(s, "test 過去の履歴")
-            for i, item in enumerate(position1.history_name_plus_minus[:4]):
-                print(s,s," ", item)
-
         # 過去二回のトレードの合計が６５ピップスになるような目標を設定する
         lc_base = 0.55
         memo = ""
@@ -1605,199 +1970,81 @@ class MainAnalysis:
         print(s, "river cross", river_cross_count)
         print(s, "turn_cross", turn_cross_count)
 
-        # (2)riverの髭の長さを算出（髭長い場合Targetが取りにくいので、Targetが取りやすいようにしたい）
-        # 髭が長い、動きが激しい場合、逆転バージョンが有効？
-        r0 = river_df.iloc[0]  # river直近一つ目の足
-        r1 = river_df.iloc[1]  #
-        # print(s, r0['time_jp'], r0['body_abs'], r0['moves'])
-
-        # (3)直近NこのPeakの平均を求める。peak平均が小さければ小さいほど、折り返しは早めにとらないと厳しい？
-        gaps = [d["gap"] for d in peaks[0:3] if "gap" in d]
-        avg_gap = round(sum(gaps) / len(gaps), self.round_digit)
-        max_gap = max(gaps)
-        min_gap = min(gaps)
-        # print(s, "peak平均", avg_gap, peaks[0]['gap'],peaks[1]['gap'], peaks[2]['gap'])
-        memo = str(avg_gap) + "," + memo
-
-        # (5)リバーがBBとクロスしている場合。
-        is_river_cross = False
-        is_river_cross_range = False
-        # ①peaks[3]（5にする？）以内に、もう一つ微折り返しがある場合、
         river_cross_border = 1
-        if river_cross_count >= river_cross_border and river['count'] >= 4:
-            is_river_cross = True
-            # print("Riverが越えている")
-            # print(peaks[0]['peak_strength'], peaks[0])
-            # print(peaks[1]['peak_strength'], peaks[1])
-            # print(peaks[2]['peak_strength'], peaks[2])
-            # print(peaks[3]['peak_strength'], peaks[3])
-            later = peaks[1]
-            middle = peaks[2]
-            older = peaks[3]
-            lm_gap_ratio = round(middle['gap'] / later['gap_high_low'], self.round_digit)
-            om_gap_ratio = round(middle['gap'] / older['gap_high_low'], self.round_digit)
-            if lm_gap_ratio <= 0.4 and om_gap_ratio <= 0.4:
-                print(s, "対象のmiddle(2)は微折り返し認定⇒今回で二回目のため、レンジ警戒", lm_gap_ratio, om_gap_ratio)
-                is_river_cross_range = True
-            else:
-                print(s, "対象のmiddle(2)は微折り返しではない", lm_gap_ratio, om_gap_ratio)
-                pass
+        if river_cross_count >= river_cross_border and river['count'] >= 3:
+            print(s, "riverがBB突破傾向⇒ジグザグの可能性？", river_cross_count)
+            r_flag = True
+            target_peak_bb = river
+        elif turn_cross_count >= river_cross_border and river['count'] <= 3:
+            print(s, "TurnがBB突破傾向＆riverが短い⇒ジグザグの可能性？")
+            # tk.line_send("参考　TurnがBB突破傾向＆riverが短い⇒ジグザグの可能性？")
+            return 0
+            # r_flag = True
+            # target_peak_bb = turn
+        else:
+            print(s, "通常のシンプルターン", river_cross_count, river['count'])
+            r_flag = False
+            target_peak_bb = turn  # 使うことはないが、黄色線が後で出るために入れておく
 
-            # ②10ピップスを超える足の動きがある場合（HighLowで）
-            border = 0.1  # ave5.cal_move_ave(1) # 0.1
-            # print(s, "大きい判定Border", border, ave5.cal_move_ave(1))
-            for idx, item in river_df.iterrows():
-                if float(item['moves']) >= border:
-                    print(s, "10pipsを超える変動足あり", item['time_jp'], item['moves'])
-                    is_river_cross_range = True
-                    break
-                else:
-                    print(s, "10pips以下", item['time_jp'], item['moves'])
-
-            # ★★★クロス有り時のオーダー
-            if is_river_cross_range:
-                # レンジが予想される場合
-                r_dir = peaks[0]['direction']  # 折り返したままlatestのほうに行く(riverで抵抗を受ける側）
-                river = peaks[1]
-                latest = peaks[0]
-                df1 = df.iloc[1]
-                df2 = df.iloc[2]
-                if r_dir == 1:
-                    r_target_price = df1['low']
-                    r_target_range = 0.015
-                    r_lc_price = df2['low']
-                    print(s, "latest low", r_target_price, "lc_price", r_lc_price)
-                else:
-                    r_target_price = df1['high']
-                    r_target_range = 0.015
-                    r_lc_price = df2['high']
-                    print(s, "latest high", r_target_price, "lc_price", r_lc_price)
-                r_lc_range = abs(round(r_target_price - r_lc_price, self.round_digit))
-
-                order_class = OCreate.Order({
-                    "name": "シンプルターン(CrossRange)",
-                    "current_price": latest_price,
-                    "target": r_target_range,
-                    "direction": r_dir,
-                    "type": "LIMIT",  # "STOP",  # "MARKET",
-                    "tp": 0.1,  # ave5.cal_move_ave(2),  # 0.2,  # ave5.cal_move_ave(3),  ,
-                    "lc": r_lc_range,  # 0.15,  #
-                    # "lc_change": None,
-                    "units": self.units_str * 1.01,  # 100,
-                    "priority": 5,
-                    "decision_time": df.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca,
-                    "lc_change_candle_type": "M5",
-                    # "order_permission": False,
-                    "order_timeout_min": 15,
-                    "memo": memo,
-                })
-                self.add_order_to_this_class(order_class)
-                return 0
-            else:
-                # Breakが予想される場合
-                r_dir = peaks[0]['direction']  # 折り返したままlatestのほうに行く(riverで抵抗を受ける側）
-                river = peaks[1]
-                latest = peaks[0]
-                df1 = df.iloc[1]
-                df2 = df.iloc[2]
-                wick_border = 0.04
-                if r_dir == 1:
-                    base_target_price = river['latest_wick_peak_price']
-                    target_range = abs(round(base_target_price - latest_price, self.round_digit))
-                    if target_range >= wick_border:
-                        # ちょっと距離が遠い（息切れして届かない？）
-                        base_target_price = river['latest_body_peak_price']
-                        lc_change = [
-                            {"exe": True, "time_after": 605, "trigger": target_range, "ensure": round(target_range * 0.8, self.round_digit)},
-                        ]
-                    else:
-                        # 距離が適正な場合、特に何も指定しない
-                        lc_change = None
-                    r_target_range = 0.015
-                    r_lc_price = df2['low']
-                    print(s, "target", base_target_price, "lc_price", r_lc_price)
-                else:
-                    base_target_price = river['latest_wick_peak_price']
-                    target_range = abs(round(base_target_price - latest_price, self.round_digit))
-                    if target_range >= wick_border:
-                        # ちょっと距離が遠い（息切れして届かない？）
-                        base_target_price = river['latest_body_peak_price']
-                        lc_change = [
-                            {"exe": True, "time_after": 605, "trigger": target_range, "ensure": round(target_range * 0.8, self.round_digit)},
-                        ]
-                    else:
-                        # 距離が適正な場合、特に何も指定しない
-                        lc_change = None
-                    r_target_range = 0.015
-                    r_lc_price = df2['low']
-                    print(s, "target", base_target_price, "lc_price", r_lc_price)
-
-                # オーダー生成
-                order_class = OCreate.Order({
-                    "name": "シンプルターン(CrossBreak)",
-                    "current_price": latest_price,
-                    "target": base_target_price,
-                    "direction": r_dir * -1,
-                    "type": "STOP",  # "STOP",  # "MARKET",
-                    "tp": 0.04,  # ave5.cal_move_ave(2),  # 0.2,  # ave5.cal_move_ave(3),  ,
-                    "lc": 0.04,  # 0.15,  #
-                    "lc_change": lc_change,
-                    "units": self.units_str * 1.01,  # 100,
-                    "priority": 5,
-                    "decision_time": df.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca,
-                    "lc_change_candle_type": "M5",
-                    # "order_permission": False,
-                    "order_timeout_min": 15,
-                    "memo": memo,
-                })
-                self.add_order_to_this_class(order_class)
-                return 0
-
-        # クロス発生時以外のシンプルターン
+        # ★★★オーダー
+        print(s, "オーダー準備")
         river = peaks[1]
         latest = peaks[0]
         df1 = df.iloc[1]
-        # Rangeと思われる場合は、順張りしない方がいい（マイナス連発する）
-        range_strength = 0
-        range_border = 0.09
-        if peaks[0]['gap'] <= range_border and peaks[1]['gap'] <= range_border:
-            if peaks[2]['gap'] >= range_border * 1.5:
-                # 旧ブレイクの形に近い⇒Rangeとは限らない
-                range_strength = 0
-            elif peaks[2]['gap'] <= range_border:
-                # 3個目のRange示唆
-                range_strength = 2
-            else:
-                # 初回のレンジ警戒
-                range_strength = 1
-
-        # ★★★クロス有り時のオーダー
-        if range_strength == 0:
-            # 当初の、Latestの方向にそのまま行くやつ
-            # オーダー生成
+        # オーダー
+        if not r_flag:
+            # 当初の予定通り、戻りきるという前提(最初の５分はLC入れずフリー級⇒その後はLCChange＆LCありにしたい）
+            # 基準価格の設定
             r_dir = peaks[0]['direction']  # 折り返したままlatestのほうに行く(riverで抵抗を受ける側）
-            target_margin = 0.014
+            target_margin = round(self.ca5.cal_move_ave(1) * 0.2, self.round_digit)  # 0.02
             if r_dir == 1:
-                r_lc_price = peaks[1]['lowest']
-                target_price = latest_price + target_margin
+                r_target_price = df1['high'] + target_margin
+                r_lc_range1 = abs(r_target_price - latest['lowest'])
+                r_lc_range2 = abs(r_target_price - river['lowest'])
+                r_lc_range = round(max(r_lc_range1, r_lc_range2) + 0.004, self.round_digit)  #  + 0.02
+                lc_price_temp = r_target_price - r_lc_range
+                print(s, "target_base", df1['high'], "margin", target_margin)
+                print(s, "latest low", latest['lowest'], "river_lowest", river['lowest'])
             else:
-                r_lc_price = peaks[1]['highest']
-                target_price = latest_price - target_margin
-            r_lc_range = round(abs(r_lc_price-target_price), self.round_digit) + 0.01
-            lc_change = [
-                {"exe": True, "time_after": 0, "trigger": r_lc_range, "ensure": r_lc_range - 0.02},
+                r_target_price = df1['low'] - target_margin
+                r_lc_range1 = abs(r_target_price - latest['highest'])
+                r_lc_range2 = abs(r_target_price - river['highest'])
+                r_lc_range = round(max(r_lc_range1, r_lc_range2) + 0.004, self.round_digit)  #  + 0.02
+                lc_price_temp = r_target_price + r_lc_range
+                print(s, "target_base", df1['low'], "margin", target_margin)
+                print(s, "latest high", latest['highest'], "river_high", river['highest'])
+            wick_range = abs(river['latest_wick_peak_price'] - river['latest_body_peak_price'])
+            print(s, "wickRange", wick_range)  # 長すぎる場合は、ちょっとLCを短くする検討？？
+            # lc_changeの設定
+            print(s, "lcChange確認用", "0.05に対して", r_lc_range, "lc_range1", r_lc_range1, "lc_range2", r_lc_range2)
+            print(s, "lc_price_temp", lc_price_temp)
+            temp = round(0.77 * self.ca5.cal_move_ave(1), self.round_digit)
+            print(s, "平均とその7.7割り掛け", self.ca5.cal_move_ave(1), temp)
+            s_for_lc_change = [
+                # {"exe": True, "time_after": 605, "trigger": -0.05, "ensure": -r_lc_range},  # 5pipまでは許容したい。
+                {"exe": True, "time_after": 605, "trigger": temp, "ensure": round(temp * 0.8, self.round_digit)},  # これは要検討
+                {"exe": True, "time_after": 605, "trigger": r_lc_range, "ensure": r_lc_range * 0.8}
             ]
+
+            # TPの設定
+            if tp_kind == 0:
+                # 負け越し
+                tp_range = 0.04
+                lc_changes = self.make_lc_change_dic("M5", None, "No")
+            else:
+                tp_range = 0.25
+                lc_changes = self.make_lc_change_dic("M5", s_for_lc_change, "offence")
+
+            # オーダー生成
             order_class = OCreate.Order({
                 "name": "シンプルターン",
                 "current_price": latest_price,
-                "target": 0.014,
+                "target": r_target_price,
                 "direction": r_dir,
                 "type": "STOP",  # "STOP",  # "MARKET",
-                "tp": 0.2,  # ave5.cal_move_ave(2),  # 0.2,  # ave5.cal_move_ave(3),  ,
-                "lc": r_lc_range,  # 0.15,  #
-                "lc_change": lc_change,
+                "tp": tp_range,  # ave5.cal_move_ave(2),  # 0.2,  # ave5.cal_move_ave(3),  ,
+                "lc": min(r_lc_range, 0.066),  # 0.15,  #
+                "lc_change": lc_changes,
                 "units": self.units_str * 1.01,  # 100,
                 "priority": 5,
                 "decision_time": df.iloc[0]['time_jp'],
@@ -1808,124 +2055,57 @@ class MainAnalysis:
                 "memo": memo,
             })
             self.add_order_to_this_class(order_class)
-        elif range_strength >= 1:
-            # レンジっぽいときは予測系にしておく・・？
-            print("レンジ警戒")
+        else:
+            # 突破方向と踏んだ場合
+            # 基準価格の設定
+            s_dir = peaks[0]['direction'] * -1  # latestとは逆方向にオーダー
+            if s_dir == 1:
+                s_target_price = river['highest']
+                s_lc_price = df1['bb_middle']
+            else:
+                s_target_price = river['lowest']
+                s_lc_price = df1['bb_middle']
+            s_lc_range = abs(s_target_price - s_lc_price)
+            s_lc_range = min(s_lc_range, 0.065)
+            # lc_changeの設定
+            # メモ：１５分以上経過してからの取得の場合、いわゆるダブルトップっで抵抗線になる⇒このオーダーは負ける可能性大？？？
+            #      また、このオーダーを出す＝既存のオーダーのキャンセルをしたほうが良い？トレンドに入る可能性があるので。
+            s_for_lc_change = {"exe": True, "time_after": 0, "trigger": s_lc_range, "ensure": s_lc_range * 0.8}
+            # TPの設定
+            if tp_kind == 0:
+                # 負け越し
+                tp_range = 0.04
+                lc_changes = self.make_lc_change_dic("M5", None, "No")
+            else:
+                tp_range = 0.25
+                lc_changes = self.make_lc_change_dic("M5", s_for_lc_change, "offence")
 
-        #     r_dir = peaks[0]['direction']  # 折り返したままlatestのほうに行く(riverで抵抗を受ける側）
-        #     target_margin = round(self.ca5.cal_move_ave(1) * 0.2, self.round_digit)  # 0.02
-        #     if r_dir == 1:
-        #         r_target_price = df1['high'] + target_margin
-        #         r_lc_range1 = abs(r_target_price - latest['lowest'])
-        #         r_lc_range2 = abs(r_target_price - river['lowest'])
-        #         r_lc_range = round(max(r_lc_range1, r_lc_range2) + 0.004, self.round_digit)  #  + 0.02
-        #         lc_price_temp = r_target_price - r_lc_range
-        #         print(s, "target_base", df1['high'], "margin", target_margin)
-        #         print(s, "latest low", latest['lowest'], "river_lowest", river['lowest'])
-        #     else:
-        #         r_target_price = df1['low'] - target_margin
-        #         r_lc_range1 = abs(r_target_price - latest['highest'])
-        #         r_lc_range2 = abs(r_target_price - river['highest'])
-        #         r_lc_range = round(max(r_lc_range1, r_lc_range2) + 0.004, self.round_digit)  #  + 0.02
-        #         lc_price_temp = r_target_price + r_lc_range
-        #         print(s, "target_base", df1['low'], "margin", target_margin)
-        #         print(s, "latest high", latest['highest'], "river_high", river['highest'])
-        #     wick_range = abs(river['latest_wick_peak_price'] - river['latest_body_peak_price'])
-        #     print(s, "wickRange", wick_range)  # 長すぎる場合は、ちょっとLCを短くする検討？？
-        #     # lc_changeの設定
-        #     print(s, "lcChange確認用", "0.05に対して", r_lc_range, "lc_range1", r_lc_range1, "lc_range2", r_lc_range2)
-        #     print(s, "lc_price_temp", lc_price_temp)
-        #     temp = round(0.77 * self.ca5.cal_move_ave(1), self.round_digit)
-        #     print(s, "平均とその7.7割り掛け", self.ca5.cal_move_ave(1), temp)
-        #     s_for_lc_change = [
-        #         # {"exe": True, "time_after": 605, "trigger": -0.05, "ensure": -r_lc_range},  # 5pipまでは許容したい。
-        #         {"exe": True, "time_after": 605, "trigger": temp, "ensure": round(temp * 0.8, self.round_digit)},  # これは要検討
-        #         {"exe": True, "time_after": 605, "trigger": r_lc_range, "ensure": r_lc_range * 0.8}
-        #     ]
-        #
-        #     # TPの設定
-        #     if tp_kind == 0:
-        #         # 負け越し
-        #         if latest_res >= 0.07:
-        #             tp_range = latest_res
-        #         else:
-        #             tp_range = 0.04
-        #         lc_changes = self.make_lc_change_dic("M5", None, "No")
-        #     else:
-        #         tp_range = 0.25
-        #         lc_changes = self.make_lc_change_dic("M5", s_for_lc_change, "offence")
-        #
-        #     # オーダー生成
-        #     order_class = OCreate.Order({
-        #         "name": "シンプルターン",
-        #         "current_price": latest_price,
-        #         "target": r_target_price,
-        #         "direction": r_dir,
-        #         "type": "STOP",  # "STOP",  # "MARKET",
-        #         "tp": tp_range,  # ave5.cal_move_ave(2),  # 0.2,  # ave5.cal_move_ave(3),  ,
-        #         "lc": min(r_lc_range, 0.10),  # 0.15,  #
-        #         "lc_change": lc_changes,
-        #         "units": self.units_str * 1.01,  # 100,
-        #         "priority": 5,
-        #         "decision_time": df.iloc[0]['time_jp'],
-        #         "candle_analysis_class": self.ca,
-        #         "lc_change_candle_type": "M5",
-        #         # "order_permission": False,
-        #         "order_timeout_min": 15,
-        #         "memo": memo,
-        #     })
-        #     self.add_order_to_this_class(order_class)
-        # else:
-        #     # 突破方向と踏んだ場合
-        #     # 基準価格の設定
-        #     s_dir = peaks[0]['direction'] * -1  # latestとは逆方向にオーダー
-        #     if s_dir == 1:
-        #         s_target_price = river['highest']
-        #         s_lc_price = df1['bb_middle']
-        #     else:
-        #         s_target_price = river['lowest']
-        #         s_lc_price = df1['bb_middle']
-        #     s_lc_range = abs(s_target_price - s_lc_price)
-        #     s_lc_range = min(s_lc_range, 0.065)
-        #     # lc_changeの設定
-        #     # メモ：１５分以上経過してからの取得の場合、いわゆるダブルトップっで抵抗線になる⇒このオーダーは負ける可能性大？？？
-        #     #      また、このオーダーを出す＝既存のオーダーのキャンセルをしたほうが良い？トレンドに入る可能性があるので。
-        #     s_for_lc_change = {"exe": True, "time_after": 0, "trigger": s_lc_range, "ensure": s_lc_range * 0.8}
-        #     # TPの設定
-        #     if tp_kind == 0:
-        #         # 負け越し
-        #         tp_range = 0.04
-        #         lc_changes = self.make_lc_change_dic("M5", None, "No")
-        #     else:
-        #         tp_range = 0.25
-        #         lc_changes = self.make_lc_change_dic("M5", s_for_lc_change, "offence")
-        #
-        #     # オーダー生成
-        #     order_class = OCreate.Order({
-        #         "name": "rシンプルターン",
-        #         "current_price": latest_price,
-        #         "target": s_target_price,
-        #         "direction": s_dir,
-        #         "type": "STOP",  # "STOP",  # "MARKET",
-        #         "tp": tp_range,  # ave5.cal_move_ave(2),  # 0.2,  # ave5.cal_move_ave(3),  ,
-        #         "lc": s_lc_range,  # _rと重複するように,
-        #         "lc_change": self.make_lc_change_dic("M5", s_for_lc_change, "offence"),
-        #         "units": self.units_str * 1.05,  # 100,
-        #         "priority": 5,
-        #         "decision_time": df.iloc[0]['time_jp'],
-        #         "candle_analysis_class": self.ca,
-        #         "lc_change_candle_type": "M5",
-        #         # "order_permission": False,
-        #         "order_timeout_min": 15,
-        #         "memo": memo
-        #     })
-        #     self.add_order_to_this_class(order_class)
+            # オーダー生成
+            order_class = OCreate.Order({
+                "name": "rシンプルターン",
+                "current_price": latest_price,
+                "target": s_target_price,
+                "direction": s_dir,
+                "type": "STOP",  # "STOP",  # "MARKET",
+                "tp": tp_range,  # ave5.cal_move_ave(2),  # 0.2,  # ave5.cal_move_ave(3),  ,
+                "lc": s_lc_price,  # _rと重複するように,
+                "lc_change": self.make_lc_change_dic("M5", s_for_lc_change, "offence"),
+                "units": self.units_str * 1.05,  # 100,
+                "priority": 5,
+                "decision_time": df.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca,
+                "lc_change_candle_type": "M5",
+                # "order_permission": False,
+                "order_timeout_min": 15,
+                "memo": memo
+            })
+            self.add_order_to_this_class(order_class)
 
     def sub_bb_cross(self, df, peak):
         """
         与えられてたピークスに入っているデータフレームが、その中のボリバンを越えているかを判定する
         """
-        # print("SUB bbcross")
+        print("SUB bbcross")
         s = self.s
         count = 0
         is_latest_out = False
@@ -1965,7 +2145,7 @@ class MainAnalysis:
                 # 下側外れ（完全にBBの外側）（1以上）
                 if low > b:
                     res = 1 + (low - b) / width
-            # print(s, row['time_jp'], res, "idx", idx, res > ratio_border)
+            print(s, row['time_jp'], res, "idx", idx, res > ratio_border)
             # print(s, s, "  ", b, high, low)
 
             # 結果のカウント
@@ -1976,6 +2156,7 @@ class MainAnalysis:
                 # print(s, "直近もBB越えている")
             # カウンター作動
             i = i + 1
+        print(s, "BB40パーセント越え数", count)
         return count
 
     def support_line_analysis(self):
@@ -2027,18 +2208,10 @@ class MainAnalysis:
             print("同一価格リストサイズ０")
             return 0
         # 変数代入＆表示
-        # Breakを許容するタイプのSamePriceList
-        same_price_list = peaks_with_same_price_list[target_no]["same_price_list_till_break"]  # ターンが抵抗線かを調べる。（リバーではない）
+        same_price_list = peaks_with_same_price_list[target_no]['same_price_list_till_break']  # ターンが抵抗線かを調べる。（リバーではない）
         same_price_list_total = sum(d['item']["peak_strength"] for d in same_price_list)
-        same_price_list_till_break_5 = [d for d in peaks_with_same_price_list[target_no]["same_price_list_till_break"] if d["item"]["peak_strength"] >= 5]
+        same_price_list_till_break_5 = [d for d in peaks_with_same_price_list[target_no]['same_price_list_till_break'] if d["item"]["peak_strength"] >= 5]
         same_price_list_till_break_5_total = sum(d['item']["peak_strength"] for d in same_price_list_till_break_5)
-
-        # breakを許容しないタイプのSamePriceList
-        same_price_list0 = peaks_with_same_price_list[target_no]["same_price_list_till_break0"]  # ターンが抵抗線かを調べる。（リバーではない）
-        same_price_list0_total = sum(d['item']["peak_strength"] for d in same_price_list)
-        same_price_list_till_break0_5 = [d for d in peaks_with_same_price_list[target_no]["same_price_list_till_break0"] if d["item"]["peak_strength"] >= 5]
-        same_price_list_till_break0_5_total = sum(d['item']["peak_strength"] for d in same_price_list_till_break_5)
-
         # 方向
         d = same_price_list[0]['item']['direction']
         target_price = same_price_list[0]['item']['latest_body_peak_price']
@@ -2099,9 +2272,6 @@ class MainAnalysis:
             "same_price_list_total": same_price_list_total,
             "same_price_list_till_break_5": same_price_list_till_break_5,
             "same_price_list_till_break_5_total": same_price_list_till_break_5_total,
-            "same_price_list0": same_price_list0,
-            "same_price_list_till_break0_5": same_price_list_till_break0_5,
-            "same_price_list_till_break0_5_total": same_price_list_till_break0_5_total,
             "line_strength": line_strength,
             "d": d,
             "target_price": target_price,

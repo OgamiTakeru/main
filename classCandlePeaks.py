@@ -171,6 +171,7 @@ class PeaksClass:
             item_copy = copy.deepcopy(item)
             item_copy['same_price_list'] = spl
             item_copy['same_price_list_till_break'] = spl_res['till_break_list']
+            item_copy['same_price_list_till_break0'] = spl_res['till_break_list2']
             item_copy['opposite_peaks'] = spl_res['opposite_peaks']
             self.peaks_with_same_price_list.append(item_copy)
 
@@ -1031,7 +1032,7 @@ class PeaksClass:
         same_price_num = 0
         strength_border = 1  # この点数以下のストレングスはカウントしない（１点はしない）
         break_border = 1  # この数以上のBreakが発生するまでの同一価格リストを求める
-        break_border2 = 2  # この数以上のBreakが発生するまでの同一価格リストを求める
+        break_border2 = 0  # この数以上のBreakが発生するまでの同一価格リストを求める
         for i, item in enumerate(peaks):
             # print(s, "      検証対象：", item['time'], item['peak_strength'], base_time)
             # 既定の裾野の内側にある場合inner=True
@@ -1142,6 +1143,7 @@ class PeaksClass:
         return {
             "same_price_list": self.same_price_list,
             "till_break_list": self.same_price_list_till_break,
+            "till_break_list2": self.same_price_list_till_break2,
             "break_list": self.break_peaks,
             "opposite_peaks": self.opposite_peaks
         }

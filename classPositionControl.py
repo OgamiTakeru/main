@@ -154,41 +154,12 @@ class position_control:
                     if res_dic['order_id'] == -1:
                         # ウォッチオーダー
                         print("オーダー通知")
-                        # line_send = line_send + "◆【" + str(res_dic['order_name']) + "】を即時ポジションなしで発行" + \
-                        #             "指定価格:【" + str(round(res_dic['order_result']['price'], self.u)) + "】" + \
-                        #             ",DIR:" + str(res_dic['order_result']['direction']) + \
-                        #             ", 数量:" + str(res_dic['order_result']['units']) + \
-                        #             ", TP:" + str(round(res_dic['order_result']['tp_price'], self.u)) + \
-                        #             "(" + str(round(res_dic['order_result']['tp_range'], self.u)) + ")" + \
-                        #             ", LC:" + str(round(res_dic['order_result']['lc_price'], self.u)) + \
-                        #             "(" + str(round(res_dic['order_result']['lc_range'], self.u)) + ")" + \
-                        #             ", AveMove:" + str(round(res_dic['ref']['move_ave'], self.u)) + \
-                        #             "[システム]classNo:" + str(class_index) + ",\n" + \
-                        #             ", memo:" + str(order_class.memo) + \
-                        #             ",lc_change" + str(lc_change_str)
-
                         # new
                         line_send = line_send + position_slot.for_line_send + "[システム]classNo:" + str(class_index) + "\n"
                         break
                     else:
                         # オーダーの生成完了をLINE通知する
                         print("オーダー通知", res_dic['order_name'])
-                        # print(res_dic)
-                        # o_trans = res_dic['order_result']['json']['orderCreateTransaction']  # 短縮のための変数化
-                        # line_send = line_send + "【" + str(res_dic['order_name']) + "】,\n" +\
-                        #             "指定価格:【" + str(res_dic['order_result']['price']) + "】"+\
-                        #             ", 数量:" + str(o_trans['units']) + \
-                        #             ", タイプ:" + order_class.ls_type + \
-                        #             ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
-                        #             "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(res_dic['order_result']['price'])), self.u)) + ")" + \
-                        #             ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
-                        #             "(" + str(round(abs(float(o_trans['stopLossOnFill']['price']) - float(res_dic['order_result']['price'])), self.u)) + ")" + \
-                        #             ", AveMove:" + str(round(res_dic['ref']['move_ave'], self.u)) + \
-                        #             ", OrderID:" + str(res_dic['order_id']) + \
-                        #             ", 取得価格:" + str(res_dic['order_result']['execution_price']) + "[システム]classNo:" + str(class_index) + ",\n" + \
-                        #             ", memo:" + str(order_class.memo) + \
-                        #             ",lc_change" + str(lc_change_str)
-
                         # new
                         line_send = line_send + position_slot.for_line_send + "[システム]classNo:" + str(class_index) + "\n"
                         break
@@ -211,8 +182,14 @@ class position_control:
             obj
             for obj, old_s in zip(self.position_classes, old_S)
             if old_s is True and obj.life is False
-        ]  # クラスのリスト
+        ]  # 更新によりクローズ（lifeがFalse）になったクラスのリスト
 
+        self.change_remain_position(changed)
+
+    def change_remain_position(self, changed):
+        """
+        オーダーのクローズが発生した場合、
+        """
         #  ## 変化に伴う作業
         if changed:
             avg = sum(obj.t_pl_u for obj in changed) / len(changed)
@@ -227,7 +204,7 @@ class position_control:
                     if item.t_state == "OPEN":
                         # できれば解消したポジションと逆の方向のポジションのTPを変更したい。
                         # ただ同時に複数のポジションを解消する可能性もあり、どうしよう
-                        tk.line_send("一部負けが確定したので、所持しているポジションを利確に持っていく")
+                        tk.line_send("一部負けが確定したので、所持しているポジションを利確に持っていく ポジ数", remain_class_num)
                         item.change_tp(abs(avg))  #TP変更
                         item.del_lc_change()
                         break  # 1つ変更したら終了
