@@ -675,7 +675,7 @@ class order_information:
             id_info = "【orderID】" + str(self.o_id) + "【tradeID】" + str(self.t_id)
             res2 = "【決:" + str(trade_latest['averageClosePrice']) + ", " + "取:" + str(trade_latest['price']) + "】"
             res3 = "【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "/ー域:" + str(self.lose_max_plu)
-            res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past'])
+            res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past']) + ",LC change:" + self.lc_change_str
             res4 = "【今回結果】" + str(trade_latest['PLu']) + "," + str(trade_latest['realizedPL']) + "円\n"
             res5 = "【合計】計" + str(order_information.total_PLu) + ",計" + str(order_information.total_yen) + "円"
             res6 = "【合計】累積最大円:" + str(order_information.total_yen_max) + ",最小円:" + str(
@@ -1888,6 +1888,21 @@ class order_information:
         # LCチェンジ執行
         self.lc_change_candle_done = True  # このクラス自体にLCChangeを実行した後をつけておく（各LCChange条件ではなく）
         new_lc_price = round(lc_price_temp, self.u)
+        if self.plan_json['direction'] < 0:
+            # 売りポジションの場合、現在のLC価格よりも低い価格（価格をプラス方向に更新）の場合は実行する
+            if new_lc_price < self.plan_json['lc_price']:
+                pass
+            else:
+                # tk.line_send("LCChangeCandle_dir-1 価格合わず未遂", new_lc_price , ">", self.plan_json['lc_price'])
+                return 0
+        else:
+            # 買いポジションの場合、現在のLC価格よりも高い場合、実行する
+            if new_lc_price > self.plan_json['lc_price']:
+                pass
+            else:
+                # tk.line_send("LCChangeCandle_dir1 価格合わず未遂", new_lc_price, "<", self.plan_json['lc_price'])
+                return 0
+
         data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
         res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
         if res['error'] == -1:
@@ -1897,7 +1912,8 @@ class order_information:
         lc_range = round(abs(float(lc_price_temp) - float(self.t_execution_price)), self.u)
         self.lc_change_num = self.lc_change_num + 1  # このクラス自体にLCChangeを実行した後をつけておく（カウント）
         if self.send_line_exe:
-            self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "新LC価格⇒", new_lc_price,
+            self.send_line("　(LCCandle底上げ)", self.name, "現在のPL", self.t_pl_u, "旧LC価格",self.plan_json['lc_price'],
+                           "新LC価格⇒", new_lc_price,
                            "保証", lc_range, "約定価格", self.t_execution_price,
                            "予定価格", self.plan_json['target_price'],  # )
                            "参考にされた時間", df_r.iloc[soeji]['time_jp'], "添え字", soeji,

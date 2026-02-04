@@ -136,7 +136,7 @@ class candleAnalysis:
                                                                   1)  # 時間昇順(直近が最後尾）
             if s5_df_res['error'] == -1:
                 print("error Candle")
-                tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                # tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 s5_df_latest_bottom = s5_df_res['data']
@@ -153,7 +153,7 @@ class candleAnalysis:
             s5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間昇順(直近が最後尾）
             if s5_df_res['error'] == -1:
                 print("error Candle")
-                tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                # tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 s5_df_latest_bottom = s5_df_res['data']

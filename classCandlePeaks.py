@@ -54,7 +54,7 @@ class PeaksClass:
             self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
             # 抵抗線関係の値　cal_big_mountain関数
             self.arrowed_gap = 0.017  # 0.0245  # 抵抗線を探す時、ずれていてもいい許容値
-            self.arrowed_break_gap = 0.04  # 抵抗線を探す時、これ以上越えていると、Breakしてると判断する範囲
+            self.arrowed_break_gap = 0.02  # 抵抗線を探す時、これ以上越えていると、Breakしてると判断する範囲
             # 狭いレンジの期間の判定用の閾値
             self.check_very_narrow_range_range = 0.07  # 一つの足のサイズが、この閾値以下の場合、小さいレンジの可能性
             # 大きな動きのクライテリア
@@ -105,6 +105,7 @@ class PeaksClass:
         # samePriceList関係
         self.same_price_list = []
         self.same_price_list_till_break = []
+        self.same_price_list_till_break2 = []
         self.same_price_list_inner = []
         self.same_price_list_outer = []
         self.result_not_same_price_list = []

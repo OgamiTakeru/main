@@ -204,9 +204,9 @@ class position_control:
                     if item.t_state == "OPEN":
                         # できれば解消したポジションと逆の方向のポジションのTPを変更したい。
                         # ただ同時に複数のポジションを解消する可能性もあり、どうしよう
-                        tk.line_send("一部負けが確定したので、所持しているポジションを利確に持っていく ポジ数", remain_class_num)
-                        item.change_tp(abs(avg))  #TP変更
-                        item.del_lc_change()
+                        # tk.line_send("一部負けが確定したので、所持しているポジションを利確に持っていく ポジ数", remain_class_num)
+                        # item.change_tp(abs(avg))  #TP変更
+                        # item.del_lc_change()
                         break  # 1つ変更したら終了
             else:
                 pass
