@@ -205,7 +205,7 @@ class Oanda:
             return {"error": 0, "data": data_df}
 
         except Exception as e:
-            print(e)
+            # print(e)
             e_info = self.error_method("ローソク取得", start_time, e)
             return e_info
 
@@ -300,7 +300,7 @@ class Oanda:
             return {"data": res_json, "error": 0}
         except Exception as e:  # エラー文短め
             print("OrderCansel_APIerror", order_id)
-            print(e)
+            # print(e)
             e_info = self.error_method("OrderCancel_APIerror" + str(order_id), start_time, e)
             return e_info
 

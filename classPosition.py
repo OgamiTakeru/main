@@ -9,6 +9,8 @@ import sys
 import classCandleAnalysis as ca
 import os
 import pandas as pd
+from collections import deque  # 最大10個の情報を持つためのもの。
+import copy
 
 # from test_loop import get_instances_of_class
 
@@ -30,6 +32,7 @@ class order_information:
     add_margin = 0.015  # CandleLcChangeで、余裕を見る分。初期は０だったが、マイナスを多くしても維持したい・・・！
 
     # history
+    result_class_arr = deque(maxlen=10)
     result_dic_arr = []
 
     # 連続して取らないように、最後に取得したタイミングを抑える（ただし、オーダー即取得の場合にデータが取れないと困るので、１分前を入れておく）
@@ -594,6 +597,8 @@ class order_information:
             self.o_state = "CANCELLED"
             # self.life_set(False)  # 本当はここに欲しい
             print("    orderCancel@close_order", self.o_id)
+
+            # ここでは、、ファイルに書き込みに行かなくてもいいか。。。
         else:  # FIEELDとかCANCELLEDの場合は、lifeにfalseを入れておく
             print("   order無し(決済済orキャンセル済)@close_order")
 
@@ -698,13 +703,16 @@ class order_information:
                 "max_plus": str(self.win_max_plu),
                 "max_minus": str(self.lose_max_plu),
                 "order_time": self.o_time,
+                "target_price": self.plan_json['target_price'],
                 "take_time": self.t_time,
                 "take_price": str(trade_latest['price']),
                 "end_time": datetime.datetime.now(),
                 "end_price": str(trade_latest['averageClosePrice']),
                 "lc_price": self.plan_json['lc_price'],
                 "lc_price_original_plan": self.plan_json['lc_price_original'],
+                "lc_range": self.plan_json.get('lc_range', 0),
                 "tp_price": self.plan_json['tp_price'],
+                "tp_range": self.plan_json.get('tp_range', 0),
                 "lc_change": self.lc_change_str,
                 "orderID": str(self.o_id),
                 "tradeID": str(self.t_id),
@@ -718,6 +726,7 @@ class order_information:
                 "memo": order_info_for_com
             }
             order_information.result_dic_arr.append(result_dic)
+            # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
         else:
             # 強制クローズ（Open最後の情報を利用する。stateはOpenの為、averageClose等がない。）
             # res1 = "強制Close【Unit】" + str(trade_latest['currentUnits'])
@@ -747,13 +756,16 @@ class order_information:
                 "max_plus": str(self.win_max_plu),
                 "max_minus": str(self.lose_max_plu),
                 "order_time": self.o_time,
+                "target_price": self.plan_json['target_price'],
                 "take_time": self.t_time,
                 "take_price": str(trade_latest['price']),
                 "end_time": datetime.datetime.now(),
                 "end_price": str(self.current_price),  #str(trade_latest['averageClosePrice']),
                 "lc_price": self.plan_json['lc_price'],
                 "lc_price_original_plan": self.plan_json['lc_price_original'],
+                "lc_range": self.plan_json['lc_range'],
                 "tp_price": self.plan_json['tp_price'],
+                "tp_range": self.plan_json['tp_range'],
                 "lc_change": self.lc_change_str,
                 "orderID": str(self.o_id),
                 "tradeID": str(self.t_id),
@@ -767,6 +779,7 @@ class order_information:
                 "memo": order_info_for_com
             }
             order_information.result_dic_arr.append(result_dic)
+            # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
 
         # # linkageトレードへの波及  positionClassで実施されていた
         # if len(self.linkage_order_classes) != 0:
@@ -971,6 +984,49 @@ class order_information:
                 self.close_order()
                 self.send_line("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min
                                , position_check_no_args()['name_list'])
+                result_dic = {
+                    "name": self.name,
+                    "res": 0,  # 上と違う部分
+                    "pl_per_units": 0,  # 以下追加
+                    "units": str(self.for_api_json['order']['units']),
+                    "max_plus": 0,
+                    "max_minus": 0,
+                    "order_time": self.o_time,
+                    "take_time": self.t_time,
+                    "take_price": 0,
+                    "end_time": datetime.datetime.now(),
+                    "end_price": 0,  # str(trade_latest['averageClosePrice']),
+                    "lc_price": self.plan_json['lc_price'],
+                    "lc_price_original_plan": self.plan_json['lc_price_original'],
+                    "lc_range": self.plan_json['lc_range'],
+                    "tp_price": self.plan_json['tp_price'],
+                    "tp_range": self.plan_json['tp_range'],
+                    "lc_change": self.lc_change_str,
+                    "orderID": str(self.o_id),
+                    "tradeID": str(self.t_id),
+                    "name_only": self.name[:-5],
+                    "plus_minus": 0,
+                    "position_keep_time": 0,
+                    "name_ymdhms": self.name_ymdhms,
+                    "tp_price_original_plan": self.plan_json['tp_price_original'],
+                    "move_ave5": self.move_ave5,
+                    "move_ave60": self.move_ave60,
+                    "memo": "Order強制キャンセル"
+                }
+                history_path = tk.history_folder_path + 'history.csv'
+                try:
+                    # ファイル書き込み
+                    if not os.path.exists(history_path):
+                        # ファイルが存在しない場合、新規作成
+                        df = pd.DataFrame(order_information.result_dic_arr)
+                        df.to_csv(history_path, index=False)
+                    else:
+                        # ファイルが存在する場合、追記処理
+                        df = pd.DataFrame([result_dic])
+                        df.to_csv(history_path, mode='a', header=False, index=False)
+
+                except (OSError, PermissionError, IOError) as e:
+                    print(f"ファイルにアクセスできませんでした: {e}")
         if order_latest['state'] == "CANCELLED":
             self.close_order()
 

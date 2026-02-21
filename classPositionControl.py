@@ -7,6 +7,10 @@ import fGeneric as gene
 import classPosition as classPosition  # とりあえずの関数集
 import classPositionForTest as testClassPosition
 
+from collections import deque  # 最大10個の情報を持つためのもの。
+import copy
+
+
 
 class position_control:
     """
@@ -17,6 +21,8 @@ class position_control:
 
     # 履歴ファイル
     def __init__(self, is_live):
+        self.result_class_arr = deque(maxlen=10)
+
         # 変数の宣言
         self.u = 3
         self.position_classes = []
@@ -183,8 +189,15 @@ class position_control:
             for obj, old_s in zip(self.position_classes, old_S)
             if old_s is True and obj.life is False
         ]  # 更新によりクローズ（lifeがFalse）になったクラスのリスト
-
         self.change_remain_position(changed)
+
+        # 更新によりクローズ（lifeがFalse）になったクラスの「コピー」を保存
+        closed_positions = [
+            copy.deepcopy(obj)
+            for obj, old_s in zip(self.position_classes, old_S)
+            if old_s is True and obj.life is False
+        ]
+        self.result_class_arr.extend(closed_positions)
 
     def change_remain_position(self, changed):
         """

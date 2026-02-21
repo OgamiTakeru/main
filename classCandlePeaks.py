@@ -80,6 +80,26 @@ class PeaksClass:
             self.check_very_narrow_range_range = 0.07  # 一つの足のサイズが、この閾値以下の場合、小さいレンジの可能性
             self.dependence_very_large_body_criteria = 0.2
             self.dependence_large_body_criteria = 0.1
+        elif granularity == "M30":
+            # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
+            self.analysis_num = 240  # この足の分のデータフレームを処理する（足ごとに設定）
+            self.peak_strength_border_min = 0.05
+            self.peak_strength_border = 0.15  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
+            self.peak_strength_border_second = 0.20  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
+            # SkipPeaksの際の基準(SkipPeaks関数）
+            self.skip_gap_border = 0.25  # 0.045  # この値以下のGapをもつPeakは、スキップ処理の対象（これ以上の場合は、スキップ対象外）
+            self.skip_gap_border_second = 0.25 #  0.05  # この値以下のGapを持つPeakは、重なり（ラップ）状況でスキップされる
+            # 急変動(fluctuation)を検知する基準の設定　cal_move_size関数
+            self.recent_fluctuation_range = 0.03  # 最大変動幅の4パーセント程度  # 指定ではなく、計算で算出される。直近N足分以内での最大変動幅（最高値ー最低値）round済み
+            self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
+            self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
+            # 抵抗線関係の値　cal_big_mountain関数
+            self.arrowed_gap = 0.03  # 抵抗線を探す時、ずれていてもいい許容値
+            self.arrowed_break_gap = 0.04  # 抵抗線を探す時、これ以上越えていると、Breakしてると判断する範囲
+            # 狭いレンジの期間の判定用の閾値
+            self.check_very_narrow_range_range = 0.07  # 一つの足のサイズが、この閾値以下の場合、小さいレンジの可能性
+            self.dependence_very_large_body_criteria = 0.2
+            self.dependence_large_body_criteria = 0.1
 
         # ■■保存用の変数群（元々クラス変数だったものを、インスタンス変数に変更）
         # 基本となるデータフレーム
@@ -120,7 +140,7 @@ class PeaksClass:
         # ■実処理
         # (1)ピークスの算出
         self.df_r_original = original_df_r
-        # print("直近価格", self.latest_price, original_df.iloc[0]['time_jp'])
+        # print("直近価格", self.latest_price, original_df_r.iloc[0]['time_jp'], original_df_r.iloc[1]['time_jp'])
 
         self.df_r = original_df_r[1:]  # df_rは先頭は省く（数秒分の足のため）
         self.df_r_copy = copy.deepcopy(self.df_r)

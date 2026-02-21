@@ -16,7 +16,7 @@ gl_previous_exe_df60_order_time = None
 gl_previous_bb_h1_class = None
 gl_latest_trend_trigger_time = None
 
-gl_unis_std = 0.1
+gl_unis_std = 0.1  # OrderCreateのベーシックUnitは10000ドル。それにかける倍率
 
 class BaseAnalysisClass:
     def __init__(self, candle_analysis):
@@ -774,13 +774,21 @@ class MainAnalysis:
         self.s = "    "
         self.round_digit = 3
         self.oa = candle_analysis.base_oa
+
         self.ca = candle_analysis
+
         self.ca5 = candle_analysis.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
         self.peaks_class = candle_analysis.peaks_class  # peaks_classだけを抽出
         self.df_r_m5 = candle_analysis.d5_df_r[1:]  # 5分足はひとつ前ので固定！！（Liveでも）
+
         self.ca60 = candle_analysis.candle_class_hour
         self.peaks_class_hour = candle_analysis.peaks_class_hour
         self.df_r_h1 = candle_analysis.d60_df_r[from_i:]
+
+        self.ca30 = candle_analysis.candle_class_m30
+        self.peaks_class_m30 = candle_analysis.peaks_class_m30
+        self.df_r_m30 = candle_analysis.m30_df_r[from_i:]
+
         self.latest_time = candle_analysis.d5_df_r.iloc[0]['time_jp']  # 5分足で判断(0行目を利用）
         self.latest_price = candle_analysis.d5_df_r.iloc[from_i_price]['close']  # iloc[1]
         self.mode = mode
@@ -811,8 +819,13 @@ class MainAnalysis:
                 print("勝ち負けの直近三個", p[-1], p[-2], p[-3], p[-4], p[-5], p[-6])
             else:
                 print("勝ち負けの直近三個", p[-1])
+            # クラスが格納されるように変更したので、クラスのテスト
+            for i, item in enumerate(self.position_control_class.result_class_arr):
+                print("クラスのテスト:", item.life, item.name, item.t_unrealize_pl, item.t_realize_pl, item.t_pl_u)
 
         # ■■■基本情報の表示
+        # peaks = self.peaks_class.peaks_original
+        # peaks_skip = self.peaks_class.skipped_peaks_hard
         peaks = self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
         print(self.s, "<SKIP前>", len(peaks), asizeof.asizeof(peaks))
@@ -864,7 +877,7 @@ class MainAnalysis:
         # Unit調整用
         self.units_mini = 0.1
         self.units_reg = 0.5
-        self.units_str =1 * gl_unis_std #0.1
+        self.units_str = 1 * gl_unis_std #0.1
         self.units_hedge = self.units_str
         # 汎用性高め
         self.lc_change_test = [
@@ -1789,7 +1802,7 @@ class MainAnalysis:
         print("■シンプルターンオーダー2", self.latest_price)
         # 変数化
         s = self.s
-        peaks = self.peaks_class.peaks_original
+        peaks = self.peaks_class_m30.peaks_original  # self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
         latest_price = self.latest_price  # self.ca = candle_analysis
         ave = self.ca.candle_class_hour
@@ -1798,7 +1811,7 @@ class MainAnalysis:
         bb_m5_class = self.bb_m5_class  # この結果も必須”
         mode = self.mode
         ave5 = self.ca5
-        df = self.peaks_class.df_r_original
+        df = self.peaks_class_m30.df_r_original  # self.peaks_class.df_r_original  # これは
         big_move_criteria = 0.1  # 個以上動いたら、5分１足にしては大きい
         u = self.round_digit
         pattern = 0  # 通常では0
@@ -1850,7 +1863,7 @@ class MainAnalysis:
             return 0
 
         # (1)BBとの関係性の調査(ジグザグトレンドの判定）
-        peaks = self.peaks_class.peaks_original
+        # peaks = self.peaks_class.peaks_original
         latest = peaks[0]
         latest_df = df[:latest['count']+1]
         river = peaks[1]
@@ -2040,13 +2053,16 @@ class MainAnalysis:
             print(s, "LatestとRiverが短い", peaks[0]['gap'], peaks[1]['gap'])
             if peaks[2]['gap'] >= range_border * 1.5:
                 # 旧ブレイクの形に近い⇒Rangeとは限らない
+                print(s, "st=0", peaks[0]['latest_time_jp'], peaks[0]['gap'], peaks[1]['latest_time_jp'], peaks[1]['gap'])
                 range_strength = 0
             elif peaks[2]['gap'] <= range_border:
                 # 3個目のRange示唆
-                range_strength = 2
+                print(s, "st=2", peaks[0]['latest_time_jp'], peaks[0]['gap'], peaks[1]['latest_time_jp'], peaks[1]['gap'])
+                range_strength = 0  # 旧２
             else:
                 # 初回のレンジ警戒(LCを短めに持つ。レンジが始まってる可能性があるため）
-                range_strength = 1
+                print(s, "st=1", peaks[0]['latest_time_jp'], peaks[0]['gap'], peaks[1]['latest_time_jp'], peaks[1]['gap'])
+                range_strength = 0  # 旧１
         elif 0.8 <= min(peaks[1]['gap'], peaks[2]['gap']) / max(peaks[1]['gap'], peaks[2]['gap']) <= 1.2:
             print(s, "2と1が同じような長さ（10pipsは越えている", min(peaks[1]['gap'], peaks[2]['gap']) / max(peaks[1]['gap'], peaks[2]['gap']))
         else:
@@ -2098,7 +2114,7 @@ class MainAnalysis:
             order_class = OCreate.Order({
                 "name": "シンプルターン",
                 "current_price": latest_price,
-                "target": 0.015,
+                "target": 0.012,
                 "direction": r_dir,
                 "type": "LIMIT",  # "STOP",  # "MARKET",
                 "tp": 0.3,  # ave5.cal_move_ave(2),  # 0.2,  # ave5.cal_move_ave(3),  ,
