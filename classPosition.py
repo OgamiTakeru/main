@@ -992,6 +992,7 @@ class order_information:
                     "max_plus": 0,
                     "max_minus": 0,
                     "order_time": self.o_time,
+                    "target_price": self.plan_json['target_price'],
                     "take_time": self.t_time,
                     "take_price": 0,
                     "end_time": datetime.datetime.now(),
