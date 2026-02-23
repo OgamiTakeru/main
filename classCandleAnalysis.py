@@ -21,7 +21,7 @@ class candleAnalysis:
     latest_df_d60_df_r = None
     latest_peaks_class_hour = None  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
     latest_candle_class_hour = None
-    latest_df_m30_df_r = None
+    latest_df_d30_df_r = None
     latest_peaks_class_m30 = None  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
     latest_candle_class_m30 = None
 
@@ -37,7 +37,7 @@ class candleAnalysis:
         self.d5_df_r = None
         self.d60_df_r = None
         self.s5_df_r = None
-        self.m30_df_r = None
+        self.d30_df_r = None
 
         # # ■■　重複でAPIを打つことを避けたい
         if candleAnalysis.latest_df_d5_df_r is None:
@@ -55,7 +55,7 @@ class candleAnalysis:
             print("既存のデータのfrom", candleAnalysis.latest_df_d5_df_r.iloc[0]['time_jp'])
             print("既存のDataFrameと同じかどうか？", same, t1, t2)
             if same:
-                print("同じデータのため、データ新規取得＆Peaks生成は呼ばず(主にcandleLCChangeで発生)  既存:", t1, ",現時刻:", t2)
+                print("同じデータのたpeaks_class_30mめ、データ新規取得＆Peaks生成は呼ばず(主にcandleLCChangeで発生)  既存:", t1, ",現時刻:", t2)
                 # データを移植する（5分足）
                 self.d5_df_r = candleAnalysis.latest_df_d5_df_r
                 self.peaks_class = candleAnalysis.latest_peaks_class
@@ -65,9 +65,9 @@ class candleAnalysis:
                 self.peaks_class_hour = candleAnalysis.latest_peaks_class_hour
                 self.candle_class_hour = candleAnalysis.latest_candle_class_hour
                 # データを移植する（30分足）
-                self.d30_df_r = candleAnalysis.latest_df_m30_df_r
-                self.peaks_class_30m = candleAnalysis.latest_peaks_class_m30
-                self.candle_class_30m = candleAnalysis.latest_candle_class_m30
+                self.d30_df_r = candleAnalysis.latest_df_d30_df_r
+                self.peaks_class_m30 = candleAnalysis.latest_peaks_class_m30
+                self.candle_class_m30 = candleAnalysis.latest_candle_class_m30
                 return
 
         # ■■データ取得
@@ -109,10 +109,10 @@ class candleAnalysis:
             # print("データ取得の確認！！！！！！", h1_df['time_jp'], h1_df['close'])
         # データを取得する（30分足）
         granularity = "M30"
-        self.peaks_class_m30 = peaksClass.PeaksClass(self.m30_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        self.peaks_class_m30 = peaksClass.PeaksClass(self.d30_df_r, granularity)  # ★★peaks_classインスタンスの生成
         self.candle_class_m30 = eachCandleAnalysis(self.peaks_class_m30, granularity)
-        if self.m30_df_r is not None:
-            m30_df = self.m30_df_r.iloc[0]
+        if self.d30_df_r is not None:
+            d30_df = self.d30_df_r.iloc[0]
 
         # ■■重複作業防止用に、クラス変数に5分足の最初と最後の情報、今回算出した情報を入れておく
         if self.d5_df_r is None:
@@ -128,7 +128,7 @@ class candleAnalysis:
             candleAnalysis.latest_df_d60_df_r = self.d60_df_r
             candleAnalysis.latest_peaks_class_hour = self.peaks_class_hour  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
             candleAnalysis.latest_candle_class_hour = self.candle_class_hour
-            candleAnalysis.latest_df_m30_df_r = self.m30_df_r
+            candleAnalysis.latest_df_d30_df_r = self.d30_df_r
             candleAnalysis.latest_peaks_class_m30 = self.peaks_class_m30  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
             candleAnalysis.latest_candle_class_m30 = self.candle_class_m30
 
@@ -218,16 +218,16 @@ class candleAnalysis:
             self.s5_df_r = s5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
             # 30分足のデータ
-            m30_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+            d30_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
                                                                    {"granularity": "M30", "count": self.need_df_num},
                                                                    1)  # 時間昇順(直近が最後尾）
-            if m30_df_res['error'] == -1:
+            if d30_df_res['error'] == -1:
                 print("error Candle")
                 tk.line_send("30分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
-                m30_df_latest_bottom = m30_df_res['data']
-            self.m30_df_r = m30_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+                m30_df_latest_bottom = d30_df_res['data']
+            self.d30_df_r = m30_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
         else:
             # 指定の時刻でやる場合
@@ -270,15 +270,15 @@ class candleAnalysis:
 
             # 最短の30分足も取得しておく
             param = {"granularity": "M30", "count": self.need_df_num, "to": euro_time_datetime_iso}
-            m30_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間昇順(直近が最後尾）
-            if m30_df_res['error'] == -1:
+            d30_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間昇順(直近が最後尾）
+            if d30_df_res['error'] == -1:
                 print("error Candle")
                 tk.line_send("30分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
-                m30_df_latest_bottom = m30_df_res['data']
-            self.m30_df_r = m30_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
-            # print(self.m30_df_r.head(3))
+                m30_df_latest_bottom = d30_df_res['data']
+            self.d30_df_r = m30_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+            # print(self.d30_df_r.head(3))
 
 class eachCandleAnalysis:
     def __init__(self, peaks_class, granularity):
