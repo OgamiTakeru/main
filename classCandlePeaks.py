@@ -22,7 +22,7 @@ class PeaksClass:
         算出されたPeakは粒度が細かすぎるため、skip_peaksを使い、粒度を荒くする。
         なおこの処理が実行されるのは、渡されたデータフレームが、登録されれているデータフレームと異なる場合のみ
         """
-        print("PeaksClassInit", granularity)
+        # print("PeaksClassInit", granularity)
         # ■■初期値の設定（Peak解析の基準）
         self.s = "     "
         # ■足の幅によって変わらない値
@@ -490,7 +490,7 @@ class PeaksClass:
                     # ほぼ見えないレベルの折り返しは点数を最も低くする
                     item['peak_strength'] = self.ps_most_most_min  # これで元データ入れ替えられるんだ？！
                     peaks[i + 1]['peak_strength'] = self.ps_most_most_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
-                    print("peaks test1", item['latest_time_jp'], item['gap'])
+                    # print("peaks test1", item['latest_time_jp'], item['gap'])
                     continue
                 # このアイテムのGapが小さい場合、直前も低くなる事に注意
                 item['peak_strength'] = self.ps_most_min  # これで元データ入れ替えられるんだ？！
@@ -511,7 +511,7 @@ class PeaksClass:
                 # print("Peak現象判定(直古との比率）", item_oldest_ratio,)
                 item['peak_strength'] = self.ps_most_min  # これで元データ入れ替えられるんだ？！
                 peaks[i + 1]['peak_strength'] = self.ps_most_min  # ひとつ前(時間的はOldest）のPeakも強制的にStrengthが1となる
-                print("peaks test", item['latest_time_jp'], item['gap'])
+                # print("peaks test", item['latest_time_jp'], item['gap'])
             elif item_latest_ratio <= overlap_ratio and item_oldest_ratio <= overlap_ratio:
                 # print("ラップ率が両サイドに比べてそこそこ低め⇒多少スキップの可能性が上がる）
                 # print("", item['time'], latest_item['time'], oldest_merged_item['time'])
