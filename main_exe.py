@@ -266,19 +266,22 @@ class main():
         """
         # ■■実行しない場合を列挙
         # ■土日は実行しない（ループにはいるが、API実行はしない）
+        is_only_update_mode = False
         if self.now.weekday() == 6:
-            # print("■土日の為API実行無し")
+            # print("■土日の為、全ての実行無し")
             return 0
         elif self.now.weekday() == 5:
             if self.time_hour >= 4:
                 if self.time_hour ==4 and self.time_min == 0 and self.time_sec <=2:
                     print("■土曜の朝4時で終了（ポジションは開放しない・・？）(4時０分2秒まで表示)")
-                return 0
+                # return 0
+                is_only_update_mode = True
         elif self.now.weekday() == 0:
             if self.time_hour <= 7:
                 if self.time_min == 0 and self.time_sec <=1:
                     print("■月曜になった深夜～朝までは実行無し", self.time_hour)
-                return 0
+                is_only_update_mode = True
+                # return 0
 
         # ■深夜帯(6時～7時)は実行しない　（ポジションやオーダーも全て解除）
         # if 6 <= self.time_hour <= 7:
@@ -300,9 +303,13 @@ class main():
             price_dic = price_dic['data']
             if price_dic['spread'] > self.ARROW_SPREAD:
                 # print("    ▲スプレッド異常", self.now, price_dic['spread'])
-                return -1  # 強制終了
+                # return -1  # 強制終了
+                is_only_update_mode = True
             self.now_price_mid = price_dic['mid']  # 念のために保存しておく（APIの回数減らすため）
             self.now_spread = price_dic['spread']
+
+        # ■更新専用
+
 
         # ■直近の検討データの取得　　　メモ：data_format = '%Y/%m/%d %H:%M:%S'
         # 直近の実行したローソク取得からの経過時間を取得する（秒単位で２連続の取得を行わないようにするためマージン）
@@ -311,14 +318,20 @@ class main():
             self.past_time_from_latest_mode1_exe = (
                 (datetime.datetime.now().replace(microsecond=0) - self.latest_exe_time).seconds)
 
-            # ↓秒指定だと飛ぶので、前回から●秒経過&秒数に余裕を追加
-            if self.time_min % 5 == 0 and 6 <= self.time_sec < 30 and self.past_time_from_latest_mode1_exe > 60:
-                print("  ")
-                print("  ")
-                self.mode1()  # ★★Mode1の実行
+            if is_only_update_mode:
+                # スプレッド大等の場合でも、Updateのみは実施（クローズ時点での連絡が欲しい。ただ本来はポジションを解消してるべき、、）
+                # print("今回はスプレッド大のため、変更を伴わないアップデートのみ", is_only_update_mode)
+                self.positions_control_class.all_update_information_at_out_time()
+            else:
+                # ↓秒指定だと飛ぶので、前回から●秒経過&秒数に余裕を追加
+                # print("　　　　", "通常の実行")
+                if self.time_min % 5 == 0 and 6 <= self.time_sec < 30 and self.past_time_from_latest_mode1_exe > 60:
+                    print("  ")
+                    print("  ")
+                    self.mode1()  # ★★Mode1の実行
 
-            if self.time_min % 1 == 0 and self.time_sec % 2 == 0:  # 高頻度での確認事項（キャンドル調査時のみ飛ぶ）
-                self.mode2()  #
+                if self.time_min % 1 == 0 and self.time_sec % 2 == 0:  # 高頻度での確認事項（キャンドル調査時のみ飛ぶ）
+                    self.mode2()  #
 
         else:
             # ■　初回だけ実行と同時に行う特殊処理

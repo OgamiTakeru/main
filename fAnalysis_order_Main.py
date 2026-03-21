@@ -55,7 +55,7 @@ class wrap_all_analysis():
         """
         position_control_class = self.position_control_class
 
-        turn_analysis_instance = ti.BbAnalysis2(self.ca)
+        # turn_analysis_instance = ti.BbAnalysis2(self.ca)
 
         # ターン起点のオーダー
         turn_analysis_instance = ti.MainAnalysis(self.ca, position_control_class, mode)
