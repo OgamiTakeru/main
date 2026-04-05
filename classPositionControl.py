@@ -471,12 +471,13 @@ class position_control:
 
 
             #　自身がの勝敗によって、Linkageをするかどうか
-            print("       確認用position control", main_position.t_realize_pl)
+            # print("       確認用position control", main_position.t_realize_pl)
             if float(main_position.t_realize_pl) >= 0:
                 pass
-                print("自身はプラス", main_position.name, main_position.t_realize_pl, main_position.o_state)
+                # print("自身はプラス", main_position.name, main_position.t_realize_pl, main_position.o_state)
             else:
-                print("自身はマイナス", main_position.name, main_position.t_realize_pl, main_position.o_state)
+                pass
+                # print("自身はマイナス", main_position.name, main_position.t_realize_pl, main_position.o_state)
                 # continue
 
             # 走査する
@@ -494,7 +495,7 @@ class position_control:
                 for i, linkage_class in enumerate(main_position.linkage_order_classes):
                     left_position = next((obj for obj in self.position_classes if obj.name == linkage_class.name), None)
                     if left_position is None:
-                        print("     レフトポジションがNone")
+                        # print("     レフトポジションがNone")
                         continue
                     print("    ", linkage_class.name, "のオーダーが対象", left_position.life, left_position.t_pl_u)
                     if left_position is None:

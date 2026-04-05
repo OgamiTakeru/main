@@ -412,10 +412,13 @@ class order_information:
 
         # (4)LC_Change情報を格納する
         if "lc_change" in plan:
-            self.lc_change_dic_arr = plan['lc_change']  # 辞書を丸ごと
-            # おかしいのでテスト用
-            if 'time_done' in self.lc_change_dic_arr[0]:
-                tk.line_send("最初からLCChangeのDone時間が入っているNG classPosition.py ３３０行目付近")
+            if len(plan['lc_change']) == 0:
+                self.lc_change_dic_arr = [{"exe": True, "time_after": 0, "trigger": 1, "ensure": 1}]
+            else:
+                self.lc_change_dic_arr = plan['lc_change']  # 辞書を丸ごと
+                # おかしいのでテスト用
+                if 'time_done' in self.lc_change_dic_arr[0]:
+                    tk.line_send("最初からLCChangeのDone時間が入っているNG classPosition.py ３３０行目付近")
         else:
             tk.line_send("lcLineミス classPosition.py ３３０行目付近")
 
