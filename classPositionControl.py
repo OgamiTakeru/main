@@ -212,6 +212,57 @@ class position_control:
         ]
         self.result_class_arr.extend(closed_positions)
 
+    def close_hedge_positions(self):
+        # 両建て状態になっている場合、かつ、両方がプラスになっている両建ての場合、その時点で解消する
+        positions = self.position_classes
+        exist_positions = []
+        # 生きているポジションを取得する
+        for i, position in enumerate(positions):
+            # 生きているオーダーの取得価格が近い場合
+            if position.life:
+                # 先に残存するポジションの一覧を生成しておく
+                info = {
+                    "name": position.name,
+                    "target_price": position.plan_json['target_price'],
+                    "direction": position.plan_json['direction'],
+                    "t_unrealize_pl": position.t_unrealize_pl,
+                    "position_class": position
+                }
+                exist_positions.append(info)
+        # 両建てのベストペアを解消する
+        best_pair = None
+        best_score = -float("inf")
+        for l in exist_positions:
+            if l["direction"] != 1 or l["t_unrealize_pl"] <= 0:
+                continue
+            for s in exist_positions:
+                if s["direction"] != -1 or s["t_unrealize_pl"] <= 0:
+                    continue
+                score = l["t_unrealize_pl"] + s["t_unrealize_pl"]
+
+                if score > best_score:
+                    best_score = score
+                    best_pair = (l, s)
+        if best_pair is None:
+            pass
+        else:
+            l, s = best_pair
+            l = l['position_class']
+            s = s['position_class']
+            te = gene.str_merge("両プラス状態", l.name, l.t_unrealize_pl, l.plan_json['direction'], l.plan_json['units'], ",",
+                           s.name, s.t_unrealize_pl, s.plan_json['direction'], s.plan_json['units'])
+            print("どっちもプラスの逆方向あり", best_pair)
+            tk.line_send(te)
+
+            # クローズする
+            if tk.setting_json['hedge_close_on']:
+                pass
+            else:
+                l.close_order()
+                s.close_order()
+
+
+
     def change_remain_position(self, changed):
         """
         オーダーのクローズが発生した場合、
