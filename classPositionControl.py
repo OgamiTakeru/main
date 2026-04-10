@@ -191,7 +191,7 @@ class position_control:
                 target_name = position_slot.linkage_order_classes[0].name
                 for other in allowed_position_slot:
                     if other.name == target_name:
-                        print("    ⇒相手発見 自分のlinakageに登録する")
+                        print("      ⇒相手発見 自分のlinakageに登録する", other.name, target_name)
                         position_slot.linkage_class_slots.append(other)
                         break
 
@@ -512,186 +512,186 @@ class position_control:
         # プログラム内のクラスの整理
         self.all_update_information()  # 関数呼び出し（アップデート）
 
-    def linkage_control(self):
-        """
-        終わってしまったポジションから、残っているポジションを変えに行く、という方向。
-        """
-        margin = 0.01
-        lc_range = 0.03
-
-        # print("PositionControlのリンケージセクション", len(self.position_classes))
-        for main_position in self.position_classes:
-
-            # print("★★", main_position.name, "のリンケージ残存を確認")
-            if main_position.linkage_done:
-                # print(main_position.name, " リンケージ調整済み(相手側を調整した,またはされた）")
-                continue
-            elif main_position.life and main_position.t_state == "OPEN":
-                # print(main_position.name, " まだ自分がポジション所持中のため、処理しない", main_position.life, main_position.t_state)
-                continue
-            elif main_position.life and main_position.o_state == "PENDING":
-                # print(main_position.name, " まだ自分がオーダー状態(ポジション前）のため、処理しない")
-                continue
-            elif not main_position.life and main_position.t_state == "":
-                continue
-            elif main_position.o_json:  # この条件は、テストモードでおかしなことが起きるために追加した（本番悪影響なら消したい）
-                # print(main_position.o_json)
-                if main_position.o_json['state'] == "PENDING":
-                    continue
-
-            # elifだと通過してしまう（上のどれかに引っかかってしまっている）ため、独立して記述（o_jsonで引っ掛かってる？）
-            if main_position.o_state == "Watching":
-                continue
-
-            # これ正しい？
-            if not main_position.life and main_position.t_state == "CLOSED" and not main_position.linkage_done:
-                # ★クローズした初回のみ実施！！！？　フラグはここで建てておく。
-                print("★★初回リンケージチェック", main_position.name, main_position.t_realize_pl)
-                main_position.linkage_done_func()
-
-
-            #　自身がの勝敗によって、Linkageをするかどうか
-            # print("       確認用position control", main_position.t_realize_pl)
-            if float(main_position.t_realize_pl) >= 0:
-                pass
-                # print("自身はプラス", main_position.name, main_position.t_realize_pl, main_position.o_state)
-            else:
-                pass
-                # print("自身はマイナス", main_position.name, main_position.t_realize_pl, main_position.o_state)
-                # continue
-
-            # 走査する
-            if hasattr(main_position, "order_class"):
-                if hasattr(main_position.order_class, "linkage_order_classes"):
-                    # print("  ", main_position.name, "のリンケージ")
-                    if len(main_position.order_class.linkage_order_classes) == 0:
-                        # print("    linkage登録数０")
-                        continue
-                else:
-                    # print("    linkageのインスタンス変数なし")
-                    continue
-
-                # 本処理(残されたリンケージオーダーへの対応）
-                for i, linkage_class in enumerate(main_position.linkage_order_classes):
-                    left_position = next((obj for obj in self.position_classes if obj.name == linkage_class.name), None)
-                    if left_position is None:
-                        # print("     レフトポジションがNone")
-                        continue
-                    # print("    ", linkage_class.name, "のオーダーが対象", left_position.life, left_position.t_pl_u)
-                    if left_position is None:
-                        # print("    ", linkage_class.name, "のリンケージオーダー[", linkage_class.name, "]が対象だが見つからない")
-                        # tk.line_send("リンケージ先がない物があった.", linkage_class.name, "のリンケージ", linkage_class.name)
-                        main_position.linkage_done_func()  # 自身のリンケージも終了
-                        continue
-                    # 自分自身はポジションあるが、相手がクローズしてしまっている場合
-                    if left_position.linkage_done:
-                        # 既に残された側が、
-                        print("     ", left_position.name, " 既にリンケージ調整され済み", )
-                        continue
-
-                    # メインの種類によって、場合分け？？
-                    # (0)これ　両建てみたいになっている場合、一つがロスカになった場合、もう一つも、マイナスは避けたい
-                    # ただし「既存」は色々なデータが欠如してるため不可
-                    if not "既存" in main_position.name:
-                        main_pl = float(main_position.t_pl_u)
-                        if main_pl < 0 and main_position.plan_json['direction'] != left_position.plan_json['direction']:
-                            if left_position.life and left_position.t_state == "OPEN":
-                                left_position_take_price = left_position.plan_json['target_price']
-                                left_position_dir = left_position.plan_json['direction']
-                                new_lc_range = round(left_position.plan_json['lc_range'] / 1, 3)
-                                if left_position_dir == 1:
-                                    new_lc_price = left_position_take_price - new_lc_range  # -正の値で、ロスカを広げる
-                                else:
-                                    new_lc_price = left_position_take_price + new_lc_range  # -正の値で、ロスカを広げる
-                                left_position.linkage_lc_change(new_lc_price)
-                                main_position.linkage_done_func()
-
-
-                    # (1)メインが、ヘッジ用（負けるか確認のやつ）の場合
-                    # if "Short" in main_position.name:
-                    #     pl = float(main_position.t_pl_u)
-                    #     if pl >= 0:
-                    #         # print("プラスなので、プラス分を残存しているポジションのLCに設定する")
-                    #         if left_position.life and left_position.t_state == "OPEN":
-                    #             left_position_take_price = left_position.plan_json['target_price']
-                    #             left_position_dir = left_position.plan_json['direction']
-                    #             new_lc_price = left_position_take_price
-                    #             new_lc_range = pl
-                    #             if left_position_dir == 1:
-                    #                 new_lc_price = new_lc_price - new_lc_range  # -正の値で、ロスカを広げる
-                    #             else:
-                    #                 new_lc_price = new_lc_price + new_lc_range  # -正の値で、ロスカを広げる
-                    #             left_position.linkage_lc_change(new_lc_price)
-                    #             main_position.linkage_done_func()
-                    #             # tk.line_send("NewLcPrice", left_position_take_price)
-                    #     else:
-                    #         pass
-                    #         # print("マイナスなので何もしない")
-                    #
-                    # elif "シンプルターン_r" in main_position.name:
-                    #     # print("     rによるリンケージ操作", main_position.name, main_position.linkage_done, main_position.t_state, main_position.t_realize_pl, left_position.t_state)
-                    #     if float(main_position.t_realize_pl) >= 0:
-                    #         # プラス域の場合は、問答無用で相手をキャンセルする。
-                    #
-                    #         # 相手がまだオーダーの場合、オーダーをクローズする (自分の利確の分をLCにして継続するのもありかも）
-                    #         if left_position.t_state == "" and left_position.o_state == "PENDING":
-                    #             # print(" まだlinage先のポジションが成立していないため、オーダー解除")
-                    #             left_position.close_order()
-                    #             main_position.linkage_done_func()  # 自身のリンケージも終了
-                    #             continue
-                    #
-                    #         # 相手がポジションの場合、クローズする
-                    #         if left_position.life and left_position.t_state == "OPEN":
-                    #             # 相方のポジションがまだある場合（毎なるポジションが想定される）
-                    #             left_position.close_trade(None)
-                    #             main_position.linkage_done_func()
-                    #             continue
-                    #     else:
-                    #         # 相手がまだオーダーの場合、オーダーをクローズする (自分の利確の分をLCにして継続するのもありかも）
-                    #         if left_position.t_state == "" and left_position.o_state == "PENDING":
-                    #             # print(" まだlinage先のポジションが成立していないため、オーダー解除")
-                    #             left_position.close_order()
-                    #             main_position.linkage_done_func()  # 自身のリンケージも終了
-                    #             continue
-                    #         # 相手がポジションの場合、プラスが予想される。自身がマイナスなので、相方のマイナス突入は死守。
-                    #         if left_position.life and left_position.t_state == "OPEN":
-                    #             left_position_take_price = left_position.plan_json['target_price']
-                    #             tk.line_send("classPosition477テスト", left_position_take_price)
-                    #             # print("     残りポジションのTargetPrice", left_position.name, left_position_take_price, left_position_dir)
-                    #             left_position_dir = left_position.plan_json['direction']
-                    #             new_lc_price = left_position_take_price
-                    #             if left_position_dir == 1:
-                    #                 new_lc_price = new_lc_price - 0.001  # -正の値で、ロスカを広げる
-                    #             else:
-                    #                 new_lc_price = new_lc_price + 0.001  # -正の値で、ロスカを広げる
-                    #             left_position.linkage_lc_change(new_lc_price)
-                    #             main_position.linkage_done_func()
-                    #
-                    # elif "シンプルターン" in main_position.name:
-                    #     print("     シンプルターンによるリンケージ操作", main_position.name, ",", main_position.t_state, ",",main_position.t_realize_pl, ",",left_position.t_state)
-                    #     # 相手がポジションの場合、プラスが予想される。自身がマイナスなので、相方のマイナス突入は死守。
-                    #     if left_position.life and left_position.t_state == "OPEN":
-                    #         left_position_take_price = left_position.plan_json['target_price']
-                    #         tk.line_send("classPosition488テスト", left_position_take_price)
-                    #         print("     残りポジションのTargetPrice", left_position.name, left_position_take_price)
-                    #         new_lc_price = left_position_take_price
-                    #         left_position.linkage_lc_change(new_lc_price)
-                    #         main_position.linkage_done_func()
-                    #     if left_position.t_state == "" and left_position.o_state == "PENDING":
-                    #         # print(" まだlinage先のポジションが成立していないため、オーダー解除")
-                    #         left_position.close_order()
-                    #         main_position.linkage_done_func()  # 自身のリンケージも終了
-                    #         continue
-                    # elif "rシンプルターン" in main_position.name:
-                    #     print("    rシンプルターン_rが先に終了。rシンプルターンも終わらせないと？？")
-                    #     # 利確してるときは、確実に終了させる　または、　少しでもマイナスが少ないようにする
-                    #     if left_position.life and left_position.t_state == "OPEN":
-                    #         left_position_take_price = left_position.plan_json['target_price']
-                    #         tk.line_send("classPosition521テスト", left_position_take_price)
-
-            else:
-                pass
-                print("オーダークラスがない！！！⇒未発行とかそこらへん")
+    # def linkage_control(self):
+    #     """
+    #     終わってしまったポジションから、残っているポジションを変えに行く、という方向。
+    #     """
+    #     margin = 0.01
+    #     lc_range = 0.03
+    #
+    #     # print("PositionControlのリンケージセクション", len(self.position_classes))
+    #     for main_position in self.position_classes:
+    #
+    #         # print("★★", main_position.name, "のリンケージ残存を確認")
+    #         if main_position.linkage_done:
+    #             # print(main_position.name, " リンケージ調整済み(相手側を調整した,またはされた）")
+    #             continue
+    #         elif main_position.life and main_position.t_state == "OPEN":
+    #             # print(main_position.name, " まだ自分がポジション所持中のため、処理しない", main_position.life, main_position.t_state)
+    #             continue
+    #         elif main_position.life and main_position.o_state == "PENDING":
+    #             # print(main_position.name, " まだ自分がオーダー状態(ポジション前）のため、処理しない")
+    #             continue
+    #         elif not main_position.life and main_position.t_state == "":
+    #             continue
+    #         elif main_position.o_json:  # この条件は、テストモードでおかしなことが起きるために追加した（本番悪影響なら消したい）
+    #             # print(main_position.o_json)
+    #             if main_position.o_json['state'] == "PENDING":
+    #                 continue
+    #
+    #         # elifだと通過してしまう（上のどれかに引っかかってしまっている）ため、独立して記述（o_jsonで引っ掛かってる？）
+    #         if main_position.o_state == "Watching":
+    #             continue
+    #
+    #         # これ正しい？
+    #         if not main_position.life and main_position.t_state == "CLOSED" and not main_position.linkage_done:
+    #             # ★クローズした初回のみ実施！！！？　フラグはここで建てておく。
+    #             print("★★初回リンケージチェック", main_position.name, main_position.t_realize_pl)
+    #             main_position.linkage_done_func()
+    #
+    #
+    #         #　自身がの勝敗によって、Linkageをするかどうか
+    #         # print("       確認用position control", main_position.t_realize_pl)
+    #         if float(main_position.t_realize_pl) >= 0:
+    #             pass
+    #             # print("自身はプラス", main_position.name, main_position.t_realize_pl, main_position.o_state)
+    #         else:
+    #             pass
+    #             # print("自身はマイナス", main_position.name, main_position.t_realize_pl, main_position.o_state)
+    #             # continue
+    #
+    #         # 走査する
+    #         if hasattr(main_position, "order_class"):
+    #             if hasattr(main_position.order_class, "linkage_order_classes"):
+    #                 # print("  ", main_position.name, "のリンケージ")
+    #                 if len(main_position.order_class.linkage_order_classes) == 0:
+    #                     # print("    linkage登録数０")
+    #                     continue
+    #             else:
+    #                 # print("    linkageのインスタンス変数なし")
+    #                 continue
+    #
+    #             # 本処理(残されたリンケージオーダーへの対応）
+    #             for i, linkage_class in enumerate(main_position.linkage_order_classes):
+    #                 left_position = next((obj for obj in self.position_classes if obj.name == linkage_class.name), None)
+    #                 if left_position is None:
+    #                     # print("     レフトポジションがNone")
+    #                     continue
+    #                 # print("    ", linkage_class.name, "のオーダーが対象", left_position.life, left_position.t_pl_u)
+    #                 if left_position is None:
+    #                     # print("    ", linkage_class.name, "のリンケージオーダー[", linkage_class.name, "]が対象だが見つからない")
+    #                     # tk.line_send("リンケージ先がない物があった.", linkage_class.name, "のリンケージ", linkage_class.name)
+    #                     main_position.linkage_done_func()  # 自身のリンケージも終了
+    #                     continue
+    #                 # 自分自身はポジションあるが、相手がクローズしてしまっている場合
+    #                 if left_position.linkage_done:
+    #                     # 既に残された側が、
+    #                     print("     ", left_position.name, " 既にリンケージ調整され済み", )
+    #                     continue
+    #
+    #                 # メインの種類によって、場合分け？？
+    #                 # (0)これ　両建てみたいになっている場合、一つがロスカになった場合、もう一つも、マイナスは避けたい
+    #                 # ただし「既存」は色々なデータが欠如してるため不可
+    #                 if not "既存" in main_position.name:
+    #                     main_pl = float(main_position.t_pl_u)
+    #                     if main_pl < 0 and main_position.plan_json['direction'] != left_position.plan_json['direction']:
+    #                         if left_position.life and left_position.t_state == "OPEN":
+    #                             left_position_take_price = left_position.plan_json['target_price']
+    #                             left_position_dir = left_position.plan_json['direction']
+    #                             new_lc_range = round(left_position.plan_json['lc_range'] / 1, 3)
+    #                             if left_position_dir == 1:
+    #                                 new_lc_price = left_position_take_price - new_lc_range  # -正の値で、ロスカを広げる
+    #                             else:
+    #                                 new_lc_price = left_position_take_price + new_lc_range  # -正の値で、ロスカを広げる
+    #                             left_position.linkage_lc_change(new_lc_price)
+    #                             main_position.linkage_done_func()
+    #
+    #
+    #                 # (1)メインが、ヘッジ用（負けるか確認のやつ）の場合
+    #                 # if "Short" in main_position.name:
+    #                 #     pl = float(main_position.t_pl_u)
+    #                 #     if pl >= 0:
+    #                 #         # print("プラスなので、プラス分を残存しているポジションのLCに設定する")
+    #                 #         if left_position.life and left_position.t_state == "OPEN":
+    #                 #             left_position_take_price = left_position.plan_json['target_price']
+    #                 #             left_position_dir = left_position.plan_json['direction']
+    #                 #             new_lc_price = left_position_take_price
+    #                 #             new_lc_range = pl
+    #                 #             if left_position_dir == 1:
+    #                 #                 new_lc_price = new_lc_price - new_lc_range  # -正の値で、ロスカを広げる
+    #                 #             else:
+    #                 #                 new_lc_price = new_lc_price + new_lc_range  # -正の値で、ロスカを広げる
+    #                 #             left_position.linkage_lc_change(new_lc_price)
+    #                 #             main_position.linkage_done_func()
+    #                 #             # tk.line_send("NewLcPrice", left_position_take_price)
+    #                 #     else:
+    #                 #         pass
+    #                 #         # print("マイナスなので何もしない")
+    #                 #
+    #                 # elif "シンプルターン_r" in main_position.name:
+    #                 #     # print("     rによるリンケージ操作", main_position.name, main_position.linkage_done, main_position.t_state, main_position.t_realize_pl, left_position.t_state)
+    #                 #     if float(main_position.t_realize_pl) >= 0:
+    #                 #         # プラス域の場合は、問答無用で相手をキャンセルする。
+    #                 #
+    #                 #         # 相手がまだオーダーの場合、オーダーをクローズする (自分の利確の分をLCにして継続するのもありかも）
+    #                 #         if left_position.t_state == "" and left_position.o_state == "PENDING":
+    #                 #             # print(" まだlinage先のポジションが成立していないため、オーダー解除")
+    #                 #             left_position.close_order()
+    #                 #             main_position.linkage_done_func()  # 自身のリンケージも終了
+    #                 #             continue
+    #                 #
+    #                 #         # 相手がポジションの場合、クローズする
+    #                 #         if left_position.life and left_position.t_state == "OPEN":
+    #                 #             # 相方のポジションがまだある場合（毎なるポジションが想定される）
+    #                 #             left_position.close_trade(None)
+    #                 #             main_position.linkage_done_func()
+    #                 #             continue
+    #                 #     else:
+    #                 #         # 相手がまだオーダーの場合、オーダーをクローズする (自分の利確の分をLCにして継続するのもありかも）
+    #                 #         if left_position.t_state == "" and left_position.o_state == "PENDING":
+    #                 #             # print(" まだlinage先のポジションが成立していないため、オーダー解除")
+    #                 #             left_position.close_order()
+    #                 #             main_position.linkage_done_func()  # 自身のリンケージも終了
+    #                 #             continue
+    #                 #         # 相手がポジションの場合、プラスが予想される。自身がマイナスなので、相方のマイナス突入は死守。
+    #                 #         if left_position.life and left_position.t_state == "OPEN":
+    #                 #             left_position_take_price = left_position.plan_json['target_price']
+    #                 #             tk.line_send("classPosition477テスト", left_position_take_price)
+    #                 #             # print("     残りポジションのTargetPrice", left_position.name, left_position_take_price, left_position_dir)
+    #                 #             left_position_dir = left_position.plan_json['direction']
+    #                 #             new_lc_price = left_position_take_price
+    #                 #             if left_position_dir == 1:
+    #                 #                 new_lc_price = new_lc_price - 0.001  # -正の値で、ロスカを広げる
+    #                 #             else:
+    #                 #                 new_lc_price = new_lc_price + 0.001  # -正の値で、ロスカを広げる
+    #                 #             left_position.linkage_lc_change(new_lc_price)
+    #                 #             main_position.linkage_done_func()
+    #                 #
+    #                 # elif "シンプルターン" in main_position.name:
+    #                 #     print("     シンプルターンによるリンケージ操作", main_position.name, ",", main_position.t_state, ",",main_position.t_realize_pl, ",",left_position.t_state)
+    #                 #     # 相手がポジションの場合、プラスが予想される。自身がマイナスなので、相方のマイナス突入は死守。
+    #                 #     if left_position.life and left_position.t_state == "OPEN":
+    #                 #         left_position_take_price = left_position.plan_json['target_price']
+    #                 #         tk.line_send("classPosition488テスト", left_position_take_price)
+    #                 #         print("     残りポジションのTargetPrice", left_position.name, left_position_take_price)
+    #                 #         new_lc_price = left_position_take_price
+    #                 #         left_position.linkage_lc_change(new_lc_price)
+    #                 #         main_position.linkage_done_func()
+    #                 #     if left_position.t_state == "" and left_position.o_state == "PENDING":
+    #                 #         # print(" まだlinage先のポジションが成立していないため、オーダー解除")
+    #                 #         left_position.close_order()
+    #                 #         main_position.linkage_done_func()  # 自身のリンケージも終了
+    #                 #         continue
+    #                 # elif "rシンプルターン" in main_position.name:
+    #                 #     print("    rシンプルターン_rが先に終了。rシンプルターンも終わらせないと？？")
+    #                 #     # 利確してるときは、確実に終了させる　または、　少しでもマイナスが少ないようにする
+    #                 #     if left_position.life and left_position.t_state == "OPEN":
+    #                 #         left_position_take_price = left_position.plan_json['target_price']
+    #                 #         tk.line_send("classPosition521テスト", left_position_take_price)
+    #
+    #         else:
+    #             pass
+    #             print("オーダークラスがない！！！⇒未発行とかそこらへん")
 
 
 class position_control_for_test(position_control):

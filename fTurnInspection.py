@@ -993,9 +993,11 @@ class MainAnalysis:
         target_margin_limit = 0.025
         lc_change_info = op.cal_target_price_oppo_stop(target_margin_limit)  # target価格を計算する(lc_rangeもここで計算される）
         no_order = op.compare_with_exist_positions(self.position_control_class, op.l_dir_oppo)  # 既存オーダー都の検証
+        order_class = None
         if no_order:
-            order_class = None
             tk.line_send("既存オーダーと同方向のため、オーダーなし(Short)", op.l_dir_oppo)
+        elif not lc_change_info['is_exe']:
+            print("ShortにおいてTPが確保できないため、ショートオーダーはスルー")
         else:
             order_class = OCreate.Order({
                 "name": "シンプルターンShort",
@@ -1021,8 +1023,8 @@ class MainAnalysis:
         target_margin_stop = 0.009
         lc_change_info = op.cal_target_price_stop(target_margin_stop)  # targetマージンからtarget価格を計算する(lc_rangeもここで計算される）
         no_order = op.compare_with_exist_positions(self.position_control_class, op.l_dir)  # 既存オーダーとの兼ね合いの検証
+        order_class1 = None
         if no_order:
-            order_class1 = None
             tk.line_send("既存オーダーと同方向のため、オーダーなし(Long)", op.l_dir)
         else:
             order_class1 = OCreate.Order({
@@ -1045,7 +1047,7 @@ class MainAnalysis:
             })
             self.add_order_to_this_class(order_class1)
 
-            if order_class is not None:
+            if order_class1 is not None and order_class is not None:
                 # order_classがある場合、リンケージオーダーとして登録する
                 order_class1.add_linkage(order_class)
                 order_class.add_linkage(order_class1)
@@ -2127,6 +2129,7 @@ class OrderPoints:
 
     def cal_target_price_oppo_stop(self, margin):
         rr = 1.3  # RR値。ロスカ幅に対する、利確幅の比率
+        is_exe = True
         base = self.latest_price
         base = self.peaks[0]['latest_body_peak_price']
         target_dir = self.l_dir_oppo
@@ -2151,9 +2154,12 @@ class OrderPoints:
         self.tp_range_stop_op = round(abs(self.tp_price_stop_op - self.target_price_stop_op), self.round_digit) + self.spred
         self.tp_range_stop_wick_op = round(abs(self.tp_price_stop_wick_op - self.target_price_stop_op), self.round_digit) + self.spred
         print("    TP Range", self.tp_range_stop_op, self.tp_price_stop_op, self.target_price_stop_op)
-        base_range_border = 0.04
-        if self.tp_range_stop_op <= base_range_border:
-            self.tp_range_stop_op = base_range_border
+        base_tp_range_border = 0.0222
+        if self.tp_range_stop_op <= base_tp_range_border:
+            print(" ショートポジションにおいて、利確幅が短すぎる！！！")
+            tk.line_send("ショーとポジションでTPが狭すぎる", self.tp_range_stop_op)
+            self.tp_range_stop_op = base_tp_range_border
+            is_exe = False
 
         # lcRangeも算出する
         self.lc_range_stop_op = round(self.tp_range_stop_op + 0.01 / rr, 3)
@@ -2181,7 +2187,7 @@ class OrderPoints:
             {"exe": True, "time_after": 0, "trigger": base_range_wick + (e * 5), "ensure": base_range + (e * 5)},
         ]
 
-        return {"lc_change": tp_alls}
+        return {"lc_change": tp_alls, "is_exe": is_exe}
 
     def cal_target_price_limit(self, margin):
         base = self.latest_price
@@ -2308,6 +2314,7 @@ class OrderPoints:
         tp_range_border = lc_range * rr + margin
         target_price = self.target_price_stop  # いつかの使いまわしのために変数化
         lc_change = []
+        add_tp_trigger_gap_around_border = True  # TP_range_borderを一番最初に追加した後は、追加しないようにするフラグ
         print("RRにおけるTP算出  LC", lc_range, "rr", rr, "⇒tp_range", tp_range_border, "target_price", target_price)
         for i, item in enumerate(tp_lines):
             trigger_price = item['median']
@@ -2316,6 +2323,7 @@ class OrderPoints:
             ensure_price_ref = round(target_price + (target_dir * tp_gap_ensure), 3)
             print(" loop test", item['median'] ,tp_trigger_gap, tp_range_border, item['total_strength'])
             if tp_trigger_gap <= tp_range_border:
+                # tp_rangeの幅が少なすぎる場合⇒　よほど抵抗が強くない場合、lcChangeは行わない
                 if item['total_strength'] >= 15:
                     print(s, "　TPGAP小さいが、非常に強い抵抗と思われる。⇒　勝率悪そう？？（レンジの長さ次第では突破？", tp_trigger_gap <= tp_range_border + margin,
                                  item['total_strength'])
@@ -2331,9 +2339,16 @@ class OrderPoints:
 
             else:
                 # RR算出のTP以上の場合
-                # if tp_trigger_gap
-                #     # tp_range_borderで必ず一つ作る
-                #
+                if tp_trigger_gap >= tp_range_border + 0.02 and add_tp_trigger_gap_around_border:
+                    # TP borderを大幅に(2pips)超える場合は、TP　Orderで一区切り入れる
+                    print(s, "tp_range_borderあたりが飛ぶので、追加")
+                    trigger_range = tp_range_border + 0.01
+                    ensure_range = tp_range_border - 0.02
+                    trigger_price_around = round(target_price + (trigger_range * target_dir), 3)
+                    ensure_price_around = round(target_price + (ensure_range * target_dir), 3)
+                    lc_change.append({"exe": True, "time_after": 0, "trigger": trigger_range, "ensure": ensure_range,
+                                "trigger_price": trigger_price_around, "ensure_price": ensure_price_around})
+
                 if tp_trigger_gap >= 0.2 and i == 0:
                     # 初回の距離があまりに大きすぎる場合は、半分のものを追加する
                     print(s, "初回のサイズ調整発生")
@@ -2760,7 +2775,7 @@ class OrderPoints:
                 d for d in exist_positions
                 if float(d.get("direction", 0)) * plan_dir > 0
             ]
-            exists = len(matched) >= 3  # booleanも持っておく
+            exists = len(matched) >= 2  # booleanも持っておく
 
             print("残存オーダーとの比較結果", exists, ", 指定条件の残存数", len(matched), "指定の方向", plan_dir)
             for i, item in enumerate(matched):

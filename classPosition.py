@@ -199,6 +199,7 @@ class order_information:
         self.order_register_time = 0
         self.order_class = None
         self.linkage_order_classes = []
+        self.linkage_class_slots = []  # リンクオーダーのポジションコントールクラスのスロットの一覧
         self.linkage_done = False
         self.candle_analysis_class = None
         # オーダー情報(オーダー発行時に基本的に上書きされる）
@@ -934,7 +935,7 @@ class order_information:
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
                 self.send_line("    (取得)", self.name, trade_latest['price'], trade_latest['id'])
                 # リンケージオーダーのコントロール
-                self.linkage_close_order()
+                self.linkage_change_order()
                 #  取得時には、ローソクデータも取得しておく
                 now = datetime.datetime.now().replace(microsecond=0)
                 time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
@@ -974,17 +975,16 @@ class order_information:
         elif self.t_state == "OPEN" and trade_latest['state'] == "CLOSED":  # 通常の成り行きのクローズ時
             print("    成り行きのクローズ発生")
             self.after_close_trade_function()
-            self.linkage_close_trade()
+            self.linkage_change_trade()
             return 0
 
-    def linkage_close_order(self):
+    def linkage_change_order(self):
         """
         リンケージのオーダーをコントロールする
+        リンケージの先のクラスは、classPositionControlのorder_class_addで登録される
         """
         print("リンケージオーダークローズ")
         for i, linkage_class in enumerate(self.linkage_class_slots):
-            print(" tttt", linkage_class.name)
-            print("     ", )
             if linkage_class.linkage_done:
                 # 既に残された側が、
                 print("     ", linkage_class.name, " 既にリンケージ調整され済み", )
@@ -998,9 +998,10 @@ class order_information:
                       linkage_class.t_state)
                 pass
 
-    def linkage_close_trade(self):
+    def linkage_change_trade(self):
         """
         リンケージのポジションをコントロールする
+        リンケージの先のクラスは、classPositionControlのorder_class_addで登録される
         """
         for i, linkage_class in enumerate(self.linkage_class_slots):
             if linkage_class.linkage_done:
