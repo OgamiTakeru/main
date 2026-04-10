@@ -941,9 +941,7 @@ class MainAnalysis:
         print(l['gap'], r['gap'], r['gap'] * 0.7, r['gap']*1.3)
         if r['count'] >= 4:
             if 0.7 * r['gap'] <= l['gap'] <= r['gap'] * 1.3 and df.iloc[1]['body_abs'] >= range_candle_border:
-                print(s, "折り返しが強く、一本でかなり折り返している場合終了")
-                tk.line_send("折り返しが強く、一本でかなり折り返している場合終了")
-                return 0
+                print(s, "折り返しが強く、一本でかなり折り返している場合終了⇒変動ユニットのため終了せず")
 
         # (2)Range判定
         # latestの大きさで判断してみる　小さい場合は、ちょっと危ない？
@@ -992,7 +990,7 @@ class MainAnalysis:
         op = OrderPoints(peaks_class, df, latest_price, foot)  # オーダーポイントの計算
 
         # オーダー１用の数字の生成
-        target_margin_limit = 0.009
+        target_margin_limit = 0.025
         lc_change_info = op.cal_target_price_oppo_stop(target_margin_limit)  # target価格を計算する(lc_rangeもここで計算される）
         no_order = op.compare_with_exist_positions(self.position_control_class, op.l_dir_oppo)  # 既存オーダー都の検証
         if no_order:
@@ -1005,10 +1003,10 @@ class MainAnalysis:
                 "target": op.target_price_stop_op,  # op.target_price_limit,
                 "direction": op.l_dir_oppo,  # op.l_dir,
                 "type": "STOP",  # "STOP",  # "MARKET",
-                "tp": op.tp_range_stop_op * 2,  #min(tp_min, op.lc_range_limit * 1.2),
-                "lc": 0.045,  # op.lc_range_limit,  # 0.15,  #
+                "tp": op.tp_range_stop_op * 2,  # min(tp_min, op.lc_range_limit * 1.2),
+                "lc": op.lc_range_stop_op,  # 0.045,  #
                 "lc_change": lc_change_info["lc_change"],
-                "units": self.units_str * 1.01,  # 100,
+                "units": op.cal_units(op.lc_range_stop_op, tk.setting_json['s_units'], "s"),  # self.units_str * 1.01,  # 100,
                 "priority": 5,
                 "decision_time": df.iloc[0]['time_jp'],
                 "candle_analysis_class": self.ca,
@@ -1036,7 +1034,7 @@ class MainAnalysis:
                 "tp": op.tp_range_stop,
                 "lc": op.lc_range_stop,  # 0.15,  #
                 "lc_change": lc_change_info['lc_change'],
-                "units": op.cal_units(op.lc_range_stop, 1000, "l"),  # 100,
+                "units": op.cal_units(op.lc_range_stop, tk.setting_json['l_units'], "l"),  # 100,
                 "priority": 5,
                 "decision_time": df.iloc[0]['time_jp'],
                 "candle_analysis_class": self.ca,
@@ -1483,115 +1481,6 @@ class MainAnalysis:
         print(self.s, remark, on_line_ratio, near_line_ratio)
 
         return is_tilt
-
-    def simple_turn_analysis_old(self):
-        print("■シンプルターンオーダー2", self.latest_price)
-
-        # 変数化
-        s = self.s
-        peaks = self.peaks_class_m30.peaks_original  # self.peaks_class.peaks_original
-        peaks_skip = self.peaks_class.skipped_peaks_hard
-        latest_price = self.latest_price  # self.ca = candle_analysis
-        ave = self.ca.candle_class_hour
-        latest_time = self.latest_time
-        bb_h1_class = self.bb_h1_class  # この結果が必須！
-        bb_m5_class = self.bb_m5_class  # この結果も必須”
-        mode = self.mode
-        ave5 = self.ca5
-        df = self.peaks_class_m30.df_r_original  # self.peaks_class.df_r_original  # これは
-        big_move_criteria = 0.1  # 個以上動いたら、5分１足にしては大きい
-        u = self.round_digit
-        pattern = 0  # 通常では0
-        allowed_gap_to_bb = 0.02  # 現在価格と近いBBまでの距離（近い場合＋レンジの場合は伸びないはず）
-        latest_dir = peaks[0]['direction']
-
-        # 実施する時間（30分足の場合5分おきに入ってしまうため）
-        dt = datetime.strptime(self.latest_time, '%Y/%m/%d %H:%M:%S')
-        minute = dt.minute
-        if minute == 0 or minute == 30:  # or minute == 5 or minute == 35:  #minute % 30 == 0:
-            pass
-        else:
-            print("30分足以外")
-            return 0
-
-        # 途中終了の場合
-        if peaks[1]['gap'] < 0.04:
-            print(s, "対象が小さい", peaks[1]['gap'])
-        if peaks[0]['count'] != 2:  # and self.mode == "inspection"
-            print(s, "カウントが２以外", peaks[0]['count'])
-            return 0
-
-
-        # レンジに入ったと思われる場合
-        print("レンジ簡易判定", peaks[1]['latest_time_jp'], peaks[1]['count'], peaks[1]['gap'])
-        print("レンジ簡易判定", peaks[2]['latest_time_jp'], peaks[2]['count'], peaks[2]['gap'])
-        print("レンジ簡易判定", peaks[3]['latest_time_jp'], peaks[3]['count'], peaks[3]['gap'])
-        gap_border = 0.085  # 30分足の場合0.8
-        if peaks[1]['count'] <= 3 and peaks[1]['gap'] <= gap_border and peaks[2]['count'] <= 3 and peaks[2]['gap'] <= gap_border:
-            tk.line_send("Rangeの危険性あり")
-
-        # 当初の、Latestの方向にそのまま行くやつ
-        op = OrderPoints(self.peaks_class_m30, df, latest_price)  # オーダーポイントの計算
-        op.cal_target_price_limit(0.012)  #　targetマージンからtarget価格を計算する(lc_rangeもここで計算される）
-        op.predict_lines_wrap_up()
-        lc_change = [
-            {"exe": True, "time_after": 0, "trigger": 0.02, "ensure": -0.04},
-            {"exe": True, "time_after": 0, "trigger": 0.05, "ensure": 0.04},
-            {"exe": True, "time_after": 0, "trigger": 0.055, "ensure": 0.05},
-            {"exe": True, "time_after": 0, "trigger": 0.08, "ensure": 0.07},
-            {"exe": True, "time_after": 0, "trigger": 0.10, "ensure": 0.09},
-        ]
-        order_class = OCreate.Order({
-            "name": "シンプルターンShort",
-            "current_price": latest_price,
-            "target": op.target_price_limit,
-            "direction": op.l_dir,
-            "type": "LIMIT",  # "STOP",  # "MARKET",
-            "tp": min(0.045, op.lc_range_limit * 1.2),
-            "lc": op.lc_range_limit,  # 0.15,  #
-            "lc_change": lc_change,
-            "units": self.units_str * 1.01,  # 100,
-            "priority": 5,
-            "decision_time": df.iloc[0]['time_jp'],
-            "candle_analysis_class": self.ca,
-            "lc_change_candle_type": "M30",
-            # "order_permission": False,
-            "order_timeout_min": 15,
-            "memo": "",
-        })
-        self.add_order_to_this_class(order_class)
-
-        op.cal_target_price_stop(0.012)  # targetマージンからtarget価格を計算する(lc_rangeもここで計算される）
-        lc_change_long = [
-            {"exe": True, "time_after": 0, "trigger": 0.15, "ensure": 0.15 - 0.02},
-            {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.16},
-            {"exe": True, "time_after": 0, "trigger": 0.30, "ensure": 0.25},
-            {"exe": True, "time_after": 0, "trigger": 0.40, "ensure": 0.35},
-            {"exe": True, "time_after": 0, "trigger": 0.50, "ensure": 0.45},
-            {"exe": True, "time_after": 0, "trigger": 0.60, "ensure": 0.55},
-        ]
-        order_class1 = OCreate.Order({
-            "name": "シンプルターンLong",
-            "current_price": latest_price,
-            "target": op.target_price_stop,
-            "direction": op.l_dir,
-            "type": "STOP",  # "STOP",  # "MARKET",
-            "tp": 0.6,
-            "lc": op.lc_range_stop,  # 0.15,  #
-            "lc_change": lc_change_long,
-            "units": self.units_str * 1,  # 100,
-            "priority": 5,
-            "decision_time": df.iloc[0]['time_jp'],
-            "candle_analysis_class": self.ca,
-            "lc_change_candle_type": "M30",
-            # "order_permission": False,
-            "order_timeout_min": 15,
-            "memo": "exist_res_com",
-        })
-        self.add_order_to_this_class(order_class1)
-
-        order_class1.add_linkage(order_class)
-        order_c
 
 
 class BaseAnalysisClass:
@@ -2237,32 +2126,42 @@ class OrderPoints:
         # self.lc_range_limit = min(self.lc_range_limit, 0.10)  # max(0.05, min(self.op_r_range_limit, 0.18))
 
     def cal_target_price_oppo_stop(self, margin):
+        rr = 1.3  # RR値。ロスカ幅に対する、利確幅の比率
         base = self.latest_price
         base = self.peaks[0]['latest_body_peak_price']
+        target_dir = self.l_dir_oppo
         # ターゲット価格の算出
-        if self.l_dir == 1:
+        if target_dir == -1:
             self.target_price_stop_op = base - margin
         else:
             self.target_price_stop_op = base + margin
         # TP価格、LC価格の算出
-        if self.l_dir_oppo == 1:
-            self.lc_price_stop_wick_op = self.peaks[1]['lowest'] - self.spred  # 他にはlatest_body_peak_price
-            self.lc_price_stop_op = self.peaks[1]['latest_body_peak_price'] - self.spred
+        if target_dir == 1:
+            # self.lc_price_stop_wick_op = self.peaks[1]['lowest'] - self.spred  # 他にはlatest_body_peak_price
+            # self.lc_price_stop_op = self.peaks[1]['latest_body_peak_price'] - self.spred
             self.tp_price_stop_wick_op = self.peaks[1]['lowest'] - self.spred  # 他にはlatest_body_peak_price
             self.tp_price_stop_op = self.peaks[1]['latest_body_peak_price'] - self.spred
         else:
-            self.lc_price_stop_wick_op = self.peaks[1]['highest'] + self.spred
-            self.lc_price_stop_op = self.peaks[1]['latest_body_peak_price'] + self.spred
+            # self.lc_price_stop_wick_op = self.peaks[1]['highest'] + self.spred
+            # self.lc_price_stop_op = self.peaks[1]['latest_body_peak_price'] + self.spred
             self.tp_price_stop_wick_op = self.peaks[1]['highest'] - self.spred  # 他にはlatest_body_peak_price
             self.tp_price_stop_op = self.peaks[1]['latest_body_peak_price'] - self.spred
 
         # op_r_priceをlcと仮定し、tp_rangeを計算する
         self.tp_range_stop_op = round(abs(self.tp_price_stop_op - self.target_price_stop_op), self.round_digit) + self.spred
         self.tp_range_stop_wick_op = round(abs(self.tp_price_stop_wick_op - self.target_price_stop_op), self.round_digit) + self.spred
-        print("TP Range", self.tp_range_stop_op, self.tp_price_stop_op, self.target_price_stop_op)
+        print("    TP Range", self.tp_range_stop_op, self.tp_price_stop_op, self.target_price_stop_op)
         base_range_border = 0.04
         if self.tp_range_stop_op <= base_range_border:
             self.tp_range_stop_op = base_range_border
+
+        # lcRangeも算出する
+        self.lc_range_stop_op = round(self.tp_range_stop_op + 0.01 / rr, 3)
+        if target_dir == 1:
+            self.lc_price_stop_op = self.target_price_stop_op - self.lc_range_stop_op
+        else:
+            self.lc_price_stop_op = self.target_price_stop_op + self.lc_range_stop_op
+        print("    参考のLCの確認", self.lc_range_stop_op, self.lc_price_stop_op)
 
         # lc_changeも作ってしまう
         base_range = self.tp_range_stop_op
@@ -2418,9 +2317,9 @@ class OrderPoints:
             print(" loop test", item['median'] ,tp_trigger_gap, tp_range_border, item['total_strength'])
             if tp_trigger_gap <= tp_range_border:
                 if item['total_strength'] >= 15:
-                    print(s, "　TPGAP小さいが、非常に強い抵抗と思われる。⇒　勝率悪そう？？", tp_trigger_gap <= tp_range_border + margin,
+                    print(s, "　TPGAP小さいが、非常に強い抵抗と思われる。⇒　勝率悪そう？？（レンジの長さ次第では突破？", tp_trigger_gap <= tp_range_border + margin,
                                  item['total_strength'])
-                    tk.line_send("TPが小さいところに強い抵抗がある。勝率悪そう？？（レンジの長さ次第では突破？）", tp_trigger_gap <= tp_range_border + margin,
+                    tk.line_send("TPが小さいところに強い抵抗がある。勝率悪そう？？　tp短め。", tp_trigger_gap <= tp_range_border + margin,
                                  item['total_strength'])
                     self.tp_range_stop = tp_trigger_gap
                 elif tp_trigger_gap <= tp_range_border/2:
@@ -2431,6 +2330,10 @@ class OrderPoints:
                                       "trigger_price": item['median'], "ensure_price": ensure_price_ref})
 
             else:
+                # RR算出のTP以上の場合
+                # if tp_trigger_gap
+                #     # tp_range_borderで必ず一つ作る
+                #
                 if tp_trigger_gap >= 0.2 and i == 0:
                     # 初回の距離があまりに大きすぎる場合は、半分のものを追加する
                     print(s, "初回のサイズ調整発生")
@@ -2853,13 +2756,16 @@ class OrderPoints:
                       ex_position['direction'])
 
             # 残存ポジションと、現在価格との比較
-            # plan_dir = peaks[0]['direction']
-            exists = sum(
-                # "LONG" in d.get("name", "") and
-                (float(d.get("direction", 0)) * plan_dir > 0)
-                for d in exist_positions
-            ) >= 3
-            print("残存オーダーとの比較結果", exists)
+            matched = [
+                d for d in exist_positions
+                if float(d.get("direction", 0)) * plan_dir > 0
+            ]
+            exists = len(matched) >= 3  # booleanも持っておく
+
+            print("残存オーダーとの比較結果", exists, ", 指定条件の残存数", len(matched), "指定の方向", plan_dir)
+            for i, item in enumerate(matched):
+                print("  ", item['name'], item['direction'], item['t_unrealize_pl'])
+
             if exists:
                 no_order = True
                 print("残存オーダーに同方向有！！",)

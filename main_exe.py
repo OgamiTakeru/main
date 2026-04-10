@@ -234,7 +234,7 @@ class main():
 
         if life_check_res['life_exist']:
             # オーダー以上がある場合。表示用（１分に１回表示させたい）
-            self.positions_control_class.linkage_control()  # positionの更新
+            # self.positions_control_class.linkage_control()  # positionの更新
             c = ""
             temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
             if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒～２秒の間)

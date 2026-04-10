@@ -379,149 +379,149 @@ class Oanda:
             return {"data": res_json, "error": 0}
         except Exception as e:
             # print(e)
-            e_info = self.error_method("OrderDetail" + str(order_id), start_time, e)
+            e_info = self.error_method("OrderDetail" + str(order_id), start_time, e, order_id)
             e_info['o_id'] = order_id
             return {"data": e_info, "error": 1}
 
     # (9)指定のオーダーのステータス（オーダーとトレードの詳細）を取得
-    def OrderDetailsState_exe(self, order_id):
-        """
-        単品の注文番号を渡すと、ポジションまで（ある場合）の情報を返却する
-        order無し時でも、position有時でも、同一の辞書形式を返却する。
-        :param order_id: 注文のID
-        :return: Error有無、Data（どの場合も同一形式）
-        """
-
-        # 実行除外条件
-        if order_id == 0:
-            return 0
-
-        # （１）オーダー状況取得
-        order_ans = self.OrderDetails_exe(order_id)
-        order_dic = order_ans['data']['order']
-        print(order_dic)
-        if order_dic['state'] == "FILLED":
-            print("  ポジション移行有⇒ポジションを検索")
-            if "tradeClosedIDs" in order_dic['order']:  # 既にクローズまで行っている場合、これがPositionID
-                # print("  Closeあり　今までのAPIエラーケース")
-                position_id = order_dic['order']['tradeClosedIDs'][0]  # PositionIDを取得
-                position_type = "single"
-            elif "tradeReducedID" in order_dic['order']:  # 約定価格が同じ場合、グルーピングされる場合がある？？！
-                # print("  Closeあり　今までのAPIエラーケース")
-                position_id = order_dic['order']['tradeReducedID']
-                position_type = "group"
-            else:
-                position_id = order_dic['order']['fillingTransactionID']  # PositionIDを取得
-                position_type = "single"
-        else:
-            # Cancelやpendingの場合はやらない
-            return 0
-
-        # (2)ポジション情報の取得
-
-        # (2) オーダーの情報を取得
-        if order_id == 0:
-            order_id = 0  # エラー同等
-            error_flag = -1
-            print(" ★OrderDetailState- orderID 0での問い合わせ発生", order_id)
-        else:
-            res_json_dic = self.OrderDetails_exe(order_id)
-            if res_json_dic['error'] == -1:
-                # オーダー無し（エラー含む）の場合
-                print(" ★OrderDetailState- orderDetail ミス", order_id)
-                res_json_dic['method'] = " ★OrderDetailState- orderDetail ミス"
-                # return res_json_dic  # エラーの返却
-                order_id = 0  # エラー同等
-                error_flag = -1
-            else:
-                # オーダーありの場合、オーダー情報を取得する
-                res_json = res_json_dic['data']
-                # orderの情報を取得する
-                order_createtime = iso_to_jstdt_single(res_json['order']['createTime'])
-                order_time_past = cal_past_time_single(iso_to_jstdt_single(res_json['order']['createTime']))
-                order_units = res_json['order']['units']
-                order_state = res_json['order']['state']  # オーダーのステータスを確認
-                if "price" in res_json['order']:  # MARKET注文の場合、orderPriceが表示されない
-                    order_price = res_json['order']['price']
-                else:
-                    order_price = 0
-
-                # Positionを探しに行く
-                if order_state == 'PENDING' or order_state == 'CANCELLED':  # 注文中
-                    pass  # 初期値のまま（全て０）でOK
-                else:  # order_state == 'FILLED':  # オーダー約定済み⇒ポジションIDを取得して情報を取得
-                    # positionIDを取得
-                    if "tradeClosedIDs" in res_json['order']:  # 既にクローズまで行っている場合、これがPositionID
-                        # print("  Closeあり　今までのAPIエラーケース")
-                        position_id = res_json['order']['tradeClosedIDs'][0]  # PositionIDを取得
-                        position_type = "single"
-                    elif "tradeReducedID" in res_json['order']:  # 約定価格が同じ場合、グルーピングされる場合がある？？！
-                        # print("  Closeあり　今までのAPIエラーケース")
-                        position_id = res_json['order']['tradeReducedID']
-                        position_type = "group"
-                    else:
-                        position_id = res_json['order']['fillingTransactionID']  # PositionIDを取得
-                        position_type = "single"
-
-                    # (2)ポジションの詳細を取得
-                    position_js_dic = self.TradeDetails_exe(position_id)  # ★★★★★PositionIDから詳細を取得
-                    if position_js_dic['error'] == -1:
-                        # わかりやすいJsonを作っておく
-                        position_js_dic['method'] = "★OrderDatailState- positionDetail ミス"
-                        print("   ★OrderDatailState- positionDetail ミス", position_id, "(", order_id, ")")
-                        error_flag = -1
-                    else:
-                        position_js = position_js_dic['data']
-                        if position_js['trade']['state'] == 'CLOSED':  # すでに閉じたポジションの場合
-                            # splitnumは本来１：１の分割ではないが、手間なのでとりあえず半々に分ける
-                            split_num = float(len(position_js['trade']['closingTransactionIDs']))  # 複数が同時に出力される場合有
-                            pips = round((float(position_js['trade']['realizedPL']) / split_num) / abs(
-                                float(position_js['trade']['initialUnits'])), 3)
-                            position_initial_units = position_js['trade']['initialUnits']
-                            position_current_units = position_js['trade']['currentUnits']
-                            position_realize_pl = float(position_js['trade']['realizedPL']) / split_num
-                            position_time = iso_to_jstdt_single(position_js['trade']['openTime'])  # ポジションした時間がうまる
-                            position_close_time = iso_to_jstdt_single(
-                                position_js['trade']['closeTime'])  # ポジションがクローズした時間がうまる
-                            position_price = position_js['trade']['price']  # 現在価格
-                            position_state = position_js['trade']['state']
-                            position_close_price = position_js['trade']['averageClosePrice']
-                        elif position_js['trade']['state'] == 'OPEN':  # 所持中しているポジションの場合
-                            pips = round(float(position_js['trade']['unrealizedPL']) / abs(
-                                float(position_js['trade']['initialUnits'])), 3)
-                            position_initial_units = position_js['trade']['initialUnits']
-                            position_current_units = position_js['trade']['currentUnits']
-                            position_realize_pl = position_js['trade']['unrealizedPL']
-                            position_time = iso_to_jstdt_single(position_js['trade']['openTime'])  # ポジションした時間がうまる
-                            position_close_time = 0
-                            position_price = position_js['trade']['price']
-                            position_state = position_js['trade']['state']
-                            position_close_price = 0
-        # 返却の形式は以下に統一。
-        res = {
-            "func_complete": 0,  # APIエラーなく完了しているかどうか
-            "order_id": order_id,
-            "order_time": order_createtime,
-            "order_time_past": order_time_past,
-            "order_units": order_units,
-            "order_price": order_price,  # Marketでは存在しない
-            "order_state": order_state,
-            "order_json": res_json,
-            "position_id": position_id,
-            "position_type": position_type,  # 両建てや部分解消の場合「group」が入る。
-            "position_initial_units": position_initial_units,
-            "position_current_units": position_current_units,
-            "position_time": position_time,
-            "position_time_past": cal_past_time_single(position_time) if position_time != 0 else 0,
-            "position_price": position_price,
-            "position_state": position_state,
-            "position_realize_pl": position_realize_pl,
-            "position_pips": pips,
-            "position_close_time": position_close_time,
-            "position_close_price": position_close_price,
-            "position_json": position_js_dic,
-        }
-        return {"data": res, "error": error_flag}
+    # def OrderDetailsState_exe(self, order_id):
+    #     """
+    #     単品の注文番号を渡すと、ポジションまで（ある場合）の情報を返却する
+    #     order無し時でも、position有時でも、同一の辞書形式を返却する。
+    #     :param order_id: 注文のID
+    #     :return: Error有無、Data（どの場合も同一形式）
+    #     """
+    #
+    #     # 実行除外条件
+    #     if order_id == 0:
+    #         return 0
+    #
+    #     # （１）オーダー状況取得
+    #     order_ans = self.OrderDetails_exe(order_id)
+    #     order_dic = order_ans['data']['order']
+    #     print(order_dic)
+    #     if order_dic['state'] == "FILLED":
+    #         print("  ポジション移行有⇒ポジションを検索")
+    #         if "tradeClosedIDs" in order_dic['order']:  # 既にクローズまで行っている場合、これがPositionID
+    #             # print("  Closeあり　今までのAPIエラーケース")
+    #             position_id = order_dic['order']['tradeClosedIDs'][0]  # PositionIDを取得
+    #             position_type = "single"
+    #         elif "tradeReducedID" in order_dic['order']:  # 約定価格が同じ場合、グルーピングされる場合がある？？！
+    #             # print("  Closeあり　今までのAPIエラーケース")
+    #             position_id = order_dic['order']['tradeReducedID']
+    #             position_type = "group"
+    #         else:
+    #             position_id = order_dic['order']['fillingTransactionID']  # PositionIDを取得
+    #             position_type = "single"
+    #     else:
+    #         # Cancelやpendingの場合はやらない
+    #         return 0
+    #
+    #     # (2)ポジション情報の取得
+    #
+    #     # (2) オーダーの情報を取得
+    #     if order_id == 0:
+    #         order_id = 0  # エラー同等
+    #         error_flag = -1
+    #         print(" ★OrderDetailState- orderID 0での問い合わせ発生", order_id)
+    #     else:
+    #         res_json_dic = self.OrderDetails_exe(order_id)
+    #         if res_json_dic['error'] == -1:
+    #             # オーダー無し（エラー含む）の場合
+    #             print(" ★OrderDetailState- orderDetail ミス", order_id)
+    #             res_json_dic['method'] = " ★OrderDetailState- orderDetail ミス"
+    #             # return res_json_dic  # エラーの返却
+    #             order_id = 0  # エラー同等
+    #             error_flag = -1
+    #         else:
+    #             # オーダーありの場合、オーダー情報を取得する
+    #             res_json = res_json_dic['data']
+    #             # orderの情報を取得する
+    #             order_createtime = iso_to_jstdt_single(res_json['order']['createTime'])
+    #             order_time_past = cal_past_time_single(iso_to_jstdt_single(res_json['order']['createTime']))
+    #             order_units = res_json['order']['units']
+    #             order_state = res_json['order']['state']  # オーダーのステータスを確認
+    #             if "price" in res_json['order']:  # MARKET注文の場合、orderPriceが表示されない
+    #                 order_price = res_json['order']['price']
+    #             else:
+    #                 order_price = 0
+    #
+    #             # Positionを探しに行く
+    #             if order_state == 'PENDING' or order_state == 'CANCELLED':  # 注文中
+    #                 pass  # 初期値のまま（全て０）でOK
+    #             else:  # order_state == 'FILLED':  # オーダー約定済み⇒ポジションIDを取得して情報を取得
+    #                 # positionIDを取得
+    #                 if "tradeClosedIDs" in res_json['order']:  # 既にクローズまで行っている場合、これがPositionID
+    #                     # print("  Closeあり　今までのAPIエラーケース")
+    #                     position_id = res_json['order']['tradeClosedIDs'][0]  # PositionIDを取得
+    #                     position_type = "single"
+    #                 elif "tradeReducedID" in res_json['order']:  # 約定価格が同じ場合、グルーピングされる場合がある？？！
+    #                     # print("  Closeあり　今までのAPIエラーケース")
+    #                     position_id = res_json['order']['tradeReducedID']
+    #                     position_type = "group"
+    #                 else:
+    #                     position_id = res_json['order']['fillingTransactionID']  # PositionIDを取得
+    #                     position_type = "single"
+    #
+    #                 # (2)ポジションの詳細を取得
+    #                 position_js_dic = self.TradeDetails_exe(position_id)  # ★★★★★PositionIDから詳細を取得
+    #                 if position_js_dic['error'] == -1:
+    #                     # わかりやすいJsonを作っておく
+    #                     position_js_dic['method'] = "★OrderDatailState- positionDetail ミス"
+    #                     print("   ★OrderDatailState- positionDetail ミス", position_id, "(", order_id, ")")
+    #                     error_flag = -1
+    #                 else:
+    #                     position_js = position_js_dic['data']
+    #                     if position_js['trade']['state'] == 'CLOSED':  # すでに閉じたポジションの場合
+    #                         # splitnumは本来１：１の分割ではないが、手間なのでとりあえず半々に分ける
+    #                         split_num = float(len(position_js['trade']['closingTransactionIDs']))  # 複数が同時に出力される場合有
+    #                         pips = round((float(position_js['trade']['realizedPL']) / split_num) / abs(
+    #                             float(position_js['trade']['initialUnits'])), 3)
+    #                         position_initial_units = position_js['trade']['initialUnits']
+    #                         position_current_units = position_js['trade']['currentUnits']
+    #                         position_realize_pl = float(position_js['trade']['realizedPL']) / split_num
+    #                         position_time = iso_to_jstdt_single(position_js['trade']['openTime'])  # ポジションした時間がうまる
+    #                         position_close_time = iso_to_jstdt_single(
+    #                             position_js['trade']['closeTime'])  # ポジションがクローズした時間がうまる
+    #                         position_price = position_js['trade']['price']  # 現在価格
+    #                         position_state = position_js['trade']['state']
+    #                         position_close_price = position_js['trade']['averageClosePrice']
+    #                     elif position_js['trade']['state'] == 'OPEN':  # 所持中しているポジションの場合
+    #                         pips = round(float(position_js['trade']['unrealizedPL']) / abs(
+    #                             float(position_js['trade']['initialUnits'])), 3)
+    #                         position_initial_units = position_js['trade']['initialUnits']
+    #                         position_current_units = position_js['trade']['currentUnits']
+    #                         position_realize_pl = position_js['trade']['unrealizedPL']
+    #                         position_time = iso_to_jstdt_single(position_js['trade']['openTime'])  # ポジションした時間がうまる
+    #                         position_close_time = 0
+    #                         position_price = position_js['trade']['price']
+    #                         position_state = position_js['trade']['state']
+    #                         position_close_price = 0
+    #     # 返却の形式は以下に統一。
+    #     res = {
+    #         "func_complete": 0,  # APIエラーなく完了しているかどうか
+    #         "order_id": order_id,
+    #         "order_time": order_createtime,
+    #         "order_time_past": order_time_past,
+    #         "order_units": order_units,
+    #         "order_price": order_price,  # Marketでは存在しない
+    #         "order_state": order_state,
+    #         "order_json": res_json,
+    #         "position_id": position_id,
+    #         "position_type": position_type,  # 両建てや部分解消の場合「group」が入る。
+    #         "position_initial_units": position_initial_units,
+    #         "position_current_units": position_current_units,
+    #         "position_time": position_time,
+    #         "position_time_past": cal_past_time_single(position_time) if position_time != 0 else 0,
+    #         "position_price": position_price,
+    #         "position_state": position_state,
+    #         "position_realize_pl": position_realize_pl,
+    #         "position_pips": pips,
+    #         "position_close_time": position_close_time,
+    #         "position_close_price": position_close_price,
+    #         "position_json": position_js_dic,
+    #     }
+    #     return {"data": res, "error": error_flag}
 
     # オーダーの一覧（全て）を取得
     def OrdersPending_exe(self):
@@ -908,7 +908,7 @@ class Oanda:
         return for_ans
 
     # (extra) エラー送信用
-    def error_method(self, name, start_time, e):
+    def error_method(self, name, start_time, e, id_errered=0):
         print("   ¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥¥")
         now_time = datetime.datetime.now().replace(microsecond=0)
         past_sec = (now_time - start_time).seconds
@@ -918,7 +918,8 @@ class Oanda:
         # エラーの種類によって表示やLINE送信を行う。
         if "OrderDetail" in name and not self.already_error_send1:
             self.already_error_send1 = True  # 一度きりの送信
-            tk.line_send("おかしなオーダーdetailエラー発生⇒", e)
+            tk.line_send("オーダーDetailエラー ", id_errered)
+            # tk.line_send("おかしなオーダーdetailエラー発生⇒", e)
 
         # if name == "価格情報取得":
         #     print(e)

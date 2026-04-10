@@ -74,7 +74,8 @@ class order_information:
         self.current_price = 0
         self.lc_change_candle_num = 100
         self.order_class = None
-        self.linkage_order_classes = []
+        self.linkage_order_classes = []  # リンクオーダーのオーダー情報
+        self.linkage_class_slots = []  # リンクオーダーのポジションコントールクラスのスロットの一覧
         self.linkage_done = False
         self.u = 3
         self.lc_ensure_range_border = 0.01  # lc_changeで確保できる利益が、この値以下の場合は、実施しない。
@@ -538,7 +539,6 @@ class order_information:
             self.for_line_send = "Order失敗"
         elif self.o_id == -1:
             # ウォッチオーダー
-            print("オーダー通知")
             # print(order_dic)
             # line_sendは利確や損切の指定が無い場合はエラーになりそう（ただそんな状態は基本存在しない）
             # TPrangeとLCrangeの表示は「inspection_result_dic」を参照している。
@@ -557,7 +557,6 @@ class order_information:
                         ",lc_change" + str(lc_change_str)
         else:
             # オーダーの生成完了をLINE通知する
-            print("オーダー通知", self.name)
             order_result = self.order_result_wrap_up
             oanda_res = self.order_result_from_oanda['orderCreateTransaction']  # =self.order_result_wrap_up['json']
             # tempの計算
@@ -933,7 +932,9 @@ class order_information:
         # print(trade_latest)
         if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
-                self.send_line("    (取得)", self.name, trade_latest['price'])
+                self.send_line("    (取得)", self.name, trade_latest['price'], trade_latest['id'])
+                # リンケージオーダーのコントロール
+                self.linkage_close_order()
                 #  取得時には、ローソクデータも取得しておく
                 now = datetime.datetime.now().replace(microsecond=0)
                 time_difference = now - self.latest_df_get_time  # 最後にDFを取った時からの経過時間
@@ -973,7 +974,52 @@ class order_information:
         elif self.t_state == "OPEN" and trade_latest['state'] == "CLOSED":  # 通常の成り行きのクローズ時
             print("    成り行きのクローズ発生")
             self.after_close_trade_function()
+            self.linkage_close_trade()
             return 0
+
+    def linkage_close_order(self):
+        """
+        リンケージのオーダーをコントロールする
+        """
+        print("リンケージオーダークローズ")
+        for i, linkage_class in enumerate(self.linkage_class_slots):
+            print(" tttt", linkage_class.name)
+            print("     ", )
+            if linkage_class.linkage_done:
+                # 既に残された側が、
+                print("     ", linkage_class.name, " 既にリンケージ調整され済み", )
+                continue
+
+            if linkage_class.o_state == "PENDING":
+                # まだ相手がオーダーの状態であれば、クローズしてしまう
+                linkage_class.close_order()
+            else:
+                print(" リンケージオーダークローズ　相手の状態", linkage_class.name, linkage_class.o_state,
+                      linkage_class.t_state)
+                pass
+
+    def linkage_close_trade(self):
+        """
+        リンケージのポジションをコントロールする
+        """
+        for i, linkage_class in enumerate(self.linkage_class_slots):
+            if linkage_class.linkage_done:
+                # 既に残された側が、
+                print("     ", linkage_class.name, " 既にリンケージ調整され済み", )
+                continue
+
+            main_pl = float(self.t_pl_u)
+            if main_pl < 0 and self.plan_json['direction'] != linkage_class.plan_json['direction']:
+                if linkage_class.life and linkage_class.t_state == "OPEN":
+                    left_position_take_price = linkage_class.plan_json['target_price']
+                    left_position_dir = linkage_class.plan_json['direction']
+                    new_lc_range = round(linkage_class.plan_json['lc_range'] / 1, 3)
+                    if left_position_dir == 1:
+                        new_lc_price = left_position_take_price - new_lc_range  # -正の値で、ロスカを広げる
+                    else:
+                        new_lc_price = left_position_take_price + new_lc_range  # -正の値で、ロスカを広げる
+                    linkage_class.linkage_lc_change(new_lc_price)
+                    self.linkage_done_func()
 
     def order_update_and_close(self):
         order_latest = self.o_json
@@ -2458,7 +2504,7 @@ def position_check_no_args():
                     item.count_up_position_check()  # 対象ポジションのtry_update_numをカウントアップする
                 else:
                     item.life_set(False)  # 強制的にクローズ
-                    tk.line_send(" 謎の状態　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name,
+                    tk.line_send(" 謎の状態(クローズ)　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name,
                                  ",life=", item.life, ",try_num", item.try_update_num, "回目のため終了（lifeFalse)")
         # else:
         #     # Lifeが終わっているもの

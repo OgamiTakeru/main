@@ -504,9 +504,9 @@ class Inspection:
             self.positions_control_class.all_update_information(row_s5, self.candleAnalysisClass)  # positionの更新
             life_check_res = self.positions_control_class.life_check()
 
-            if life_check_res['life_exist']:
-                # オーダー以上がある場合。表示用（１分に１回表示させたい）
-                self.positions_control_class.linkage_control()  # positionの更新
+            # if life_check_res['life_exist']:
+            #     # オーダー以上がある場合。表示用（１分に１回表示させたい）
+            #     self.positions_control_class.linkage_control()  # positionの更新
 
         # キャッシュ処理　最後の月を保存
         if cache_path and save_cache_local:

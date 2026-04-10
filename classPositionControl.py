@@ -137,6 +137,7 @@ class position_control:
         line_send = ""
         for order_i, order_class in enumerate(order_classes):
             for class_index, position_slot in enumerate(allowed_position_slot):
+                # 指定ランクの空きスロットを巡回する
                 if position_slot.life:
                     # Trueの所には上書きしない
                     continue
@@ -169,6 +170,31 @@ class position_control:
                         # new
                         line_send = line_send + position_slot.for_line_send + "[システム]classNo:" + str(class_index) + "\n"
                         break
+
+        # ポジションスロットを巡回し、リンケージオーダーがある場合、互いにスロットを登録する
+        for class_index, position_slot in enumerate(allowed_position_slot):
+            # 指定ランクの空きスロットを巡回する
+            if not position_slot.life or len(position_slot.linkage_class_slots) >= 1:
+                # Trueの所には上書きしない
+                print("    ポジションスロットを入れ替えない(登録済?)", position_slot.life, position_slot.name, len(position_slot.linkage_class_slots))
+                continue
+
+            # スロットルの中身を確認
+            if len(position_slot.linkage_order_classes) == 0:
+                pass
+                print("     オーダーレジストレーション リンケージオーダーなし", position_slot.name)
+            else:
+                print("     オーダーレジストレーション　リンケージオーダーあり", position_slot.name, "リンク先[0]",
+                      position_slot.linkage_order_classes[0].name)
+
+                # とりあえず、、代表の一つの「名前」を取得（名前はユニーク）
+                target_name = position_slot.linkage_order_classes[0].name
+                for other in allowed_position_slot:
+                    if other.name == target_name:
+                        print("    ⇒相手発見 自分のlinakageに登録する")
+                        position_slot.linkage_class_slots.append(other)
+                        break
+
         return line_send
 
     def all_update_information_at_out_time(self, candle_analysis_class=None):
@@ -212,6 +238,10 @@ class position_control:
         ]
         self.result_class_arr.extend(closed_positions)
 
+        # 追加の機能
+        # 1 ヘッジオーダーの終了
+        self.close_hedge_positions()
+
     def close_hedge_positions(self):
         # 両建て状態になっている場合、かつ、両方がプラスになっている両建ての場合、その時点で解消する
         positions = self.position_classes
@@ -233,14 +263,14 @@ class position_control:
         best_pair = None
         best_score = -float("inf")
         for l in exist_positions:
-            if l["direction"] != 1 or l["t_unrealize_pl"] <= 0:
+            if float(l["direction"]) != 1 or float(l["t_unrealize_pl"]) <= 0:
                 continue
             for s in exist_positions:
-                if s["direction"] != -1 or s["t_unrealize_pl"] <= 0:
+                if float(s["direction"]) != -1 or float(s["t_unrealize_pl"]) <= 0:
                     continue
-                score = l["t_unrealize_pl"] + s["t_unrealize_pl"]
+                score = float(l["t_unrealize_pl"]) + float(s["t_unrealize_pl"])
 
-                if score > best_score:
+                if score > best_score and best_score>0.4:
                     best_score = score
                     best_pair = (l, s)
         if best_pair is None:
@@ -249,19 +279,18 @@ class position_control:
             l, s = best_pair
             l = l['position_class']
             s = s['position_class']
-            te = gene.str_merge("両プラス状態", l.name, l.t_unrealize_pl, l.plan_json['direction'], l.plan_json['units'], ",",
+            te = gene.str_merge("hedge両プラス状態", l.name, l.t_unrealize_pl, l.plan_json['direction'], l.plan_json['units'], ",",
                            s.name, s.t_unrealize_pl, s.plan_json['direction'], s.plan_json['units'])
-            print("どっちもプラスの逆方向あり", best_pair)
-            tk.line_send(te)
+            print("どっちもプラスの逆方向あり", best_pair, te)
+            # tk.line_send(te)
 
             # クローズする
             if tk.setting_json['hedge_close_on']:
                 pass
             else:
-                l.close_order()
-                s.close_order()
-
-
+                tk.line_send(te)
+                l.close_trade()
+                s.close_trade()
 
     def change_remain_position(self, changed):
         """
@@ -292,7 +321,7 @@ class position_control:
             pass
 
         #  #関連オーダーの更新
-        self.linkage_control()
+        # self.linkage_control()
 
     def life_check(self):
         """
@@ -534,12 +563,12 @@ class position_control:
             # 走査する
             if hasattr(main_position, "order_class"):
                 if hasattr(main_position.order_class, "linkage_order_classes"):
-                    print("  ", main_position.name, "のリンケージ")
+                    # print("  ", main_position.name, "のリンケージ")
                     if len(main_position.order_class.linkage_order_classes) == 0:
-                        print("    linkage登録数０")
+                        # print("    linkage登録数０")
                         continue
                 else:
-                    print("    linkageのインスタンス変数なし")
+                    # print("    linkageのインスタンス変数なし")
                     continue
 
                 # 本処理(残されたリンケージオーダーへの対応）
@@ -548,9 +577,9 @@ class position_control:
                     if left_position is None:
                         # print("     レフトポジションがNone")
                         continue
-                    print("    ", linkage_class.name, "のオーダーが対象", left_position.life, left_position.t_pl_u)
+                    # print("    ", linkage_class.name, "のオーダーが対象", left_position.life, left_position.t_pl_u)
                     if left_position is None:
-                        print("    ", linkage_class.name, "のリンケージオーダー[", linkage_class.name, "]が対象だが見つからない")
+                        # print("    ", linkage_class.name, "のリンケージオーダー[", linkage_class.name, "]が対象だが見つからない")
                         # tk.line_send("リンケージ先がない物があった.", linkage_class.name, "のリンケージ", linkage_class.name)
                         main_position.linkage_done_func()  # 自身のリンケージも終了
                         continue
@@ -561,65 +590,82 @@ class position_control:
                         continue
 
                     # メインの種類によって、場合分け？？
+                    # (0)これ　両建てみたいになっている場合、一つがロスカになった場合、もう一つも、マイナスは避けたい
+                    # ただし「既存」は色々なデータが欠如してるため不可
+                    if not "既存" in main_position.name:
+                        main_pl = float(main_position.t_pl_u)
+                        if main_pl < 0 and main_position.plan_json['direction'] != left_position.plan_json['direction']:
+                            if left_position.life and left_position.t_state == "OPEN":
+                                left_position_take_price = left_position.plan_json['target_price']
+                                left_position_dir = left_position.plan_json['direction']
+                                new_lc_range = round(left_position.plan_json['lc_range'] / 1, 3)
+                                if left_position_dir == 1:
+                                    new_lc_price = left_position_take_price - new_lc_range  # -正の値で、ロスカを広げる
+                                else:
+                                    new_lc_price = left_position_take_price + new_lc_range  # -正の値で、ロスカを広げる
+                                left_position.linkage_lc_change(new_lc_price)
+                                main_position.linkage_done_func()
+
+
                     # (1)メインが、ヘッジ用（負けるか確認のやつ）の場合
-                    if "Short" in main_position.name:
-                        pl = float(main_position.t_pl_u)
-                        if pl >= 0:
-                            print("プラスなので、プラス分を残存しているポジションのLCに設定する")
-                            if left_position.life and left_position.t_state == "OPEN":
-                                left_position_take_price = left_position.plan_json['target_price']
-                                left_position_dir = left_position.plan_json['direction']
-                                new_lc_price = left_position_take_price
-                                new_lc_range = pl
-                                if left_position_dir == 1:
-                                    new_lc_price = new_lc_price - new_lc_range  # -正の値で、ロスカを広げる
-                                else:
-                                    new_lc_price = new_lc_price + new_lc_range  # -正の値で、ロスカを広げる
-                                left_position.linkage_lc_change(new_lc_price)
-                                main_position.linkage_done_func()
-                                # tk.line_send("NewLcPrice", left_position_take_price)
-                        else:
-                            pass
-                            print("マイナスなので何もしない")
-
-                    elif "シンプルターン_r" in main_position.name:
-                        print("     rによるリンケージ操作", main_position.name, main_position.linkage_done, main_position.t_state, main_position.t_realize_pl, left_position.t_state)
-                        if float(main_position.t_realize_pl) >= 0:
-                            # プラス域の場合は、問答無用で相手をキャンセルする。
-
-                            # 相手がまだオーダーの場合、オーダーをクローズする (自分の利確の分をLCにして継続するのもありかも）
-                            if left_position.t_state == "" and left_position.o_state == "PENDING":
-                                # print(" まだlinage先のポジションが成立していないため、オーダー解除")
-                                left_position.close_order()
-                                main_position.linkage_done_func()  # 自身のリンケージも終了
-                                continue
-
-                            # 相手がポジションの場合、クローズする
-                            if left_position.life and left_position.t_state == "OPEN":
-                                # 相方のポジションがまだある場合（毎なるポジションが想定される）
-                                left_position.close_trade(None)
-                                main_position.linkage_done_func()
-                                continue
-                        else:
-                            # 相手がまだオーダーの場合、オーダーをクローズする (自分の利確の分をLCにして継続するのもありかも）
-                            if left_position.t_state == "" and left_position.o_state == "PENDING":
-                                print(" まだlinage先のポジションが成立していないため、オーダー解除")
-                                left_position.close_order()
-                                main_position.linkage_done_func()  # 自身のリンケージも終了
-                                continue
-                            # 相手がポジションの場合、プラスが予想される。自身がマイナスなので、相方のマイナス突入は死守。
-                            if left_position.life and left_position.t_state == "OPEN":
-                                left_position_take_price = left_position.plan_json['target_price']
-                                tk.line_send("classPosition477テスト", left_position_take_price)
-                                print("     残りポジションのTargetPrice", left_position.name, left_position_take_price, left_position_dir)
-                                left_position_dir = left_position.plan_json['direction']
-                                new_lc_price = left_position_take_price
-                                if left_position_dir == 1:
-                                    new_lc_price = new_lc_price - 0.001  # -正の値で、ロスカを広げる
-                                else:
-                                    new_lc_price = new_lc_price + 0.001  # -正の値で、ロスカを広げる
-                                left_position.linkage_lc_change(new_lc_price)
-                                main_position.linkage_done_func()
+                    # if "Short" in main_position.name:
+                    #     pl = float(main_position.t_pl_u)
+                    #     if pl >= 0:
+                    #         # print("プラスなので、プラス分を残存しているポジションのLCに設定する")
+                    #         if left_position.life and left_position.t_state == "OPEN":
+                    #             left_position_take_price = left_position.plan_json['target_price']
+                    #             left_position_dir = left_position.plan_json['direction']
+                    #             new_lc_price = left_position_take_price
+                    #             new_lc_range = pl
+                    #             if left_position_dir == 1:
+                    #                 new_lc_price = new_lc_price - new_lc_range  # -正の値で、ロスカを広げる
+                    #             else:
+                    #                 new_lc_price = new_lc_price + new_lc_range  # -正の値で、ロスカを広げる
+                    #             left_position.linkage_lc_change(new_lc_price)
+                    #             main_position.linkage_done_func()
+                    #             # tk.line_send("NewLcPrice", left_position_take_price)
+                    #     else:
+                    #         pass
+                    #         # print("マイナスなので何もしない")
+                    #
+                    # elif "シンプルターン_r" in main_position.name:
+                    #     # print("     rによるリンケージ操作", main_position.name, main_position.linkage_done, main_position.t_state, main_position.t_realize_pl, left_position.t_state)
+                    #     if float(main_position.t_realize_pl) >= 0:
+                    #         # プラス域の場合は、問答無用で相手をキャンセルする。
+                    #
+                    #         # 相手がまだオーダーの場合、オーダーをクローズする (自分の利確の分をLCにして継続するのもありかも）
+                    #         if left_position.t_state == "" and left_position.o_state == "PENDING":
+                    #             # print(" まだlinage先のポジションが成立していないため、オーダー解除")
+                    #             left_position.close_order()
+                    #             main_position.linkage_done_func()  # 自身のリンケージも終了
+                    #             continue
+                    #
+                    #         # 相手がポジションの場合、クローズする
+                    #         if left_position.life and left_position.t_state == "OPEN":
+                    #             # 相方のポジションがまだある場合（毎なるポジションが想定される）
+                    #             left_position.close_trade(None)
+                    #             main_position.linkage_done_func()
+                    #             continue
+                    #     else:
+                    #         # 相手がまだオーダーの場合、オーダーをクローズする (自分の利確の分をLCにして継続するのもありかも）
+                    #         if left_position.t_state == "" and left_position.o_state == "PENDING":
+                    #             # print(" まだlinage先のポジションが成立していないため、オーダー解除")
+                    #             left_position.close_order()
+                    #             main_position.linkage_done_func()  # 自身のリンケージも終了
+                    #             continue
+                    #         # 相手がポジションの場合、プラスが予想される。自身がマイナスなので、相方のマイナス突入は死守。
+                    #         if left_position.life and left_position.t_state == "OPEN":
+                    #             left_position_take_price = left_position.plan_json['target_price']
+                    #             tk.line_send("classPosition477テスト", left_position_take_price)
+                    #             # print("     残りポジションのTargetPrice", left_position.name, left_position_take_price, left_position_dir)
+                    #             left_position_dir = left_position.plan_json['direction']
+                    #             new_lc_price = left_position_take_price
+                    #             if left_position_dir == 1:
+                    #                 new_lc_price = new_lc_price - 0.001  # -正の値で、ロスカを広げる
+                    #             else:
+                    #                 new_lc_price = new_lc_price + 0.001  # -正の値で、ロスカを広げる
+                    #             left_position.linkage_lc_change(new_lc_price)
+                    #             main_position.linkage_done_func()
                     #
                     # elif "シンプルターン" in main_position.name:
                     #     print("     シンプルターンによるリンケージ操作", main_position.name, ",", main_position.t_state, ",",main_position.t_realize_pl, ",",left_position.t_state)
@@ -802,7 +848,7 @@ class position_control_for_test(position_control):
                 item.update_information(df_row, candle_analysis_class)
 
         # # 関連オーダーの更新
-        self.linkage_control()
+        # self.linkage_control()
 
     def reset_all_position(self, df_row):
         print("  RESET ALL POSITIONS")
