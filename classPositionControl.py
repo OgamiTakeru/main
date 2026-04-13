@@ -162,13 +162,13 @@ class position_control:
                         # ウォッチオーダー
                         print("オーダー通知 idが-1のもの")
                         # new
-                        line_send = line_send + position_slot.for_line_send + "[システム]classNo:" + str(class_index) + "\n"
+                        line_send = line_send + position_slot.for_line_send_order_info + "[システム]classNo:" + str(class_index) + "\n"
                         break
                     else:
                         # オーダーの生成完了をLINE通知するための、コメントを生成する
                         # print("オーダー通知", res_dic['order_name'])
                         # new
-                        line_send = line_send + position_slot.for_line_send + "[システム]classNo:" + str(class_index) + "\n"
+                        line_send = line_send + position_slot.for_line_send_order_info + "[システム]classNo:" + str(class_index) + "\n"
                         break
 
         # ポジションスロットを巡回し、リンケージオーダーがある場合、互いにスロットを登録する
@@ -399,7 +399,7 @@ class position_control:
                         "pl": item.t_pl_u,
                         "o_json": item.o_json,
                         "o_time": item.o_time,
-                        # "realizedPL": item.t_json['realizedPL'],
+                        "unrealizedPL": item.t_json['unrealizedPL'],
                         # "direction": item.plan_json['direction'],
                         "t_time_past_sec": item.t_time_past_sec
                     })
@@ -426,6 +426,7 @@ class position_control:
                         "pl": item.t_pl_u,
                         "o_json": item.o_json,
                         "o_time": item.o_time,
+                        "realizedPL": 0,
                         "direction": item.plan_json['direction']
                     })
                     # ポジションの所有時間（ポジションがある中で最大）も取得しておく

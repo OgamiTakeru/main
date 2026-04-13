@@ -2795,9 +2795,12 @@ class OrderPoints:
             # 残存ポジションと、現在価格との比較
             matched = [
                 d for d in exist_positions
-                if float(d.get("direction", 0)) * plan_dir > 0
+                if (
+                        float(d.get("direction", 0)) * plan_dir > 0
+                        or float(d.get("pl", 0)) <= 0.01
+                )
             ]
-            exists = len(matched) >= 2  # booleanも持っておく
+            exists = len(matched) >= 1  # booleanも持っておく
 
             print("残存オーダーとの比較結果", exists, ", 指定条件の残存数", len(matched), "指定の方向", plan_dir)
             for i, item in enumerate(matched):

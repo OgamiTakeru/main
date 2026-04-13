@@ -2,6 +2,7 @@ import requests  # Line送信用
 import datetime  # 時刻の取得用
 import pandas as pd
 import requests
+import json
 
 # 練習環境
 accountID = ""  # デモ    # ★★★
@@ -20,6 +21,8 @@ api_url = 'https://notify-api.line.me/api/notify'
 TOKEN_dic = {'Authorization': 'Bearer' + ' ' + TOKEN}
 send_dic = {'message': 'Order'}
 
+# DiscordURL
+WEBHOOK_URL_main = ""
 
 def line_send(*msg):
     # 関数は可変複数のコンマ区切りの引数を受け付ける
@@ -36,6 +39,12 @@ def line_send(*msg):
     # メッセージの最後尾に付ける
     message = message + day_time
 
+    if len(message) >= 2000:
+        print("@@文字オーバー")
+        # print(message)
+        message = "Discord受信許容文字数オーバー" + str(len(message)) + "@" + message[:50]
+
+
     # ■LINE版　送信
     # requests.post(api_url, headers=TOKEN_dic, data={'message': message})  # 送信を関数化
     # print("     [Line]", message)  # コマンドラインにも表示
@@ -43,19 +52,19 @@ def line_send(*msg):
     # ■■■Discard
     # ■履歴の送信（これだけ独立）
     if "検証期間" in message:
-        if "LONG" in message:
-            # 【長期間の検証用】
-            WEBHOOK_URL = ""
-            data = {"content": "@everyone " + message,
-                    "allowed_mentions": {
-                        "parse": ["everyone"]
-                    }
-                    }
-            requests.post(WEBHOOK_URL, json=data)
-            return 0
+        # if "LONG" in message:
+        #     # 【長期間の検証用】
+        #     WEBHOOK_URL = "https://discord.com/api/webhooks/1377574418750111846/dUhw9-X1emM4uNO4xj4FT0VnwXzJePZhMy8rq73IUNI5Md6zfU6Zjn_pxT4ug8H8Nh8b"
+        #     data = {"content": "@everyone " + message,
+        #             "allowed_mentions": {
+        #                 "parse": ["everyone"]
+        #             }
+        #             }
+        #     requests.post(WEBHOOK_URL, json=data)
+        #     return 0
 
         # 【短期間専用　よく動かすやつ】履歴送信の場合は、サードのみに送信　 # ■Discord３ テスト結果を送信する用
-        WEBHOOK_URL = ""
+        WEBHOOK_URL = "https://discord.com/api/webhooks/1367742723129479218/NLo4cKQ3mdSw8MW8TwZ-Zg2tbettQ0Z9OJHJESRb5a3pRVQnMBv4wEhwz4nDJfERxnzY"
         data = {"content": "@everyone " + message,
                 "allowed_mentions": {
                     "parse": ["everyone"]
@@ -65,7 +74,7 @@ def line_send(*msg):
         return 0
 
     # ■■■  通常のDiscord送信　■■■　　最悪これ以下だけあればいい
-    WEBHOOK_URL = ""
+    WEBHOOK_URL = WEBHOOK_URL_main
     data = {"content": "@everyone " + message,
             "allowed_mentions": {
                     "parse": ["everyone"]
@@ -74,7 +83,7 @@ def line_send(*msg):
     requests.post(WEBHOOK_URL, json=data)
 
     # ■Discord2 共有サーバーに送付(テストなので25/8には消去)
-    # line_to_friend(message)  # オプション（オーダーと結果のみを送信する。人に送りたくなければなくて負い）
+    line_to_friend(message)  # オプション（オーダーと結果のみを送信する。人に送りたくなければなくて負い）
 
     # ■コマンドラインに表示
     print("     [Disc]", message)  # コマンドラインにも表示
@@ -84,7 +93,7 @@ def line_to_friend(meg):
     """
     メッセージを受け取り、内容によって共有のDiscordに通知を送信する
     """
-    print("サブ", meg)
+    # print("サブ", meg)
     if "■■■解消:" in meg or "★オーダー発行" in meg or "test from Webfook" in meg:
         # 指定の文字を含む場合のみ、送信
         WEBHOOK_URL = ""
@@ -116,17 +125,23 @@ def write_result(dic):
 
 
 # ログ用ファイル設定
-path_log = ""  # ★★★
+path_log = "C:/Users/taker/Dropbox/fx/log.txt"  # ★★★
 
 # 結果核のようようCSVファイル
 path_csv = ""
 
 # ログフォルダ設定
-folder_path = ""
+folder_path = "C:/Users/taker/OneDrive/Desktop/oanda_logs/"
+
+history_folder_path = "C:/Users/taker/OneDrive/Desktop/oanda_logs/history/"
 
 # 読み込み設定ファイル（条件を途中で変えられるように）
-setting_folder_path = ""
+setting_folder_path = "C:/Users/taker/OneDrive/Desktop/OandaPrograms/main/"
 
 # 検討フォルダ用
-inspection_data_cache_folder_path = ''
+inspection_data_cache_folder_path = 'C:/Users/taker/Desktop/oanda_details/'
 
+# 設定用メモ ＆内容のJson確保
+setting_file_path = "C:/Users/taker/OneDrive/Desktop/OandaPrograms/main/Ref_file.txt"
+with open(setting_file_path, "r", encoding="utf-8") as f:
+    setting_json = json.load(f)
