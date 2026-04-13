@@ -71,20 +71,23 @@ class MainAnalysis:
         self.send_message_at_last = ""
 
         # ■■■　現在の勝ち負けの様子
-        print("test", self.position_control_class)
         if self.position_control_class is None:
-            print("過去の勝ち負けは気にしない（単発のテストのため情報なし）")
+            # print("過去の勝ち負けは気にしない（単発のテストのため情報なし）")
+            pass
         else:
             position_one = self.position_control_class.position_classes[0]  # positionの先頭を取得（どれでもいい）
             p = position_one.history_plus_minus
-            print("過去の勝ち負けの履歴", position_one.history_plus_minus)
+            # print("過去の勝ち負けの履歴", position_one.history_plus_minus)
             if len(p) >= 6:
-                print("勝ち負けの直近三個", p[-1], p[-2], p[-3], p[-4], p[-5], p[-6])
+                # print("勝ち負けの直近三個", p[-1], p[-2], p[-3], p[-4], p[-5], p[-6])
+                pass
             else:
-                print("勝ち負けの直近三個", p[-1])
+                pass
+                # print("勝ち負けの直近三個", p[-1])
             # クラスが格納されるように変更したので、クラスのテスト
             for i, item in enumerate(self.position_control_class.result_class_arr):
-                print("クラスのテスト:", item.life, item.name, item.t_unrealize_pl, item.t_realize_pl, item.t_pl_u)
+                pass
+                # print("クラスのテスト:", item.life, item.name, item.t_unrealize_pl, item.t_realize_pl, item.t_pl_u)
 
         # ■■■基本情報の表示
         # peaks = self.peaks_class.peaks_original
@@ -985,6 +988,25 @@ class MainAnalysis:
         elif df1_df2_body_ratio >= 0.7:
             is_go_and_brake = True
             print(s, "大きな折り返しの後のブレーキ", l_df1['body_abs'], l_df2['body_abs'], df1_df2_body_ratio)
+
+        # latestを形成する二つのローソクの重なり（Bodyサイズだけではなく、価格的に包括関係にあるか）
+        max1 = l_df1['inner_high']
+        min1 = l_df1['inner_low']
+        max2 = l_df2['inner_high']
+        min2 = l_df2['inner_low']
+        width1 = max1 - min1
+        width2 = max2 - min2
+        overlap = max(0, min(max1, max2) - max(min1, min2))
+        # overlap_ratio = overlap / width1 if width1 != 0 else 0  # A基準
+        overlap_ratio2 = overlap / (max2 - min2)  # ひとつ前の足が、latestの足と何パーセントかぶっているか
+        overlap_ratio = overlap / (max1 - min1)  # latestの何パーセントがそのひとつ前と被っているか
+        size_ratio = width2 / width1 if width1 != 0 else 0
+
+        size_condition = width2 >= width1 * 1.3
+        overlap_condition = overlap >= width1 * 0.88  # ←ここがA基準
+        print(l_df1['time_jp'] ,min1, max1, l_df2['time_jp'], min2, max2, overlap, max1 - min1)
+        print("size", size_condition, size_ratio, "overlap1", overlap_ratio, "overlap2", overlap_ratio2)
+
 
         # 当初の、Latestの方向にそのまま行くやつ
         op = OrderPoints(peaks_class, df, latest_price, foot)  # オーダーポイントの計算

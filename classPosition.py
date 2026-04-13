@@ -5,6 +5,7 @@ import classOanda
 import tokens as tk
 import fGeneric as gene
 import gc
+import traceback
 import sys
 import classCandleAnalysis as ca
 import os
@@ -30,6 +31,9 @@ class order_information:
     latest_df_r = None
     latest_df_get_time = datetime.datetime.now().replace(microsecond=0) - timedelta(minutes=1)
     add_margin = 0.015  # CandleLcChangeで、余裕を見る分。初期は０だったが、マイナスを多くしても維持したい・・・！
+
+    # ポジションリスト
+    positions_information = {}  # これはコントロールクラスで、updateのたびに作られる。
 
     # history
     result_class_arr = deque(maxlen=10)
@@ -67,6 +71,11 @@ class order_information:
     def __init__(self, name, is_live):
         self.oa = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)  # 仮の値
         self.oa_mode = 2  # アカウント選択（１が通常、２が両建てアカウント） 初期値は１
+        self.created_at = datetime.datetime.now()
+        self.refresh_at = 0
+        self.creation_stack = "".join(traceback.format_stack(limit=5))
+        self.created_file = traceback.extract_stack()[-2].filename
+        self.created_line = traceback.extract_stack()[-2].lineno
         self.is_live = is_live  # 本番環境か練習か（Boolean）
         self.select_oa(self.oa_mode)  # 重要！　id_noとis_liveを基に、oaクラスを選択する
         self.name = name  #
@@ -187,6 +196,7 @@ class order_information:
         # 情報の完全リセット（テンプレートに戻す）
         # print("    ●●●●OrderClassリセット●●●●")
         self.name = ""
+        self.refresh_at = datetime.datetime.now()
         self.name_ymdhms = ""
         self.oa_mode = 0  # アカウント選択（１が通常、２が両建てアカウント）
         self.for_line_send = ""
@@ -433,7 +443,7 @@ class order_information:
             self.candle_analysis_class = self.order_class.candle_analysis
             self.move_ave5 = round(self.candle_analysis_class.candle_class.cal_move_ave(1), self.u)
             self.move_ave60 = round(self.candle_analysis_class.candle_class_hour.cal_move_ave(1), self.u)
-            print("オーダーのキャンドル情報追加", self.move_ave5, self.move_ave60)
+            # print("オーダーのキャンドル情報追加", self.move_ave5, self.move_ave60)
         else:
             print("オーダーにcandle_analysis_classがない！")
 
@@ -618,6 +628,22 @@ class order_information:
         trade_latest = self.t_json
         # (0)　改めてLifeを殺す
         self.life_set(False)
+        print(" after_close_function", self.life, trade_latest['state'])
+
+        # (0) -2 LINE送信用のNameリストを生成する(name listはPositionControlで生成される。)
+        open_positions_names = ""
+        pending_positions_names = ""
+        for i, item in enumerate(self.positions_information['open_positions']):
+            if item['name'] != self.name:
+                # 自分（直前で解消されたポジション）は除く
+                open_positions_names = open_positions_names + "," + gene.delYearDay(item['o_time']) + "(" + str(item['o_json']['units']) + ")"
+            else:
+                print("直前で消されたのは自分", self.name)
+        for i, item in enumerate(self.positions_information['pending_positions']):
+            pending_positions_names = pending_positions_names + "," + gene.delYearDay(item['o_time']) + "(" + str(item['o_json']['units']) + ")"
+        name_list = "\n[P待ち]" + pending_positions_names + "\n[P中]" + open_positions_names + "\n"
+
+
         # （１）計算するー累計の円や、回数等
         if trade_latest['state'] == "CLOSED":
             # Totalの円を求める
@@ -692,9 +718,9 @@ class order_information:
                 order_information.total_PLu_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
                 order_information.minus_yen_position_num)
-            self.send_line("■■■解消:", self.name, '\n',
+            self.send_line("■■■ 解消:", self.name, '\n',
                            res4, res5, res1, id_info, res2, res3, res6, res7, res8,
-                           position_check_no_args()['name_list'])
+                           position_check_no_args()['name_list'], self.positions_information['name_list'], name_list)
             # 履歴の書き込み
             # print("書き込みエラー確認用")
             # print(trade_latest)
@@ -749,7 +775,7 @@ class order_information:
 
             self.send_line("■■■強制クローズ解消:", self.name, '\n',
                            res4, res5, res1, id_info, res2, res3, res6, res7, res8,
-                           position_check_no_args()['name_list'])
+                           position_check_no_args()['name_list'], self.positions_information['name_list'], name_list)
 
             result_dic = {
                 "name": self.name,
@@ -973,7 +999,7 @@ class order_information:
                 # print("    NOT GOOD Ref")
 
         elif self.t_state == "OPEN" and trade_latest['state'] == "CLOSED":  # 通常の成り行きのクローズ時
-            print("    成り行きのクローズ発生")
+            print("    成り行きのクローズ発生", self.t_state, trade_latest['state'], self.life)
             self.after_close_trade_function()
             self.linkage_change_trade()
             return 0
@@ -993,7 +1019,9 @@ class order_information:
             if linkage_class.o_state == "PENDING":
                 # まだ相手がオーダーの状態であれば、クローズしてしまう
                 linkage_class.close_order()
+                tk.line_send("リンケージオーダーのクローズ", linkage_class.name, "　約定した方⇒", self.name)
             else:
+                # 相手の状態が既にキャンセルか約定済みの場合
                 print(" リンケージオーダークローズ　相手の状態", linkage_class.name, linkage_class.o_state,
                       linkage_class.t_state)
                 pass
@@ -2437,7 +2465,10 @@ def position_check_no_args():
     watching_list = []
     open_class_names = closed_class_names = pending_class_names = ""
     total_pl = 0
+    # print("PositionCheck関数")
     for item in classes:
+        # print("classPosition 2443チェック クラス名確認用", item.life, item.name, item.t_state, item.created_at,
+        #       item.refresh_at, item.created_line, id(item))
         if item.life:  #lifeがTrueの場合、ポジションかオーダーが存在
             # 各情報
             if item.o_state == "Watching":
@@ -2449,6 +2480,7 @@ def position_check_no_args():
                                       "keeping": round(item.step1_keeping_second, 0),
                                       })
             if item.t_state == "OPEN":
+                print("      P中判定")
                 # ポジションがある場合、ポジションの情報を取得する
                 # プライオリティも最高値を取得
                 if item.priority > max_priority_position:

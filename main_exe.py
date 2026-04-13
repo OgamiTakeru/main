@@ -229,7 +229,7 @@ class main():
 
     def mode2(self):
         self.candleAnalysisClass.update_s5_df(0)  # 5秒足のデータフレーム更新
-        self.positions_control_class.all_update_information(self.candleAnalysisClass)  # positionの更新
+        current_positions = self.positions_control_class.all_update_information(self.candleAnalysisClass)  # positionの更新
         life_check_res = self.positions_control_class.life_check()
 
         if life_check_res['life_exist']:
@@ -238,7 +238,7 @@ class main():
             c = ""
             temp_date = datetime.datetime.now().replace(microsecond=0)  # 秒を算出
             if 0 <= int(temp_date.second) < 2:  # ＝１分に一回(毎分１秒～２秒の間)
-                current_positions = self.positions_control_class.position_check()
+                # current_positions = self.positions_control_class.position_check()
                 print("■■■Mode2(いずれかポジション有)", f.now(), "これは１分に１回表示")
                 if len(current_positions['open_positions']) > 0:
                     # ポジションがある場合、表示する情報を組み立てる。
