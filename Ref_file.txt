@@ -1,5 +1,5 @@
 {
     "hedge_close_on": false,
-    "l_units": 1000,
-    "s_units": 1000
+    "l_units": 500,
+    "s_units": 500
 }

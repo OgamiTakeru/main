@@ -728,7 +728,7 @@ class order_information:
             res2 = "【決:" + str(trade_latest['averageClosePrice']) + ", " + "取:" + str(trade_latest['price']) + "】"
             res3 = "【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "/ー域:" + str(self.lose_max_plu)
             res3 = res3 + "【ポジション期間の最大/小の振れ幅(円)】 ＋域:" + str(self.win_max_plu_yen) + "/ー域:" + str(self.lose_max_plu_yen)
-            res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past']) + ",LC change:" + self.lc_change_str
+            res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past'])
             res4 = "【今回結果】" + str(trade_latest['PLu']) + "," + str(trade_latest['realizedPL']) + "円\n"
             res5 = "【合計】計" + str(order_information.total_PLu) + ",計" + str(order_information.total_yen) + "円"
             res6 = "【合計】累積最大円:" + str(order_information.total_yen_max) + ",最小円:" + str(
@@ -737,8 +737,8 @@ class order_information:
                 order_information.total_PLu_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
                 order_information.minus_yen_position_num)
-            self.send_line("■■■ 解消:", self.name, '\n', self.for_line_send_order_info_at_close,
-                           res4, res5, res1, id_info, res2, res3, res6, res7, res8, name_list)
+            self.send_line("■■■ 解消:", self.name, '\n',
+                           res4, res5, res1, id_info, res2, self.for_line_send_order_info_at_close, res3, res6, res7, res8, name_list)
             # 履歴の書き込み
             # print("書き込みエラー確認用")
             # print(trade_latest)
@@ -792,8 +792,8 @@ class order_information:
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
                 order_information.minus_yen_position_num)
 
-            self.send_line("■■■強制クローズ解消:", self.name, '\n', self.for_line_send_order_info_at_close,
-                           res4, res5, res1, id_info, res2, res3, res6, res7, res8, name_list)
+            self.send_line("■■■強制クローズ解消:", self.name, '\n',
+                           res4, res5, res1, id_info, res2, self.for_line_send_order_info_at_close, res3, res6, res7, res8, name_list)
 
             result_dic = {
                 "name": self.name,
