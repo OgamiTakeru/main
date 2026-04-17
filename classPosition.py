@@ -80,6 +80,7 @@ class order_information:
         self.select_oa(self.oa_mode)  # 重要！　id_noとis_liveを基に、oaクラスを選択する
         self.name = name  #
         self.name_ymdhms = ""
+        self.current_price_all = {}
         self.current_price = 0
         self.lc_change_candle_num = 100
         self.order_class = None
@@ -629,6 +630,22 @@ class order_information:
             # self.life_set(False)  # 本当はここに欲しい
             print("    orderCancel@close_order", self.o_id)
 
+            # (0) -2 LINE送信用のNameリストを生成する(name listはPositionControlで生成される。)
+            open_positions_names = ""
+            pending_positions_names = ""
+            for i, item in enumerate(self.positions_information['open_positions']):
+                if item['name'] != self.name:
+                    # 自分（直前で解消されたポジション）は除く
+                    open_positions_names = open_positions_names + "," + gene.delYearDay(item['o_time']) + "(" + str(
+                        item['o_json']['units']) + " / " + str(item['unrealizedPL']) + ")"
+                else:
+                    print("直前で消されたのは自分", self.name)
+            for i, item in enumerate(self.positions_information['pending_positions']):
+                pending_positions_names = pending_positions_names + "," + gene.delYearDay(item['o_time']) + "(" + str(
+                    item['o_json']['units']) + ")"
+            name_list = "\n[P待ち]" + pending_positions_names + "\n[P中]" + open_positions_names + "\n"
+            return name_list
+
             # ここでは、、ファイルに書き込みに行かなくてもいいか。。。
         else:  # FIEELDとかCANCELLEDの場合は、lifeにfalseを入れておく
             print("   order無し(決済済orキャンセル済)@close_order")
@@ -981,7 +998,14 @@ class order_information:
         trade_latest = self.t_json
         if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
-                self.send_line("    (取得)", self.name, trade_latest['price'], trade_latest['id'])
+                self.send_line("    (取得)", self.name, trade_latest['price'], trade_latest['id'],
+                               "方向", self.plan_json['direction'],
+                               "現在価格(買)", self.current_price_all['data']['ask'],
+                               "(売)", self.current_price_all['data']['bid']
+                               )
+                # gap = self.current_price - trade_latest['price']
+                # if gap <= 0 and abs(gap)
+                #     # currentのほうが大きいのが正しい場合
                 # リンケージオーダーのコントロール
                 self.linkage_change_order_from_detect_change()
                 #  取得時には、ローソクデータも取得しておく
@@ -1041,8 +1065,8 @@ class order_information:
             if linkage_class.o_state == "PENDING":
                 # まだ相手がオーダーの状態であれば、クローズしてしまう
                 pass
-                # linkage_class.close_order()
-                # tk.line_send("リンケージオーダーのクローズ", linkage_class.name, "　約定した方⇒", self.name)
+                linkage_class.close_order()
+                tk.line_send("リンケージオーダーのクローズ", linkage_class.name, "　約定した方⇒", self.name)
             else:
                 # 相手の状態が既にキャンセルか約定済みの場合
                 print(" リンケージオーダークローズ　相手の状態", linkage_class.name, linkage_class.o_state,
@@ -1082,9 +1106,9 @@ class order_information:
         if order_latest['state'] == "PENDING":
             # print("    時間的な解消を検討", self.o_time_past, self.o_state, "基準", self.order_timeout_min * 60)
             if self.o_time_past_sec > self.order_timeout_min * 60 and (self.o_state == "" or self.o_state == "PENDING"):
-                self.close_order()
+                name_list = self.close_order()
                 self.send_line("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min
-                               , position_check_no_args()['name_list'])
+                               , name_list)
                 result_dic = {
                     "name": self.name,
                     "res": 0,  # 上と違う部分
@@ -1187,8 +1211,11 @@ class order_information:
         if not self.life:
             return 0  # LifeがFalse（＝オーダーが発行されていない状態）では実行しない
 
+        self.candle_analysis_class = candle_analysis_class
+
         # (0)現在価格の取得
         temp_current_price = self.oa.NowPrice_exe("USD_JPY")
+        self.current_price_all = temp_current_price
         if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
             print("API異常で現在価格が取得できず（ポジションクラス）")
             return 0
@@ -2426,8 +2453,8 @@ class order_information:
         if int(self.t_time_past_sec) >= 600:
             # print("  確認用2402", self.t_unrealize_pl, self.win_max_plu)
             if float(self.t_unrealize_pl) <= 0 and float(self.win_max_plu) <= 0.02:
-                tk.line_send("クローズ勧告", self.name, self.t_time_past_sec, "秒", self.t_unrealize_pl, "円、max", self.win_max_plu)
-                self.close_trade()
+                # tk.line_send("クローズ勧告", self.name, self.t_time_past_sec, "秒", self.t_unrealize_pl, "円、max", self.win_max_plu)
+                # self.close_trade()
                 pass
 
 

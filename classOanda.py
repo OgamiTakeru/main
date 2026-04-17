@@ -282,6 +282,7 @@ class Oanda:
 
         except Exception as e:
             print("★★★OrderCreateAPIエラー")
+            print(e)
             e_info = self.error_method("オーダー", start_time, e)
             return e_info
 
