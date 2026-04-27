@@ -540,7 +540,7 @@ class order_information:
         """
         オーダーに関する情報を生成する（LINE送信用）
         """
-        # lc_range情報の文字列化
+        # lc_range情報の文字列化①
         lc_change_str = ""
         for i, item in enumerate(self.lc_change_dic_arr):
             if i == 2:
@@ -549,8 +549,11 @@ class order_information:
             ens = str(round(item['ensure'], self.u))
             lc_change_str = lc_change_str + ",(" + tr + "-" + ens + ")"
         self.lc_change_str = lc_change_str
-
-        # classPositionになった場合
+        # lc_changeのTP　rangeを取得
+        if len(self.lc_change_dic_arr) > 0:
+            lc_change_tp_range = round(self.lc_change_dic_arr[0].get("ensure"), 3)
+        else:
+            lc_change_tp_range = None
 
         # オーダー情報
         if self.o_id == 0:
@@ -567,18 +570,24 @@ class order_information:
                         ",DIR:" + str(self.plan_json['direction']) + \
                         ", 数量:" + str(self.plan_json['units']) + \
                         ", TP:" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ")" + \
+                        "(" + str(round(self.plan_json['tp_range'], self.u)) + " - " + str(lc_change_tp_range) + ")" + \
                         ", LC:" + str(round(self.plan_json['lc_price'], self.u)) + \
                         "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
+                        ", RR_tp:" + str(round(self.plan_json['tp_range']/self.plan_json['lc_range'], 2)) + \
+                        ", RR_lc_change:" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
                         ", AveMove:" + str(round(self.plan_json['move_ave'], self.u)) + \
                         ", memo:" + str(self.memo) + \
                         ",lc_change" + str(lc_change_str)
             # クローズの時にも送るよう
             self.for_line_send_order_info_at_close = "【TP】" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ")" + \
+                        "(" + str(round(self.plan_json['tp_range'], self.u)) + " - " + str(lc_change_tp_range) + ")" + \
                         "【LC】" + str(round(self.plan_json['lc_price'], self.u)) + \
                         "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
-                        "【lc_change】" + str(lc_change_str)
+                        "【lc_change】" + str(lc_change_str) + \
+                        "【RR_tp】" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
+                        "【RR_tp2】" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
+                        "【memo】" + str(self.memo)
+
         else:
             # オーダーの生成完了をLINE通知する
             order_result = self.order_result_wrap_up
@@ -591,9 +600,11 @@ class order_information:
                         ", 数量:" + str(oanda_res['units']) + \
                         ", タイプ:" + str(self.plan_json['type']) + \
                         ", TP:" + str(oanda_res['takeProfitOnFill']['price']) + \
-                        "(" + str(tp_range) + ")" + \
+                        "(" + str(tp_range) + " - " + str(lc_change_tp_range) + ")" + \
                         ", LC:" + str(oanda_res['stopLossOnFill']['price']) + \
                         "(" + str(lc_range) + ")" + \
+                        ", RR:" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
+                        ", RR_tp2:" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
                         ", AveMove:" + str(round(self.plan_json['move_ave'], self.u)) + \
                         ", OrderID:" + str(self.o_id) + \
                         ", 取得価格:" + str(order_result['execution_price']) + ",\n" + \
@@ -601,10 +612,13 @@ class order_information:
                                             "lc_change" + str(lc_change_str)
             # クローズの時にも送るよう
             self.for_line_send_order_info_at_close = "【TP】" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ")" + \
+                        "(" + str(round(self.plan_json['tp_range'], self.u)) + " - " + str(lc_change_tp_range) + ")" + \
                         "【LC】" + str(round(self.plan_json['lc_price'], self.u)) + \
                         "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
-                        "【lc_change】" + str(lc_change_str)
+                        "【lc_change】" + str(lc_change_str) + \
+                        "【RR_tp】" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
+                        "【RR_tp2】" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
+                        "【memo】" + str(self.memo)
 
     def close_order(self):
         # オーダークローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -998,10 +1012,22 @@ class order_information:
         trade_latest = self.t_json
         if (self.o_state == "PENDING" or self.o_state == "") and order_latest['state'] == 'FILLED':  # オーダー達成（Pending⇒Filled）
             if trade_latest['state'] == 'OPEN':  # ポジション所持状態
-                self.send_line("    (取得)", self.name, trade_latest['price'], trade_latest['id'],
-                               "方向", self.plan_json['direction'],
-                               "現在価格(買)", self.current_price_all['data']['ask'],
-                               "(売)", self.current_price_all['data']['bid']
+                # 取得予定価格と、実際の取得価格のずれを算出
+                plan_price = float(self.plan_json['target_price'])
+                take_price = float(trade_latest['price'])
+                gap_plan = round(abs(plan_price - take_price), 3)
+                if self.plan_json['direction'] == 1:
+                    # 買いの場合(実際はちょっと高めに買わされている）
+                    current_price = self.current_price_all['data']['ask']
+                    gap = abs(current_price - take_price)
+                else:
+                    # 売りの場合(実際はちょっと低めで売っている）
+                    current_price = self.current_price_all['data']['bid']
+                    gap = abs(current_price - take_price)
+                self.send_line("    (取得)", self.name, "ID", trade_latest['id'], "方向", self.plan_json['direction'],
+                               "取得時価格", trade_latest['price'], "取得希望価格", plan_price, "GAP", gap_plan,
+                               "現在価格", current_price, "  [参考] 買", self.current_price_all['data']['ask'],
+                               "-売", self.current_price_all['data']['bid']
                                )
                 # gap = self.current_price - trade_latest['price']
                 # if gap <= 0 and abs(gap)
@@ -2450,13 +2476,28 @@ class order_information:
         """
         クローズを検討する
         """
-        if int(self.t_time_past_sec) >= 600:
-            # print("  確認用2402", self.t_unrealize_pl, self.win_max_plu)
+        s = "    "
+        first_lc_change = self.lc_change_dic_arr[0]['ensure']
+        if int(self.t_time_past_sec) >= 1200:
+            # print("クローズ検討", self.name, self.t_time_past_sec, self.t_unrealize_pl, self.win_max_plu, first_lc_change)
+            if float(self.t_unrealize_pl) >= 0 and float(self.win_max_plu) <= first_lc_change * 0.6:
+                # 時間がたっても、くすぶっていいる場合（TPの半分以下のMAXで、まだプラス域）
+                # print("経過時間がたっても、MAX伸びておらず、微妙なプラスが続いている場合⇒もう少なくても利確")
+                # self.close_trade()
+                pass
             if float(self.t_unrealize_pl) <= 0 and float(self.win_max_plu) <= 0.02:
                 # tk.line_send("クローズ勧告", self.name, self.t_time_past_sec, "秒", self.t_unrealize_pl, "円、max", self.win_max_plu)
                 # self.close_trade()
                 pass
-
+        if int(self.t_time_past_sec) >= 2400:
+            if float(self.t_unrealize_pl) >= 0:
+                pass
+                data = {"stopLoss": {"price": str(self.plan_json["target_price"]), "timeInForce": "GTC"}, }
+                res = self.oa.TradeCRCDO_exe(self.t_id, data)
+                # self.close_trade()
+            else:
+                pass
+                # print(s, "どうせなら0になるまで待つ？")
 
 def position_check_no_args():
     """

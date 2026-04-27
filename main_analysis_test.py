@@ -95,14 +95,10 @@ gl_candleAnalysisClass = None
 # ■■取得時間の指定
 gl_use_now = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
 # gl_target_time = datetime.datetime(2025, 6, 6, 18, 30, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
-# gl_target_time = datetime.datetime(2025, 6, 6, 14, 30, 6)
-# gl_target_time = datetime.datetime(2022, 2, 18, 3, 40, 6)
-# gl_target_time = datetime.datetime(2024, 10, 2, 0, 5, 6)  #SKIPテスト
-# gl_target_time = datetime.datetime(2022, 2, 3, 16, 55, 6)
-# gl_target_time = datetime.datetime(2025, 7, 17, 10, 20, 6)
-# gl_target_time = datetime.datetime(2025, 11, 1, 3, 45, 6)
-gl_target_time = datetime.datetime(2026, 4, 17, 14, 50, 6)  # ←これみそだよ！
-# gl_target_time = datetime.datetime(2026, 4, 16, 18, 45, 6)
+gl_target_time = datetime.datetime(2026, 4, 18, 1, 0, 6)  # ←これみそだよ！
+gl_target_time = datetime.datetime(2026, 4, 18, 1, 55, 6)
+gl_target_time = datetime.datetime(2026, 4, 22, 20, 35, 6)  # レンジ始まりくらい。
+gl_target_time = datetime.datetime(2026, 4, 27, 10, 30, 6)  # レンジ始まりくらい。
 # gl_target_time = datetime.datetime(2025, 6, 17, 21, 30, 6)
 
 # Mainスタート
