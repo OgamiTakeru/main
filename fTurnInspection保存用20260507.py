@@ -510,33 +510,30 @@ class MainAnalysis:
 
         # オーダー2用の数字の生成
         order_class1 = None
-        if op.stop_order_cancel == 0:
-            if not is_exist:
-                order_class1 = OCreate.Order({
-                    "name": "シンプルターンLong",
-                    "current_price": latest_price,
-                    "target": op.target_price_stop,
-                    "direction": op.l_dir,
-                    "type": "STOP",  # "STOP",  # "MARKET",
-                    "tp": op.tp_range_stop,
-                    "lc": op.lc_range_stop,  # 0.15,  # 価格手指定しよう
-                    "lc_change": op.lc_change_stop,
-                    "units": op.cal_units(op.lc_range_stop, tk.setting_json['l_units'], "l"),  # 100,
-                    "priority": 5,
-                    "decision_time": df.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca,
-                    "lc_change_candle_type": candle_foot,
-                    # "order_permission": False,
-                    "order_timeout_min": 15,
-                    "memo": op.stop_memo,
-                })
-                self.add_order_to_this_class(order_class1)
-                if order_class1 is not None and order_class is not None:
-                    # order_classがある場合、リンケージオーダーとして登録する
-                    order_class1.add_linkage(order_class)
-                    order_class.add_linkage(order_class1)
-            else:
-                tk.line_send("オーダーを阻止するオーダーありのため、発行せず")
+        if op.stop_order_cancel == 0 and not is_exist:
+            order_class1 = OCreate.Order({
+                "name": "シンプルターンLong",
+                "current_price": latest_price,
+                "target": op.target_price_stop,
+                "direction": op.l_dir,
+                "type": "STOP",  # "STOP",  # "MARKET",
+                "tp": op.tp_range_stop,
+                "lc": op.lc_range_stop,  # 0.15,  # 価格手指定しよう
+                "lc_change": op.lc_change_stop,
+                "units": op.cal_units(op.lc_range_stop, tk.setting_json['l_units'], "l"),  # 100,
+                "priority": 5,
+                "decision_time": df.iloc[0]['time_jp'],
+                "candle_analysis_class": self.ca,
+                "lc_change_candle_type": candle_foot,
+                # "order_permission": False,
+                "order_timeout_min": 15,
+                "memo": op.stop_memo,
+            })
+            self.add_order_to_this_class(order_class1)
+            if order_class1 is not None and order_class is not None:
+                # order_classがある場合、リンケージオーダーとして登録する
+                order_class1.add_linkage(order_class)
+                order_class.add_linkage(order_class1)
 
 class OrderPoints:
     def __init__(self, peaks_class, df_r, latest_price, foot):
@@ -771,7 +768,6 @@ class OrderPoints:
         base_price = self.latest_price  # peaks[0]['latest_body_peak_price']  # self.latest_price
         target_dir = self.l_dir
         self.stop_order_cancel = 999  # 途中返却の可能性もあるため、最初から入れておく
-        df = self.peaks_class.df_r_original  # これは
         order_cancel = 0
         margin2 = 0.005
         memo = ""
@@ -794,15 +790,6 @@ class OrderPoints:
             target_price = base_price + margin
         else:
             target_price = base_price - margin
-
-        # ■■■価格変動の速さを計測（６秒で動きすぎているかの判定　いまは参考程度）
-        now_peak_gap = abs(self.latest_price - latest['latest_body_peak_price'])
-        latest_df = df.iloc[1]  # [0]は形成され始めた瞬間の足なので注意
-        if now_peak_gap >= 0.01:
-            if latest['direction'] == latest_df['direction']:
-                tk.line_send("LatestPriceとPeak価格に大きな差がある", self.latest_price, peaks[0]['latest_body_peak_price'])
-            else:
-                print("方向が逆のため、Gapは大きい", now_peak_gap, latest['direction'], latest_df['direction'])
 
         # ■■■ラインの情報から、利確、ロスカの候補を算出する
         upper_lines = self.predict_line_upper(base_price)  # target_price
@@ -866,7 +853,7 @@ class OrderPoints:
 
         # ■解析０　ローソクがかぶりすぐていないかの検証
         # latestを形成する二つのローソクの重なり（Bodyサイズだけではなく、価格的に包括関係にあるか）
-
+        df = self.peaks_class.df_r_original  # これは
         l = peaks[0]
         l_df1 = df.iloc[1]
         l_df2 = df.iloc[2]
@@ -904,9 +891,11 @@ class OrderPoints:
             else:
                 print(s, "lcが重め　LCに行かなそう（TP行きやすいかも）")
 
-        # print("kokokokokoo")
-        # for i, item in enumerate(peaks[:6]):
-        #     print(item["direction"],item["count"],item["latest_time_jp"], item["gap"])
+        print("kokokokokoo")
+        for i, item in enumerate(peaks[:6]):
+            print(item["direction"],item["count"],item["latest_time_jp"], item["gap"])
+
+
 
         # ■解析２　TPの位置について
         print("-tp-----------------------------------------------------------------")
@@ -927,7 +916,6 @@ class OrderPoints:
         else:
             # tp linesが0本の場合
             print(s, "TP linesが0本です(強引にオーダーをコード）")
-            tk.line_send("tp linesが０本のため、特殊オーダー")
             lc_range = 0.03
             lc_price = target_price - (lc_range * target_dir)
             tp_range = lc_range * rr_b
@@ -958,6 +946,12 @@ class OrderPoints:
 
         # 時間的に直近のもののみで判定してみる
         print("currenttime", current_time)
+        filtered_groups = []
+        # for i, item in enumerate(tp_lines):
+        #     print("tttt", item['oldest_time'], gene.cal_str_time_gap(current_time, item['oldest_time'])['gap_abs_min'])
+        #     if gene.cal_str_time_gap(current_time, item['oldest_time'])['gap_abs_min'] <= 60:
+        #         print("   これそうだよ！")
+        #         filtered_groups.append(item)
         filtered_groups = [
             g for g in tp_lines
             if gene.cal_str_time_gap(current_time, g['oldest_time'])['gap_abs_min'] <= 60
@@ -983,6 +977,11 @@ class OrderPoints:
                 f"max_gap_end = {g['max_gap_end']}, "
                 f"prices = {', '.join(map(str, g['prices']))}"
             )
+
+        print("kokokokokoo")
+        for i, item in enumerate(peaks[:6]):
+            print(item["count"], item["gap"])
+
 
         # ■解析３　LCの強さについて(LCが強い場合それ以上行かなそうだから、おおきく出てもよい・・？）
         first_lc_line = {}
@@ -1011,34 +1010,101 @@ class OrderPoints:
         print("            ", first_lc_line['total_strength'], first_lc_line['count'], first_lc_line['far'])
 
         # 一部の変数化
-        latest_peak_wick_price_temp = round(river["lowest"] if latest["direction"] == 1 else river["highest"], 3)
-        latest_peak_wick_range_temp = abs(target_price - latest_peak_wick_price_temp)
-        latest_peak_wick_range = latest_peak_wick_range_temp * (1.2 if latest_peak_wick_range_temp <= 0.05 else 1.0)
+        latest_peak_range = round(abs(latest['latest_body_peak_price'] - latest['oldest_body_peak_price']), 3)
+        latest_peak_price = base_price - (latest_peak_range * target_dir)
+        latest_peak_wick_price = round(river["lowest"] if latest["direction"] == 1 else river["highest"], 3)
+        latest_peak_wick_range = abs(target_price - latest_peak_wick_price) * 1.2
         latest_peak_wick_price = target_price - (latest_peak_wick_range * target_dir)
-        print("LC候補", latest_peak_wick_price_temp, "レンジ", abs(target_price - latest_peak_wick_price_temp), latest_peak_wick_range)
+
+        # latest_peak_wick_range = round((latest["latest_body_peak_price"] - latest["lowest"]) + margin2 if latest["direction"] == 1 else (latest["highest"] - latest["latest_body_peak_price"]) + margin2, 3)
+        # latest_peak_wick_range = latest_peak_wick_range * 1.2
+        # latest_peak_wick_price = base_price - (latest_peak_wick_range * target_dir)
+
+        # print(s, latest["latest_body_peak_price"], latest["lowest"], latest["highest"], latest['gap'])
+        # print(s, "各LCの計算を先にしておく", latest_peak_price, latest_peak_range, latest_peak_wick_price, latest_peak_wick_range)
+
         # ベースはこれ
         lc_range = latest_peak_wick_range
         lc_price = latest_peak_wick_price
         tp_range = lc_range * rr_b
         tp_price = target_price + (tp_range * target_dir)
 
+        if first_lc_line['total_strength'] >= 10 and first_lc_line['count'] >= 3:
+            if first_lc_line['far'] >= 0.03:
+                print(s, "@@@lc lineが強いため、このLC以上には負けなそう？？　LCをベースにTPを決める")
+                lc_strength = first_lc_line['total_strength']
+                if first_tp_line['far'] <= tp_range:
+                    # 仮のtp range(temp_tp_range)が現実的かを確認する
+                    print(s, " @@@かなりいい感じのTP？")
+                    tp_range = tp_range
+                    tp_price = target_price + (tp_range * target_dir)
+                else:
+                    print(s, "@@@temp TPに至る前に、強い抵抗線有 tempTP range", tp_range, "FarRange", first_tp_line['far'], "lc", lc_range)
+                    if lc_strength <= first_tp_line['total_strength']:
+                        print(s, "TPの抵抗線のほうが強い　⇒　TPに行きにくい")
+                        order_cancel = 1
+                    else:
+                        print(s, "@@@TPの抵抗線のほうが弱い　⇒　TPに行きやすい　⇒　オーダーOK？　ベース通り")
+            else:
+                print(s, "@@@lc lineが強いが、近すぎる ⇒　すぐ抵抗されてTP側に行くのでは？　FarをLCとする")
+                lc_range = max(first_lc_line['far'], latest_peak_wick_range)
+                lc_price = target_price - (lc_range * target_dir)
+                tp_range = lc_range * rr_b
+                tp_price = target_price + (tp_range * target_dir)
+        else:
+            # lc_range = max(first_lc_line['far'], latest_peak_wick_range)
+            # lc_price = first_lc_line['far_price']
+            lc_strength = first_lc_line['total_strength']
+            # temp_tp_range = lc_range * rr_b
+            # tp_price = target_price + (temp_tp_range * target_dir)
+            print(s, "@@@lc lineがそんなに強くない　⇒　もっと負けの方向に行くかもしれないため、警戒", lc_range)
+            if first_tp_line['far'] <= tp_range:
+                # 仮のtp range(temp_tp_range)が現実的かを確認する
+                print(s, "@@@かなりいい感じのTP？ ベース通り")
+                tp_range = tp_range
+                tp_price = target_price + (tp_range * target_dir)
+            else:
+                print(s, "@@@temp TPに至る前に、強い抵抗線有 tempTP range", tp_range, "FarRange", first_tp_line['far'], lc_range)
+                if lc_strength <= first_tp_line['total_strength']:
+                    if 0.02 < tp_range <= 0.05:
+                        print(" とりあえずTP短いので狙っておく ベース通り")
+                    else:
+                        print(s, "@@@TPの抵抗線のほうが強い　⇒　TPに行きにくい")
+                        order_cancel = 3
+                else:
+                    print(s, "@@@それでも、TPの抵抗線のほうが弱い　⇒　TPに行きやすい　⇒　オーダーOK？")
+                    temp_rr = round(tp_range / lc_range,2)
+                    print(s, "理論RR", temp_rr, lc_range, tp_range)
+                    if temp_rr < 1:
+                        print(s, "tp幅が取れていない　RR短め設定＆LCchangeあり？")
+                        rr = 1.2
+                    elif temp_rr <= 1.3:
+                        rr = 1.4
+                        print(s, "若干RR取れている場合 RR１．４位に拡張")
+                    elif temp_rr <= 1.8:
+                        rr = 1.6
+                        print(s, "TPがちょうど理想の状態")
+                    else:
+                        rr = 1.6
+                    tp_range = round(lc_range * rr, 3)
+                    tp_price = target_price + (tp_range * target_dir)
+
         print("最終結果(STOP)", order_cancel)
         if (tp_price == 0 or tp_range == 0 or lc_price == 0 or lc_range == 0) and order_cancel == 0:
             print(s, "０を含むオーダーになりそう！！おかしい　tp_price", tp_price, "tp_range", tp_range, lc_price, lc_range)
             order_cancel = 100
-        # if lc_range >= 0.12:
-        #     print(s, "LC rangeが予想以上に大きい！！")
-        #     tk.line_send("LCやTPが大きいため修正")
-        #     lc_range = 0.12
-        #     lc_price = target_price - (lc_range * target_dir)
-        #     tp_range = lc_range * rr_b
-        #     tp_price = target_price + (tp_range * target_dir)
+        if lc_range >= 0.12:
+            print(s, "LC rangeが予想以上に大きい！！")
+            tk.line_send("LCやTPが大きいため修正")
+            lc_range = 0.12
+            lc_price = target_price - (lc_range * target_dir)
+            tp_range = lc_range * rr_b
+            tp_price = target_price + (tp_range * target_dir)
             # order_cancel = 200
 
         print(s, "LC Changeテスト用")
         print(s, "rr1.6:", tp_range, "tt1.4", lc_range * rr_s, "lc_range", lc_range)
         if lc_range * rr_b - lc_range * rr_s >= 0.02:
-            print("攻めれるのでTP　Rangeを0.4に設定")
             # lc_changeでensureまで0.02取れる場合は、攻めてみる
             lc_change = [
                 {"exe": True, "time_after": 0, "trigger": lc_range * rr_b, "ensure": lc_range * rr_s},
@@ -1049,6 +1115,10 @@ class OrderPoints:
             tp_price = target_price + (tp_range * target_dir)
             memo = memo + "LcChange実装"
         memo = memo + "orderCancel:" + str(order_cancel)
+
+        if tp_range == 0 or lc_range == 0:
+            tk.line_send("tpかLCが０！！ long")
+            return 1999
 
         # line_info = self.predict_lines_wrap_up(target_price, target_dir)  # self.lower等を算出
         # 明示的に、結果を代入していく
@@ -1090,7 +1160,6 @@ class OrderPoints:
         current_group = []
 
         for item in data_sorted:
-
             if not current_group:
                 current_group.append(item)
                 continue
@@ -1173,9 +1242,9 @@ class OrderPoints:
             key=lambda x: x["median_price"],
             reverse=(order == -1)
         )
-        # for i, item in enumerate(group_info):
-        #     print( item)
+
         return group_info
+
 
     def predict_line_lower(self, target_price):
         # 現在価格より下にある、抵抗線候補を列挙する
@@ -1249,10 +1318,7 @@ class OrderPoints:
                     lines.append(item)
                 else:
                     pass
-                    # print("   ", item['latest_time_jp'], temp['same_price_list_comp_total'], item[price], item['direction']
-
-        # for i, item in enumerate(lines):
-        #     print("kore", item)
+                    # print("   ", item['latest_time_jp'], temp['same_price_list_comp_total'], item[price], item['direction'])
 
         # グルーピング
         line_group = self.predict_line_group(lines, 1)
@@ -1260,13 +1326,14 @@ class OrderPoints:
         # 情報の付与
         for d in line_group:  # 差分を追加しておく
             # Upperにおいて通常の向き
-            d["median"] = round(d["median_price"] - target_price, 3)
+            d["median"] = round(target_price - d["median_price"], 3)
             d['near_price'] = min(d['prices'], key=lambda x: x - target_price)
-            d['far_price'] = max(d['prices'], key=lambda x: x - target_price)
+            d['far_price'] = max(d['prices'], key=lambda x: x - target_price )
             # 差を計算
             d["near"] = round(d['near_price'] - target_price, 3)
             d["far"] = round(d['far_price'] - target_price, 3)
             d['near_far_gap'] = round(abs(max(d['prices'], key=lambda x: target_price - x) - min(d['prices'], key=lambda x: target_price - x)), 3)
+
 
         # 若干さかのぼって（価格を参照して）取得しているが、medianが離れている場合、除外する。
         final_lines = []
@@ -1275,10 +1342,11 @@ class OrderPoints:
             # Ｕｐｐｅｒなので、ターゲットよりちょい下のものを入れるか入れないかの判定
             # medianが0.008以上さかのぼっている場合は、無視する。
             if d["median"] <= -0.008:
+                print("MEDIANijyou ", d['median'])
                 continue
             # 基本は追加
+            print("追加", d,['median_price'], d['median'])
             final_lines.append(d)
-
 
         return final_lines
 

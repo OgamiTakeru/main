@@ -84,12 +84,16 @@ def str_to_time(str_time):
     :param str_time:
     :return:
     """
-    time_dt = datetime.datetime(int(str_time[0:4]),
-                                int(str_time[5:7]),
-                                int(str_time[8:10]),
-                                int(str_time[11:13]),
-                                int(str_time[14:16]),
-                                int(str_time[17:19]))
+    if isinstance(str_time, datetime.datetime):
+        # すでにdatetime → 何もしない
+        time_dt = str_time
+    else:
+        time_dt = datetime.datetime(int(str_time[0:4]),
+                                    int(str_time[5:7]),
+                                    int(str_time[8:10]),
+                                    int(str_time[11:13]),
+                                    int(str_time[14:16]),
+                                    int(str_time[17:19]))
     return time_dt
 
 

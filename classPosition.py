@@ -195,6 +195,7 @@ class order_information:
         self.send_line_exe = True  # いるか不明（Trueの場合は一部の情報についてLINE送信頻度増）
         self.memo = ""
         self.trigger_class = None
+        self.close_consider_done = False
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
@@ -305,6 +306,7 @@ class order_information:
         # 調査結果も保有する
         self.ca = None  # CandleAnalysisの格納
         self.trigger_class = None
+        self.close_consider_done = False
 
     def print_info(self):
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
@@ -432,12 +434,9 @@ class order_information:
         # (4)LC_Change情報を格納する
         if "lc_change" in plan:
             if len(plan['lc_change']) == 0:
-                self.lc_change_dic_arr = [{"exe": True, "time_after": 0, "trigger": 1, "ensure": 1}]
+                self.lc_change_dic_arr = []  # lc_changeは空の配列で実行しない。
             else:
                 self.lc_change_dic_arr = plan['lc_change']  # 辞書を丸ごと
-                # おかしいのでテスト用
-                if 'time_done' in self.lc_change_dic_arr[0]:
-                    tk.line_send("最初からLCChangeのDone時間が入っているNG classPosition.py ３３０行目付近")
         else:
             tk.line_send("lcLineミス classPosition.py ３３０行目付近")
 
@@ -2490,11 +2489,14 @@ class order_information:
                 # self.close_trade()
                 pass
         if int(self.t_time_past_sec) >= 2400:
-            if float(self.t_unrealize_pl) >= 0:
-                pass
-                data = {"stopLoss": {"price": str(self.plan_json["target_price"]), "timeInForce": "GTC"}, }
-                res = self.oa.TradeCRCDO_exe(self.t_id, data)
-                # self.close_trade()
+            if float(self.t_unrealize_pl) >= 0 and self.plan_json['lc_range'] >= 0.1:
+                # プラス域、かつ、range広めの場合（次のポジションに行きたいので、早めに終わらせたい）
+                if not self.close_consider_done:
+                    data = {"stopLoss": {"price": str(self.plan_json["target_price"]), "timeInForce": "GTC"}, }
+                    tk.line_send("時間がたったため、強制的に終了", self.name)
+                    res = self.oa.TradeCRCDO_exe(self.t_id, data)
+                    self.close_consider_done = True
+                    self.close_trade()
             else:
                 pass
                 # print(s, "どうせなら0になるまで待つ？")

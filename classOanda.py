@@ -1228,6 +1228,7 @@ def add_basic_data(data_df):
     data_df['inner_low'] = data_df.apply(lambda x: il_func(x), axis=1)  # ローソク本体で低い方（OpenかClose価格）
     data_df['body'] = data_df['close'] - data_df['open']  # 胴体の長さ（正負あり）
     data_df['body_abs'] = abs(data_df['close'] - data_df['open'])  # 胴体の長さ
+    data_df['direction'] = np.sign(data_df['close'] - data_df['open'])  # 胴体向き
     data_df['moves'] = data_df['high'] - data_df['low']
     data_df['up_rod'] = data_df.apply(lambda x: for_upper(x), axis=1)  # 上髭の長さを取得
     data_df['low_rod'] = data_df.apply(lambda x: for_lower(x), axis=1)  # 下髭の長さを取得

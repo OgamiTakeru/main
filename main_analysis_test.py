@@ -86,19 +86,15 @@ gl_inspection_end_time = 0
 # 解析と検証に必要な行数
 gl_res_part_low = 25  # 解析には50行必要(逆順DFでの直近R行が対象の為、[0:R]。check_mainと同値であること。
 gl_analysis_part_low = 85  # 解析には200行必要(逆順DFで直近N行を結果パートに取られた後の為、[R:R+A])。check_mainと同値であること。
-# 取得する行数(1回のテストをしたい場合、指定でもres_part_low + analysis_part_lowが必要）
+# 取得する行数(1回のテストをした い場合、指定でもres_part_low + analysis_part_lowが必要）
 gl_count = gl_res_part_low + gl_analysis_part_low + 1
 gl_times = 1  # Count(最大5000件）を何セット取るか  大体2225×３で１
-gl_candleAnalysisClass = None
-
-
-# ■■取得時間の指定
 gl_use_now = False  # 現在時刻実行するかどうか False True　　Trueの場合は現在時刻で実行。target_timeを指定したいときはFalseにする。
 # gl_target_time = datetime.datetime(2025, 6, 6, 18, 30, 6)  # 検証時間 (以後ループの有無で調整） 6秒があるため、00:00:06の場合、00:05:00までの足が取れる
 gl_target_time = datetime.datetime(2026, 4, 18, 1, 0, 6)  # ←これみそだよ！
 gl_target_time = datetime.datetime(2026, 4, 18, 1, 55, 6)
 gl_target_time = datetime.datetime(2026, 4, 22, 20, 35, 6)  # レンジ始まりくらい。
-gl_target_time = datetime.datetime(2026, 4, 27, 10, 30, 6)  # レンジ始まりくらい。
+gl_target_time = datetime.datetime(2026, 5, 7, 2, 15, 6)  # レンジ始まりくらい。
 # gl_target_time = datetime.datetime(2025, 6, 17, 21, 30, 6)
 
 # Mainスタート
