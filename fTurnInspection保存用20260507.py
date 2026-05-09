@@ -129,9 +129,9 @@ class MainAnalysis:
         # # preFlopとflopの解析
         # self.fp = TuneAnalysisInformation(self.peaks_class, 2, "fp")  # peak情報源生成
         # 各価格に使うかもしれない物
-        self.latest_turn_resistance_gap = abs(t['latest_body_peak_price'] - self.peaks_class.latest_price)
-        self.latest_flop_resistance_gap = abs(f['latest_body_peak_price'] - self.peaks_class.latest_price)
-        self.current_price = self.peaks_class.latest_price
+        self.latest_turn_resistance_gap = abs(t['latest_body_peak_price'] - self.peaks_class.current_price)
+        self.latest_flop_resistance_gap = abs(f['latest_body_peak_price'] - self.peaks_class.current_price)
+        self.current_price = self.peaks_class.current_price
 
         # 調整用の係数たち
         self.sp = 0.004  # スプレッド考慮用

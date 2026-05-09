@@ -850,9 +850,9 @@ class MainAnalysis:
         # preFlopとflopの解析
         self.fp = TuneAnalysisInformation(self.peaks_class, 2, "fp")  # peak情報源生成
         # 各価格に使うかもしれない物
-        self.latest_turn_resistance_gap = abs(t['latest_body_peak_price'] - self.peaks_class.latest_price)
-        self.latest_flop_resistance_gap = abs(f['latest_body_peak_price'] - self.peaks_class.latest_price)
-        self.current_price = self.peaks_class.latest_price
+        self.latest_turn_resistance_gap = abs(t['latest_body_peak_price'] - self.peaks_class.current_price)
+        self.latest_flop_resistance_gap = abs(f['latest_body_peak_price'] - self.peaks_class.current_price)
+        self.current_price = self.peaks_class.current_price
 
         # 調整用の係数たち
         self.sp = 0.004  # スプレッド考慮用
@@ -1097,8 +1097,8 @@ class MainAnalysis:
         # ●ヘッジオーダー
         order_class2 = OCreate.Order({
             "name": comment + "HEDGE",
-            "current_price": self.peaks_class.latest_price,
-            "target": self.peaks_class.latest_price,  # self.ca5.cal_move_ave(0.4),
+            "current_price": self.peaks_class.current_price,
+            "target": self.peaks_class.current_price,  # self.ca5.cal_move_ave(0.4),
             "direction": t['direction'],
             "type": "MARKET",  # "STOP",
             "tp": self.ca5.cal_move_ave(5),  # self.ca5.cal_move_ave(5),
@@ -2326,7 +2326,7 @@ class MainAnalysis:
         # ③直近のピークが収束
 
         print(self.s, "FLAG判定 isLine", is_line, ",isTilt", is_tilt, "isPeak収束", )
-        print(self.s, "現在価格", self.peaks_class.latest_price)
+        print(self.s, "現在価格", self.peaks_class.current_price)
 
         # 最終判定
         if is_line and is_tilt:
@@ -2337,7 +2337,7 @@ class MainAnalysis:
         # フラッグ後は、大きく価格が動く可能性がある⇒両建はするが、マイナス側の深追いはやめたい
         order_class1 = OCreate.Order({
             "name": "フラッグ突破方向",
-            "current_price": self.peaks_class.latest_price,
+            "current_price": self.peaks_class.current_price,
             "target": t['latest_body_peak_price'] + (self.ca5.cal_move_ave(0.5) * t['direction']),
             "direction": t['direction'],  # フラッグはターン基準（ターンが抵抗かどうか）なので、t方向が突破方向
             "type": "STOP",
@@ -2353,7 +2353,7 @@ class MainAnalysis:
         self.add_order_to_this_class(order_class1)
         order_class2 = OCreate.Order({
             "name": "フラッグレンジ(Hedge)方向",
-            "current_price": self.peaks_class.latest_price,
+            "current_price": self.peaks_class.current_price,
             "target": self.ca5.cal_move_ave(1.5),
             "direction": r['direction'],
             "type": "STOP",

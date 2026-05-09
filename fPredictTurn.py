@@ -123,7 +123,7 @@ def cal_predict_turn_at_trend(peaks_class):
     search_grid = 0.02
     search_range_upper = round(search_grid/2, 3)  #0.01  # searchPriceの上下この範囲内でのピークを探す
     search_range_lower = round(search_grid/2, 3)  #0.01
-    search_price = peaks_class.latest_price
+    search_price = peaks_class.current_price
     suggested_peaks = []
     loop_manegement = 0
     i = 0
@@ -264,7 +264,7 @@ def order_make_dir0_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         target = round(target_num + (margin * order_dir) * margin_dir * 1, 3)
 
     # STOPオーダー専用のため、おかしな場合は、エラーを出す
-    now_price = peaks_class.latest_price
+    now_price = peaks_class.current_price
     if order_dir == 1:
         if target >= now_price:
             type = "STOP"
@@ -352,7 +352,7 @@ def order_make_dir1_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         target = round(target_num + (margin * order_dir) * margin_dir * 1, 3)
 
     # STOPオーダー専用のため、おかしな場合は、エラーを出す
-    now_price = peaks_class.latest_price
+    now_price = peaks_class.current_price
     if order_dir == 1:
         if target >= now_price:
             type = "STOP"

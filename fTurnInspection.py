@@ -38,7 +38,7 @@ class MainAnalysis:
         self.round_digit = 3
         self.oa = candle_analysis.base_oa
 
-        self.ca = candle_analysis
+        self.candle_analysis_all = candle_analysis
 
         self.ca5 = candle_analysis.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
         self.peaks_class = candle_analysis.peaks_class  # peaks_classだけを抽出
@@ -53,10 +53,10 @@ class MainAnalysis:
         self.df_r_m30 = candle_analysis.d30_df_r[from_i:]
 
         self.latest_time = candle_analysis.d5_df_r.iloc[0]['time_jp']  # 5分足で判断(0行目を利用）
-        self.latest_price = candle_analysis.d5_df_r.iloc[from_i_price]['close']  # iloc[1]
+        self.current_price = candle_analysis.current_price  # candleAnalysisからとる（本番の場合はAPIで最新、解析の場合はclose価格)
         self.mode = mode  # 検証かどうか
         self.pair = "USD_JPY"
-        print("latest_priceの確認(main_analysis)", self.latest_price, "移動平均", self.ca5.cal_move_ave(1))
+        print("current_priceの確認(main_analysis)", self.current_price, "移動平均", self.ca5.cal_move_ave(1))
         # 抵抗線関係
         self.exist_strong_line = False
         # BB関係
@@ -129,9 +129,8 @@ class MainAnalysis:
         # # preFlopとflopの解析
         # self.fp = TuneAnalysisInformation(self.peaks_class, 2, "fp")  # peak情報源生成
         # 各価格に使うかもしれない物
-        self.latest_turn_resistance_gap = abs(t['latest_body_peak_price'] - self.peaks_class.latest_price)
-        self.latest_flop_resistance_gap = abs(f['latest_body_peak_price'] - self.peaks_class.latest_price)
-        self.current_price = self.peaks_class.latest_price
+        self.latest_turn_resistance_gap = abs(t['latest_body_peak_price'] - self.current_price)
+        self.latest_flop_resistance_gap = abs(f['latest_body_peak_price'] - self.current_price)
 
         # 調整用の係数たち
         self.sp = 0.004  # スプレッド考慮用
@@ -296,7 +295,7 @@ class MainAnalysis:
 
         s = self.s
         df_r = self.df_r_m5  # 場合によって0が消されているdf_r
-        candle_analysis = self.ca
+        candle_analysis = self.candle_analysis_all
         peaks = self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
         mode = self.mode
@@ -344,11 +343,11 @@ class MainAnalysis:
         self.simple_turn_analysis()
 
     def simple_turn_analysis(self):
-        print("■シンプルターンオーダー2", self.latest_price)
+        print("■シンプルターンオーダー2", self.current_price)
 
         # 変数化（共通
         s = self.s
-        latest_price = self.latest_price  # self.ca = candle_analysis
+        current_price = self.current_price  # self.ca = candle_analysis
         # 変数化（足ごと
         foot = 5
         if foot == 5:
@@ -470,12 +469,12 @@ class MainAnalysis:
 
         size_condition = width2 >= width1 * 1.3
         overlap_condition = overlap >= width1 * 0.88  # ←ここがA基準
-        print(l_df1['time_jp'] ,min1, max1, l_df2['time_jp'], min2, max2, overlap, max1 - min1)
+        print(l_df1['time_jp'], min1, max1, l_df2['time_jp'], min2, max2, overlap, max1 - min1)
         print("size", size_condition, size_ratio, "overlap1", overlap_ratio, "overlap2", overlap_ratio2)
 
 
         # 当初の、Latestの方向にそのまま行くやつ
-        op = OrderPoints(peaks_class, df, latest_price, foot)  # オーダーポイントの計算
+        op = OrderPoints(self.candle_analysis_all, peaks_class, foot)  # オーダーポイントの計算
         # オーダー１の情報
         target_margin_limit = 0.009
         op.cal_target_price_oppo_limit(target_margin_limit)  # target価格を計算する(lc_rangeもここで計算される）
@@ -490,7 +489,7 @@ class MainAnalysis:
         if op.stop_order_cancel != 0 and not is_exist_oppo and op.stop_exe_op:
             order_class = OCreate.Order({
                 "name": "シンプルターンShort",
-                "current_price": latest_price,
+                "current_price": current_price,
                 "target": op.target_price_limit_op,
                 "direction": op.l_dir_oppo,  # op.l_dir,
                 "type": "LIMIT",  # "STOP",  # "MARKET",
@@ -500,7 +499,7 @@ class MainAnalysis:
                 "units": op.cal_units(op.lc_range_limit_wick_op, tk.setting_json['s_units'], "s"),  # self.units_str * 1.01,  # 100,
                 "priority": 5,
                 "decision_time": df.iloc[0]['time_jp'],
-                "candle_analysis_class": self.ca,
+                "candle_analysis_class": self.candle_analysis_all,
                 "lc_change_candle_type": candle_foot,
                 # "order_permission": False,
                 "order_timeout_min": 15,
@@ -510,11 +509,11 @@ class MainAnalysis:
 
         # オーダー2用の数字の生成
         order_class1 = None
-        if op.stop_order_cancel == 0:
-            if not is_exist:
+        if op.stop_order_cancel == 0:  # 0以外の場合は、キャンセルということ
+            if not is_exist:  # 阻害するポジションが無い場合は、通常通りオーダー
                 order_class1 = OCreate.Order({
                     "name": "シンプルターンLong",
-                    "current_price": latest_price,
+                    "current_price": current_price,
                     "target": op.target_price_stop,
                     "direction": op.l_dir,
                     "type": "STOP",  # "STOP",  # "MARKET",
@@ -524,7 +523,7 @@ class MainAnalysis:
                     "units": op.cal_units(op.lc_range_stop, tk.setting_json['l_units'], "l"),  # 100,
                     "priority": 5,
                     "decision_time": df.iloc[0]['time_jp'],
-                    "candle_analysis_class": self.ca,
+                    "candle_analysis_class": self.candle_analysis_all,
                     "lc_change_candle_type": candle_foot,
                     # "order_permission": False,
                     "order_timeout_min": 15,
@@ -539,15 +538,16 @@ class MainAnalysis:
                 tk.line_send("オーダーを阻止するオーダーありのため、発行せず")
 
 class OrderPoints:
-    def __init__(self, peaks_class, df_r, latest_price, foot):
+    def __init__(self, candle_analysis_all, peaks_class, foot):
         print(" ")
         print(" ★★オーダーポイントの整理")
         # ■■■基本情報の取得
+        self.candle_analysis_all = candle_analysis_all
         self.peaks_class = peaks_class
         self.peaks = peaks_class.peaks_original
         self.round_digit = 3
         self.spred = 0.008
-        self.latest_price = latest_price
+        self.current_price = candle_analysis_all.current_price  # 本番だとAPI経由の正確な値になる
         self.peaks = self.peaks
         self.foot = foot
 
@@ -731,7 +731,7 @@ class OrderPoints:
         self.lc_range_stop_wick_op = 0
 
     def cal_target_price_limit(self, margin):
-        base = self.latest_price
+        base = self.current_price
         base = self.peaks[0]['latest_body_peak_price']
         # ターゲットプライスを算出
         if self.l_dir == 1:
@@ -768,7 +768,7 @@ class OrderPoints:
         s = "    "
         peaks = self.peaks
         spred = self.spred
-        base_price = self.latest_price  # peaks[0]['latest_body_peak_price']  # self.latest_price
+        base_price = self.current_price  # peaks[0]['latest_body_peak_price']  # self.latest_price
         target_dir = self.l_dir
         self.stop_order_cancel = 999  # 途中返却の可能性もあるため、最初から入れておく
         df = self.peaks_class.df_r_original  # これは
@@ -796,11 +796,11 @@ class OrderPoints:
             target_price = base_price - margin
 
         # ■■■価格変動の速さを計測（６秒で動きすぎているかの判定　いまは参考程度）
-        now_peak_gap = abs(self.latest_price - latest['latest_body_peak_price'])
+        now_peak_gap = abs(self.current_price - latest['latest_body_peak_price'])
         latest_df = df.iloc[1]  # [0]は形成され始めた瞬間の足なので注意
         if now_peak_gap >= 0.01:
             if latest['direction'] == latest_df['direction']:
-                tk.line_send("LatestPriceとPeak価格に大きな差がある", self.latest_price, peaks[0]['latest_body_peak_price'])
+                tk.line_send("LatestPriceとPeak価格に大きな差がある", self.current_price, peaks[0]['latest_body_peak_price'])
             else:
                 print("方向が逆のため、Gapは大きい", now_peak_gap, latest['direction'], latest_df['direction'])
 
@@ -1026,29 +1026,13 @@ class OrderPoints:
         if (tp_price == 0 or tp_range == 0 or lc_price == 0 or lc_range == 0) and order_cancel == 0:
             print(s, "０を含むオーダーになりそう！！おかしい　tp_price", tp_price, "tp_range", tp_range, lc_price, lc_range)
             order_cancel = 100
-        # if lc_range >= 0.12:
-        #     print(s, "LC rangeが予想以上に大きい！！")
-        #     tk.line_send("LCやTPが大きいため修正")
-        #     lc_range = 0.12
-        #     lc_price = target_price - (lc_range * target_dir)
-        #     tp_range = lc_range * rr_b
-        #     tp_price = target_price + (tp_range * target_dir)
-            # order_cancel = 200
 
-        print(s, "LC Changeテスト用")
-        print(s, "rr1.6:", tp_range, "tt1.4", lc_range * rr_s, "lc_range", lc_range)
-        if lc_range * rr_b - lc_range * rr_s >= 0.02:
-            print("攻めれるのでTP　Rangeを0.4に設定")
-            # lc_changeでensureまで0.02取れる場合は、攻めてみる
+        # tpが広すぎる場合があるので、調整
+        if tp_range >= 0.1:
+            print(s, "tpが大きいので、LCChangeで０調整を行う")
             lc_change = [
-                {"exe": True, "time_after": 0, "trigger": lc_range * rr_b, "ensure": lc_range * rr_s},
-                {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.16},
-                {"exe": True, "time_after": 0, "trigger": 0.30, "ensure": 0.25},
+                {"exe": True, "time_after": 0, "trigger": lc_range * 0.95, "ensure": lc_range * 0.1},
             ]
-            tp_range = 0.4
-            tp_price = target_price + (tp_range * target_dir)
-            memo = memo + "LcChange実装"
-        memo = memo + "orderCancel:" + str(order_cancel)
 
         # line_info = self.predict_lines_wrap_up(target_price, target_dir)  # self.lower等を算出
         # 明示的に、結果を代入していく

@@ -139,7 +139,7 @@ def cal_little_turn_at_trend(peaks_class):
             comment = "●●Count2のすぐBreak"
             target_price = t['latest_body_peak_price']  # targetはTurnのピーク値
             margin_border = 0.02
-            if abs(target_price - peaks_class.latest_price) <= margin_border:
+            if abs(target_price - peaks_class.current_price) <= margin_border:
                 # ほとんど即時オーダーになってしまう場合、1.5pipのマージンを取る
                 print("即時オーダーになりそう")
                 margin = margin_border
@@ -150,7 +150,7 @@ def cal_little_turn_at_trend(peaks_class):
             lc_range = gene.cal_at_least(0.03, round(abs(target_price - lc_price), 3))  # lc_rangeに変換し最低値を確保
             print("参考 lc_price", lc_price, "lc_range:", round(abs(target_price - lc_price), 3), "targetPrice",
                   target_price)
-            print("LCrange", lc_range, "latest_price", peaks_class.latest_price)
+            print("LCrange", lc_range, "latest_price", peaks_class.current_price)
             temp = round(abs(target_price - t['latest_wick_peak_price']), 3)
             change_temp = gene.cal_at_least(0.04, temp)
             order = order_make_dir1_s(
@@ -167,7 +167,7 @@ def cal_little_turn_at_trend(peaks_class):
         elif ((skip_exist or 5 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
               0 < turn_strength <= 8 and 0.18 < rt_ratio <= 0.50):
             comment = "△Count2のすぐRange側"
-            target_price = peaks_class.latest_price
+            target_price = peaks_class.current_price
             margin = round(abs(t['gap']) / 4, 3)
             order = order_make_dir0_s(
                 peaks_class, comment, target_price, margin, 1,
@@ -200,7 +200,7 @@ def cal_little_turn_at_trend(peaks_class):
                 0 < turn_strength <= 8 and 0 < rt_ratio <= 0.36):
             comment = "●●●強いやつ"
             # target_price = peaks[0]['latest_body_peak_price']
-            target_price = peaks_class.latest_price
+            target_price = peaks_class.current_price
             temp = round(abs(target_price - t['latest_wick_peak_price']), 3)
             change_temp = gene.cal_at_least(0.04, temp)
             exe_orders.append(
@@ -396,7 +396,7 @@ def cal_little_turn_at_trend_test(peaks_class):
             comment = "●●Count2のすぐBreak"
             target_price = t['latest_body_peak_price']  # targetはTurnのピーク値
             margin_border = 0.02
-            if abs(target_price - peaks_class.latest_price) <= margin_border:
+            if abs(target_price - peaks_class.current_price) <= margin_border:
                 # ほとんど即時オーダーになってしまう場合、1.5pipのマージンを取る
                 print("即時オーダーになりそう")
                 margin = margin_border
@@ -408,7 +408,7 @@ def cal_little_turn_at_trend_test(peaks_class):
             lc_range = gene.cal_at_least(0.03, lc_range_temp)  # lc_rangeに変換し最低値を確保
             print("参考 lc_price", lc_price, "lc_range:", round(abs(target_price - lc_price), 3), "targetPrice",
                   target_price)
-            print("LCrange", lc_range, "latest_price", peaks_class.latest_price)
+            print("LCrange", lc_range, "latest_price", peaks_class.current_price)
             temp = round(abs(target_price - t['latest_wick_peak_price']), 3)
             change_temp = gene.cal_at_least(0.04, temp)
             order = order_make_dir1_s(
@@ -437,7 +437,7 @@ def cal_little_turn_at_trend_test(peaks_class):
             comment = "〇Count2のすぐBreak(same以外)"
             target_price = t['latest_body_peak_price']  # targetはTurnのピーク値
             margin_border = 0.02
-            if abs(target_price - peaks_class.latest_price) <= margin_border:
+            if abs(target_price - peaks_class.current_price) <= margin_border:
                 # ほとんど即時オーダーになってしまう場合、1.5pipのマージンを取る
                 print("即時オーダーになりそう")
                 margin = margin_border
@@ -449,7 +449,7 @@ def cal_little_turn_at_trend_test(peaks_class):
             lc_range = gene.cal_at_least(0.03, lc_range_temp)  # lc_rangeに変換し最低値を確保
             print("参考 lc_price", lc_price, "lc_range:", round(abs(target_price - lc_price), 3), "targetPrice",
                   target_price)
-            print("LCrange", lc_range, "latest_price", peaks_class.latest_price)
+            print("LCrange", lc_range, "latest_price", peaks_class.current_price)
             temp = round(abs(target_price - t['latest_wick_peak_price']), 3)
             change_temp = gene.cal_at_least(0.04, temp)
             order = order_make_dir1_s(
@@ -477,7 +477,7 @@ def cal_little_turn_at_trend_test(peaks_class):
         elif ((skip_exist or 5 <= t['count'] < 100) and t_sk['skip_include_num'] < 3 and
               0 < turn_strength <= 8 and 0.30 < rt_ratio <= 0.50):
             comment = "△Count2のすぐRange側"
-            target_price = peaks_class.latest_price
+            target_price = peaks_class.current_price
             margin = round(abs(t['gap']) / 4, 3)
             order = order_make_dir0_s(
                 peaks_class, comment, target_price, margin, -1,
@@ -504,7 +504,7 @@ def cal_little_turn_at_trend_test(peaks_class):
                 0 < turn_strength <= 8 and 0 < rt_ratio <= 0.36):
             comment = "●●●強いやつ"
             # target_price = peaks[0]['latest_body_peak_price']
-            target_price = peaks_class.latest_price
+            target_price = peaks_class.current_price
             temp = abs(target_price - t['latest_wick_peak_price'])
             exe_orders.append(
                 order_make_dir1_s(
@@ -926,7 +926,7 @@ def order_make_dir0_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         target = round(target_num + (margin * order_dir) * margin_dir * 1, 3)
 
     # STOPオーダー専用のため、おかしな場合は、エラーを出す
-    now_price = peaks_class.latest_price
+    now_price = peaks_class.current_price
     if order_dir == 1:
         if target >= now_price:
             type = "STOP"
@@ -1123,7 +1123,7 @@ def order_make_dir1_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         target = round(target_num + (margin * order_dir) * margin_dir * 1, 3)
 
     # STOPオーダー専用のため、おかしな場合は、エラーを出す
-    now_price = peaks_class.latest_price
+    now_price = peaks_class.current_price
     if order_dir == 1:
         if target >= now_price:
             type = "STOP"

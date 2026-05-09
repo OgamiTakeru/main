@@ -122,7 +122,7 @@ class time_analysis():
             print("深夜の一時の初回です")
             order_class1 = OCreate.Order({
                 "name": "深夜一時の売りオーダー",
-                "current_price": self.peaks_class.latest_price,
+                "current_price": self.peaks_class.current_price,
                 "target": 0,  # target_price,
                 "direction": -1,
                 "type": "MARKET",  # "MARKET",

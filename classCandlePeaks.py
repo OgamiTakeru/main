@@ -11,7 +11,7 @@ import copy
 
 class PeaksClass:
 
-    def __init__(self, original_df_r, granularity):
+    def __init__(self, original_df_r, granularity, current_price):
         """
         処理解説
         make_peakでdf_rの直近一つのブロック（Peakと呼ぶ。同方向へローソクが進む範囲のこと。）を取得する。
@@ -37,6 +37,9 @@ class PeaksClass:
         self.ps_min = 4  # 若干弱いピークに付与する値
         self.ps_most_max = 8  # 強いピークとみなす（直近数時間で最も高い（または低い）ピークの場合)　
         self.minimum = 0.0000001
+
+        # ★現在価格（親のcandleAnalysisで取得されたものを使用する)
+        self.current_price = current_price
 
         # ■足の幅で変わる値群
         if granularity == "M5":
@@ -112,9 +115,8 @@ class PeaksClass:
         # self.peaks_original_marked_skip = []  # 使ってない？？
         # self.peaks_original_marked_hard_skip = []  # 使ってない？？　peaksとしてはオリジナル同様だが、スキップピークに、フラグが付いている物
         self.latest_resistance_line = {}  # Nullか、情報が入っているかのどちらか（Null＝抵抗線ではない）
-        self.latest_price = 0  # 現在価格（場合よっては最新価格）
         self.latest_peak_price = 0  # 直近の折り返しのピーク(=turnのこと）
-        self.gap_price_and_latest_turn_peak_abs = abs(self.latest_peak_price - self.latest_price)
+        self.gap_price_and_latest_turn_peak_abs = abs(self.latest_peak_price - self.current_price)
         # 動きの数値化された情報
         self.is_big_move_peak = False
         self.is_big_move_candle = False
@@ -140,7 +142,6 @@ class PeaksClass:
         # ■実処理
         # (1)ピークスの算出
         self.df_r_original = original_df_r
-        # print("直近価格", self.latest_price, original_df_r.iloc[0]['time_jp'], original_df_r.iloc[1]['time_jp'])
 
         self.df_r = original_df_r[1:]  # df_rは先頭は省く（数秒分の足のため）
         self.df_r_copy = copy.deepcopy(self.df_r)
@@ -169,10 +170,8 @@ class PeaksClass:
         self.recalculation_peak_strength_for_peaks()  # ピークストレングスの算出
 
         # (2) ある程度よく使う値は変数に入れておく
-        self.latest_price = original_df_r.iloc[0]['open']
         self.latest_peak_price = self.peaks_original[0]['peak']
-        self.gap_price_and_latest_turn_peak_abs = abs(self.latest_price - self.latest_peak_price)
-        # print("直近価格", self.latest_price)
+        self.gap_price_and_latest_turn_peak_abs = abs(self.current_price - self.latest_peak_price)
         # print("直近ピーク", self.latest_peak_price)
 
         # (3) 時間の取得
@@ -368,7 +367,7 @@ class PeaksClass:
         ans_dic["oldest_body_peak_price"] = oldest_body_price
         ans_dic["oldest_time_jp"] = ans_df.iloc[-1]["time_jp"]
         ans_dic["latest_time_jp"] = ans_df.iloc[0]["time_jp"]  # これがピークの時刻
-        ans_dic["latest_price"] = ans_df.iloc[0]["close"]
+        ans_dic["latest_price"] = self.current_price
         ans_dic["oldest_price"] = ans_df.iloc[-1]["open"]
         ans_dic["latest_wick_peak_price"] = latest_wick_price
         ans_dic["oldest_wick_peak_price"] = oldest_wick_price

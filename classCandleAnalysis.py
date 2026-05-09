@@ -33,6 +33,9 @@ class candleAnalysis:
         self.base_oa = base_oa
         self.need_df_num = 250
 
+        self.current_price = 0  # 後に価格として入る(本番の場合[=時間指定なし]API、検証の場合はdfの先頭）
+        self.current_price_by_df = 0  # デーらフレームから取得した（.iloc[1]['close']）価格
+
         # データ入れる用
         self.d5_df_r = None
         self.d60_df_r = None
@@ -71,7 +74,7 @@ class candleAnalysis:
                 return
 
         # ■■データ取得
-        self.get_date_df(target_time_jp)  # self.d5_df_rとself.d60_df_rを取得
+        self.get_date_df(target_time_jp)  # 現在価格と、self.d5_df_rとself.d60_df_rを取得
         if self.d5_df_r is None:
             print("データ取得＆Peaks生成 失敗？？")
         else:
@@ -97,19 +100,19 @@ class candleAnalysis:
         # ■■処理
         # データを取得する(5分足系）
         granularity = "M5"
-        self.peaks_class = peaksClass.PeaksClass(self.d5_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        self.peaks_class = peaksClass.PeaksClass(self.d5_df_r, granularity, self.current_price)  # ★peaks_classの生成
         # self.inspect_instance_memory(self.peaks_class)
         self.candle_class = eachCandleAnalysis(self.peaks_class, granularity)
         # データを取得する（60分足）
         granularity = "H1"
-        self.peaks_class_hour = peaksClass.PeaksClass(self.d60_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        self.peaks_class_hour = peaksClass.PeaksClass(self.d60_df_r, granularity, self.current_price)
         self.candle_class_hour = eachCandleAnalysis(self.peaks_class_hour, granularity)
         if self.d60_df_r is not None:
             h1_df = self.d60_df_r.iloc[0]
             # print("データ取得の確認！！！！！！", h1_df['time_jp'], h1_df['close'])
         # データを取得する（30分足）
         granularity = "M30"
-        self.peaks_class_m30 = peaksClass.PeaksClass(self.d30_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        self.peaks_class_m30 = peaksClass.PeaksClass(self.d30_df_r, granularity, self.current_price)
         self.candle_class_m30 = eachCandleAnalysis(self.peaks_class_m30, granularity)
         if self.d30_df_r is not None:
             d30_df = self.d30_df_r.iloc[0]
@@ -176,11 +179,10 @@ class candleAnalysis:
                 s5_df_latest_bottom = s5_df_res['data']
             self.s5_df_r = s5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
-
     def get_date_df(self, target_time_jp):
         # データを取得する
         if target_time_jp == 0:
-            # nowでやる場合（通常）
+            # ■■■nowでやる場合（リアルトレード環境がメイン）
             # 5分足のデータ
             d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
                                                                   {"granularity": "M5", "count": self.need_df_num},
@@ -229,8 +231,16 @@ class candleAnalysis:
                 m30_df_latest_bottom = d30_df_res['data']
             self.d30_df_r = m30_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
+            # ★★現在価格の取得（API）
+            price_dic = self.base_oa.NowPrice_exe("USD_JPY")
+            if price_dic['error'] == -1:  # APIエラーの場合はスキップ
+                print("API異常発生の可能性@candleAnalysis")
+                return -1  # 終了
+            self.current_price = price_dic['data']['mid']
+            self.current_price_by_df = self.d5_df_r.iloc[1]['close']  # 共通
+
         else:
-            # 指定の時刻でやる場合
+            # ■■■指定の時刻でやる場合
             jp_time = target_time_jp
             euro_time_datetime = jp_time - datetime.timedelta(hours=9)
             euro_time_datetime_iso = str(euro_time_datetime.isoformat()) + ".000000000Z"  # ISOで文字型。.0z付き）
@@ -279,6 +289,10 @@ class candleAnalysis:
                 m30_df_latest_bottom = d30_df_res['data']
             self.d30_df_r = m30_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
             # print(self.d30_df_r.head(3))
+
+            # ★★★currentPriceの取得（APIを使わず、データから）
+            self.current_price = self.d5_df_r.iloc[1]['close']
+            self.current_price_by_df = self.d5_df_r.iloc[1]['close']
 
 class eachCandleAnalysis:
     def __init__(self, peaks_class, granularity):
@@ -443,10 +457,10 @@ class candleAnalisysForTest(candleAnalysis):
 
         # データを取得する(5分足系）
         granularity = "M5"
-        self.peaks_class = peaksClass.PeaksClass(self.d5_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        self.peaks_class = peaksClass.PeaksClass(self.d5_df_r, granularity, self.current_price)
         # self.inspect_instance_memory(self.peaks_class)
         self.candle_class = eachCandleAnalysis(self.peaks_class, granularity)
         # データを取得する（60分足）
         granularity = "H1"
-        self.peaks_class_hour = peaksClass.PeaksClass(self.d60_df_r, granularity)  # ★★peaks_classインスタンスの生成
+        self.peaks_class_hour = peaksClass.PeaksClass(self.d60_df_r, granularity, self.current_price)
         self.candle_class_hour = eachCandleAnalysis(self.peaks_class_hour, granularity)

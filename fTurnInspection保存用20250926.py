@@ -30,9 +30,9 @@ class turn_analisys:
         # preFlopとflopの解析
         self.fp = TuneAnalysisInformation(self.peaks_class, 2, "fp")  # peak情報源生成
         # 各価格に使うかもしれない物
-        self.latest_turn_resistance_gap = abs(t['latest_body_peak_price'] - self.peaks_class.latest_price)
-        self.latest_flop_resistance_gap = abs(f['latest_body_peak_price'] - self.peaks_class.latest_price)
-        self.current_price = self.peaks_class.latest_price
+        self.latest_turn_resistance_gap = abs(t['latest_body_peak_price'] - self.peaks_class.current_price)
+        self.latest_flop_resistance_gap = abs(f['latest_body_peak_price'] - self.peaks_class.current_price)
+        self.current_price = self.peaks_class.current_price
 
         # 調整用の係数たち
         self.sp = 0.004  # スプレッド考慮用
@@ -91,7 +91,7 @@ class turn_analisys:
         target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
         order_class1 = OCreate.Order({
             "name": comment,
-            "current_price": self.peaks_class.latest_price,
+            "current_price": self.peaks_class.current_price,
             "target": self.ca5.cal_move_ave(0.5),  # target_price,
             "direction": r['direction'],
             "type": "STOP",  # "MARKET",
@@ -107,7 +107,7 @@ class turn_analisys:
         # ●ヘッジオーダー
         order_class2 = OCreate.Order({
             "name": comment + "HEDGE",
-            "current_price": self.peaks_class.latest_price,
+            "current_price": self.peaks_class.current_price,
             "target": self.ca5.cal_move_ave(0.6),
             "direction": t['direction'],
             "type": "STOP",
@@ -247,7 +247,7 @@ class turn_analisys:
                     target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
                     order_class1 = OCreate.Order({
                         "name": comment,
-                        "current_price": self.peaks_class.latest_price,
+                        "current_price": self.peaks_class.current_price,
                         "target": target_price,
                         "direction": t['direction'],
                         "type": "MARKET",
@@ -263,7 +263,7 @@ class turn_analisys:
                     # ●ヘッジオーダー
                     order_class2 = OCreate.Order({
                         "name": comment + "HEDGE",
-                        "current_price": self.peaks_class.latest_price,
+                        "current_price": self.peaks_class.current_price,
                         "target": self.ca5.cal_move_ave(1.5),
                         "direction": r['direction'],
                         "type": "STOP",
@@ -287,7 +287,7 @@ class turn_analisys:
                     target_price = r['latest_body_peak_price'] + (self.sp * t['direction'])
                     order_class1 = OCreate.Order({
                         "name": comment,
-                        "current_price": self.peaks_class.latest_price,
+                        "current_price": self.peaks_class.current_price,
                         "target": target_price,
                         "direction": r['direction'],
                         "type": "MARKET",
@@ -304,7 +304,7 @@ class turn_analisys:
                     # ●ヘッジオーダー
                     order_class2 = OCreate.Order({
                         "name": comment + "HEDGE",
-                        "current_price": self.peaks_class.latest_price,
+                        "current_price": self.peaks_class.current_price,
                         "target": self.ca5.cal_move_ave(1.1),  # 0.025,
                         "direction": t['direction'],
                         "type": "STOP",
@@ -330,7 +330,7 @@ class turn_analisys:
                     comment = "●●●強いやつ(旧式"
                     order_class1 = OCreate.Order({
                         "name": comment,
-                        "current_price": self.peaks_class.latest_price,
+                        "current_price": self.peaks_class.current_price,
                         "target": 0,
                         "direction": t['direction'],
                         "type": "MARKET",
@@ -348,7 +348,7 @@ class turn_analisys:
                     comment = "●●●強いやつ(旧式）逆"
                     order_class2 = OCreate.Order({
                         "name": comment,
-                        "current_price": self.peaks_class.latest_price,
+                        "current_price": self.peaks_class.current_price,
                         "target": self.ca5.cal_move_ave(1),
                         "direction": r['direction'],
                         "type": "STOP",

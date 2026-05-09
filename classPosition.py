@@ -552,7 +552,7 @@ class order_information:
         if len(self.lc_change_dic_arr) > 0:
             lc_change_tp_range = round(self.lc_change_dic_arr[0].get("ensure"), 3)
         else:
-            lc_change_tp_range = None
+            lc_change_tp_range = 0
 
         # オーダー情報
         if self.o_id == 0:
@@ -569,22 +569,22 @@ class order_information:
                         ",DIR:" + str(self.plan_json['direction']) + \
                         ", 数量:" + str(self.plan_json['units']) + \
                         ", TP:" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + " - " + str(lc_change_tp_range) + ")" + \
+                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLcChange" + str(lc_change_tp_range) + ")" + \
                         ", LC:" + str(round(self.plan_json['lc_price'], self.u)) + \
                         "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
                         ", RR_tp:" + str(round(self.plan_json['tp_range']/self.plan_json['lc_range'], 2)) + \
-                        ", RR_lc_change:" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
+                        ", RR(LcChange):" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
                         ", AveMove:" + str(round(self.plan_json['move_ave'], self.u)) + \
                         ", memo:" + str(self.memo) + \
                         ",lc_change" + str(lc_change_str)
             # クローズの時にも送るよう
             self.for_line_send_order_info_at_close = "【TP】" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + " - " + str(lc_change_tp_range) + ")" + \
+                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLcChange" + str(lc_change_tp_range) + ")" + \
                         "【LC】" + str(round(self.plan_json['lc_price'], self.u)) + \
                         "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
                         "【lc_change】" + str(lc_change_str) + \
                         "【RR_tp】" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
-                        "【RR_tp2】" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
+                        "【RR_tp(LcChange)】" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
                         "【memo】" + str(self.memo)
 
         else:
@@ -599,11 +599,11 @@ class order_information:
                         ", 数量:" + str(oanda_res['units']) + \
                         ", タイプ:" + str(self.plan_json['type']) + \
                         ", TP:" + str(oanda_res['takeProfitOnFill']['price']) + \
-                        "(" + str(tp_range) + " - " + str(lc_change_tp_range) + ")" + \
+                        "(" + str(tp_range) + ",1stLcChange" + str(lc_change_tp_range) + ")" + \
                         ", LC:" + str(oanda_res['stopLossOnFill']['price']) + \
                         "(" + str(lc_range) + ")" + \
                         ", RR:" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
-                        ", RR_tp2:" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
+                        ", RR(LcChange)" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
                         ", AveMove:" + str(round(self.plan_json['move_ave'], self.u)) + \
                         ", OrderID:" + str(self.o_id) + \
                         ", 取得価格:" + str(order_result['execution_price']) + ",\n" + \
@@ -611,12 +611,12 @@ class order_information:
                                             "lc_change" + str(lc_change_str)
             # クローズの時にも送るよう
             self.for_line_send_order_info_at_close = "【TP】" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + " - " + str(lc_change_tp_range) + ")" + \
+                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLcChange" + str(lc_change_tp_range) + ")" + \
                         "【LC】" + str(round(self.plan_json['lc_price'], self.u)) + \
                         "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
                         "【lc_change】" + str(lc_change_str) + \
                         "【RR_tp】" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
-                        "【RR_tp2】" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
+                        "【RR_tp(LcChange)】" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
                         "【memo】" + str(self.memo)
 
     def close_order(self):
