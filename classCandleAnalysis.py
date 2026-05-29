@@ -31,7 +31,7 @@ class candleAnalysis:
         """
         # オアンダクラス
         self.base_oa = base_oa
-        self.need_df_num = 250
+        self.need_df_num = 72  # 250
 
         self.current_price = 0  # 後に価格として入る(本番の場合[=時間指定なし]API、検証の場合はdfの先頭）
         self.current_price_by_df = 0  # デーらフレームから取得した（.iloc[1]['close']）価格

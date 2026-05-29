@@ -219,7 +219,7 @@ class main():
                 # tk.line_send(" オーダー発行せず　or 失敗　main 175")
             else:
                 tk.line_send("★★★オーダー発行", self.trade_num, "回目: ", " 　　　", exe_res,
-                             ", 現在価格:", self.now_price_mid, "スプレッド", str(self.now_spread),
+                             ", 現在価格(微古):", self.now_price_mid, "スプレッド", str(self.now_spread),
                              "直前の結果:", classPosition.order_information.before_latest_plu, ",開始時間",
                              self.start_time_str)  # , "memo", classPosition.)
                 self.trade_num = self.trade_num + 1

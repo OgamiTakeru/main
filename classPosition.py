@@ -26,6 +26,7 @@ class order_information:
     position_num = 0  # 何個のポジションを持ったか
     minus_yen_position_num = 0
     plus_yen_position_num = 0
+    lc_change_num = 0
     exist_alive_class = False  # 生きているクラスがあるかどうか（ある場合に限り、ローソクデータの取得を行いたいため）
     latest_df = None  # 直近の解析用のデータを持っておく（LcChangeFromCnadleで利用）
     latest_df_r = None
@@ -82,6 +83,8 @@ class order_information:
         self.name_ymdhms = ""
         self.current_price_all = {}
         self.current_price = 0
+        self.current_price_by_candle = 0
+        self.current_candle_price_gap = 0  # 注文時点の、current_priceとcurrent_price_by_candleの差分
         self.lc_change_candle_num = 100
         self.order_class = None
         self.linkage_order_classes = []  # リンクオーダーのオーダー情報
@@ -125,7 +128,7 @@ class order_information:
         self.t_execution_price = 0  # 約定価格
         self.t_unrealize_pl = 0
         self.t_realize_pl = 0
-        self.t_pl_u = 0
+        self.t_pl_u = 0  # unrealizeとrealizeで共通。open中はunrealize/units.
         self.t_close_time = 0
         self.t_close_price = 0
         self.already_offset_notice = False  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
@@ -138,6 +141,8 @@ class order_information:
         self.lose_hold_time_sec = 0
         self.win_max_plu = 0
         self.lose_max_plu = 0
+        self.win_max_price = 0
+        self.lose_max_price = 0
         self.win_max_plu_yen = 0
         self.lose_max_plu_yen = 0
 
@@ -196,6 +201,8 @@ class order_information:
         self.memo = ""
         self.trigger_class = None
         self.close_consider_done = False
+        self.close_consider_done2 = False
+        self.close_consider_done3 = False
 
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
@@ -207,6 +214,10 @@ class order_information:
         self.for_line_send_order_info = ""
         self.for_line_send_order_info_at_close = ""  # オーダー情報をクローズ時に送る準備
         self.priority = 0  # このポジションのプライオリティ
+        self.current_price_all = {}
+        self.current_price = 0
+        self.current_price_by_candle = 0
+        self.current_candle_price_gap = 0
         # self.is_live = True  # 本番環境か練習か（Boolean）　⇒する必要なし
         self.life = False
         self.waiting_order = False
@@ -249,6 +260,8 @@ class order_information:
         self.lose_hold_time_sec = 0
         self.win_max_plu = 0
         self.lose_max_plu = 0
+        self.win_max_price = 0
+        self.lose_max_price = 0
         self.win_max_plu_yen = 0
         self.lose_max_plu_yen = 0
 
@@ -307,6 +320,8 @@ class order_information:
         self.ca = None  # CandleAnalysisの格納
         self.trigger_class = None
         self.close_consider_done = False
+        self.close_consider_done2 = False
+        self.close_consider_done3 = False
 
     def print_info(self):
         print("   <表示>", self.name, datetime.datetime.now().replace(microsecond=0))
@@ -393,7 +408,7 @@ class order_information:
         self.reset()  # 一旦リセットする
 
         self.order_class = order_class
-        plan = order_class.exe_order
+        plan = order_class.exe_order_plan
 
         # ■受け取った情報を、インスタンス変数に入れていく
         self.order_register_time = datetime.datetime.now()
@@ -450,8 +465,13 @@ class order_information:
             self.move_ave5 = round(self.candle_analysis_class.candle_class.cal_move_ave(1), self.u)
             self.move_ave60 = round(self.candle_analysis_class.candle_class_hour.cal_move_ave(1), self.u)
             # print("オーダーのキャンドル情報追加", self.move_ave5, self.move_ave60)
+            self.current_price = self.candle_analysis_class.current_price
+            peaks = self.candle_analysis_class.peaks_class.peaks_original
+            self.current_price_by_candle = peaks[0]['latest_body_peak_price']
         else:
-            print("オーダーにcandle_analysis_classがない！")
+            print("オーダーにcandle_analysis_classがない！ よって現在価格等も０")
+            self.current_price = 0
+            self.current_price_by_candle = 0
 
         # (9)アラート関係
         # {"range": 0, "time": 0}
@@ -551,8 +571,18 @@ class order_information:
         # lc_changeのTP　rangeを取得
         if len(self.lc_change_dic_arr) > 0:
             lc_change_tp_range = round(self.lc_change_dic_arr[0].get("ensure"), 3)
+            lc_change_comment = "Tr:" + str(round(self.lc_change_dic_arr[0].get("trigger"), 3)) + ",En:" + str(lc_change_tp_range)
         else:
             lc_change_tp_range = 0
+            lc_change_comment = "Tr:0, En:0"
+
+        # 価格変動の強さ）現在価格と、ピークの最新価格（取得に６秒の差がある）
+        cu = self.current_price
+        cu_by_ca = self.current_price_by_candle
+        cu_gap = round(abs(cu - cu_by_ca), 3)
+        self.current_candle_price_gap = cu_gap
+        current_price_info = ", 現在価格:" + str(cu) + "現在価格byピーク:" + str(cu_by_ca) + ", 現価格との差:" + str(cu_gap) + " "
+        # current_price_info = "現在価格byピーク:" + str(cu_by_ca) + ", 現価格との差:" + str(cu_gap)
 
         # オーダー情報
         if self.o_id == 0:
@@ -569,23 +599,25 @@ class order_information:
                         ",DIR:" + str(self.plan_json['direction']) + \
                         ", 数量:" + str(self.plan_json['units']) + \
                         ", TP:" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLcChange" + str(lc_change_tp_range) + ")" + \
+                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLC_C:" + lc_change_comment + ")" + \
                         ", LC:" + str(round(self.plan_json['lc_price'], self.u)) + \
                         "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
                         ", RR_tp:" + str(round(self.plan_json['tp_range']/self.plan_json['lc_range'], 2)) + \
                         ", RR(LcChange):" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
+                        "" + current_price_info + \
                         ", AveMove:" + str(round(self.plan_json['move_ave'], self.u)) + \
-                        ", memo:" + str(self.memo) + \
+                        ", memo:" + str(self.plan_json['memo']) + \
                         ",lc_change" + str(lc_change_str)
             # クローズの時にも送るよう
             self.for_line_send_order_info_at_close = "【TP】" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLcChange" + str(lc_change_tp_range) + ")" + \
+                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLcChange" + lc_change_comment + ")" + \
                         "【LC】" + str(round(self.plan_json['lc_price'], self.u)) + \
                         "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
                         "【lc_change】" + str(lc_change_str) + \
                         "【RR_tp】" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
                         "【RR_tp(LcChange)】" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
-                        "【memo】" + str(self.memo)
+                        "" + current_price_info + \
+                        "【memo】" + str(self.plan_json['memo'])
 
         else:
             # オーダーの生成完了をLINE通知する
@@ -599,7 +631,7 @@ class order_information:
                         ", 数量:" + str(oanda_res['units']) + \
                         ", タイプ:" + str(self.plan_json['type']) + \
                         ", TP:" + str(oanda_res['takeProfitOnFill']['price']) + \
-                        "(" + str(tp_range) + ",1stLcChange" + str(lc_change_tp_range) + ")" + \
+                        "(" + str(tp_range) + ",1stLC_C:" + lc_change_comment + ")" + \
                         ", LC:" + str(oanda_res['stopLossOnFill']['price']) + \
                         "(" + str(lc_range) + ")" + \
                         ", RR:" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
@@ -607,17 +639,20 @@ class order_information:
                         ", AveMove:" + str(round(self.plan_json['move_ave'], self.u)) + \
                         ", OrderID:" + str(self.o_id) + \
                         ", 取得価格:" + str(order_result['execution_price']) + ",\n" + \
-                                            ", memo:" + str(self.memo) + \
-                                            "lc_change" + str(lc_change_str)
+                        "" + current_price_info + \
+                        ", memo:" + str(self.plan_json['memo']) + \
+                        ", lc_change" + str(lc_change_str)
+
             # クローズの時にも送るよう
             self.for_line_send_order_info_at_close = "【TP】" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLcChange" + str(lc_change_tp_range) + ")" + \
+                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLcChange" + lc_change_comment + ")" + \
                         "【LC】" + str(round(self.plan_json['lc_price'], self.u)) + \
                         "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
                         "【lc_change】" + str(lc_change_str) + \
                         "【RR_tp】" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
                         "【RR_tp(LcChange)】" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
-                        "【memo】" + str(self.memo)
+                        "" + current_price_info + \
+                        "【memo】" + str(self.plan_json['memo'])
 
     def close_order(self):
         # オーダークローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -744,19 +779,14 @@ class order_information:
         else:
             order_info_for_com = self.order_class.memo
 
-        # # 一時的かも（オーダートリガーとなるクラスの情報を入れる場合
-        # if self.trigger_class is None:
-        #     trigger_info = 0
-        # else:
-        #     trigger_info = self.trigger_class.
-
         # ②本文作成
         if trade_latest['state'] == "CLOSED":
             # res1 = "【Unit】" + str(trade_latest['currentUnits'])
             res1 = "【Unit】" + str(units_for_view * direction)
             id_info = "【orderID】" + str(self.o_id) + "【tradeID】" + str(self.t_id)
             res2 = "【決:" + str(trade_latest['averageClosePrice']) + ", " + "取:" + str(trade_latest['price']) + "】"
-            res3 = "【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "/ー域:" + str(self.lose_max_plu)
+            res3 = ("【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "@" + str(self.win_max_price)
+                    + "/ー域:" + str(self.lose_max_plu) + "@" + str(self.lose_max_price))
             res3 = res3 + "【ポジション期間の最大/小の振れ幅(円)】 ＋域:" + str(self.win_max_plu_yen) + "/ー域:" + str(self.lose_max_plu_yen)
             res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past'])
             res4 = "【今回結果】" + str(trade_latest['PLu']) + "," + str(trade_latest['realizedPL']) + "円\n"
@@ -766,7 +796,7 @@ class order_information:
             res7 = "【合計】累計最大PL:" + str(order_information.total_PLu_max) + ",最小PL:" + str(
                 order_information.total_PLu_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
-                order_information.minus_yen_position_num)
+                order_information.minus_yen_position_num) + ", lcChange回数" + str(order_information.lc_change_num)
             self.send_line("■■■ 解消:", self.name, '\n',
                            res4, res5, res1, id_info, res2, self.for_line_send_order_info_at_close, res3, res6, res7, res8, name_list)
             # 履歴の書き込み
@@ -800,7 +830,9 @@ class order_information:
                 "tp_price_original_plan": self.plan_json['tp_price_original'],
                 "move_ave5": self.move_ave5,
                 "move_ave60": self.move_ave60,
-                "memo": order_info_for_com
+                "memo": order_info_for_com,
+                "current_price_gap": self.current_candle_price_gap,
+                "rr": round(self.plan_json.get('tp_range', 0) / self.plan_json.get('lc_range', 0), 1)
             }
             order_information.result_dic_arr.append(result_dic)
             # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
@@ -810,7 +842,8 @@ class order_information:
             res1 = "【Unit】" + str(trade_latest['currentUnits'])  # )str(units_for_view * direction)
             id_info = "【orderID】" + str(self.o_id) + "【tradeID】" + str(self.t_id)
             res2 = "【決:" + str(self.current_price) + ", " + "取:" + str(trade_latest['price']) + "】"
-            res3 = "【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "/ー域:" + str(self.lose_max_plu)
+            res3 = ("【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "@" + str(self.win_max_price)
+                    + "/ー域:" + str(self.lose_max_plu) + "@=" + str(self.lose_max_price))
             res3 = res3 + "【ポジション期間の最大/小の振れ幅(円)】 ＋域:" + str(self.win_max_plu_yen) + "/ー域:" + str(self.lose_max_plu_yen)
             res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past'])
             res4 = "【今回結果】" + str(trade_latest['PLu']) + "," + str(trade_latest['unrealizedPL']) + "円\n"
@@ -820,7 +853,7 @@ class order_information:
             res7 = "【合計】累計最大PL" + str(order_information.total_PLu_max) + ",最小PL" + str(
                 order_information.total_PLu_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
-                order_information.minus_yen_position_num)
+                order_information.minus_yen_position_num) + ", lcChange回数" + str(order_information.lc_change_num)
 
             self.send_line("■■■強制クローズ解消:", self.name, '\n',
                            res4, res5, res1, id_info, res2, self.for_line_send_order_info_at_close, res3, res6, res7, res8, name_list)
@@ -853,7 +886,9 @@ class order_information:
                 "tp_price_original_plan": self.plan_json['tp_price_original'],
                 "move_ave5": self.move_ave5,
                 "move_ave60": self.move_ave60,
-                "memo": order_info_for_com
+                "memo": order_info_for_com,
+                "current_price_gap": self.current_candle_price_gap,
+                "rr": round(self.plan_json.get('tp_range', 0) / self.plan_json.get('lc_range', 0), 1)
             }
             order_information.result_dic_arr.append(result_dic)
             # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
@@ -905,8 +940,6 @@ class order_information:
             lines.append(line)
         # 改行で結合
         lines.append(f"{a_sum:>{max_width}}")
-        output_str = "\n".join(lines)
-        # tk.line_send("■■■:", "\n", output_str)
 
         # ③ピボット結果の送信
         temp = pd.read_csv(history_path)
@@ -923,7 +956,6 @@ class order_information:
             lines.append(line)
         pivot_str = "\n".join(lines)
         print(pivot_str)
-        # tk.line_send("■■■:", "\n", pivot_str)
 
     def close_trade(self, units=None):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
@@ -993,8 +1025,10 @@ class order_information:
         # pips
         if self.lose_max_plu > self.t_pl_u:  # 最小値更新時
             self.lose_max_plu = self.t_pl_u
+            self.lose_max_price = self.current_price
         if self.win_max_plu < self.t_pl_u:  # 最大値更新時
             self.win_max_plu = self.t_pl_u
+            self.win_max_price = self.current_price
         # yen(なぜfloatここはいるんだ？上はいらないのに）
         # print(self.lose_max_plu_yen, self.t_unrealize_pl)
         if float(self.lose_max_plu_yen) > float(self.t_unrealize_pl):  # 最小値更新時
@@ -1162,7 +1196,9 @@ class order_information:
                     "tp_price_original_plan": self.plan_json['tp_price_original'],
                     "move_ave5": self.move_ave5,
                     "move_ave60": self.move_ave60,
-                    "memo": "Order強制キャンセル"
+                    "memo": "Order強制キャンセル",
+                    "current_price_gap": self.current_candle_price_gap,
+                    "rr": round(self.plan_json.get('tp_range', 0) / self.plan_json.get('lc_range', 0), 1)
                 }
                 history_path = tk.history_folder_path + 'history.csv'
                 try:
@@ -1241,6 +1277,7 @@ class order_information:
         # (0)現在価格の取得
         temp_current_price = self.oa.NowPrice_exe("USD_JPY")
         self.current_price_all = temp_current_price
+        # print("@@@@@@@@@@@@@@@@@1280 pasition", self.current_price_all)
         if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
             print("API異常で現在価格が取得できず（ポジションクラス）")
             return 0
@@ -1399,7 +1436,7 @@ class order_information:
         if self.lc_change_num != 0:
             pass
             # LC_Changeが執行されている場合は、Candleも有効にする
-            self.lc_change_from_candle(candle_analysis_class)
+            # self.lc_change_from_candle(candle_analysis_class)
 
         # # アラート
         # if self.alert_watch_exe:
@@ -2325,11 +2362,14 @@ class order_information:
         self.plan_json['target_price'] = float(price)
         self.plan_json['tp_price'] = float(tp_price)
         self.plan_json['lc_price'] = float(lc_price)
+        self.plan_json['tp_range'] = self.plan_json['target_price'] + self.plan_json['tp_price']
+        self.plan_json['lc_range'] = self.plan_json['target_price'] - self.plan_json['lc_price']
         self.plan_json['lc_price_original'] = float(lc_price)
         self.plan_json['tp_price_original'] = float(tp_price)
         self.plan_json['direction'] = int(json['currentUnits']) / abs(int(json['currentUnits']))
         self.plan_json['units'] = json['currentUnits']
         self.plan_json['type'] = "Already"
+        self.plan_json['priority'] = 5
 
         self.life = True
         self.name = name + "_" + str(gene.delYearDay(datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")))
@@ -2338,6 +2378,8 @@ class order_information:
 
         self.waiting_order = False
         self.order_register_time = 0
+        # 基本情報
+        self.current_price = self.current_price
         # オーダー情報(オーダー発行時に基本的に上書きされる）
         self.o_id = -1  # ★大事な代入
         self.o_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
@@ -2476,30 +2518,63 @@ class order_information:
         クローズを検討する
         """
         s = "    "
-        first_lc_change = self.lc_change_dic_arr[0]['ensure']
-        if int(self.t_time_past_sec) >= 1200:
-            # print("クローズ検討", self.name, self.t_time_past_sec, self.t_unrealize_pl, self.win_max_plu, first_lc_change)
-            if float(self.t_unrealize_pl) >= 0 and float(self.win_max_plu) <= first_lc_change * 0.6:
-                # 時間がたっても、くすぶっていいる場合（TPの半分以下のMAXで、まだプラス域）
-                # print("経過時間がたっても、MAX伸びておらず、微妙なプラスが続いている場合⇒もう少なくても利確")
-                # self.close_trade()
+        if len(self.lc_change_dic_arr) == 0:
+            first_lc = self.plan_json["lc_range"]
+        else:
+            first_lc = self.lc_change_dic_arr[0]['ensure']
+
+        # 以下は未実施の場合のみ。
+        if self.close_consider_done:
+            # 実施済みのため、実施無し。
+            return 0
+
+        # 方針：プラス域、かつ、15分経過時。tpRangeが40％以上(lcRangeの7割程度)の場合、現プラス割合の-30％にLCを持ってくる
+        tp_range = self.plan_json['tp_range']
+        pl = float(self.t_pl_u)  # 変数を短くする
+        if pl >= 0:
+            # 一度最高額のほうに行っているのかを検証
+            if float(self.win_max_plu) >= first_lc * 0.6:
+                # 一度最高額の近くに行って、戻ってくるところ・・？
                 pass
-            if float(self.t_unrealize_pl) <= 0 and float(self.win_max_plu) <= 0.02:
-                # tk.line_send("クローズ勧告", self.name, self.t_time_past_sec, "秒", self.t_unrealize_pl, "円、max", self.win_max_plu)
-                # self.close_trade()
-                pass
-        if int(self.t_time_past_sec) >= 2400:
-            if float(self.t_unrealize_pl) >= 0 and self.plan_json['lc_range'] >= 0.1:
-                # プラス域、かつ、range広めの場合（次のポジションに行きたいので、早めに終わらせたい）
-                if not self.close_consider_done:
-                    data = {"stopLoss": {"price": str(self.plan_json["target_price"]), "timeInForce": "GTC"}, }
-                    tk.line_send("時間がたったため、強制的に終了", self.name)
-                    res = self.oa.TradeCRCDO_exe(self.t_id, data)
+
+            # 本番
+            if int(self.t_time_past_sec) >= 900:  # 15分以上経過時
+                ratio = round(pl / tp_range, 1)
+                if ratio > 0.4:
+                    print(s, "TPの50％あるので終了?", pl, tp_range)
+                    print(self.plan_json)
+                    tp_range_ratio = ratio - 0.39
+                    new_tp_range = round(tp_range_ratio * tp_range, 3)  # オーダーとしてはlcだたtp域のためTPと命名
+                    new_lc_price = round(float(self.t_execution_price) + (new_tp_range * self.plan_json['direction']), self.u)
+                    data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+                    print(s, "確認用@classPosition 2555 NewTpRange", new_tp_range, new_lc_price)
+                    print(s, "確認用@classPosition 2555 NewTpRange", ratio, tp_range_ratio)
+                    res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
+                    if res['error'] == -1:
+                        self.send_line("    LC変更ミス＠lc_change")
+                        return 0  # APIエラー時は終了
                     self.close_consider_done = True
-                    self.close_trade()
-            else:
-                pass
-                # print(s, "どうせなら0になるまで待つ？")
+                    self.send_line("　(LC底上げ50％越え)", self.name, self.t_pl_u, round(self.plan_json['lc_price'], self.u),
+                                   "⇒", new_lc_price,
+                                   "Border:", round(pl, self.u), "保証",
+                                   round(new_tp_range, self.u), "Posiprice",
+                                   self.t_execution_price,
+                                   "予定価格", round(self.plan_json['target_price'], self.u))
+                    self.plan_json['lc_price'] = new_lc_price
+                    order_information.lc_change_num = order_information.lc_change_num + 1
+                    # lc_changeが発生しないように、lc_change側にDoneを埋める
+                    for i, item in enumerate(self.lc_change_dic_arr):
+                        item['done'] = True
+                        item['time_done'] = datetime.datetime.now()
+                        item['lc_change_exe'] = False  # 実行後はFalseする（１回のみ）
+                else:
+                    pass
+                    # data = {"stopLoss": {"price": str(self.plan_json["target_price"]), "timeInForce": "GTC"}, }
+                    # tk.line_send("時間がたったため、強制的に終了", self.name)
+                    # res = self.oa.TradeCRCDO_exe(self.t_id, data)
+                    # self.close_consider_done = True
+                    # self.close_trade()
+
 
 def position_check_no_args():
     """

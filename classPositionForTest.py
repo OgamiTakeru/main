@@ -364,7 +364,7 @@ class order_information:
         self.reset()  # 一旦リセットする
 
         self.order_class = order_class
-        plan = order_class.exe_order
+        plan = order_class.exe_order_plan
 
         # ■受け取った情報を、インスタンス変数に入れていく
         self.order_register_time = datetime.datetime.now()

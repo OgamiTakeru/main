@@ -56,8 +56,8 @@ class PeaksClass:
             self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
             self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
             # 抵抗線関係の値　cal_big_mountain関数
-            self.arrowed_gap = 0.017  # 0.0245  # 抵抗線を探す時、ずれていてもいい許容値
-            self.arrowed_break_gap = 0.02  # 抵抗線を探す時、これ以上越えていると、Breakしてると判断する範囲
+            self.arrowed_gap = 0.03  # 0.0245  # 抵抗線を探す時、ずれていてもいい許容値
+            self.arrowed_break_gap = 0.012 # 抵抗線を探す時、これ以上越えていると、Breakしてると判断する範囲
             # 狭いレンジの期間の判定用の閾値
             self.check_very_narrow_range_range = 0.07  # 一つの足のサイズが、この閾値以下の場合、小さいレンジの可能性
             # 大きな動きのクライテリア
@@ -195,13 +195,13 @@ class PeaksClass:
             item_copy['opposite_peaks'] = spl_res['opposite_peaks']
             self.peaks_with_same_price_list.append(item_copy)
 
-        # 一番シンプルなpeaks_originalを作成する（長くなる要素を消して、表示がしやすいようにする）
-        # peaks_original = copy.deepcopy(self.peaks_original)# 深いコピーを作成
-        # for d in peaks_original:# 指定キーを削除
-        #     d.pop('next', None)
-        #     d.pop('previous_time_peak', None)
-        #     d.pop('support_info', None)
-        #     d.pop('memo_time', None)
+        # nowから5時間前
+        border_time = datetime.now() - timedelta(hours=1)
+        # 抽出
+        self.peaks_latest = [
+            d for d in self.peaks_original
+            if datetime.strptime(d['latest_time_jp'], '%Y/%m/%d %H:%M:%S') > border_time
+        ]
 
         # (4) 表示
         s = "   "
@@ -1030,7 +1030,6 @@ class PeaksClass:
 
         # ■■閾値の情報
         # Margin情報
-        arrowed_range = self.arrowed_gap
         # arrowed_range = self.recent_fluctuation_range * 0.07  # 最大変動幅の4パーセント程度
         # 山の情報
         mountain_foot_min = 60  # 山のすそ野の広さ 足の個数（この値以上の山の裾野の広さを狙う）
@@ -1050,7 +1049,7 @@ class PeaksClass:
         # ■■同一価格の探索
         break_num = 0  #
         same_price_num = 0
-        strength_border = 1  # この点数以下のストレングスはカウントしない（１点はしない）
+        strength_border = 0  # この点数以下のストレングスはカウントしない（１点はしない）
         break_border = 1  # この数以上のBreakが発生するまでの同一価格リストを求める
         break_border2 = 0  # この数以上のBreakが発生するまでの同一価格リストを求める
         for i, item in enumerate(peaks):
@@ -1094,7 +1093,7 @@ class PeaksClass:
 
             # Breakかを先に判定する
             if target_peak['direction'] == 1:
-                if item['peak'] > target_price + self.arrowed_break_gap:
+                if item['latest_body_peak_price'] > target_price + self.arrowed_break_gap:
                     # print("          Break up：", item['time'], item['peak_strength'])
                     # ターゲットピークを越えている場合(UpperLineで、上側に突き抜け）、NG
                     self.break_peaks.append({"i": i, "item": item, "time_gap": time_gap_sec})
@@ -1105,7 +1104,7 @@ class PeaksClass:
                     # 共通
                     break_num = break_num + 1
             else:
-                if item['peak'] < target_price - self.arrowed_break_gap:
+                if item['latest_body_peak_price'] < target_price - self.arrowed_break_gap:
                     # print("          Break：", item['time'], item['peak_strength'])
                     # ターゲットピークを越えている場合（lowerLineで下に突き抜け）、NG
                     self.break_peaks.append({"i": i, "item": item, "time_gap": time_gap_sec})
@@ -1117,14 +1116,14 @@ class PeaksClass:
                     break_num = break_num + 1
 
             # 同一価格リストを取得（Breakがn個発生するまでの同一価格、全体の同一価格、時間内の同一価格）
-            body_gap_abs = abs(target_price - item['peak'])
-            if abs(item['latest_wick_peak_price'] - item['peak']) >= arrowed_range:
+            body_gap_abs = abs(target_price - item['latest_body_peak_price'])
+            if abs(item['latest_wick_peak_price'] - item['latest_body_peak_price']) >= self.arrowed_gap:
                 # 髭が長すぎる場合は無効（無効は、上限をオーバーする値に設定してしまう
-                body_wick_gap_abs = arrowed_range + 1  # 確実にarrowed_rangeより大きな値
+                body_wick_gap_abs = self.arrowed_gap + 1  # 確実にarrowed_rangeより大きな値
             else:
                 body_wick_gap_abs = abs(target_price - item['latest_wick_peak_price'])
             # if body_gap_abs <= arrowed_range or body_wick_gap_abs <= arrowed_range:  # 髭も混み
-            if body_gap_abs <= arrowed_range:  # or body_wick_gap_abs <= arrowed_range:
+            if body_gap_abs <= self.arrowed_gap:  # or body_wick_gap_abs <= arrowed_range:
                 # 同一価格とみなせる場合
                 # print("             同一価格：")
                 self.same_price_list.append({"i": i, "item": item, "time_gap": time_gap_sec})

@@ -25,7 +25,8 @@ class wrap_all_analysis():
         # 最終的なオーダー
         print("最終的なオーダー")
         for exe_order_class in self.exe_order_classes:
-            print(exe_order_class.exe_order)
+            print(exe_order_class.exe_order_plan['name'])
+            print("  ", exe_order_class.exe_order_plan)
 
     def orders_add_this_class(self, order_classes):
         """

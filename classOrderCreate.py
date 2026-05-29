@@ -34,7 +34,7 @@ class Order:
         # ■■
         # OandaAPI用のにはこのJsonを送信することでオーダーを発行可能
         self.data = {}
-        self.exe_order = {}
+        self.exe_order_plan = {}
         # オーダーを管理するための情報群（デフォルト値付）
         self.oa_mode = 2
         self.target = 0  # 正の値で記載。margin または　target_priceが渡される（引数のコピー）
@@ -107,7 +107,7 @@ class Order:
                 }
             }
         # ■ポジション管理用含めた情報
-        self.exe_order = {
+        self.exe_order_plan = {
             "decision_time": self.decision_time,
             "units": self.units,
             "direction": self.direction,
@@ -130,7 +130,8 @@ class Order:
             "for_api_json": self.data,  # 発注API用(classPositionにはexe_orderしか渡さないため、その中に入れておく）
             "lc_change": self.lc_change,
             "move_ave": self.move_ave,  # 参考情報だが追加（無いとLineSendでエラーになるが、オーダーには影響ない）
-            "candle_lc_change_type": "5M"  # lc_changeで利用する足
+            "candle_lc_change_type": "5M",  # lc_changeで利用する足,
+            "memo": self.memo
         }
 
         # クラスにある情報を明示しておく（混乱防止用で、冗長な書き方）
@@ -164,7 +165,7 @@ class Order:
         # ■■
         # OandaAPI用のにはこのJsonを送信することでオーダーを発行可能
         self.data = {}
-        self.exe_order = {}
+        self.exe_order_plan = {}
         # オーダーを管理するための情報群（デフォルト値付）
         self.oa_mode = 2
         self.target = 0  # 正の値で記載。margin または　target_priceが渡される（引数のコピー）

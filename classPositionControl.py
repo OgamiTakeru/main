@@ -81,8 +81,8 @@ class position_control:
         # max_dict = max(order_dic_list, key=lambda d: d["priority"], default=None)
         # max_dict = max(order_dic_list, key=lambda d: d.get("priority", float("-inf")))
         # order_max_priority = max_dict['priority']
-        max_instance = max(order_classes, key=lambda x: x.exe_order["priority"])
-        order_max_priority = max_instance.exe_order['priority']
+        max_instance = max(order_classes, key=lambda x: x.exe_order_plan["priority"])
+        order_max_priority = max_instance.exe_order_plan['priority']
         if order_max_priority >=100:
             order_priority_class = "high"
             i_from = self.high_i_from
@@ -755,8 +755,8 @@ class position_control_for_test(position_control):
         # max_dict = max(order_dic_list, key=lambda d: d["priority"], default=None)
         # max_dict = max(order_dic_list, key=lambda d: d.get("priority", float("-inf")))
         # order_max_priority = max_dict['priority']
-        max_instance = max(order_classes, key=lambda x: x.exe_order["priority"])
-        order_max_priority = max_instance.exe_order['priority']
+        max_instance = max(order_classes, key=lambda x: x.exe_order_plan["priority"])
+        order_max_priority = max_instance.exe_order_plan['priority']
         if order_max_priority >=100:
             order_priority_class = "high"
             i_from = self.high_i_from
