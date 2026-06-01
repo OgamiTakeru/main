@@ -100,14 +100,14 @@ class MainAnalysis:
         # peaks_skip = self.peaks_class.skipped_peaks_hard
         peaks = self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
-        print(self.s, "<SKIP前>", len(peaks), asizeof.asizeof(peaks))
-        gene.print_arr(peaks[:4])
+        print(self.s, "<SKIP前ggg>", len(peaks), asizeof.asizeof(peaks))
+        gene.print_peaks(peaks[:4])
         print("↓")
-        gene.print_arr(peaks[-2:])
+        gene.print_peaks(peaks[-2:])
         print("")
 
         print(self.s, "<SKIP後＞", len(peaks_skip), asizeof.asizeof(peaks_skip))
-        gene.print_arr(peaks_skip[:3])
+        gene.print_peaks(peaks_skip[:3])
         print("")
 
         # print(self.s, "<SKIP前 1h足>", len(self.peaks_class_hour.peaks_original), asizeof.asizeof(self.peaks_class_hour.peaks_original))
@@ -358,7 +358,6 @@ class MainAnalysis:
         foot = 5
         if foot == 5:
             # ５分足の場合
-            # 基本情報
             peaks_class = self.peaks_class
             peaks = self.peaks_class.peaks_original
             df = self.peaks_class.df_r_original  # これは
@@ -370,7 +369,6 @@ class MainAnalysis:
             tp_min = 0.045
         else:
             # 30分足の場合
-            # 基本情報
             peaks_class = self.peaks_class_m30
             peaks = self.peaks_class_m30.peaks_original  # self.peaks_class.peaks_original
             df = self.peaks_class_m30.df_r_original  # self.peaks_class.df_r_original  # これは
@@ -391,8 +389,6 @@ class MainAnalysis:
                 return 0
 
         # 途中終了の場合
-        # if peaks[1]['gap'] < exist_order_gap_border:
-        #     print(s, "対象が小さい", peaks[1]['gap'])
         if peaks[0]['count'] != 2:  # and self.mode == "inspection"
             print(s, "カウントが２以外", peaks[0]['count'])
             return 0
@@ -410,7 +406,6 @@ class MainAnalysis:
         l = peaks[0]
         r = peaks[1]
         print(l['count'])
-        print(r)
         print(df.iloc[1]['time_jp'], df.iloc[1]['body_abs'])
         print(l['gap'], r['gap'], r['gap'] * 0.7, r['gap'] * 1.3)
         if r['count'] >= 4:
@@ -485,7 +480,7 @@ class MainAnalysis:
         op.cal_target_price_stop(target_margin_stop)  # targetマージンからtarget価格を計算する(lc_rangeもここで計算される）
         is_exist = op.compare_with_exist_positions(self.position_control_class, op.dir_stop, op.order_stop_priority)
         # 逆方向のオーダー用
-        op.cal_target_price_oppo_stop(0.005)
+        # op.cal_target_price_oppo_stop(0.005)
 
         # オーダー2用の数字の生成
         order_class1 = None
@@ -854,8 +849,8 @@ class OrderPoints:
                 f"Group {i}: median_price = {g['median_price']:.3f}, "
                 f"median = {g['median']:.3f}, "
                 f"total_strength = {g['total_strength']}, "
-                # f"ave_strength = {g['ave_strength']}, "
                 f"count = {g['count']}, "
+                f"ave_strength = {g['ave_strength']}, "
                 # f"near_far_gap = {g['near_far_gap']}, "
                 # f"near = {g['near']}, "
                 # f"near_p = {g['near_price']}, "
@@ -875,8 +870,8 @@ class OrderPoints:
                 f"Group {i}: median_price = {g['median_price']:.3f}, "
                 f"median = {g['median']:.3f}, "
                 f"total_strength = {g['total_strength']}, "
-                # f"ave_strength = {g['ave_strength']}, "
                 f"count = {g['count']}, "
+                f"ave_strength = {g['ave_strength']}, "
                 # f"near_far_gap = {g['near_far_gap']}, "
                 # f"near = {g['near']}, "
                 # f"near_p = {g['near_price']}, "
@@ -891,110 +886,44 @@ class OrderPoints:
             )
 
         # ■解析１　利確とロスカの強さについて
-        print("------------------------------------------------------------------")
-        tp_len = len(tp_lines)
-        lc_len = len(lc_lines)
-        print(s, "len比較 tp", tp_len, "lc", lc_len)
-        if tp_len >= lc_len * 2.5 or lc_len >= tp_len * 2.5:
-            if tp_len > lc_len:
-                print(s, "tpが重め　TP取りにくそう")
+        print("-lc-----------------------------------------------------------------")
+        if len(lc_lines) != 0:
+            # riverPeakが強い抵抗線に含まれているか、または過去最高のpeakかを判定する
+            river_peak_price = peaks[1]['latest_body_peak_price']
+            item_with_river = next((item for item in lc_lines if river_peak_price in item['prices']), None)
+            if item_with_river:
+                print(s, "riverを含む抵抗線", item_with_river['median_price'], "price", river_peak_price)
+                if item_with_river['total_strength'] >= 5 and item_with_river['count'] >= 2:
+                    print(s, "riverがそこそこの抵抗線に含まれる　⇒　ここらでLC方向は歯止めがかかる rr1.2?")
+                    lc_range = peaks[0]['gap']
+                    print(s, "latest_range(riverまでのrange)", lc_range)
+                else:
+                    print(s, "riverがそこそこの抵抗線に含まれるが、弱い⇒LC方向に持っていく可能性")
             else:
-                print(s, "lcが重め　LCに行かなそう（TP行きやすいかも）")
-
-        if len(tp_lines) == 0:
-            print("TPLineが０のため、キャンセルしておく")
-            # self.stop_order_cancel = 9
-            # return 0
+                print(s, "riverはLineに含まれない　⇒　LC方向にもっと行く可能性あり")
+        else:
+            print("LC 0本")
+        # 過去最高のピーク化を確認
+        river_peak_strength = peaks[1]['peak_strength']
+        if river_peak_strength == 8:
+            print(s, "river peaksは最高到達点", river_peak_strength)
+        elif river_peak_strength == 5:
+            print(s, "river peaksは通常ポイント", river_peak_strength)
+        else:
+            print(s, "river_peaksは小さいポイント", river_peak_strength)
 
         # ■解析２　TPの位置について
         print("-tp-----------------------------------------------------------------")
         # 一つ目のそこそこ強い物を取得する
         if len(tp_lines) != 0:
-            print(s, "TPlineが存在する場合")
-            first_tp_line = {}
-            strongest_line = {}
-            if tp_len != 0:
-                # 最も近く、そこそこの強さのラインを取得
-                for i, line in enumerate(tp_lines):
-                    strength = line['total_strength']
-                    count = line['count']
-
-                    if strength > 5 and strength / count > 3:
-                        first_tp_line = line
-                        break
-                # 一番大きいラインを取得
-                strongest_line = max(tp_lines, key=lambda x: x['total_strength'])
-            else:
-                # tp linesが0本の場合
-                print(s, "TP linesが0本です(強引にオーダーをコード）")
-
-            if len(first_tp_line) == 0:
-                print(s, "該当のTPなし")
-                first_tp_line = tp_lines[0]
-                strongest_line = tp_lines[0]
-            print(" 初回のTPLine", first_tp_line)
-            print("            streng", first_tp_line['total_strength'], "count", first_tp_line['count'], "gap",
-                  first_tp_line['median'])
-            print(" もっとも強いTPline", strongest_line)
-            print("            streng", strongest_line['total_strength'], "count", strongest_line['count'], "gap",
-                  strongest_line['median'])
-            if strongest_line['ave_strength'] >= 6:
-                # 8を含んでいそうな場合(平均が6以上の強さ）
-                time_gap_min = gene.cal_str_time_gap(peaks[0]['latest_time_jp'], strongest_line['oldest_time'])[
-                    'gap_abs_min']
-                print(s, "強いラインは、突破しかかっている状況", peaks[0]['latest_time_jp'],
-                      strongest_line['oldest_time'])
-                if time_gap_min <= 80:
-                    print(s, "時間差短め⇒突破する可能性あり・・？")
-                else:
-                    print(s, "時間差だいぶ前⇒強い抵抗にもう一度上当たりにいく可能性")
-
-            # 時間的に直近のもののみで判定してみる
-            print("currenttime", current_time)
-            filtered_groups = [
-                g for g in tp_lines
-                if gene.cal_str_time_gap(current_time, g['oldest_time'])['gap_abs_min'] <= 60
-            ]
-            print("  TP LINES（直近）", len(filtered_groups))
-            for i, g in enumerate(filtered_groups):
-                print(
-                    f"{s}"
-                    f"Group {i}: median_price = {g['median_price']:.3f}, "
-                    f"median = {g['median']:.3f}, "
-                    f"strength = {g['total_strength']}, "
-                    f"ave_strength = {g['ave_strength']}, "
-                    f"count = {g['count']}, "
-                    f"near_far_gap = {g['near_far_gap']}, "
-                    f"near = {g['near']}, "
-                    f"near_p = {g['near_price']}, "
-                    f"far = {g['far']}, "
-                    f"far_p = {g['far_price']}, "
-                    f"oldest_time = {g['oldest_time']}, "
-                    f"newest_time = {g['newest_time']}, "
-                    f"max_gap_minutes = {g['max_gap_minutes']}, "
-                    f"max_gap_start = {g['max_gap_start']}, "
-                    f"max_gap_end = {g['max_gap_end']}, "
-                    f"prices = {', '.join(map(str, g['prices']))}"
-                )
+            max_line = max(tp_lines, key=lambda x: x['total_strength'])
+            if max_line['median'] <= 0.03:
+                self.stop_order_cancel = "median 0.03以下"
+                return 0
         else:
-            print("　TP LINES　0本")
+            # TPが0本
+            pass
 
-        # ■解析３　LCの強さについて(LCが強い場合それ以上行かなそうだから、おおきく出てもよい・・？）
-        lc_base_peak_price = peaks[1]['latest_body_peak_price']
-        base_strong_line_strength = 0
-        print("LC Base Price", lc_base_peak_price)
-
-        if len(lc_lines) != 0:
-            for i, line in enumerate(lc_lines):
-                # 判定１
-                if lc_base_peak_price in line['prices']:
-                    base_strong_line_strength = line['total_strength']
-
-            # print(" 初回のLCline", first_lc_line)
-            # print("            ", first_lc_line['total_strength'], first_lc_line['count'], first_lc_line['far'])
-        else:
-            print("　LC LINES 0本")
-        print("river peakのライン強度", base_strong_line_strength)
 
         # ■直近2時間でのPeaksの数
         if len(peaks_latest) >= 5:
@@ -1230,7 +1159,6 @@ class OrderPoints:
                 {"exe": True, "time_after": 0, "trigger": tr, "ensure": tp_range * 0.1},
             ]
 
-        # line_info = self.predict_lines_wrap_up(target_price, target_dir)  # self.lower等を算出
         # 明示的に、結果を代入していく
         self.target_price_stop = target_price  # ストップ（順張り）用の価格
         self.tp_price_stop = tp_price
@@ -1250,126 +1178,16 @@ class OrderPoints:
         self.lc_price_stop_wick = 0
         self.lc_range_stop_wick = 0
 
-    def predict_line_group(self, lines, order=1, threshold=0.017):
-        """
-        lines: 辞書のリスト
-            必須キー:
-                - latest_body_peak_price
-                - peak_strength
-                - time（datetime想定）
-        order: 1=昇順, -1=降順
-        """
-
-        import statistics
-        from datetime import datetime
-
-        price_key = "latest_body_peak_price"
-
-        # --- 価格でソート ---
-        data_sorted = sorted(lines, key=lambda x: x[price_key])
-
-        # --- グループ化 ---
-        groups = []
-        current_group = []
-
-        for item in data_sorted:
-
-            if not current_group:
-                current_group.append(item)
-                continue
-
-            min_price = current_group[0][price_key]
-
-            if (item[price_key] - min_price) <= threshold:
-                current_group.append(item)
-            else:
-                groups.append(current_group)
-                current_group = [item]
-
-        if current_group:
-            groups.append(current_group)
-
-        # --- グループ情報作成 ---
-        group_info = []
-
-        for g in groups:
-            # ---- 価格系 ----
-            prices = sorted([x[price_key] for x in g])
-            print("prices", prices)
-            median_price = statistics.median(prices)
-            total_strength = sum(x["peak_strength"] for x in g)
-
-            # ---- 時間系 ----
-            times_raw = [x["time"] for x in g]
-
-            # datetime前提（文字列なら変換）
-            if isinstance(times_raw[0], str):
-                times = sorted([
-                    datetime.strptime(t, "%Y/%m/%d %H:%M:%S")
-                    for t in times_raw
-                ])
-            else:
-                times = sorted(times_raw)
-
-            oldest_time = times[0]
-            newest_time = times[-1]
-
-            # ---- 最大ギャップ ----
-            max_gap = 0
-            gap_start = None
-            gap_end = None
-
-            if len(times) >= 2:
-                for t1, t2 in zip(times, times[1:]):
-                    gap = (t2 - t1).total_seconds() / 60  # 分
-
-                    if gap > max_gap:
-                        max_gap = gap
-                        gap_start = t1
-                        gap_end = t2
-
-            # ---- 期間全体（参考用）----
-            total_span = (newest_time - oldest_time).total_seconds() / 60 if len(times) >= 2 else 0
-
-            group_info.append({
-                "median_price": median_price,
-                "count": len(g),
-                "total_strength": total_strength,
-                "ave_strength": round(total_strength / len(g), 2),
-                "prices": prices,
-
-                # 時間情報
-                "oldest_time": oldest_time,
-                "newest_time": newest_time,
-
-                # ←今回の主役
-                "max_gap_minutes": max_gap,
-                "max_gap_start": gap_start,
-                "max_gap_end": gap_end,
-
-                # おまけ（あとで使える）
-                "total_span_minutes": total_span,
-            })
-
-        # --- 並び替え ---
-        group_info = sorted(
-            group_info,
-            key=lambda x: x["median_price"],
-            reverse=(order == -1)
-        )
-        # for i, item in enumerate(group_info):
-        #     print( item)
-        return group_info
 
     def make_same_price_group(self, peaks,
-                              direction,
+                              upper_lower,
                               target_price,
                               width=0.03,
                               direction_filter=None,
                               sort_direction=-1,  # 1=昇順, -1=降順
                               ):
         # priceで絞り込み
-        if direction == -1:
+        if upper_lower == -1:
             # 下側の場合
             filtered_peaks = [
                 p for p in peaks
@@ -1379,8 +1197,10 @@ class OrderPoints:
             # 上側の場合
             filtered_peaks = [
                 p for p in peaks
-                if float(p['latest_body_peak_price']) > target_price
+                if float(p['latest_body_peak_price']) >= target_price
             ]
+        # print("   ...", upper_lower)
+        # print(filtered_peaks)
         # directionで絞り込み
         if direction_filter is not None:
             filtered_peaks = [
@@ -1414,22 +1234,17 @@ class OrderPoints:
             ]
             median_price = median(prices)
             results.append({
-
-                # 元データも保持
                 # 'items': items,
                 'median_price': median_price,
                 'median': round(abs(target_price - median_price), 3),
                 "total_strength": sum(float(x['peak_strength']) for x in items),
-                "ave_strength": sum(float(x['peak_strength']) for x in items),
+                'count': len(items),
+                "ave_strength": round(sum(float(x['peak_strength']) for x in items) / len(items) if items else 0, 1),
                 'prices': prices,
                 'range_min': round(group_key, 5),
                 'range_max': round(group_key + width, 5),
-                # グループのprice一覧
-
                 'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
-                # 一番古い時刻
                 'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
-                'count': len(items),
             })
         # median_price降順
         results = sorted(
@@ -1454,21 +1269,20 @@ class OrderPoints:
         ]
         # for i, item in enumerate(peaks):
         #     print(item)
-        # 価格でフィルタ
-        peaks = [
-            p for p in peaks
-            if float(p['latest_body_peak_price']) < target_price
-        ]
         minus_groups = self.make_same_price_group(
             peaks=peaks,
-            direction=-1,
+            upper_lower=-1,  # target_priceより下側
             target_price=target_price,
             width=0.02,
-            # direction_filter=-1
+            sort_direction=-1  # 降順
         )
         for i, item in enumerate(minus_groups):
             print(item)
-        return minus_groups
+
+        # aveが1.5以上のもの。
+        filtered = [d for d in minus_groups if d["ave_strength"] >= 1.5 and d['count'] >= 2]
+
+        return filtered
 
     def predict_line_upper(self, target_price, time_before_h=3, threshold=0.023):
         # 現在価格より上にある、抵抗線候補を列挙する
@@ -1476,540 +1290,26 @@ class OrderPoints:
         # 変数置換
         margin = 0.000
         peaks = self.peaks[0:35]
-        same_price_list_sum_border = 3  # 同価格リストの合計値の下限（これ以上ないと、Lineとして認めない）
-        # nowから5時間前
+        # 時間でフィルタ
         border_time = datetime.strptime(self.current_time, '%Y/%m/%d %H:%M:%S') - timedelta(hours=time_before_h)
         peaks = [
             d for d in peaks
             if datetime.strptime(d['latest_time_jp'], '%Y/%m/%d %H:%M:%S') > border_time
         ]
-
-        # print(peaks[0]['latest_time_jp'], "-", peaks[-1]['latest_time_jp'])
-        price = "latest_body_peak_price"
-        lines = []
-
-        for i, item in enumerate(peaks):
-            if i == 0:
-                continue
-            if item[price] >= target_price - margin:
-                temp = self.line_detect(i)
-                if temp['same_price_list_comp_total'] >= same_price_list_sum_border:
-                    # print("上の価格あったよ", item['latest_time_jp'], temp['same_price_list_comp_total'], item[price], item['direction'])
-                    lines.append(item)
-                else:
-                    pass
-                    # print("   ", item['latest_time_jp'], temp['same_price_list_comp_total'], item[price], item['direction'])
-
-        # グルーピング
-        line_group = self.predict_line_group(lines, 1, threshold)
-
-        # 情報の付与
-        for d in line_group:  # 差分を追加しておく
-            # Upperにおいて通常の向き
-            d["median"] = round(d["median_price"] - target_price, 3)
-            d['near_price'] = min(d['prices'], key=lambda x: x - target_price)
-            d['far_price'] = max(d['prices'], key=lambda x: x - target_price)
-            # 差を計算
-            d["near"] = round(d['near_price'] - target_price, 3)
-            d["far"] = round(d['far_price'] - target_price, 3)
-            d['near_far_gap'] = round(abs(max(d['prices'], key=lambda x: target_price - x) - min(d['prices'], key=lambda
-                x: target_price - x)), 3)
-
-        # 若干さかのぼって（価格を参照して）取得しているが、medianが離れている場合、除外する。
-        final_lines = []
-        s = "    "
-        for d in line_group:
-            # Ｕｐｐｅｒなので、ターゲットよりちょい下のものを入れるか入れないかの判定
-            # medianが0.008以上さかのぼっている場合は、無視する。
-            if d["median"] <= -0.008:
-                continue
-            # 基本は追加
-            final_lines.append(d)
-
-        return final_lines
-
-    def line_detect(self, target_no):
-        peaks_class = self.peaks_class
-        peaks_with_same_price_list = peaks_class.peaks_with_same_price_list
-        target_no_time = peaks_class.peaks_original[target_no]['latest_time_jp']
-        target_no_time = datetime.strptime(target_no_time, "%Y/%m/%d %H:%M:%S")
-
-        if len(peaks_with_same_price_list) == 0:
-            print("同一価格リストサイズ０")
-            return 0
-        # 変数代入＆表示
-        # Breakを許容するタイプのSamePriceList
-        same_price_list = peaks_with_same_price_list[target_no]["same_price_list_till_break"]  # ターンが抵抗線かを調べる。（リバーではない）
-        same_price_list_total = sum(d['item']["peak_strength"] for d in same_price_list)
-        same_price_list_till_over_5 = [d for d in peaks_with_same_price_list[target_no]["same_price_list_till_break"] if
-                                       d["item"]["peak_strength"] >= 5]
-        same_price_list_till_over_5_total = sum(d['item']["peak_strength"] for d in same_price_list_till_over_5)
-
-        # breakを許容しないタイプのSamePriceList
-        same_price_list0 = peaks_with_same_price_list[target_no][
-            "same_price_list_till_break0"]  # ターンが抵抗線かを調べる。（リバーではない）
-        same_price_list0_total = sum(d['item']["peak_strength"] for d in same_price_list0)
-        same_price_list_till_break0_5 = [d for d in peaks_with_same_price_list[target_no]["same_price_list_till_break0"]
-                                         if d["item"]["peak_strength"] >= 5]
-        same_price_list_till_break0_5_total = sum(d['item']["peak_strength"] for d in same_price_list_till_over_5)
-
-        # ブレークとか気にしないやつ
-        same_price_list_comp = peaks_with_same_price_list[target_no]["same_price_list"]  # ターンが抵抗線かを調べる。（リバーではない）
-        same_price_list_comp_total = sum(d['item']["peak_strength"] for d in same_price_list_comp)
-
-        # 方向
-        d = same_price_list_comp[0]['item']['direction']
-        target_price = same_price_list_comp[0]['item']['latest_body_peak_price']
-
-        if same_price_list_comp_total <= 1:
-            line_strength = 0
-            # print(self.s, "抵抗なし(自身のみの検出）")
-        elif same_price_list_comp_total <= 4:
-            line_strength = 4
-            # print("    引っ掛かり程度の抵抗線", target_price)
-        elif same_price_list_comp_total < 10:  # 12は5が二つと2が一つを想定。
-            if same_price_list_comp_total >= 5 and len(same_price_list) >= 2:
-                # print(self.s, "軽いダブルトップ抵抗線", same_price_list_total, same_price_list_till_over_5_total)
-                line_strength = 5
-            else:  # =5の場合は、自身のみ
-                # print("     ５自身のみか、複数の２", same_price_list_total, same_price_list_till_over_5_total)
-                line_strength = 3
-        else:
-            # 12以上
-            if same_price_list_comp_total >= 10:
-                # print(self.s, "相当強めの抵抗線", same_price_list_total, same_price_list_till_over_5_total)
-                line_strength = 10
-            else:
-                # print(self.s, "強めの抵抗線", same_price_list_total, same_price_list_till_over_5_total)
-                line_strength = 7
-
-        # print(":::", same_price_list_comp_total, line_strength)
-        # for i, item in enumerate(same_price_list_comp):
+        # for i, item in enumerate(peaks):
         #     print(item)
+        minus_groups = self.make_same_price_group(
+            peaks=peaks,
+            upper_lower=1,  # target_priceより下側
+            target_price=target_price,
+            width=0.02,
+            sort_direction=1  # 降順
+        )
+        for i, item in enumerate(minus_groups):
+            print(item)
 
-        # 狭い脚判定
-        if len(same_price_list) == 2:
-            latest_time = same_price_list[0]['item']['latest_time_jp']
-            oldest_time = same_price_list[1]['item']['latest_time_jp']
-            ans = gene.cal_str_time_gap(latest_time, oldest_time)
-            # print(self.s, ans['gap_abs']/60, "分", latest_time, oldest_time)
-
-        return {
-            "same_price_list": same_price_list,
-            "same_price_list_total": same_price_list_total,
-            "same_price_list_till_over_5": same_price_list_till_over_5,
-            "same_price_list_till_over_5_total": same_price_list_till_over_5_total,
-            "same_price_list0": same_price_list0,
-            "same_price_list0_total": same_price_list0_total,
-            "same_price_list_till_break0_5": same_price_list_till_break0_5,
-            "same_price_list_till_break0_5_total": same_price_list_till_break0_5_total,
-            "same_price_list_comp": same_price_list_comp,
-            "same_price_list_comp_total": same_price_list_comp_total,
-            "line_strength": line_strength,
-            "d": d,
-            "target_price": target_price,
-            "mes": "[" + str(d) + "抵抗線]" + str(target_price) + " "
-        }
-
-    def predict_lines_wrap_up(self, target_price, target_dir):
-        # LINEからTPやLCの値を提案する。
-        ss = "   "
-        s = "    "
-
-        # # 上下で格納(LINEの生成）
-        # if len(self.upper_lines) + len(self.lower_lines) == 0:
-        #     # upper
-        #     upper_lines = self.predict_line_upper(target_price)
-        #     # lower
-        #     lower_lines = self.predict_line_lower(target_price)
-        #     self.upper_lines = upper_lines
-        #     self.lower_lines = lower_lines
-        # else:
-        #     # 既に生成済の場合は、生成しない。
-        #     print(s, "すでにUpperLineとLowerLine検索実施済み")
-        upper_lines = self.predict_line_upper(target_price)
-        # lower
-        lower_lines = self.predict_line_lower(target_price)
-        self.upper_lines = upper_lines
-        self.lower_lines = lower_lines
-
-        # TPとLCでも格納
-        if target_dir == 1:
-            # 直近価格＝注文価格の場合 いずれも直近価格から近い順に並んでいる。
-            tp_lines = self.upper_lines
-            lc_lines = self.lower_lines
-        else:
-            # 直近価格＝注文価格の場合
-            tp_lines = self.lower_lines
-            lc_lines = self.upper_lines
-        print("TARGET PRICE:", target_price)
-        print("  TP LINES", len(tp_lines))
-        for i, g in enumerate(tp_lines):
-            print(
-                f"{s}"
-                f"Group {i}: median_price = {g['median_price']:.3f}, "
-                f"median = {g['median']:.3f}, "
-                f"strength = {g['total_strength']}, "
-                f"count = {g['count']}, "
-                f"near = {g['near']}, "
-                f"near_p = {g['near_price']}, "
-                f"far = {g['far']}, "
-                f"far_p = {g['far_price']}, "
-                f"prices = {', '.join(map(str, g['prices']))}"
-            )
-        print("  LC LINES", len(lc_lines))
-        for i, g in enumerate(lc_lines):
-            print(
-                f"{s}"
-                f"Group {i}: median_price = {g['median_price']:.3f}, "
-                f"median = {g['median']:.3f}, "
-                f"total_strength = {g['total_strength']}, "
-                f"count = {g['count']}, "
-                f"near = {g['near']}, "
-                f"near_p = {g['near_price']}, "
-                f"far = {g['far']}, "
-                f"far_price = {g['far_price']}, "
-                f"prices = {', '.join(map(str, g['prices']))}"
-            )
-
-        # ■■処理
-        #TPについて
-        print("新判定検証")
-        # [0]で固定ではなく、最初に有効なもの、探すのがいいかも
-        # count1 strength5 のみは除外。それ以外。
-        print("TP幅検討")
-        tp_price_min = tp_range_min = tp_price = tp_range = 0
-        lc_change = []
-        lc_change_temp = []
-        rr = 1.6
-        trigger_m = 0.01
-        ensure_m = 0.01
-        order_cancel = 0  # 0の場合はオーダー通常通りあり　それ以外はオーダー発行無しを示すフラグ＋種類
-        if len(tp_lines) != 0:
-            for i, line in enumerate(tp_lines):
-                far = line['far']
-                med_price = line['median_price']
-                med = line['median']
-                far_price = line['far_price']
-                near = line['near']
-                near_price = line['near_price']
-                strength = line['total_strength']
-                count = line['count']
-                print("  TP検討", med_price)
-                # 判定
-                if count == 1:
-                    if strength == 8:
-                        # トレンドで新領域に入った場合
-                        print(s, "新トレンドに入ったところ", med_price, "count:", count, "strength", strength)
-                        if i == 0 or tp_price_min == 0:
-                            tp_price_min = med_price
-                            tp_range_min = med
-                            lc_change.append(
-                                {"exe": True, "time_after": 0, "trigger": med + trigger_m, "ensure": med - ensure_m,
-                                 "trigger_price": med_price + trigger_m, "ensure_price": med_price - ensure_m})
-                    elif strength <= 5:
-                        print(s, "単発ライン⇒基本無視(LC change候補）", med_price, "count:", count, "strength", strength)
-                        lc_change_temp.append(
-                            {"exe": True, "time_after": 0, "trigger": med, "ensure": med,
-                             "trigger_price": med_price, "ensure_price": med_price})
-                elif 2 <= count <= 3:
-                    if strength > 10:
-                        print(s, "比較的抵抗するライン(LCチェンジ候補)")
-                        if far <= 0.030:
-                            pass
-                            print(s, "farですら近い⇒TP　＆　初回の場合、この取引は危ない可能性大")
-                            order_cancel = 1
-                            break
-                        else:
-                            print(s,
-                                  "farがある程度遠い。midLCChangeのEnsureを短めでよい？。発散してほしいが、逃げのLC change")
-                            rr = 1.4
-                            if i == 0 or tp_price_min == 0:
-                                tp_price_min = med_price
-                                tp_range_min = med
-                            lc_change.append(
-                                {"exe": True, "time_after": 0, "trigger": med + trigger_m, "ensure": med - ensure_m,
-                                 "trigger_price": med_price + trigger_m, "ensure_price": med_price - ensure_m})
-                    else:
-                        print(s, "若干の抵抗だが、中粒の集合感。抵抗は弱。LC_changeはtrigger攻め気味。")
-                        trigger_m = 0.01
-                        ensure_m = 0.01
-                        lc_change.append(
-                            {"exe": True, "time_after": 0, "trigger": med + trigger_m, "ensure": med - ensure_m,
-                             "trigger_price": med_price + trigger_m, "ensure_price": med_price - ensure_m})
-                elif count >= 4:
-                    # カウントが多いので、そろそろ発散の可能性（小粒でない限り
-                    if strength < count * 3:
-                        if strength >= 14:
-                            print(s,
-                                  "小粒だが、多い⇒微抵抗しそうだが突破の可能性もあるため、LC_Changeとして追加(4pips程度のおおきめの余裕が欲しい）")
-                            if med <= 0.01:
-                                print(s, "　極めて近距離に抵抗線。⇒無視が基本")
-                                order_cancel = 2
-                                break
-                            else:
-                                if i == 0 or tp_price_min == 0:
-                                    tp_price_min = med_price
-                                    tp_range_min = med
-                                trigger_m = 0.002
-                                ensure_m = 0.01
-                                lc_change.append(
-                                    {"exe": True, "time_after": 0, "trigger": med + trigger_m, "ensure": med - ensure_m,
-                                     "trigger_price": med_price + trigger_m, "ensure_price": med_price - ensure_m})
-                        else:
-                            print(s, "カウントは多いが、小粒ぞろい。抵抗しないと推定")
-                    elif strength <= 35:
-                        print(s,
-                              "かなり強い抵抗がある⇒これはフラッグの可能性もあるが、抵抗されそう。TPはここで固定にした方がいいかも。")
-                    else:
-                        # 強そうな抵抗線。LCChangeを基本利確レベルで入れる
-                        if med <= 0.03:
-                            print(s, "近いところに、カウントの多いLINEあり⇒突破目前（フラッグの先頭？？！）")
-                            rr = 1.6
-                        else:
-                            rr = 1.4  # 弱気
-                            print(s, "LC change追加")
-                            if i == 0 or tp_price_min == 0:
-                                tp_price_min = med_price
-                                tp_range_min = med
-                            lc_change.append(
-                                {"exe": True, "time_after": 0, "trigger": med + trigger_m, "ensure": med - ensure_m,
-                                 "trigger_price": med_price + trigger_m, "ensure_price": med_price - ensure_m})
-        else:
-            # TP LINESが０この場合
-            print("TP linesが0本")
-            lc_change.append(
-                {"exe": True, "time_after": 0, "trigger": 0.04, "ensure": 0.04,
-                 "trigger_price": 0, "ensure_price": 0})
-
-        # 調整
-        # LC_Changeの調整
-        print("LC の適正値の検討")
-        if len(lc_change) == 0:
-            # lc_changeが０件の場合は、規定値を入れる。やむなし。
-            if len(lc_change_temp) == 0:
-                print("　lc_changeが０、どっちも０なんですけど")
-                lc_change = [
-                    {"exe": True, "time_after": 0, "trigger": 0.15, "ensure": 0.15 - 0.02},
-                    {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.16},
-                    {"exe": True, "time_after": 0, "trigger": 0.30, "ensure": 0.25},
-                ]
-            else:
-                print("　lc_changeが０のため、tempと差し替え")
-                lc_change = lc_change_temp
-        else:
-            # lc_changeがある場合、調整。
-            # lc_rangeの初回が遠い場合、tempに入っている物を付け足す
-            if lc_change[0]['trigger'] >= 0.07:
-                print(s, "初回のLcChangeがおおきい⇒temp_lc(仮のやつ）を探して0.08程度のものを探して追加する")
-                lc_change_exist_temp = False
-                for i, line in enumerate(lc_change_temp):
-                    if 0.07 <= line['trigger'] <= 0.15:
-                        # ちょうどいいのがある場合
-                        lc_change_exist_temp = True
-                        med = line['trigger']
-                        med_price = line['trigger_price']
-                        lc_change.append(
-                            {"exe": True, "time_after": 0, "trigger": round(med - 0.008, 3),
-                             "ensure": round(med - 0.05, 3),
-                             "trigger_price": round(med_price - 0.008, 3), "ensure_price": round(med_price - 0.05, 3)})
-                        print(s, "追加分",
-                              {"exe": True, "time_after": 0, "trigger": round(med - 0.008, 3),
-                               "ensure": round(med - 0.05, 3),
-                               "trigger_price": round(med_price - 0.008, 3),
-                               "ensure_price": round(med_price - 0.05, 3)})
-                if not lc_change_exist_temp:
-                    # ちょうどいいのが無かった場合
-                    lc_change.extend(
-                        [
-                            {"exe": True, "time_after": 0, "trigger": 0.10, "ensure": 0.10 - 0.05},
-                            {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.16},
-                        ]
-                    )
-
-            lc_change.sort(key=lambda x: x["trigger"])
-        print(s, "最終のLC change")
-        # roundを実施
-        lc_change = [
-            {
-                **d,
-                "trigger": round(d.get("trigger", 0), 3),
-                "ensure": round(d.get("ensure", 0), 3)
-            }
-            for d in lc_change
-        ]
-        # 表示
-        for i, item in enumerate(lc_change):
-            print("  ", item)
-
-        # RR情報
-        st = "ensure"  # trigger
-        peaks = self.peaks
-        rr = 1.4
-        tp_range_from_lc_change = lc_change[0][st]  # lc_change[0]['ensure]
-        tp_price_form_lc_change = target_price + (target_dir * lc_change[0][st])
-        lc_range_from_rr = round(tp_range_from_lc_change / rr, 2)
-        lc_price_from_rr = round(target_price - (target_dir * lc_range_from_rr), 2)
-        lc_price_river = peaks[1]['latest_body_peak_price'] - (0 * target_dir)  # 調整用もつけとく
-        lc_range_river = round(abs(lc_price_river - target_price), 3)
-        real_rr = round(abs(tp_range_from_lc_change / lc_range_river), 2)
-        tp_range_from_lc = lc_range_river * rr
-        tp_price_from_lc = round(target_price + (target_dir * tp_range_from_lc), 3)
-        print(s, "基本的な利確等の情報 target_price", target_price)
-        print(s, "利確幅(lc_changeの最低値)：", tp_range_from_lc_change, tp_price_form_lc_change)
-        print(s, "RRを基に算出したlc_range", round(tp_range_from_lc_change / rr, 2), lc_price_from_rr)
-        print(s, "本来lcにしたいrangeとpriceとRR", lc_range_river, lc_price_river, real_rr)
-        print(s, "本来lcを採用した場合のrr基準のTP range＆price", tp_range_from_lc, tp_price_from_lc)
-        print("")
-
-        # メモ
-        memo = ""
-        # ■■■■パターン２　（LCからTPを決める方法を試す）
-        # lc linesからの見解
-        suggest_lc_price = 0  # latest_wick_peak_price  , latest_body_peak_price
-        if len(lc_lines) != 0:
-            if len(lc_lines) == 1:
-                print("lc linesが1本")
-                lc_line = lc_lines[0]
-                print(lc_line)
-                if lc_line['total_strength'] == 8:
-                    print("ピークの中のピークのため、突破したらでかい動きに。(髭含めないLCで構える）")
-                    suggest_lc_price = peaks[1]['latest_wick_peak_price']
-        else:
-            print(s, "lc linesが0本")
-
-        if lc_range_river <= 0.013:
-            print(s, "lc_が狭すぎるのでさすがに手を出さない", lc_range_river)
-            order_cancel = 3
-        elif lc_range_river <= 0.04:
-            print(s, "lc狭いので、lc_priceをヒゲ＊1pipsに変更 and RRを下げる", lc_range_river,
-                  peaks[1]['latest_wick_peak_price'])
-            rr = 1.2
-            # 以下再計算
-            lc_price_river = peaks[1]['latest_wick_peak_price'] - (0.01 * target_dir)  # 調整用もつけとく
-            print("変更後", lc_price_river)
-            lc_range_river = round(abs(lc_price_river - target_price), 3)
-            real_rr = round(abs(tp_range_from_lc_change / lc_range_river), 2)
-            tp_range_from_lc = lc_range_river * rr
-            tp_price_from_lc = round(target_price + (target_dir * tp_range_from_lc), 3)
-        else:
-            rr = 1.6
-
-        tp_range_from_lc = lc_range_river * rr
-        result = [d for d in lc_change if d.get("ensure", 0) >= tp_range_from_lc]
-        if len(result) == 0:
-            print(s, "0の場合、そのまま利確幅にする ＆　プログラムの調整としてLC changeを入れておく")
-            tp_range_final = tp_range_from_lc
-            if len(result) == 0:
-                result.extend(
-                    [
-                        {"exe": True, "time_after": 0, "trigger": 0.10, "ensure": 0.10 - 0.05},
-                        {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.16},
-                    ]
-                )
-        else:
-            print(s, "ある場合はTP rangeを広げて、利確を上げれるようにする")
-            tp_range_final = 0.25
-        tp_price_final = target_price + (tp_range_final * target_dir)
-        print(s, "さらに最終のLC change。　なおtpは", tp_price_final, tp_range_final)
-        for i, item in enumerate(result):
-            print("  ", item)
-
-        print(" WrapUpここまで")
-
-        if tp_range_from_lc_change <= 0.05:
-            order_cancel = 10
-            print("STOPオーダー実施せず")
-        return {
-            # "tp_range": tp_range_min,  # これはTP　Rangeだが、実際はもう少し上にする可能性がある
-            "tp_range": tp_range_final,  # 0.2,
-            "tp_price": tp_price_final,
-            "lc_range": lc_range_river,
-            "lc_price": lc_price_river,
-            "lc_change": result,
-            "order_cancel": order_cancel,
-            "memo": memo,
-        }
-
-    def predict_lines_wrap_up_rev(self, target_price, target_dir):
-        # LINEからTPやLCの値を提案する。
-        ss = "   "
-        s = "    "
-
-        # upper
-        upper_lines = self.predict_line_upper(target_price)
-        # lower
-        lower_lines = self.predict_line_lower(target_price)
-        self.upper_lines = upper_lines
-        self.lower_lines = lower_lines
-
-        # TPとLCでも格納
-        if target_dir == 1:
-            # 直近価格＝注文価格の場合 いずれも直近価格から近い順に並んでいる。
-            tp_lines = self.upper_lines
-            lc_lines = self.lower_lines
-        else:
-            # 直近価格＝注文価格の場合
-            tp_lines = self.lower_lines
-            lc_lines = self.upper_lines
-        print("TARGET PRICE:", target_price)
-        print("  TP LINES", len(tp_lines))
-        for i, g in enumerate(tp_lines):
-            print(
-                f"{s}"
-                f"Group {i}: median = {g['median_price']:.3f}, "
-                f"range = {g['median']:.3f}, "
-                f"strength = {g['total_strength']}, "
-                f"count = {g['count']}, "
-                f"near = {g['near']}, "
-                f"near_p = {g['near_price']}, "
-                f"far = {g['far']}, "
-                f"far_p = {g['far_price']}, "
-                f"prices = {', '.join(map(str, g['prices']))}"
-            )
-        print("  LC LINES", len(lc_lines))
-        for i, g in enumerate(lc_lines):
-            print(
-                f"{s}"
-                f"Group {i}: median = {g['median_price']:.3f}, "
-                f"range = {g['median']:.3f}, "
-                f"total_strength = {g['total_strength']}, "
-                f"count = {g['count']}, "
-                f"near = {g['near']}, "
-                f"near_p = {g['near_price']}, "
-                f"far = {g['far']}, "
-                f"far_price = {g['far_price']}, "
-                f"prices = {', '.join(map(str, g['prices']))}"
-            )
-
-        # ■■処理
-        #TPについて
-        st = "ensure"  # trigger
-        peaks = self.peaks
-        rr = 1.4
-        # tp_range_from_river = peaks[1]['latest_body_peak_price'] + (0 * target_dir)
-        # tp_price_from_river = round(target_price + (target_dir * tp_range_from_river), 3)
-        # lc_range_from_tp = round(tp_range_from_river / rr, 3)
-        # lc_price_from_tp = round(target_price - (lc_range_from_tp * target_dir), 3)  # 調整用もつけとく
-        # lc_change = [
-        #                 {"exe": True, "time_after": 0, "trigger": 0.10, "ensure": 0.10 - 0.05},
-        #                 {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.16},
-        #             ]
-        #
-        # print(s, "基本的な利確等の情報 target_price", target_price)
-        # print(s, "利確幅(lc_changeの最低値)：", tp_range_from_river, tp_price_from_river)
-        # print(s, "RRを基に算出したlc_range", round(lc_range_from_tp / rr, 2), lc_price_from_tp)
-        # print("")
-        #
-        # print(" WrapUpここまで")
-        # return {
-        #     "tp_range": tp_range_from_river,
-        #     "tp_price": tp_price_from_river,
-        #     "lc_range": lc_range_from_tp,
-        #     "lc_price": lc_price_from_tp,
-        #     "lc_change": lc_change,
-        #     "is_exe": 0
-        # }
+        filtered = [d for d in minus_groups if d["ave_strength"] >= 1.5 and d['count'] >= 2]
+        return filtered
 
     def cal_units(self, lc_range, risk_yen=500, tag="s", yen_per_pip_per_lot=1000, ):
         """
@@ -2022,7 +1322,7 @@ class OrderPoints:
         # 基本的なUNIT計算
         doller_yen = 10000
         lc_pips = max(lc_range / 0.01, 0.000000001)  # 下のdeveide0を防ぎたい
-        print("　UNITSを計算する lc_range", lc_range, "pips", lc_pips, "許容損失", risk_yen)
+        # print("　UNITSを計算する lc_range", lc_range, "pips", lc_pips, "許容損失", risk_yen)
         lot = risk_yen / (lc_pips * yen_per_pip_per_lot)
         units = int(lot * doller_yen)
 

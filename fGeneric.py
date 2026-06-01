@@ -258,6 +258,43 @@ def print_arr(*arr):
     # print("↑ーーーーーーーーーーーーーーーーーーーーーーー")
 
 
+def print_peaks(peaks, keys=None, indent_spaces=1):
+    """
+    peaks配列を渡して、指定したキーのみを改行表示する。
+    :param peaks: peaksのリスト
+    :param keys: 表示したいキーのリスト。Noneならすべて表示する。
+    :param indent_spaces: 行頭のインデント文字数
+    :return:
+    """
+    keys = [
+        "latest_time_jp",
+        "oldest_time_jp",
+        "direction",
+        "latest_body_peak_price",
+        "oldest_body_peak_price",
+        "latest_wick_peak_price",
+        "oldest_wick_peak_price",
+        "peak_strength",
+        "count",
+    ]
+    if keys is None:
+        keys = []
+
+    if not isinstance(peaks, (list, tuple)):
+        peaks = [peaks]
+
+    indent = " " * indent_spaces
+    for i, peak in enumerate(peaks):
+        if isinstance(peak, dict):
+            if keys:
+                items = [f"'{key}': {repr(peak.get(key))}" for key in keys]
+                print(indent + str(i) + ", " + ", ".join(items))
+            else:
+                print(indent + str(i) + ", " + ", ".join([f"'{k}': {repr(v)}" for k, v in peak.items()]))
+        else:
+            print(indent + str(i), peak)
+
+
 def print_json(dic):
     """
     Jsonを渡すと、わかりやすく表示する
