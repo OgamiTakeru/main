@@ -462,8 +462,8 @@ class order_information:
         # (8)キャンドルアナリシスクラスの有無
         if hasattr(self, "candle_analysis_class"):
             self.candle_analysis_class = self.order_class.candle_analysis
-            self.move_ave5 = round(self.candle_analysis_class.candle_class.cal_move_ave(1), self.u)
-            self.move_ave60 = round(self.candle_analysis_class.candle_class_hour.cal_move_ave(1), self.u)
+            self.move_ave5 = round(self.candle_analysis_class.candle_meta_class.cal_move_ave(1), self.u)
+            self.move_ave60 = round(self.candle_analysis_class.candle_meta_class_hour.cal_move_ave(1), self.u)
             # print("オーダーのキャンドル情報追加", self.move_ave5, self.move_ave60)
             self.current_price = self.candle_analysis_class.current_price
             peaks = self.candle_analysis_class.peaks_class.peaks_original

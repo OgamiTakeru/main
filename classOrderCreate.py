@@ -32,8 +32,7 @@ class Order:
         self.dependence_tp_lc_margin = 0.01  # targetとTP/LCとの間が極端に狭いときはウォーニングを出す（すぐ決済になってしまうため）
 
         # ■■
-        # OandaAPI用のにはこのJsonを送信することでオーダーを発行可能
-        self.data = {}
+        self.data = {}  # Oanda API用のにはこのJsonを送信することでオーダーを発行可能
         self.exe_order_plan = {}
         # オーダーを管理するための情報群（デフォルト値付）
         self.oa_mode = 2
@@ -66,7 +65,7 @@ class Order:
         self.move_ave = 0
         if "candle_analysis_class" in order_json:
             # print("candle_analysis_classがあるよ", round(order_json['candle_analysis_class'].candle_class.cal_move_ave(1), 3))
-            self.move_ave = order_json['candle_analysis_class'].candle_class.cal_move_ave(1)
+            self.move_ave = order_json['candle_analysis_class'].candle_meta_class.cal_move_ave(1)
             self.candle_analysis = order_json['candle_analysis_class']
         else:
             tk.line_send("【注意】キャンドルアナリシスが添付されていない注文が発生")
@@ -196,7 +195,7 @@ class Order:
         self.move_ave = 0
         if "candle_analysis_class" in order_json:
             # print("candle_analysis_classがあるよ", round(order_json['candle_analysis_class'].candle_class.cal_move_ave(1), 3))
-            self.move_ave = order_json['candle_analysis_class'].candle_class.cal_move_ave(1)
+            self.move_ave = order_json['candle_analysis_class'].candle_meta_class.cal_move_ave(1)
             self.candle_analysis = order_json['candle_analysis_class']
         else:
             tk.line_send("【注意】キャンドルアナリシスが添付されていない注文が発生 in updatePlan")
@@ -215,12 +214,30 @@ class Order:
 
         最低限必要な情報
         order_base_dic = {
+            # 必須項目群
             "target": 0.00,  # 価格(80以上の値) or Range で正の値。Rangeの場合、decision_priceを基準にPrice(APIに必須）に換算される。
             "type": "STOP",  # 文字列。計算時は数字のほうが楽なため、stop_or_limit変数で数字に置き換えたものも算出（finalize関数)
             "units": OrderCreateClass.basic_unit,
             "expected_direction": 1,
             "tp": 0.9,  # 80以上の値は価格とみなし、それ以外ならRange(target価格+tpRange。正の値）とする
             "lc": 0.03,  # 80以上の値は価格とみなし、それ以外ならRange(target価格+lcRange。正の値）とする
+            'priority': 0,
+            "decision_price": 0,  # "Now"という文字列の場合、この関数で即時取得する。targetがRangeの場合必須。
+            "decision_time": "",
+            "name": "",
+            "order_timeout_min": 0,
+        }
+
+        order_base_dic = {
+            "target_price": 価格で指定（target_marginのいずれかが必要。両方入っている場合、target_price優先）,
+            "target_margin": pipsで指定。
+            "type": "STOP",  # 文字列。計算時は数字のほうが楽なため、stop_or_limit変数で数字に置き換えたものも算出（finalize関数)
+            "units": OrderCreateClass.basic_unit,
+            "expected_direction": 1,
+            "tp_price": 価格で指定。tp_rangeのいずれかが必要。両方入っている場合、tp_priceを優先
+            "tp_range": pipsで指定
+            "lc_price": 価格で指定。lc_rangeのいずれかが必要。両方入っている場合、lc_priceを優先
+            "lc_range": pipsで指定
             'priority': 0,
             "decision_price": 0,  # "Now"という文字列の場合、この関数で即時取得する。targetがRangeの場合必須。
             "decision_time": "",
@@ -411,18 +428,6 @@ class Order:
         else:
             self.memo = ""
 
-
-        # アラート機能
-        # if "alert" in order_json and "range" in order_json['alert']:
-        #     # if isinstance(plan['alert']['range'], int)
-        #     temp_range = round(order_json['alert']['range'], self.u)
-        #     temp_price = round(order_json['target_price'] - (
-        #                 order_json['alert']['range'] * order_json['direction']), self.u)
-        #     # 改めて入れなおしてしまう（別に上書きでもいいんだけど）
-        #     order_json['alert'] = {"range": temp_range, "alert_price": temp_price, "time": 0}
-        # else:
-        #     order_json['alert'] = {"range": 0, "time": 0, "alert_price": 0}
-
         # ref(無いと、検証の時にエラーになる)
         if "ref" in order_json:
             pass
@@ -430,123 +435,23 @@ class Order:
             pass
             # order_json['ref'] = {"move_ave": 0, "peak1_target_gap": 0}
 
+    def pips(self, pips, pair="dy"):
+        """
+        pipsを受け取り、価格で返却する。pips_exchangeに関数名にしたかったけど、式の途中で使うため短めに。
+        """
+
+        if pair == "dy":
+            # ドル円ペアの場合
+            yen = pips / 100
+            print("ドル円レートでpipsを円単位に変換", pips, "⇒", yen)
+        else:
+            yen = 0
+            print("おかしなことになっている")
+        return yen
+
+
+
     def add_linkage(self, another_order_class):
         # print("OrderCreate334")
         # print(self.linkage_classes)
         self.linkage_order_classes.append(another_order_class)
-
-    def lc_change_control(self):
-        order_json = self.order_json
-        # LC_Changeを付与する 検証環境の都合で、必須。(finalizedに直接追加）
-        # lc_changeは数字か辞書が入る。辞書の場合、lc_changeの先頭にそれが入る
-        # self.finalized_order['lc_change'] = [] # 初期化
-        # print("lc_change order create 324")
-        # print(self.order_json)
-
-        if "lc_change" not in order_json:
-            # typeしていない場合はノーマルを追加
-            print("ディフェンスLCチェンジ")
-            # self.add_lc_change_defence()
-            self.add_lc_change_start_with_dic(order_json['lc_change'])
-        else:
-            if isinstance(order_json['lc_change'], int):
-                # print("処理A: int型です", order_json['lc_change_type'])
-                # 指定されている場合は、指定のLC_Change処理へ
-                if order_json['lc_change'] == 1:
-                    print("ディフェンスLCチェンジ")
-                    self.add_lc_change_defence()
-                elif order_json['lc_change'] == 0:
-                    print("Noチェンジ")
-                    self.add_lc_change_no_change()
-                elif order_json['lc_change'] == 3:
-                    print("オッフェンスLCチェンジ")
-                    self.add_lc_change_offence()
-            else:
-                print("スタートLCチェンジ")
-                self.add_lc_change_start_with_dic(order_json['lc_change'])
-
-    def add_lc_change_no_change(self):
-        """
-        lcChange = 0で選ばれるもの
-        形式的に入れたもの（形式的に入れないとエラーになるので）
-        ほぼ到達しない１円を入れておく
-        """
-        self.lc_change = [
-            {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
-        ]
-
-    def add_lc_change_offence(self):
-        """
-        lcChange = 3で選ばれるもの
-        実際の運用をイメージ
-        ・最初の30分はlc_1.3程度をトリガーにしてLC分を確実に回収できるように
-        　（一度20pips位上がった後に、LCまで戻っており、悔しかった。上がるのは大体直前
-        ・30分以降は、ローソク形状の効果が切れたとみなし、プラスにいる場合はとにかく利確に向けた動きをする
-        """
-        self.lc_change = [
-            # {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
-            # {"exe": True, "time_after": 600, "trigger": 0.025, "ensure": 0.005},
-            {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": 0.004},  # -0.02が強い
-            {"exe": True, "time_after": 600, "trigger": 0.06, "ensure": 0.01},
-            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
-            {"exe": True, "time_after": 600, "trigger": 0.08, "ensure": 0.02},
-            {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
-            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
-        ]
-
-    def add_lc_change_start_with_dic(self, dic_arr):
-        """
-        lcChange = 3で選ばれるもの
-        実際の運用をイメージ
-        ・最初の30分はlc_1.3程度をトリガーにしてLC分を確実に回収できるように
-        　（一度20pips位上がった後に、LCまで戻っており、悔しかった。上がるのは大体直前
-        ・30分以降は、ローソク形状の効果が切れたとみなし、プラスにいる場合はとにかく利確に向けた動きをする
-        """
-        # print("   特殊LCChange")
-
-        add = [
-            # {"exe": True, "time_after": 0, "trigger": 1, "ensure": 1},
-            # {"exe": True, "time_after": 600, "trigger": 0.025, "ensure": 0.005},
-            # {"exe": True, "time_after": 0, "trigger": 0.04, "ensure": 0.010},
-            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
-            # {"exe": True, "time_after": 0, "trigger": 0.08, "ensure": 0.05},
-            # {"exe": True, "time_after": 0, "trigger": 0.15, "ensure": 0.1},
-            # {"exe": True, "time_after": 0, "trigger": 0.20, "ensure": 0.15},
-            # {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
-            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
-            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
-            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
-            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 4.00, "ensure": 4},
-        ]
-        # print("   渡されたLcChange", dic_arr)
-        # print("　　最終的なLcChange", add)
-        self.lc_change = dic_arr
-
-    def add_lc_change_defence(self):
-        """
-        lcChange = 1で選ばれるもの
-        負ける可能性は高くなる可能性高い。
-        少しプラスになったらLCの幅を減らしていく手法
-        """
-        min10 = 60 * 10
-        self.lc_change = [
-            {"exe": True, "time_after": min10, "trigger": 0.025, "ensure": 0.01},
-            # {"exe": True, "time_after": 600, "trigger": 0.043, "ensure": 0.018},
-            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
-            {"exe": True, "time_after": min10, "trigger": 0.05, "ensure": 0.052},
-            {"exe": True, "time_after": min10, "trigger": 0.08, "ensure": 0.05},
-            {"exe": True, "time_after": min10, "trigger": 0.20, "ensure": 0.15},
-            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
-        ]
-

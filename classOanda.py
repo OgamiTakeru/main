@@ -144,6 +144,7 @@ class Oanda:
             data_df = pd.DataFrame(res_json['candles'])  # Jsonの一部(candles)をDataframeに変換
             data_df['time_jp'] = data_df.apply(lambda x: iso_to_jstdt(x, 'time'), axis=1)  # 日本時刻の表示
             data_df = add_basic_data(data_df)  # 【関数/必須】基本項目を追加する
+            data_df = add_rsi(data_df)
             data_df = add_bb_data(data_df)
             # 返却
             return {"data": data_df, "error": 0}
@@ -182,9 +183,12 @@ class Oanda:
         temp_df.drop(['index'], axis=1, inplace=True)  # 不要項目の削除
         # 解析用の列を追加する（不要列の削除も含む）
         data_df = add_basic_data(temp_df)  # 【関数/必須】基本項目を追加する
+        data_df = add_rsi(data_df)
         # data_df = add_ema_data(data_df)
         data_df = add_bb_data(data_df)
         # data_df = self.add_peak(data_df)
+        # print("classOanda")
+        # print(data_df.iloc[0])
         # 返却
         return {"data": data_df, "error": 0}
 
@@ -1246,6 +1250,44 @@ def add_basic_data(data_df):
     # data_df.drop(['time'], axis=1, inplace=True)
     # 返却zf
     return data_df
+
+
+def add_rsi(df, close_column='close', period=14):
+    """
+    データフレームを受け取ってRSIを付加して返す
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        OHLC データフレーム
+    close_column : str
+        終値カラム名（デフォルト: 'close'）
+    period : int
+        期間（デフォルト: 14）
+
+    Returns:
+    --------
+    pd.DataFrame
+        RSIカラムを追加したデータフレーム
+    """
+    # コピーを作成して元データを保護
+    df = df.copy()
+
+    # 価格変動を計算
+    delta = df[close_column].diff()
+
+    # 上昇分と下降分を分離
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+
+    # RS（相対力）を計算
+    rs = gain / loss
+
+    # RSIを計算して追加
+    df['RSI'] = 100 - (100 / (1 + rs))
+
+    return df
+
 
 
 # 【ローソクへの情報追加】 MACD情報を追加する

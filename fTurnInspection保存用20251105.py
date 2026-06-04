@@ -11,9 +11,9 @@ class turn_analisys:
         self.oa = candle_analysis.base_oa
         # test時と本番時で、分岐（本番ではpeaks_classが渡されるが、テストではdfが渡されるため、peaks_classに変換が必要）
         self.ca = candle_analysis
-        self.ca5 = self.ca.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
+        self.ca5 = self.ca.candle_meta_class  # peaks以外の部分。cal_move_ave関数を使う用
         self.peaks_class = self.ca.peaks_class  # peaks_classだけを抽出
-        self.ca60 = self.ca.candle_class_hour
+        self.ca60 = self.ca.candle_meta_class_hour
         self.peaks_class_hour = self.ca.peaks_class_hour
 
         # 結果として使う大事な変数
@@ -835,9 +835,9 @@ class range_analysis:
         self.oa = candle_analysis.base_oa
         # test時と本番時で、分岐（本番ではpeaks_classが渡されるが、テストではdfが渡されるため、peaks_classに変換が必要）
         self.ca = candle_analysis
-        self.ca5 = self.ca.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
+        self.ca5 = self.ca.candle_meta_class  # peaks以外の部分。cal_move_ave関数を使う用
         self.peaks_class = self.ca.peaks_class  # peaks_classだけを抽出
-        self.ca60 = self.ca.candle_class_hour
+        self.ca60 = self.ca.candle_meta_class_hour
         self.peaks_class_hour = self.ca.peaks_class_hour
 
         # 結果として使う大事な変数

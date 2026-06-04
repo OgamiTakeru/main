@@ -496,7 +496,7 @@ class order_information:
             "lc_range": self.plan_json['lc_range'],
             "tp_price": self.plan_json['tp_price'],
             "tp_range": self.plan_json['tp_range'],
-            "move_ave": candleAnalysisClass.candle_class.ave_move
+            "move_ave": candleAnalysisClass.candle_meta_class.ave_move
         }
 
         self.update_dataframe(memory_dic)

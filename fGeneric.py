@@ -266,14 +266,15 @@ def print_peaks(peaks, keys=None, indent_spaces=1):
     :param indent_spaces: 行頭のインデント文字数
     :return:
     """
+    print("print   ")
     keys = [
         "latest_time_jp",
         "oldest_time_jp",
         "direction",
         "latest_body_peak_price",
-        "oldest_body_peak_price",
-        "latest_wick_peak_price",
-        "oldest_wick_peak_price",
+        # "oldest_body_peak_price",
+        # "latest_wick_peak_price",
+        # "oldest_wick_peak_price",
         "peak_strength",
         "count",
     ]

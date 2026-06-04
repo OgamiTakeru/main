@@ -77,7 +77,7 @@ class time_analysis():
     def __init__(self, candle_analysis_class):
         # 調査に必要な変数
         self.ca = candle_analysis_class  # CandleAnalysisインスタンスの生成
-        self.ca5 = self.ca.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
+        self.ca5 = self.ca.candle_meta_class  # peaks以外の部分。cal_move_ave関数を使う用
         self.peaks_class = candle_analysis_class.peaks_class
         self.df_r = self.peaks_class.df_r_original
 

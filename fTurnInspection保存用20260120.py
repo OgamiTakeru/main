@@ -28,9 +28,9 @@ class BaseAnalysisClass:
         self.s = "    "
         self.oa = candle_analysis.base_oa
         self.ca = candle_analysis
-        self.ca5 = self.ca.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
+        self.ca5 = self.ca.candle_meta_class  # peaks以外の部分。cal_move_ave関数を使う用
         self.peaks_class = self.ca.peaks_class  # peaks_classだけを抽出
-        self.ca60 = self.ca.candle_class_hour
+        self.ca60 = self.ca.candle_meta_class_hour
         self.peaks_class_hour = self.ca.peaks_class_hour
 
         # ■■■基本結果の変数の宣言
@@ -129,21 +129,21 @@ class BbAnalysis:
             # 1時間足の場合
             print(" 1時間足のBB検討")
             self.df_r = candle_analysis.d60_df_r[from_i:]  # 先頭行は生成されたばかりのもの（だが検証時は未来になってしまう）
-            self.ave = candle_analysis.candle_class_hour
+            self.ave = candle_analysis.candle_meta_class_hour
             self.df_r_include0 = candle_analysis.d60_df_r
             self.peaks_class = self.ca.peaks_class_hour
         elif foot == "M5":
             # 5分足の場合
             print(" 5分足のBB検討")
             self.df_r = candle_analysis.d5_df_r[from_i:]
-            self.ave = candle_analysis.candle_class
+            self.ave = candle_analysis.candle_meta_class
             self.df_r_include0 = candle_analysis.d5_df_r
             self.peaks_class = self.ca.peaks_class
         else:
             # 該当しない場合、5分足を入れておく
             print(" 5分足のBB検討2")
             self.df_r = candle_analysis.d5_df_r[from_i:]
-            self.ave = candle_analysis.candle_class
+            self.ave = candle_analysis.candle_meta_class
             self.df_r_include0 = candle_analysis.d5_df_r
             self.peaks_class = self.ca.peaks_class
         # ↓このタイミングで実施する必要がある（検証時はdf_r.iloc[0]が完成済なのでcloseは未来になる。Liveかでcloseが常に更新して使いたい。）
@@ -775,10 +775,10 @@ class MainAnalysis:
         self.round_digit = 3
         self.oa = candle_analysis.base_oa
         self.ca = candle_analysis
-        self.ca5 = candle_analysis.candle_class  # peaks以外の部分。cal_move_ave関数を使う用
+        self.ca5 = candle_analysis.candle_meta_class  # peaks以外の部分。cal_move_ave関数を使う用
         self.peaks_class = candle_analysis.peaks_class  # peaks_classだけを抽出
         self.df_r_m5 = candle_analysis.d5_df_r[1:]  # 5分足はひとつ前ので固定！！（Liveでも）
-        self.ca60 = candle_analysis.candle_class_hour
+        self.ca60 = candle_analysis.candle_meta_class_hour
         self.peaks_class_hour = candle_analysis.peaks_class_hour
         self.df_r_h1 = candle_analysis.d60_df_r[from_i:]
         self.latest_time = candle_analysis.d5_df_r.iloc[0]['time_jp']  # 5分足で判断(0行目を利用）
@@ -1282,7 +1282,7 @@ class MainAnalysis:
         peaks = self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
         latest_price = self.latest_price  # self.ca = candle_analysis
-        ave = self.ca.candle_class
+        ave = self.ca.candle_meta_class
         latest_time = self.latest_time
         bb_h1_class = self.bb_h1_class  # この結果が必須！
         bb_m5_class = self.bb_m5_class  # この結果も必須”
@@ -1526,7 +1526,7 @@ class MainAnalysis:
         peaks = self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
         latest_price = self.latest_price  # self.ca = candle_analysis
-        ave = self.ca.candle_class_hour
+        ave = self.ca.candle_meta_class_hour
         latest_time = self.latest_time
         bb_h1_class = self.bb_h1_class  # この結果が必須！
         bb_m5_class = self.bb_m5_class  # この結果も必須”
