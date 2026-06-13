@@ -1252,7 +1252,7 @@ def add_basic_data(data_df):
     return data_df
 
 
-def add_rsi(df, close_column='close', period=14):
+def add_rsi(df, close_column='close', period=14, method='wilder'):
     """
     データフレームを受け取ってRSIを付加して返す
 
@@ -1264,27 +1264,39 @@ def add_rsi(df, close_column='close', period=14):
         終値カラム名（デフォルト: 'close'）
     period : int
         期間（デフォルト: 14）
+    method : str
+        計算方法。'span'（pandasのspan -> alpha=2/(span+1)）か、
+        'wilder'（Wilderのalpha=1/period）。デフォルトは 'span'.
 
     Returns:
     --------
     pd.DataFrame
-        RSIカラムを追加したデータフレーム
+        RSIカラムを追加したデータフレーム（カラム名: 'RSI'）
     """
-    # コピーを作成して元データを保護
     df = df.copy()
 
     # 価格変動を計算
     delta = df[close_column].diff()
 
     # 上昇分と下降分を分離
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+
+    # 平滑化（method によって alpha の扱いを変える）
+    if method == 'wilder':
+        # Wilder方式: alpha = 1/period
+        avg_gain = gain.ewm(alpha=1.0 / period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1.0 / period, adjust=False).mean()
+    else:
+        # デフォルト: pandas の span 指定（alpha = 2/(span+1)）
+        avg_gain = gain.ewm(span=period, adjust=False).mean()
+        avg_loss = loss.ewm(span=period, adjust=False).mean()
 
     # RS（相対力）を計算
-    rs = gain / loss
+    rs = avg_gain / avg_loss
 
     # RSIを計算して追加
-    df['RSI'] = 100 - (100 / (1 + rs))
+    df['RSI'] = round(100 - (100 / (1 + rs)), 1)
 
     return df
 

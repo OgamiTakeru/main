@@ -2421,20 +2421,20 @@ class order_information:
 
         min10 = 0  # 60 * 10
         self.lc_change_dic_arr = [
-            # {"exe": True, "time_after": min10, "trigger": 0.01, "ensure": 0.001},
-            # {"exe": True, "time_after": min10, "trigger": 0.025, "ensure": 0.01},
-            # {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": 0.004},  # -0.02が強い
-            # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
-            # {"exe": True, "time_after": min10, "trigger": -0.05, "ensure": -1},
-            {"exe": True, "time_after": min10, "trigger": 0.05, "ensure": 0.012},
-            {"exe": True, "time_after": min10, "trigger": 0.08, "ensure": 0.044},
-            {"exe": True, "time_after": min10, "trigger": 0.20, "ensure": 0.15},
-            {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
-            {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
+            # # {"exe": True, "time_after": min10, "trigger": 0.01, "ensure": 0.001},
+            # # {"exe": True, "time_after": min10, "trigger": 0.025, "ensure": 0.01},
+            # # {"exe": True, "time_after": 600, "trigger": 0.04, "ensure": 0.004},  # -0.02が強い
+            # # {"exe": True, "time_after": 600, "trigger": first_trigger, "ensure": first_ensure},
+            # # {"exe": True, "time_after": min10, "trigger": -0.05, "ensure": -1},
+            # {"exe": True, "time_after": min10, "trigger": 0.05, "ensure": 0.012},
+            # {"exe": True, "time_after": min10, "trigger": 0.08, "ensure": 0.044},
+            # {"exe": True, "time_after": min10, "trigger": 0.20, "ensure": 0.15},
+            # {"exe": True, "time_after": 600, "trigger": 0.40, "ensure": 0.35},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.60, "ensure": 0.55},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.70, "ensure": 0.65},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.80, "ensure": 0.75},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 0.90, "ensure": 0.85},
+            # {"exe": True, "time_after": 2 * 5 * 60, "trigger": 1.00, "ensure": 0.95},
         ]
 
     def linkage_done_func(self):

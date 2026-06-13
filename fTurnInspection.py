@@ -209,6 +209,7 @@ class MainAnalysis:
         """
         ターン直後での判断。
         """
+        print("main")
         # 変数化
         global gl_previous_exe_df60_row
         global gl_previous_exe_df60_order_time
@@ -230,7 +231,7 @@ class MainAnalysis:
         #     print("対象が小さい", peaks[1]['gap'])
 
         # (4)大本命
-        self.simple_turn_analysis()
+        # self.simple_turn_analysis()
         # (5)ターン時以外
         self.predict_analysis()
 
@@ -240,27 +241,25 @@ class MainAnalysis:
             return None
         return max(lines, key=lambda x: x['total_strength'])
 
-
-    def compare_lines(self, line_3h, line_6h, line_type='tp', threshold=0.5):
+    def compare_lines(self, line_l, line_s, line_type='tp', threshold=0.5):
         """複数時間軸のLINEを比較（TP または LC）
         
         Args:
-            line_3h: 3時間足の抵抗線計算結果
-            line_6h: 6時間足の抵抗線計算結果
+            line_l: ロングのLINE
+            line_s: ショートのLINE
             line_type: 'tp' または 'lc'
             threshold: medianの差の閾値
         
         Returns:
             判定結果を辞書で返す
         """
-        
         # line_typeに応じて対象を選択
         if line_type.lower() == 'tp':
-            lines_3h = line_3h.tp_lines
-            lines_6h = line_6h.tp_lines
+            lines_3h = line_l.tp_lines
+            lines_6h = line_s.tp_lines
         elif line_type.lower() == 'lc':
-            lines_3h = line_3h.lc_lines
-            lines_6h = line_6h.lc_lines
+            lines_3h = line_l.lc_lines
+            lines_6h = line_s.lc_lines
         else:
             raise ValueError("line_type は 'tp' または 'lc' で指定してください")
         
@@ -298,6 +297,7 @@ class MainAnalysis:
         # ターン時以外でも実行される
         print("■予測オーダー")
         s = self.s
+        p = CurrencyPair("USDJPY", 0.01)
         current_price = self.current_price  # self.ca = candle_analysis
         foot = 5
         if foot == 5:
@@ -305,23 +305,11 @@ class MainAnalysis:
             peaks_class = self.peaks_class
             peaks = self.peaks_class.peaks_original
             df = self.peaks_class.df_r_original  # これは
-            range_gap_border = 0.06  # 30分足の場合0.8
-            exist_order_gap_border = 0.04
-            candle_foot = "M5"
-            range_candle_border = 0.06
-            range_candle_border_max = 0.1
-            tp_min = 0.045
         else:
             # 30分足の場合
             peaks_class = self.peaks_class_m30
             peaks = self.peaks_class_m30.peaks_original  # self.peaks_class.peaks_original
             df = self.peaks_class_m30.df_r_original  # self.peaks_class.df_r_original  # これは
-            range_gap_border = 0.085  # 30分足の場合0.8
-            exist_order_gap_border = 0.04
-            candle_foot = "M30"
-            range_candle_border = 0.1
-            range_candle_border_max = 0.15
-            tp_min = 0.04
 
             # ３０分足の場合は、３０分に１回実行
             dt = datetime.strptime(self.current_time, '%Y/%m/%d %H:%M:%S')
@@ -335,19 +323,185 @@ class MainAnalysis:
         base_price = peaks[0]['latest_body_peak_price']  # self.latest_price
 
         # ■RSI
+        upper_border = 67.5
+        lower_border = 30
+        # print(df[['time_jp', 'RSI']].head(15))
         f_low = df.iloc[1]
-        p_low = df.iloc[2]  # ひとつ前の足
-        print("    RSI", f_low['time_jp'], f_low['RSI'])
-        if f_low['RSI'] >= 70 and p_low['RSI'] >= 70:
+        s_low = df.iloc[2]  # ひとつ前の足
+        t_low = df.iloc[3]  # ふたつ前の足
+        print("    RSI", f_low['time_jp'], f_low['RSI'], "-", s_low['time_jp'],s_low['RSI'] )
+        if f_low['RSI'] >= upper_border and s_low['RSI'] >= upper_border:
             print("    2個連続でRSI越えている")
-
+        elif f_low['RSI'] <= lower_border and s_low['RSI'] <= lower_border:
+            print("    2個連続でRSI30切っている")
+            return 0
+        elif  f_low['RSI'] >= upper_border and s_low['RSI'] <= upper_border and t_low['RSI'] >= upper_border:
+            print("    直近と2個前は越えているが、中央は越えていない⇒継続して越えていきそう？")
+            return 0
+        elif f_low['RSI'] <= lower_border and s_low['RSI'] >= lower_border and t_low['RSI'] <= lower_border:
+            print("    直近と2個前は30切っているが、中央は切っていない⇒継続して30切っていきそう？")
+            return 0
+        
         # ■ラインの検証
-        line_class3 = LineStrengthCal(self.candle_analysis_all, "m5", 3)
-        line_class6 = LineStrengthCal(self.candle_analysis_all, "m5", 6)
-        result = self.compare_lines(line_class3, line_class6, threshold=0.5)
+        line_class_m5_l = LineStrengthCal(self.candle_analysis_all, "m5", 60)
+        line_class_m5_s = LineStrengthCal(self.candle_analysis_all, "m5", 30)
+        result = self.compare_lines(line_class_m5_l, line_class_m5_s, threshold=0.5)
         print(f"判定: {result['status']}")
-    
+        print("1時間足")
+        line_class_h1_l = LineStrengthCal(self.candle_analysis_all, "h1", 50)  # 画面全体くらい（直近の大きな流れを見れる）
+        line_class_h1_s = LineStrengthCal(self.candle_analysis_all, "h1", 30)  # 画面半分くらい（直近のレンジを見れる）
+        result = self.compare_lines(line_class_h1_l, line_class_h1_s, threshold=0.5)
 
+        # ■RSI と Line 総強度による追加判定
+        order_pattern = 0
+        if f_low['RSI'] >= upper_border:
+            upper3_strengths = [line['total_strength'] for line in line_class_m5_s.upper_lines]
+            lower3_strengths = [
+                line['total_strength'] 
+                for line in line_class_m5_s.lower_lines 
+                if line['median'] <= 4
+            ]
+            if len(upper3_strengths) == 0 and len(lower3_strengths) > 0 and max(lower3_strengths) >= 10:
+                upper3_strengths = lower3_strengths
+                print(" 近いLowerに強いのあり")
+            max_upper3 = max(upper3_strengths) if upper3_strengths else 0
+
+            upper6_strengths = [line['total_strength'] for line in line_class_m5_l.upper_lines]
+            max_upper6 = max(upper6_strengths) if upper6_strengths else 0
+
+            if max_upper3 <= 10 and max_upper6 <= 10:
+                print("    RSI>=",  "かつ line_class3/line_class6 の upper_lines がともに弱い⇒突破予想")
+                tk.line_send("RSI>=70 かつ line_class3/line_class6 の upper_lines がともに弱い⇒突破予想")
+                order_pattern = 1
+            elif max_upper3 <= 10:
+                print("    RSI>=70 かつ line_class3 の upper_lines だけが弱い⇒突破予想")
+                tk.line_send("RSI>=70 かつ line_class3/line_class6 の upper_lines がともに弱い⇒突破予想")
+                order_pattern = 1
+            elif max_upper3 >= 10 and max_upper6 >= 10:
+                print("    RSI>=",  "かつ line_class3/line_class6 の upper_lines がともに強い⇒抵抗され下がる予想")
+                tk.line_send("RSI>=70 かつ line_class3/line_class6 の upper_lines がともに強い⇒抵抗され下がる予想")
+                order_pattern = 2
+            elif max_upper3 >= 10:
+                print("    RSI>=70 かつ line_class3 の upper_lines だけが強い")
+                tk.line_send("RSI>=70 かつ line_class3がともに強い⇒抵抗され下がる予想")
+                order_pattern = 2
+        elif f_low['RSI'] <= lower_border:
+            lower3_strengths = [line['total_strength'] for line in line_class_m5_s.lower_lines]
+            upper3_strengths = [
+                line['total_strength'] 
+                for line in line_class_m5_s.upper_lines 
+                if line['median'] <= 4
+            ]
+            if len(lower3_strengths) == 0 and len(upper3_strengths) > 0 and max(upper3_strengths) >= 10:
+                lower3_strengths = upper3_strengths
+                print(" 近いUpperに強いのあり")
+            max_lower3 = max(lower3_strengths) if lower3_strengths else 0
+
+            lower6_strengths = [line['total_strength'] for line in line_class_m5_l.lower_lines]
+            max_lower6 = max(lower6_strengths) if lower6_strengths else 0
+            if max_lower3 <= 10 and max_lower6 <= 10:
+                print("    RSI<=",  "かつ line_class3/line_class6 の lower_lines がともに弱い⇒突破予想")
+                tk.line_send("RSI<=30 かつ line_class3/line_class6 の lower_lines がともに弱い⇒突破予想")
+                order_pattern = 1
+            elif max_lower3 <= 10:
+                print("    RSI<=30 かつ line_class3 の lower_lines だけが弱い")
+                tk.line_send("RSI<=30 かつ line_class3/line_class6 の lower_lines がともに弱い⇒突破予想")
+                order_pattern = 1
+            elif max_lower3 >= 10 and max_lower6 >= 10:
+                print("    RSI<=",  "かつ line_class3/line_class6 の lower_lines がともに強い⇒抵抗され上がる予想")
+                tk.line_send("RSI<=30 かつ line_class3/line_class6 の lower_lines がともに強い⇒抵抗され上がる予想")
+                order_pattern = 2
+            elif max_lower3 >= 10:
+                print("    RSI<=30 かつ line_class3 の lower_lines だけが強い")
+                tk.line_send("RSI<=30 かつ line_class3が強い⇒抵抗され上がる予想")
+                order_pattern = 2
+        else:
+            print("    RSIはどちらのラインも越えていない", f_low['RSI'])
+
+        # オーダーの発行
+        l = peaks[0]
+        if order_pattern == 1:
+            order_class1 = OCreate.Order({
+                    "name": "RSI＆Line判定 順方向" + str(order_pattern),
+                    "current_price": current_price,
+                    "target": current_price + (l['direction'] * p.pips_to_price(0.7)),  # 1ピップスで順張り
+                    "direction": l['direction'],
+                    "type": "STOP",  # "LIMIT",  # "STOP",  # "MARKET",
+                    "tp": p.pips_to_price(12),
+                    "lc": p.pips_to_price(10),  # 0.15,  # 価格手指定しよう
+                    "lc_change": [],
+                    "units": int(self.cal_units(p.pips_to_price(10), tk.setting_json['l_units'], "l") * 0.5),  # 100,
+                    "priority": 5,
+                    "decision_time": df.iloc[0]['time_jp'],
+                    "candle_analysis_class": self.candle_analysis_all,
+                    "lc_change_candle_type": "M5",
+                    # "order_permission": False,
+                    "order_timeout_min": 15,
+                    "memo": "",
+                })
+            self.add_order_to_this_class(order_class1)
+        elif order_pattern == 2:
+            order_class1 = OCreate.Order({
+                    "name": "RSI＆Line判定 逆方向" + str(order_pattern),
+                    "current_price": current_price,
+                    "target": current_price + (l['direction'] * p.pips_to_price(0.7) * -1),  # 1ピップスで順張り
+                    "direction": l['direction'] * -1,
+                    "type": "STOP",  # "LIMIT",  # "STOP",  # "MARKET",
+                    "tp": p.pips_to_price(12),
+                    "lc": p.pips_to_price(10),  # 0.15,  # 価格手指定しよう
+                    "lc_change": [],
+                    "units": int(self.cal_units(p.pips_to_price(10), tk.setting_json['l_units'], "l") * 0.5),  # 100,
+                    "priority": 5,
+                    "decision_time": df.iloc[0]['time_jp'],
+                    "candle_analysis_class": self.candle_analysis_all,
+                    "lc_change_candle_type": "M5",
+                    # "order_permission": False,
+                    "order_timeout_min": 15,
+                    "memo": "",
+                })
+            self.add_order_to_this_class(order_class1)
+
+    def cal_units(self, lc_range, risk_yen=500, tag="s", yen_per_pip_per_lot=1000, ):
+        """
+        risk_yenは最大の負け額
+        tagは注文がアプリからわかりやすいように、強引にUNITの一桁目を調整する。sの場合は1か６、lの場合は0か５になる
+        yen_per_pip_per_lot:
+            例）ドル円で1ロット=1000通貨なら約10円/pips
+                1万通貨なら約100円/pips
+        """
+        # 基本的なUNIT計算
+        doller_yen = 10000
+        lc_pips = max(lc_range / 0.01, 0.000000001)  # 下のdeveide0を防ぎたい
+        # print("　UNITSを計算する lc_range", lc_range, "pips", lc_pips, "許容損失", risk_yen)
+        lot = risk_yen / (lc_pips * yen_per_pip_per_lot)
+        units = int(lot * doller_yen)
+
+        # 調整
+        # 一桁目（10で割った余り）を取得
+        last_digit = units % 10
+        # 一桁目を除いた「十の位以上」のベース数値
+        base = (units // 10) * 10
+        if tag == "l":
+            # 0か5、近い方に合わせる
+            if last_digit <= 2 or last_digit >= 8:
+                # 0に近い場合（8, 9, 0, 1, 2）
+                # ※ 8, 9の場合は次の桁の0に近いので、四捨五入に近い処理
+                new_units = round(units / 5) * 5
+            else:
+                # 5に近い場合（3, 4, 5, 6, 7）
+                new_units = base + 5
+
+            # シンプルに書くなら： units = 5 * round(units / 5)
+            units = int(5 * round(units / 5))
+
+        elif tag == "s":
+            # 1か6、近い方に合わせる
+            # unitsから1を引くと「0か5に合わせる問題」に置き換えられる
+            adjusted = 5 * round((units - 1) / 5) + 1
+            units = int(adjusted)
+
+        return units
+    
     def simple_turn_analysis(self):
         print("■シンプルターンオーダー2", self.current_price)
 
@@ -560,28 +714,28 @@ class CurrencyPair:
         self.name = name
         self.pip_value = pip_value
 
-    def pips_to_price(self, pips: float) -> float:
+    def pips_to_price(self, pips: int | float) -> float:
         """pipsを価格差に変換"""
-        return pips * self.pip_value
+        return round(pips * self.pip_value, 5)
 
     def price_to_pips(self, price_diff: float) -> float:
         """価格差をpipsに変換"""
-        return price_diff / self.pip_value
+        return round(price_diff / self.pip_value, 2)
 
     def exchange(self, unknown_num):
         """値を渡されたら、勝手に判断してpipsに変換する"""
         if unknown_num >= self.pip_value * 100:
             # 例えばドル円で２と来た場合は、pipsと判断。
-            result = unknown_num
+            result = round(unknown_num, 2)
         else:
-            result = unknown_num / self.pip_value
+            result = round(unknown_num / self.pip_value, 2)
         return result
 
 
 class LineStrengthCal:
-    def __init__(self, candle_analysis_class, foot, time_before=3):
+    def __init__(self, candle_analysis_class, foot, time_before_foot_count=30):
         print("  ")
-        print("  抵抗線計算クラス 時間", time_before, "足", foot)
+        print("  抵抗線計算クラス 時間範囲(足数)", time_before_foot_count, "足", foot)
         # ■■■基本情報の取得
         mode = "live"
         if mode == "live":
@@ -595,7 +749,7 @@ class LineStrengthCal:
         self.s = "     "
         self.pair = "USD_JPY"
         self.candle_analysis_class = candle_analysis_class  # ローソク情報の全て
-        self.time_before = time_before
+        self.time_before_foot_count = time_before_foot_count
 
         # 各足でのローソク情報
         self.candle_meta_m5 = candle_analysis_class.candle_meta_class  # peaks以外の部分。cal_move_ave関数を使う用
@@ -613,29 +767,170 @@ class LineStrengthCal:
         self.peaks_m30 = candle_analysis_class.peaks_class_m30.peaks_original
         self.df_r_m30 = candle_analysis_class.d30_df_r[from_i:]
 
+
+        # この関数で使う基本を入れておく
+        if foot == "m5":
+            self.peaks_class = self.peaks_class_m5
+            self.peaks = self.peaks_m5
+            self.df_r = self.df_r_m5
+            self.threshold = 3
+        elif foot == "h1":
+            self.peaks_class = self.peaks_class_h1
+            self.peaks = self.peaks_h1
+            self.df_r = self.df_r_h1
+            self.threshold = 3
+        elif foot == "m30":
+            self.peaks_class = self.peaks_class_m30
+            self.peaks = self.peaks_m30
+            self.df_r = self.df_r_m30
+            self.threshold = 3
+
         self.current_time = candle_analysis_class.d5_df_r.iloc[0]['time_jp']  # 5分足で判断(0行目を利用）
         self.current_price = candle_analysis_class.current_price  # candleAnalysisからとる（本番の場合はAPIで最新、解析の場合はclose価格)
-        self.target_dir = self.peaks_m5[0]['direction']
+        self.latest_peak_dir = self.peaks[0]['direction']
 
-        # 結果保持用
+        # lines_wrap_up関数で算出する変数
+        self.filtered_peaks = []  # 指定の時間までのピークス
+        self.filterd_df = None  # 指定の時間までのDF
         self.upper_lines = []
         self.lower_lines = []
+        self.tp_lines = []
+        self.lc_lines = []
+        self.all_lines = []  # base_priceより上の場合medianがプラス値、下の場合はマイナス値（latestPeakのdirectionが1の場合）
+
+        # lines_df_analysis関数で使う用の変数
+        self.max_inner_high = 0
+        self.max_highest = 0
+        self.min_inner_low = 99999
+        self.min_lowest = 99999
+        self.ratio = 0
+
 
         # 関数の実行
         self.lines_wrap_up()  # linesの算出
+        self.lines_df_analysis()  # linesの分析
+
+    def lines_df_analysis(self):
+        """
+        算出したラインを分析する。lines_wrap_up関数で算出したラインの情報を、直近の価格の動きなどと組み合わせて分析してみる
+        """
+        # 例えば、ラインの近さと、直近の価格の動きから、どのラインが効いているかを分析してみる
+        # 直近の価格の動きは、例えば、直近の数本のローソク足の高値と安値から見てみる
+        df_filterd = self.filterd_df
+        all_lines = self.all_lines
+
+        # peaksの中で最高値、最低を取得する
+        self.max_inner_high = df_filterd['inner_high'].max()
+        self.max_highest = df_filterd['high'].max()
+        self.min_inner_low = df_filterd['inner_low'].min()
+        self.min_lowest = df_filterd['low'].min()
+        self.df_high_low_range = self.p.price_to_pips(self.max_highest - self.min_lowest)  # 価格で計算後、pipsで保存する
+        print("     最高値", self.max_inner_high, "(", self.max_highest, ")", "最低値", self.min_inner_low, "(", self.min_lowest, ")")
+ 
+        # lineでの最高値と最低値のGapを算出
+        if len(all_lines) == 0:
+            print("ALL LINESが一本もない、イレギュラーな状態")
+            return 0
+        self.lines_high_low_range = round(abs(all_lines[0]['median'] - all_lines[-1]['median']), 3)
+
+        # 比率
+        self.ratio = round(self.lines_high_low_range / self.df_high_low_range, 2)
+        
+        print("     LongラインのLinesの発散具合", self.ratio, "dfの高値と安値の差", self.df_high_low_range, "lineのmedianの高値と安値の差", self.lines_high_low_range)
+
+        # 上側の詰まり具合、下側の詰まり具合を算出
+        highest = self.max_inner_high  # max_highestと入れ替えできるように
+        lowest = self.min_inner_low
+        dir = self.latest_peak_dir
+        if dir == 1:  # 直近peakが上向きの場合、linesの一番上が最高値
+            upper_gap = self.p.price_to_pips(highest - all_lines[0]['median_price'])
+            lower_gap = self.p.price_to_pips(all_lines[-1]['median_price'] - lowest)
+            print("     HIGH-LOW", highest, "-", lowest, "LINE_high_low", all_lines[0]['median_price'], "-", all_lines[-1]['median_price'])
+        else:  # 直近peakが下向きの場合、
+            upper_gap = self.p.price_to_pips(highest - all_lines[-1]['median_price'])
+            lower_gap = self.p.price_to_pips(all_lines[0]['median_price'] - lowest)
+            # print("     HIGH", highest, "-", all_lines[-1]['median_price'], "LOW", all_lines[0]['median_price'], "-", lowest)
+            print("     HIGH-LOW", highest, "-", lowest, "LINE_high_low", all_lines[-1]['median_price'], "-", all_lines[0]['median_price'])
+        line_ratio = round(abs(all_lines[0]['median_price'] - all_lines[-1]['median_price']), 3)
+        upper_ratio = round(upper_gap / self.df_high_low_range, 2)
+        lower_ratio = round(lower_gap / self.df_high_low_range, 2)
+        print("     line_ratio", line_ratio, "gap_pips", self.p.price_to_pips(abs(all_lines[0]['median_price'] - all_lines[-1]['median_price'])))
+        print("     upper_gap_pips", upper_gap, "lower_gap_pips", lower_gap)
+        print("     upper_gap_ratio", upper_ratio, "lower_gap_ratio", lower_ratio) 
+
+        # 現在価格がどこにいるかの確認
+        current_price = self.current_price
+        upper_lines = self.upper_lines
+        lower_lines = self.lower_lines
+        highest =  0 if len(upper_lines) == 0 else round(upper_lines[0]['median_price'], 5)
+        lowest =   9999 if len(lower_lines) == 0 else round(lower_lines[-1]['median_price'], 5)
+        if len(upper_lines) != 0 and len(lower_lines) != 0:
+            print("test", round(upper_lines[0]['median_price'], 5), round(lower_lines[-1]['median_price'], 5))
+        is_inner_lines = False
+        if lowest <= current_price <= highest:
+            is_inner_lines = True
+        print("     直近価格がLINEの中に入っているか？", is_inner_lines)
+
+        # 判定
+        if is_inner_lines:
+            # linesの内側⇒レンジの可能性が出てくる
+            if upper_ratio <= 0.2 and lower_ratio >= 0.4:
+                # レンジが上部にある
+                print("      レンジが上部にあり、直近もその中")
+                pass
+            elif lower_ratio <= 0.2 and upper_ratio >= 0.4:
+                # レンジが下部にある
+                print("      レンジが下部にあり、直近もその中")
+                pass
+            elif upper_ratio <= 0.2 and lower_ratio <= 0.2:
+                # レンジが継続している
+                print("      全体的にまとまった感じ、直近もその中")
+                pass
+            elif upper_ratio >= 0.4 and lower_ratio >= 0.4:
+                # 荒れている、激しめのレンジ
+                print("      少し激しめの動き、直近もその中")
+                pass
+        else:
+            # linesの外側にある
+            print("      直近はレンジ外")
 
 
     def lines_wrap_up(self):
         """
         Lineを探索する
         """
+        # 必要な情報を変数化
         base_price = self.current_price
-        time_before_h = self.time_before
-        threshold = 3
-        upper_lines = self.search_upper_lines(base_price, time_before_h, threshold)  # target_price
-        lower_lines = self.search_lower_lines(base_price, time_before_h, threshold)  # target_price
+        time_before_foot_count = self.time_before_foot_count
+        threshold = 3  # pipsで指定
         
-        if self.target_dir == 1:
+        # ピークの取得
+        peaks = self.peaks_class.peaks_original  # 使う足の選択
+        if threshold is None:
+            threshold = self.threshold
+        
+        # ★Peaksを絞り込み(指定の直近の足数でフィルタ。土日挟むと時間指定がおかしくなるので足数。足数から時間を算出)
+        df_filterd = self.df_r[0:time_before_foot_count]
+        oldest_time = datetime.strptime(df_filterd.iloc[-1]['time_jp'], "%Y/%m/%d %H:%M:%S")
+        current_time = datetime.strptime(self.df_r.iloc[0]['time_jp'], "%Y/%m/%d %H:%M:%S")
+        time_diff = (current_time - oldest_time).total_seconds() / 3600  # 時間差を時間単位で計算
+        border_time = datetime.strptime(self.current_time, '%Y/%m/%d %H:%M:%S') - timedelta(hours=time_diff)  # peakを算出するための
+        peaks = [
+            d for d in peaks
+            if datetime.strptime(d['latest_time_jp'], '%Y/%m/%d %H:%M:%S') > border_time
+        ]
+        self.filtered_peaks = peaks  # 保存用
+        self.filterd_df = df_filterd  # 保存用
+
+        # ラインの処理
+        print("    Line探索の基準価格",base_price, "直近ピーク方向", self.latest_peak_dir, "時間最後", border_time, "time_DIFF", time_diff)
+        upper_base_price = base_price - (self.latest_peak_dir * self.p.pips_to_price(1))
+        upper_lines = self.search_upper_lines(upper_base_price, peaks, threshold)  # target_price
+        
+        lower_base_price = base_price + (self.latest_peak_dir * self.p.pips_to_price(1))
+        lower_lines = self.search_lower_lines(lower_base_price, peaks, threshold)  # target_price
+
+        if self.latest_peak_dir == 1:
             # 直近価格＝注文価格の場合 いずれも直近価格から近い順に並んでいる。
             self.tp_lines = upper_lines
             self.lc_lines = lower_lines
@@ -646,7 +941,28 @@ class LineStrengthCal:
         self.lower_lines = lower_lines
         self.upper_lines = upper_lines
 
-        print("    TARGET PRICE:", base_price, "BasePrice", base_price)
+        # ALLのラインを作る
+        if self.latest_peak_dir == 1:
+            # upper_lines: median そのまま（昇順 → 降順に反転）
+            # lower_lines: median に - をつけて（降順のまま）
+            reversed_upper = list(reversed(self.upper_lines))
+            negated_lower = [
+                {**line, 'median': -line['median']}
+                for line in self.lower_lines
+            ]
+            combined = reversed_upper + negated_lower
+        elif self.latest_peak_dir == -1:
+            # lower_lines: median そのまま（昇順 → 反転して降順に）
+            # upper_lines: median に - をつけて（昇順のまま反転せず、そのままマイナス）
+            reversed_lower = list(reversed(self.lower_lines))
+            negated_upper = [
+                {**line, 'median': -line['median']}
+                for line in self.upper_lines
+            ]
+            combined = reversed_lower + negated_upper
+        self.all_lines = combined
+
+        """
         print("    TP LINES", len(self.tp_lines))
         for i, g in enumerate(self.tp_lines):
             print(
@@ -671,60 +987,61 @@ class LineStrengthCal:
                 f"oldest_time = {g['oldest_time']}, "
                 f"prices = {', '.join(map(str, g['prices']))}"
             )
+        """
+        print("    All LINES", len(self.all_lines))
+        for i, g in enumerate(self.all_lines):
+            print(
+                self.s,
+                f"Group {i}: median_price = {g['median_price']:.3f}, "
+                f"median = {g['median']:.3f}, "
+                f"strength = {g['total_strength']}, "
+                f"count = {g['count']}, "
+                f"ave_strength = {g['ave_strength']}, "
+                f"oldest_time = {g['oldest_time']}, "
+                f"prices = {', '.join(map(str, g['prices']))}, "
+                f"dirs = {', '.join(map(str, g['dirs']))}, "
+                f"dirs_grouped = {', '.join(map(str, g['dirs_grouped']))}"
+            )
 
-    def search_upper_lines(self, base_price, time_before_h=3, threshold=2):
+    def search_upper_lines(self, base_price, peaks, threshold=None):
         # print("    UpperLines検索")
-        peaks = self.peaks_class_m5.peaks_original  # 使う足の選択
-        # 時間でPeaksを絞り込み（直近N時間のピークで解析）
-        border_time = datetime.strptime(self.current_time, '%Y/%m/%d %H:%M:%S') - timedelta(hours=time_before_h)
-        peaks = [
-            d for d in peaks
-            if datetime.strptime(d['latest_time_jp'], '%Y/%m/%d %H:%M:%S') > border_time
-        ]
         # グループ化
         minus_groups = self.make_same_price_group(
             peaks=peaks,
             upper_lower=1,  # base_priceより下側
             target_price=base_price,
-            width=threshold,
+            threshold=threshold,
             sort_direction=1  # 昇順
         )
         # 弱すぎるグループは排除する
-        filtered = [d for d in minus_groups if d["ave_strength"] >= 1.5 and d['count'] >= 2]
+        filtered = [d for d in minus_groups if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
+        # filtered = [d for d in minus_groups if d["ave_strength"] >= 2 and d['count'] >= 2]
         return filtered
 
-    def search_lower_lines(self, base_price, time_before_h=3, threshold=2):
+    def search_lower_lines(self, base_price, peaks, threshold=None):
         # print("    LowerLines検索")
-        peaks = self.peaks_class_m5.peaks_original  # 使う足の選択
-        # 時間でPeaksを絞り込み（直近N時間のピークで解析）
-        border_time = datetime.strptime(self.current_time, '%Y/%m/%d %H:%M:%S') - timedelta(hours=time_before_h)
-        peaks = [
-            d for d in peaks
-            if datetime.strptime(d['latest_time_jp'], '%Y/%m/%d %H:%M:%S') > border_time
-        ]
         # グループ化
         minus_groups = self.make_same_price_group(
             peaks=peaks,
             upper_lower=-1,  # base_priceより下側
             target_price=base_price,
-            width=threshold,
+            threshold=threshold,
             sort_direction=-1  # 降順
         )
         # 弱すぎるグループは排除する
-        filtered = [d for d in minus_groups if d["ave_strength"] >= 1.5 and d['count'] >= 2]
+        filtered = [d for d in minus_groups if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
+        # filtered = [d for d in minus_groups if d["ave_strength"] >= 2 and d['count'] >= 2]
         return filtered
 
     def make_same_price_group(self, peaks,
-                              upper_lower,
-                              target_price,
-                              width=3,  # pips単位
-                              direction_filter=None,
-                              sort_direction=-1,
-                              ):
+                            upper_lower,
+                            target_price,
+                            threshold=3,  # pips単位
+                            direction_filter=None,
+                            sort_direction=-1,
+                            ):
         # target_priceをpipsに変換（基準点として）
         target_price_pips = self.p.price_to_pips(target_price)
-        # print(f"DEBUG: target_price={target_price}, target_price_pips={target_price_pips}")
-        # print(f"DEBUG: width={width} pips")
 
         if upper_lower == -1:
             # 下側の場合
@@ -751,24 +1068,21 @@ class LineStrengthCal:
             price = float(p['latest_body_peak_price'])
             price_pips = self.p.price_to_pips(price)
             
-            # ← ここをデバッグ
             group_key = round(
-                math.floor(price_pips / width) * width,
+                math.floor(price_pips / threshold) * threshold,
                 5
             )
-            
-            # print(f"DEBUG: price={price}, price_pips={price_pips}, group_key={group_key}")
-            
             groups[group_key].append(p)
         
-        # print(f"DEBUG: groups={dict(groups)}")  # グループの内容確認
-        # print(f"DEBUG: filtered_peaks count={len(filtered_peaks)}")
-
         results = []
 
         for group_key, items in groups.items():
             prices = [
                 float(x['latest_body_peak_price'])
+                for x in items
+            ]
+            dirs = [
+                x['direction']
                 for x in items
             ]
             prices_pips = [self.p.price_to_pips(p) for p in prices]
@@ -792,11 +1106,20 @@ class LineStrengthCal:
                 'count': len(items),
                 "ave_strength": round(sum(float(x['peak_strength']) for x in items) / len(items) if items else 0, 1),
                 'prices': prices,
+                'dirs': dirs,  # ★ 追加
                 'range_min': group_key,
-                'range_max': group_key + width,
+                'range_max': group_key + threshold,
                 'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
                 'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
             })
+        # 連続した同じ値をグループ化して合計
+        from itertools import groupby
+        for r in results:
+            r['dirs_grouped'] = [sum(group) for key, group in groupby(r['dirs'])]
+
+        print("TEST表示")
+        for i, item in enumerate(results):
+            print(" ", item)
 
         results = sorted(
             results,
