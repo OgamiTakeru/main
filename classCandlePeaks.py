@@ -40,7 +40,7 @@ class PeaksClass:
         # ★現在価格（親のcandleAnalysisで取得されたものを使用する)
         self.current_price = current_price
 
-        # ■足の幅で変わる値群
+        # ■足の幅で変わる値群 全てpipsで指定。
         if granularity == "M5":
             # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
             self.analysis_num = 180  # この足の分のデータフレームを処理する（足ごとに設定）
@@ -66,11 +66,11 @@ class PeaksClass:
             # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
             self.analysis_num = 240  # この足の分のデータフレームを処理する（足ごとに設定）
             self.peak_strength_border_min = 0.05
-            self.peak_strength_border = 0.15  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
-            self.peak_strength_border_second = 0.20  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
+            self.peak_strength_border = 0.07  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
+            self.peak_strength_border_second = 0.07  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
             # SkipPeaksの際の基準(SkipPeaks関数）
-            self.skip_gap_border = 0.25  # 0.045  # この値以下のGapをもつPeakは、スキップ処理の対象（これ以上の場合は、スキップ対象外）
-            self.skip_gap_border_second = 0.25 #  0.05  # この値以下のGapを持つPeakは、重なり（ラップ）状況でスキップされる
+            self.skip_gap_border = 0.07  # 0.045  # この値以下のGapをもつPeakは、スキップ処理の対象（これ以上の場合は、スキップ対象外）
+            self.skip_gap_border_second = 0.07 #  0.05  # この値以下のGapを持つPeakは、重なり（ラップ）状況でスキップされる
             # 急変動(fluctuation)を検知する基準の設定　cal_move_size関数
             self.recent_fluctuation_range = 0.03  # 最大変動幅の4パーセント程度  # 指定ではなく、計算で算出される。直近N足分以内での最大変動幅（最高値ー最低値）round済み
             self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）

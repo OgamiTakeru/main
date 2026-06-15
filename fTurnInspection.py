@@ -348,9 +348,11 @@ class MainAnalysis:
         result = self.compare_lines(line_class_m5_l, line_class_m5_s, threshold=0.5)
         print(f"判定: {result['status']}")
         print("1時間足")
-        line_class_h1_l = LineStrengthCal(self.candle_analysis_all, "h1", 50)  # 画面全体くらい（直近の大きな流れを見れる）
+        line_class_h1_l = LineStrengthCal(self.candle_analysis_all, "h1", 65)  # 画面全体くらい（直近の大きな流れを見れる）
         line_class_h1_s = LineStrengthCal(self.candle_analysis_all, "h1", 30)  # 画面半分くらい（直近のレンジを見れる）
         result = self.compare_lines(line_class_h1_l, line_class_h1_s, threshold=0.5)
+        peaks_h1 = self.candle_analysis_all.peaks_class_hour.peaks_original
+        # gene.print_peaks(peaks_h1)
 
         # ■RSI と Line 総強度による追加判定
         order_pattern = 0
@@ -773,12 +775,12 @@ class LineStrengthCal:
             self.peaks_class = self.peaks_class_m5
             self.peaks = self.peaks_m5
             self.df_r = self.df_r_m5
-            self.threshold = 3
+            self.threshold = 1
         elif foot == "h1":
             self.peaks_class = self.peaks_class_h1
             self.peaks = self.peaks_h1
             self.df_r = self.df_r_h1
-            self.threshold = 3
+            self.threshold = 2
         elif foot == "m30":
             self.peaks_class = self.peaks_class_m30
             self.peaks = self.peaks_m30
@@ -808,7 +810,57 @@ class LineStrengthCal:
 
         # 関数の実行
         self.lines_wrap_up()  # linesの算出
-        self.lines_df_analysis()  # linesの分析
+        self.line_each_analysis()  # 各lineの分析
+        self.lines_df_analysis()  # linesの分析(全体感)
+
+        # lineの表示
+        print("    All LINES @ 815行目付近", len(self.all_lines))
+        for i, g in enumerate(self.all_lines):
+            print(
+                self.s,
+                f"Group {i}: median_price = {g['median_price']:.3f}, "
+                f"median = {g['median']:.3f}, "
+                f"strength = {g['total_strength']}, "
+                f"count = {g['count']}, "
+                f"ave_strength = {g['ave_strength']}, "
+                f"oldest_time = {g['oldest_time']}, " 
+                # f"prices = {', '.join(map(str, g['prices']))}, "
+                f"is_flipped_line = {g['is_flipped_line']},  "
+                f"price_gap = {g['price_gap']}, "
+                # f"dirs = {', '.join(map(str, g['dirs']))}, "
+                f"dirs_grouped = {', '.join(map(str, g['dirs_grouped']))}"
+                # f"is_flipped_line_st = {g['is_flipped_line_st']},  "
+            )
+            # for j, info in enumerate(g['prices_info']):
+            #     print(
+            #         self.s,
+            #         "  ",
+            #         f"time={info['latest_time_jp']}"
+            #         f"  [{j}] price={info['latest_body_peak_price']}, "
+            #         f"direction={info['direction']}, "
+            #         f"strength={info['peak_strength']}, "
+            #         f"time={info['latest_time_jp']}"
+            #     )
+
+    def line_each_analysis(self):
+        print("    個別LINE分析")
+        all_lines = self.all_lines  # 置き換え
+        # 結果用
+        for i, item in enumerate(all_lines):
+            # print("    K", item['median_price'])
+            is_flipped_line = False
+            # 各ラインを単品で見ていく
+            dirs = item['dirs_grouped']
+            if item['count'] >= 3 and len(dirs) >= 2:
+                # 3個以上ある場合、向き等を検討していく
+                if dirs[0] * dirs[1] < 0 and item['prices_info'][0]["peak_strength"]>2:
+                    # print("      K", item['median_price'], dirs[0], dirs[1])
+                    # 正負の数が異なっている
+                    if abs(dirs[1]) >= 2:
+                        is_flipped_line = True
+            # 結果付与する
+            item['is_flipped_line'] = is_flipped_line
+            item['is_flipped_line_st'] = 0
 
     def lines_df_analysis(self):
         """
@@ -816,6 +868,7 @@ class LineStrengthCal:
         """
         # 例えば、ラインの近さと、直近の価格の動きから、どのラインが効いているかを分析してみる
         # 直近の価格の動きは、例えば、直近の数本のローソク足の高値と安値から見てみる
+        print("    LINES分析")
         df_filterd = self.filterd_df
         all_lines = self.all_lines
 
@@ -864,8 +917,6 @@ class LineStrengthCal:
         lower_lines = self.lower_lines
         highest =  0 if len(upper_lines) == 0 else round(upper_lines[0]['median_price'], 5)
         lowest =   9999 if len(lower_lines) == 0 else round(lower_lines[-1]['median_price'], 5)
-        if len(upper_lines) != 0 and len(lower_lines) != 0:
-            print("test", round(upper_lines[0]['median_price'], 5), round(lower_lines[-1]['median_price'], 5))
         is_inner_lines = False
         if lowest <= current_price <= highest:
             is_inner_lines = True
@@ -924,18 +975,34 @@ class LineStrengthCal:
 
         # ラインの処理
         print("    Line探索の基準価格",base_price, "直近ピーク方向", self.latest_peak_dir, "時間最後", border_time, "time_DIFF", time_diff)
-        upper_base_price = base_price - (self.latest_peak_dir * self.p.pips_to_price(1))
-        upper_lines = self.search_upper_lines(upper_base_price, peaks, threshold)  # target_price
+        # upper_base_price = base_price + (self.latest_peak_dir * self.p.pips_to_price(1))
+        # print("     Upper基準", upper_base_price)
+        # upper_lines = self.search_upper_lines(upper_base_price, peaks, threshold)  # target_price
         
-        lower_base_price = base_price + (self.latest_peak_dir * self.p.pips_to_price(1))
-        lower_lines = self.search_lower_lines(lower_base_price, peaks, threshold)  # target_price
+        # lower_base_price = base_price - (self.latest_peak_dir * self.p.pips_to_price(1))
+        # print("     Lower基準", lower_base_price)
+        # lower_lines = self.search_lower_lines(lower_base_price, peaks, threshold)  # target_price
 
         if self.latest_peak_dir == 1:
             # 直近価格＝注文価格の場合 いずれも直近価格から近い順に並んでいる。
+            upper_base_price = base_price - (self.latest_peak_dir * self.p.pips_to_price(1))  # 利確を少し手前から
+            print("     Upper基準", upper_base_price)
+            upper_lines = self.search_upper_lines(upper_base_price, peaks, threshold)  # target_price
+            
+            lower_base_price = base_price - (self.latest_peak_dir * self.p.pips_to_price(1))
+            print("     Lower基準", lower_base_price)
+            lower_lines = self.search_lower_lines(lower_base_price, peaks, threshold)  # target_price
             self.tp_lines = upper_lines
             self.lc_lines = lower_lines
         else:
             # 直近価格＝注文価格の場合
+            upper_base_price = base_price - (self.latest_peak_dir * self.p.pips_to_price(1))  # 利確を少し手前から
+            print("     Upper基準", upper_base_price)
+            upper_lines = self.search_upper_lines(upper_base_price, peaks, threshold)  # target_price
+            
+            lower_base_price = base_price - (self.latest_peak_dir * self.p.pips_to_price(1))
+            print("     Lower基準", lower_base_price)
+            lower_lines = self.search_lower_lines(lower_base_price, peaks, threshold)  # target_price
             self.tp_lines = lower_lines
             self.lc_lines = upper_lines
         self.lower_lines = lower_lines
@@ -963,6 +1030,42 @@ class LineStrengthCal:
         self.all_lines = combined
 
         """
+        # ALL line2
+        df_filterd = self.filterd_df
+        self.max_inner_high = df_filterd['inner_high'].max()
+        self.max_highest = df_filterd['high'].max()
+        self.min_inner_low = df_filterd['inner_low'].min()
+        self.min_lowest = df_filterd['low'].min()
+        all_lines2 = self.make_same_price_group2(peaks, self.latest_peak_dir, base_price, threshold)  # target_price
+        print("    All LINES @ `````", len(all_lines2))
+        for i, g in enumerate(all_lines2):
+            print(
+                self.s,
+                f"Group {i}: median_price = {g['median_price']:.3f}, "
+                f"median = {g['median_p']:.3f}, "
+                f"strength = {g['total_strength']}, "
+                f"count = {g['count']}, "
+                f"ave_strength = {g['ave_strength']}, "
+                f"oldest_time = {g['oldest_time']}, " 
+                # f"prices = {', '.join(map(str, g['prices']))}, "
+                # f"is_flipped_line = {g['is_flipped_line']},  "
+                f"price_gap = {g['price_gap']}, "
+                # f"dirs = {', '.join(map(str, g['dirs']))}, "
+                f"dirs_grouped = {', '.join(map(str, g['dirs_grouped']))}"
+                # f"is_flipped_line_st = {g['is_flipped_line_st']},  "
+            )
+            for j, info in enumerate(g['prices_info']):
+                print(
+                    self.s,
+                    "  ",
+                    f"time={info['latest_time_jp']}"
+                    f"  [{j}] price={info['latest_body_peak_price']}, "
+                    f"direction={info['direction']}, "
+                    f"strength={info['peak_strength']}, "
+                    f"time={info['latest_time_jp']}"
+                )
+
+
         print("    TP LINES", len(self.tp_lines))
         for i, g in enumerate(self.tp_lines):
             print(
@@ -988,20 +1091,6 @@ class LineStrengthCal:
                 f"prices = {', '.join(map(str, g['prices']))}"
             )
         """
-        print("    All LINES", len(self.all_lines))
-        for i, g in enumerate(self.all_lines):
-            print(
-                self.s,
-                f"Group {i}: median_price = {g['median_price']:.3f}, "
-                f"median = {g['median']:.3f}, "
-                f"strength = {g['total_strength']}, "
-                f"count = {g['count']}, "
-                f"ave_strength = {g['ave_strength']}, "
-                f"oldest_time = {g['oldest_time']}, "
-                f"prices = {', '.join(map(str, g['prices']))}, "
-                f"dirs = {', '.join(map(str, g['dirs']))}, "
-                f"dirs_grouped = {', '.join(map(str, g['dirs_grouped']))}"
-            )
 
     def search_upper_lines(self, base_price, peaks, threshold=None):
         # print("    UpperLines検索")
@@ -1015,7 +1104,7 @@ class LineStrengthCal:
         )
         # 弱すぎるグループは排除する
         filtered = [d for d in minus_groups if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
-        # filtered = [d for d in minus_groups if d["ave_strength"] >= 2 and d['count'] >= 2]
+        # filtered = [d for d in minus_groups if d["ave_strength"] >= 0 and d['count'] >= 1]
         return filtered
 
     def search_lower_lines(self, base_price, peaks, threshold=None):
@@ -1030,13 +1119,13 @@ class LineStrengthCal:
         )
         # 弱すぎるグループは排除する
         filtered = [d for d in minus_groups if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
-        # filtered = [d for d in minus_groups if d["ave_strength"] >= 2 and d['count'] >= 2]
+        # filtered = [d for d in minus_groups if d["ave_strength"] >= 0 and d['count'] >= 1]
         return filtered
 
     def make_same_price_group(self, peaks,
                             upper_lower,
                             target_price,
-                            threshold=3,  # pips単位
+                            threshold=3,  # pips単位（前後の範囲）
                             direction_filter=None,
                             sort_direction=-1,
                             ):
@@ -1062,71 +1151,381 @@ class LineStrengthCal:
                 if p['direction'] == direction_filter
             ]
 
-        groups = defaultdict(list)
-        
-        for p in filtered_peaks:
-            price = float(p['latest_body_peak_price'])
-            price_pips = self.p.price_to_pips(price)
-            
-            group_key = round(
-                math.floor(price_pips / threshold) * threshold,
-                5
-            )
-            groups[group_key].append(p)
-        
+        if not filtered_peaks:
+            return []
+
+        # 価格でソート（降順）
+        sorted_peaks = sorted(
+            filtered_peaks,
+            key=lambda x: float(x['latest_body_peak_price']),
+            reverse=True
+        )
+
+        used_indices = set()  # 既に使われたインデックス
         results = []
 
-        for group_key, items in groups.items():
-            prices = [
-                float(x['latest_body_peak_price'])
-                for x in items
-            ]
-            dirs = [
-                x['direction']
-                for x in items
-            ]
-            prices_pips = [self.p.price_to_pips(p) for p in prices]
+        for i, p in enumerate(sorted_peaks):
+            if i in used_indices:
+                continue
 
-            latest_times = [
-                datetime.strptime(
-                    x['latest_time_jp'],
-                    '%Y/%m/%d %H:%M:%S'
+            center_price = float(p['latest_body_peak_price'])
+            center_price_pips = self.p.price_to_pips(center_price)
+            
+            # 中心価格の前後thresholdの範囲にあるものを集める
+            group_items = []
+            group_indices = []
+
+            for j, candidate in enumerate(sorted_peaks):
+                if j not in used_indices:
+                    candidate_price = float(candidate['latest_body_peak_price'])
+                    candidate_price_pips = self.p.price_to_pips(candidate_price)
+                    
+                    # pips単位で前後thresholdの範囲内か確認
+                    if abs(candidate_price_pips - center_price_pips) <= threshold:
+                        group_items.append(candidate)
+                        group_indices.append(j)
+
+            if group_items:
+                # 時系列順に戻る
+                sorted_group_items = sorted(
+                    group_items,
+                    key=lambda x: datetime.strptime(x['latest_time_jp'], '%Y/%m/%d %H:%M:%S'),
+                    reverse=True
                 )
-                for x in items
-            ]
+                
+                prices = [float(x['latest_body_peak_price']) for x in sorted_group_items]
+                dirs = [x['direction'] for x in sorted_group_items]
+                prices_pips = [self.p.price_to_pips(p) for p in prices]
 
-            median_price_pips = median(prices_pips)
-            median_diff_pips = abs(target_price_pips - median_price_pips)
+                latest_times = [
+                    datetime.strptime(
+                        x['latest_time_jp'],
+                        '%Y/%m/%d %H:%M:%S'
+                    )
+                    for x in sorted_group_items
+                ]
 
-            results.append({
-                'median_price': median(prices),
-                'median_p': round(abs(target_price - median(prices)), 3),
-                'median': median_diff_pips,
-                "total_strength": sum(float(x['peak_strength']) for x in items),
-                'count': len(items),
-                "ave_strength": round(sum(float(x['peak_strength']) for x in items) / len(items) if items else 0, 1),
-                'prices': prices,
-                'dirs': dirs,  # ★ 追加
-                'range_min': group_key,
-                'range_max': group_key + threshold,
-                'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
-                'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
-            })
+                median_price = median(prices)
+                median_price_pips = median(prices_pips)
+                median_diff_pips = abs(target_price_pips - median_price_pips)
+                price_gap = self.p.price_to_pips(max(prices) - min(prices))
+
+                results.append({
+                    'median_price': median_price,
+                    'median_p': round(abs(target_price - median_price), 3),
+                    'median': median_diff_pips,
+                    "total_strength": sum(float(x['peak_strength']) for x in sorted_group_items),
+                    'count': len(sorted_group_items),
+                    "ave_strength": round(
+                        sum(float(x['peak_strength']) for x in sorted_group_items) / len(sorted_group_items) 
+                        if sorted_group_items else 0, 1
+                    ),
+                    'prices': prices,
+                    'price_gap': round(price_gap, 5),
+                    'prices_info': sorted_group_items,
+                    'dirs': dirs,
+                    'range_min': center_price_pips - threshold,
+                    'range_max': center_price_pips + threshold,
+                    'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
+                    'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
+                })
+                
+                # このグループに属するものを使用済みに
+                used_indices.update(group_indices)
+
         # 連続した同じ値をグループ化して合計
         from itertools import groupby
         for r in results:
             r['dirs_grouped'] = [sum(group) for key, group in groupby(r['dirs'])]
 
-        print("TEST表示")
-        for i, item in enumerate(results):
-            print(" ", item)
+        # グループ化されなかったものを1個のグループとして追加
+        for i, peak in enumerate(sorted_peaks):
+            if i not in used_indices:
+                price = float(peak['latest_body_peak_price'])
+                price_pips = self.p.price_to_pips(price)
+                
+                latest_time = datetime.strptime(
+                    peak['latest_time_jp'],
+                    '%Y/%m/%d %H:%M:%S'
+                )
+                
+                results.append({
+                    'median_price': price,
+                    'median_p': round(abs(target_price - price), 3),
+                    'median': abs(target_price_pips - price_pips),
+                    "total_strength": float(peak['peak_strength']),
+                    'count': 1,
+                    "ave_strength": float(peak['peak_strength']),
+                    'prices': [price],
+                    'price_gap': 0,
+                    'prices_info': [peak],
+                    'dirs': [peak['direction']],
+                    'dirs_grouped': [peak['direction']],
+                    'range_min': price_pips - threshold,
+                    'range_max': price_pips + threshold,
+                    'newest_time': latest_time.strftime('%Y/%m/%d %H:%M:%S'),
+                    'oldest_time': latest_time.strftime('%Y/%m/%d %H:%M:%S'),
+                })
+        # print("TEST表示")
+        # for i, item in enumerate(results):
+        #     print(" ", item)
 
         results = sorted(
             results,
             key=lambda x: x['median_price'],  # 価格で並び替え
             reverse=(sort_direction == -1)
         )
+        
         return results
+
+
+    def make_same_price_group2(self, peaks,
+                            direction,
+                            target_price,
+                            threshold=3,
+                            direction_filter=None,
+                            ):
+        # target_priceをpipsに変換（基準点として）
+        target_price_pips = self.p.price_to_pips(target_price)
+
+        if direction_filter is not None:
+            filtered_peaks = [
+                p for p in peaks
+                if p['direction'] == direction_filter
+            ]
+        else:
+            filtered_peaks = peaks
+
+        if not filtered_peaks:
+            return []
+        print('1287')
+        gene.print_peaks(filtered_peaks)
+
+        # 価格は既に降順で並んでいるので、ソート不要
+        sorted_peaks = filtered_peaks
+
+        used_indices = set()
+        results = []
+
+        for i, p in enumerate(sorted_peaks):
+            if i in used_indices:
+                continue
+
+            center_price = float(p['latest_body_peak_price'])
+            center_price_pips = self.p.price_to_pips(center_price)
+            
+            # 中心価格の前後thresholdの範囲にあるものを集める
+            group_items = []
+            group_indices = []
+
+            for j, candidate in enumerate(sorted_peaks):
+                if j not in used_indices:
+                    candidate_price = float(candidate['latest_body_peak_price'])
+                    candidate_price_pips = self.p.price_to_pips(candidate_price)
+                    
+                    # pips単位で前後thresholdの範囲内か確認
+                    if abs(candidate_price_pips - center_price_pips) <= threshold:
+                        group_items.append(candidate)
+                        group_indices.append(j)
+
+            if group_items:
+                # 時系列順に戻る（新しい順）
+                sorted_group_items = sorted(
+                    group_items,
+                    key=lambda x: datetime.strptime(x['latest_time_jp'], '%Y/%m/%d %H:%M:%S'),
+                    reverse=True
+                )
+                
+                prices = [float(x['latest_body_peak_price']) for x in sorted_group_items]
+                dirs = [x['direction'] for x in sorted_group_items]
+                prices_pips = [self.p.price_to_pips(p) for p in prices]
+
+                latest_times = [
+                    datetime.strptime(
+                        x['latest_time_jp'],
+                        '%Y/%m/%d %H:%M:%S'
+                    )
+                    for x in sorted_group_items
+                ]
+
+                median_price = median(prices)
+                median_price_pips = median(prices_pips)
+                
+                # ★ direction に応じて median の値を変える
+                if direction == 1:
+                    # 上側：median_price - target_price
+                    median_value = median_price - target_price
+                else:  # direction == -1
+                    # 下側：target_price - median_price
+                    median_value = target_price - median_price
+                
+                price_gap = self.p.price_to_pips(max(prices) - min(prices))
+
+                results.append({
+                    'median_price': median_price,
+                    'median_p': self.p.price_to_pips(median_value),
+                    'median': round(median_value, 3),  
+                    "total_strength": sum(float(x['peak_strength']) for x in sorted_group_items),
+                    'count': len(sorted_group_items),
+                    "ave_strength": round(
+                        sum(float(x['peak_strength']) for x in sorted_group_items) / len(sorted_group_items) 
+                        if sorted_group_items else 0, 1
+                    ),
+                    'prices': prices,
+                    'price_gap': round(price_gap, 5),
+                    'prices_info': sorted_group_items,
+                    'dirs': dirs,
+                    'range_min': center_price_pips - threshold,
+                    'range_max': center_price_pips + threshold,
+                    'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
+                    'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
+                })
+                
+                # このグループに属するものを使用済みに
+                used_indices.update(group_indices)
+
+        # 連続した同じ値をグループ化して合計
+        from itertools import groupby
+        for r in results:
+            r['dirs_grouped'] = [sum(group) for key, group in groupby(r['dirs'])]
+
+        # グループ化されなかったものを1個のグループとして追加
+        for i, peak in enumerate(sorted_peaks):
+            if i not in used_indices:
+                price = float(peak['latest_body_peak_price'])
+                price_pips = self.p.price_to_pips(price)
+                
+                latest_time = datetime.strptime(
+                    peak['latest_time_jp'],
+                    '%Y/%m/%d %H:%M:%S'
+                )
+                
+                # ★ direction に応じて median の値を変える
+                if direction == 1:
+                    median_value = price - target_price
+                else:
+                    median_value = target_price - price
+                
+                results.append({
+                    'median_price': price,
+                    'median_p': round(abs(target_price - price), 3),
+                    'median': round(median_value, 3),  # ★ 修正
+                    "total_strength": float(peak['peak_strength']),
+                    'count': 1,
+                    "ave_strength": float(peak['peak_strength']),
+                    'prices': [price],
+                    'price_gap': 0,
+                    'prices_info': [peak],
+                    'dirs': [peak['direction']],
+                    'dirs_grouped': [peak['direction']],
+                    'range_min': price_pips - threshold,
+                    'range_max': price_pips + threshold,
+                    'newest_time': latest_time.strftime('%Y/%m/%d %H:%M:%S'),
+                    'oldest_time': latest_time.strftime('%Y/%m/%d %H:%M:%S'),
+                })
+
+        # フィルタ（よわいものは除外）      
+        # results = [d for d in results if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
+    
+        # 並び替え
+        results.sort(key=lambda x: x['median_price'], reverse=True)
+
+        return results
+
+        # def make_same_price_group(self, peaks,
+        #                         upper_lower,
+        #                         target_price,
+        #                         threshold=3,  # pips単位
+        #                         direction_filter=None,
+        #                         sort_direction=-1,
+        #                         ):
+        #     # target_priceをpipsに変換（基準点として）
+        #     target_price_pips = self.p.price_to_pips(target_price)
+
+        #     if upper_lower == -1:
+        #         # 下側の場合
+        #         filtered_peaks = [
+        #             p for p in peaks
+        #             if float(p['latest_body_peak_price']) < target_price
+        #         ]
+        #     else:
+        #         # 上側の場合
+        #         filtered_peaks = [
+        #             p for p in peaks
+        #             if float(p['latest_body_peak_price']) >= target_price
+        #         ]
+
+        #     if direction_filter is not None:
+        #         filtered_peaks = [
+        #             p for p in filtered_peaks
+        #             if p['direction'] == direction_filter
+        #         ]
+
+        #     groups = defaultdict(list)
+            
+        #     for p in filtered_peaks:
+        #         price = float(p['latest_body_peak_price'])
+        #         price_pips = self.p.price_to_pips(price)
+                
+        #         group_key = round(
+        #             math.floor(price_pips / threshold) * threshold,
+        #             5
+        #         )
+        #         groups[group_key].append(p)
+            
+        #     results = []
+
+        #     for group_key, items in groups.items():
+        #         prices = [
+        #             float(x['latest_body_peak_price'])
+        #             for x in items
+        #         ]
+        #         dirs = [
+        #             x['direction']
+        #             for x in items
+        #         ]
+        #         prices_pips = [self.p.price_to_pips(p) for p in prices]
+
+        #         latest_times = [
+        #             datetime.strptime(
+        #                 x['latest_time_jp'],
+        #                 '%Y/%m/%d %H:%M:%S'
+        #             )
+        #             for x in items
+        #         ]
+
+        #         median_price_pips = median(prices_pips)
+        #         median_diff_pips = abs(target_price_pips - median_price_pips)
+
+        #         results.append({
+        #             'median_price': median(prices),
+        #             'median_p': round(abs(target_price - median(prices)), 3),
+        #             'median': median_diff_pips,
+        #             "total_strength": sum(float(x['peak_strength']) for x in items),
+        #             'count': len(items),
+        #             "ave_strength": round(sum(float(x['peak_strength']) for x in items) / len(items) if items else 0, 1),
+        #             'prices': prices,
+        #             'dirs': dirs,  # ★ 追加
+        #             'range_min': group_key,
+        #             'range_max': group_key + threshold,
+        #             'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
+        #             'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
+        #         })
+        #     # 連続した同じ値をグループ化して合計
+        #     from itertools import groupby
+        #     for r in results:
+        #         r['dirs_grouped'] = [sum(group) for key, group in groupby(r['dirs'])]
+
+        #     print("TEST表示")
+        #     for i, item in enumerate(results):
+        #         print(" ", item)
+
+        #     results = sorted(
+        #         results,
+        #         key=lambda x: x['median_price'],  # 価格で並び替え
+        #         reverse=(sort_direction == -1)
+        #     )
+        #     return results
 
 
 class OrderPoints:
