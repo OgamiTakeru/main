@@ -52,7 +52,7 @@ class MainAnalysis:
 
         self.ca60 = candle_analysis.candle_meta_class_hour
         self.peaks_class_hour = candle_analysis.peaks_class_hour
-        self.df_r_h1 = candle_analysis.d60_df_r[from_i:]
+        self.df_r_h1 = candle_analysis.h1_df_r[from_i:]
 
         self.ca30 = candle_analysis.candle_meta_class_m30
         self.peaks_class_m30 = candle_analysis.peaks_class_m30
@@ -205,6 +205,57 @@ class MainAnalysis:
         # print("発行したオーダー2↓　(turn255)")
         # print(order_class.exe_order)
 
+    def add_h1_line_limit_orders(self, line_class, current_price, decision_time):
+        if self.mode != "inspection":
+            return
+
+        p = gene.USD_JPY
+        spread_pips = 0.8
+        lc_pips = 15
+        rr = 1.65
+        tp_pips = round(rr * (lc_pips + spread_pips) + spread_pips, 1)
+        lc_range = p.pips_to_price(lc_pips)
+        tp_range = p.pips_to_price(tp_pips)
+        units = int(self.cal_units(lc_range, tk.setting_json['l_units'], "l") * 0.5)
+
+        line_orders = []
+        for line_side, direction, lines in (
+            ("upper", -1, line_class.upper_lines),
+            ("lower", 1, line_class.lower_lines),
+        ):
+            for i, line in enumerate(lines):
+                line_price = p.round_price(line["median_price"])
+                order_class = OCreate.Order({
+                    "name": "H1LineLimit_" + line_side + "_" + str(i),
+                    "current_price": current_price,
+                    "target": line_price,
+                    "direction": direction,
+                    "type": "LIMIT",
+                    "tp": tp_range,
+                    "lc": lc_range,
+                    "lc_change": [],
+                    "units": units,
+                    "priority": int(line.get("total_strength", 0)),
+                    "decision_time": decision_time,
+                    "candle_analysis_class": self.candle_analysis_all,
+                    "lc_change_candle_type": "M5",
+                    "order_timeout_min": 60,
+                    "memo": "virtual H1 line limit order",
+                })
+                order_class.exe_order_plan["source"] = "line"
+                order_class.exe_order_plan["line_side"] = line_side
+                order_class.exe_order_plan["line_price"] = line_price
+                order_class.exe_order_plan["line_total_strength"] = line.get("total_strength")
+                order_class.exe_order_plan["line_count"] = line.get("count")
+                order_class.exe_order_plan["line_ave_strength"] = line.get("ave_strength")
+                order_class.exe_order_plan["line_is_flipped"] = line.get("is_flipped_line")
+                order_class.exe_order_plan["line_oldest_time"] = line.get("oldest_time")
+                line_orders.append(order_class)
+
+        if line_orders:
+            print("H1 line limit orders:", len(line_orders))
+            self.add_order_to_this_class(line_orders)
+
     def main(self):
         """
         ターン直後での判断。
@@ -222,7 +273,7 @@ class MainAnalysis:
         peaks_skip = self.peaks_class.skipped_peaks_hard
         mode = self.mode
         # 変数化（BB）
-        df_h1_row = candle_analysis.d60_df_r.iloc[0]
+        df_h1_row = candle_analysis.h1_df_r.iloc[0]
         bb_h1_class = self.bb_h1_class
         bb_m5_class = self.bb_m5_class
 
@@ -282,7 +333,7 @@ class MainAnalysis:
         return {
             'status': status,
             'line_type': line_type,
-            'median_diff': round(median_diff, 3),
+            'median_diff': gene.USD_JPY.round_price(median_diff),
             'threshold': threshold,
             'median_3h': median_3h,
             'median_6h': median_6h,
@@ -297,7 +348,7 @@ class MainAnalysis:
         # ターン時以外でも実行される
         print("■予測オーダー")
         s = self.s
-        p = CurrencyPair("USDJPY", 0.01)
+        p = gene.USD_JPY
         current_price = self.current_price  # self.ca = candle_analysis
         foot = 5
         if foot == 5:
@@ -350,6 +401,9 @@ class MainAnalysis:
         print("1時間足")
         line_class_h1_l = LineStrengthCal(self.candle_analysis_all, "h1", 65)  # 画面全体くらい（直近の大きな流れを見れる）
         line_class_h1_s = LineStrengthCal(self.candle_analysis_all, "h1", 30)  # 画面半分くらい（直近のレンジを見れる）
+        self.line_class_h1_l = line_class_h1_l
+        self.line_class_h1_s = line_class_h1_s
+        self.add_h1_line_limit_orders(line_class_h1_l, current_price, df.iloc[0]['time_jp'])
         result = self.compare_lines(line_class_h1_l, line_class_h1_s, threshold=0.5)
         peaks_h1 = self.candle_analysis_all.peaks_class_hour.peaks_original
         # gene.print_peaks(peaks_h1)
@@ -709,31 +763,6 @@ class MainAnalysis:
             tk.line_send("オーダーキャンセルのコードあり", op.stop_order_cancel)
 
 
-class CurrencyPair:
-    """通貨ペアのメタデータ"""
-
-    def __init__(self, name: str, pip_value: float):
-        self.name = name
-        self.pip_value = pip_value
-
-    def pips_to_price(self, pips: int | float) -> float:
-        """pipsを価格差に変換"""
-        return round(pips * self.pip_value, 5)
-
-    def price_to_pips(self, price_diff: float) -> float:
-        """価格差をpipsに変換"""
-        return round(price_diff / self.pip_value, 2)
-
-    def exchange(self, unknown_num):
-        """値を渡されたら、勝手に判断してpipsに変換する"""
-        if unknown_num >= self.pip_value * 100:
-            # 例えばドル円で２と来た場合は、pipsと判断。
-            result = round(unknown_num, 2)
-        else:
-            result = round(unknown_num / self.pip_value, 2)
-        return result
-
-
 class LineStrengthCal:
     def __init__(self, candle_analysis_class, foot, time_before_foot_count=30):
         print("  ")
@@ -746,7 +775,7 @@ class LineStrengthCal:
         else:
             from_i = 1
             self.mode = "inspection"
-        self.p = CurrencyPair("USDJPY", 0.01)
+        self.p = gene.USD_JPY
 
         self.s = "     "
         self.pair = "USD_JPY"
@@ -762,7 +791,7 @@ class LineStrengthCal:
         self.candle_meta_h1 = candle_analysis_class.candle_meta_class_hour
         self.peaks_class_h1 = candle_analysis_class.peaks_class_hour
         self.peaks_h1 = candle_analysis_class.peaks_class_hour.peaks_original
-        self.df_r_h1 = candle_analysis_class.d60_df_r[from_i:]
+        self.df_r_h1 = candle_analysis_class.h1_df_r[from_i:]
 
         self.candle_meta_m30 = candle_analysis_class.candle_meta_class_m30
         self.peaks_class_m30 = candle_analysis_class.peaks_class_m30
@@ -884,7 +913,7 @@ class LineStrengthCal:
         if len(all_lines) == 0:
             print("ALL LINESが一本もない、イレギュラーな状態")
             return 0
-        self.lines_high_low_range = round(abs(all_lines[0]['median'] - all_lines[-1]['median']), 3)
+        self.lines_high_low_range = self.p.round_price(abs(all_lines[0]['median'] - all_lines[-1]['median']))
 
         # 比率
         self.ratio = round(self.lines_high_low_range / self.df_high_low_range, 2)
@@ -904,7 +933,7 @@ class LineStrengthCal:
             lower_gap = self.p.price_to_pips(all_lines[0]['median_price'] - lowest)
             # print("     HIGH", highest, "-", all_lines[-1]['median_price'], "LOW", all_lines[0]['median_price'], "-", lowest)
             print("     HIGH-LOW", highest, "-", lowest, "LINE_high_low", all_lines[-1]['median_price'], "-", all_lines[0]['median_price'])
-        line_ratio = round(abs(all_lines[0]['median_price'] - all_lines[-1]['median_price']), 3)
+        line_ratio = self.p.round_price(abs(all_lines[0]['median_price'] - all_lines[-1]['median_price']))
         upper_ratio = round(upper_gap / self.df_high_low_range, 2)
         lower_ratio = round(lower_gap / self.df_high_low_range, 2)
         print("     line_ratio", line_ratio, "gap_pips", self.p.price_to_pips(abs(all_lines[0]['median_price'] - all_lines[-1]['median_price'])))
@@ -915,8 +944,8 @@ class LineStrengthCal:
         current_price = self.current_price
         upper_lines = self.upper_lines
         lower_lines = self.lower_lines
-        highest =  0 if len(upper_lines) == 0 else round(upper_lines[0]['median_price'], 5)
-        lowest =   9999 if len(lower_lines) == 0 else round(lower_lines[-1]['median_price'], 5)
+        highest = 0 if len(upper_lines) == 0 else self.p.round_price(upper_lines[0]['median_price'])
+        lowest = 9999 if len(lower_lines) == 0 else self.p.round_price(lower_lines[-1]['median_price'])
         is_inner_lines = False
         if lowest <= current_price <= highest:
             is_inner_lines = True
@@ -970,8 +999,8 @@ class LineStrengthCal:
             d for d in peaks
             if datetime.strptime(d['latest_time_jp'], '%Y/%m/%d %H:%M:%S') > border_time
         ]
-        self.filtered_peaks = peaks  # 保存用
-        self.filterd_df = df_filterd  # 保存用
+        self.filtered_peaks = peaks
+        self.filterd_df = df_filterd
 
         # ラインの処理
         print("    Line探索の基準価格",base_price, "直近ピーク方向", self.latest_peak_dir, "時間最後", border_time, "time_DIFF", time_diff)
@@ -1212,7 +1241,7 @@ class LineStrengthCal:
 
                 results.append({
                     'median_price': median_price,
-                    'median_p': round(abs(target_price - median_price), 3),
+                    'median_p': self.p.price_to_pips(abs(target_price - median_price)),
                     'median': median_diff_pips,
                     "total_strength": sum(float(x['peak_strength']) for x in sorted_group_items),
                     'count': len(sorted_group_items),
@@ -1221,7 +1250,7 @@ class LineStrengthCal:
                         if sorted_group_items else 0, 1
                     ),
                     'prices': prices,
-                    'price_gap': round(price_gap, 5),
+                    'price_gap': price_gap,
                     'prices_info': sorted_group_items,
                     'dirs': dirs,
                     'range_min': center_price_pips - threshold,
@@ -1251,7 +1280,7 @@ class LineStrengthCal:
                 
                 results.append({
                     'median_price': price,
-                    'median_p': round(abs(target_price - price), 3),
+                    'median_p': self.p.price_to_pips(abs(target_price - price)),
                     'median': abs(target_price_pips - price_pips),
                     "total_strength": float(peak['peak_strength']),
                     'count': 1,
@@ -1364,7 +1393,7 @@ class LineStrengthCal:
                 results.append({
                     'median_price': median_price,
                     'median_p': self.p.price_to_pips(median_value),
-                    'median': round(median_value, 3),  
+                    'median': self.p.round_price(median_value),
                     "total_strength": sum(float(x['peak_strength']) for x in sorted_group_items),
                     'count': len(sorted_group_items),
                     "ave_strength": round(
@@ -1372,7 +1401,7 @@ class LineStrengthCal:
                         if sorted_group_items else 0, 1
                     ),
                     'prices': prices,
-                    'price_gap': round(price_gap, 5),
+                    'price_gap': price_gap,
                     'prices_info': sorted_group_items,
                     'dirs': dirs,
                     'range_min': center_price_pips - threshold,
@@ -1408,8 +1437,8 @@ class LineStrengthCal:
                 
                 results.append({
                     'median_price': price,
-                    'median_p': round(abs(target_price - price), 3),
-                    'median': round(median_value, 3),  # ★ 修正
+                    'median_p': self.p.price_to_pips(abs(target_price - price)),
+                    'median': self.p.round_price(median_value),  # ★ 修正
                     "total_strength": float(peak['peak_strength']),
                     'count': 1,
                     "ave_strength": float(peak['peak_strength']),
@@ -1751,7 +1780,7 @@ class OrderPoints:
 
         # ■■■価格変動の速さを計測（６秒で動きすぎているかの判定　いまは参考程度）
         # 順方向なので、直近のpeak方向が１の場合、＋方向に離れてる場合は、動きが強い
-        now_peak_gap = round(self.current_price - latest['latest_body_peak_price'], 3)
+        now_peak_gap = self.p.round_price(self.current_price - latest['latest_body_peak_price'])
 
         latest_df = df.iloc[1]  # [0]は形成され始めた瞬間の足なので注意
         if now_peak_gap >= 0.007:
@@ -1803,8 +1832,8 @@ class OrderPoints:
             # サイズをクリアする場合、比率も見ておく（elseにしないと、伸びる可能性なのに、戻り強すぎ、が起きてしまう）
             print("latestのriverに対する比率", ratio_l_r, "turnのriverに対する比率", ratio_r_t, "rivergap", river_gap)
             if 1.8 >= ratio_l_r >= 0.9:
-                a = round(df.iloc[1]['body_abs'], 3)
-                b = round(df.iloc[2]['body_abs'], 3)
+                a = self.p.round_price(df.iloc[1]['body_abs'])
+                b = self.p.round_price(df.iloc[2]['body_abs'])
                 print(s, "dfの長さ", a, b, df.iloc[1]['time_jp'], latest_gap, a > latest_gap * 0.8,
                       b > latest_gap * 0.8)
                 if a > latest_gap * 0.8 or b > latest_gap * 0.8:
@@ -1868,8 +1897,8 @@ class OrderPoints:
         u1 = peaks[2][strs]
         p2 = peaks[3][strs]
         u2 = peaks[4][strs]
-        older_gap = round(abs(u2 - p2), 3)
-        later_gap = round(abs(u1 - p1), 3)
+        older_gap = self.p.round_price(abs(u2 - p2))
+        later_gap = self.p.round_price(abs(u1 - p1))
         small_big_ratio = round(peaks[2]['gap'] / max(peaks[1]['gap'], peaks[3]['gap']), 3)
         print(s, "ダウポイントP:", peaks[1]['latest_time_jp'], peaks[3]['latest_time_jp'], p1, p2)
         print(s, "ダウポイントU:", peaks[2]['latest_time_jp'], peaks[4]['latest_time_jp'], u1, u2)
@@ -1879,7 +1908,7 @@ class OrderPoints:
         if 0.8 < older_gap / later_gap < 1.2 and small_big_ratio <= 0.73:
             predict_gap = peaks[2]["gap"]  # elseの場合は使わないが共通処理
             latest_gap = peaks[0]['gap']
-            yuuyo_gap = round(predict_gap - latest_gap, 3)  # マイナスの場合は、latestで順方向にかなり戻している場合
+            yuuyo_gap = self.p.round_price(predict_gap - latest_gap)  # マイナスの場合は、latestで順方向にかなり戻している場合
             predict_tp = peaks[1]['gap']  # riverがダウ伸びしろしては適切
             predict_tp_price = peaks[0]['latest_body_peak_price'] + (self.l_dir * -1 * predict_tp)
             print(s, "サイズ比率的にはOK ,Pre", predict_gap, "lat", latest_gap)
@@ -1952,7 +1981,7 @@ class OrderPoints:
             order_cancel = 100
 
         # tpが広すぎる場合があるので、調整
-        tr = round(tp_range * 0.625, 3)
+        tr = self.p.round_price(tp_range * 0.625)
         if tr >= 0.08:
             tr = 0.055
         if tp_range >= 0.1:
@@ -2020,10 +2049,7 @@ class OrderPoints:
         for p in filtered_peaks:
             price = float(p['latest_body_peak_price'])
             # 浮動小数誤差対策
-            group_key = round(
-                math.floor(price / width) * width,
-                5
-            )
+            group_key = self.p.round_price(math.floor(price / width) * width)
             groups[group_key].append(p)
         results = []
 
@@ -2043,13 +2069,13 @@ class OrderPoints:
             results.append({
                 # 'items': items,
                 'median_price': median_price,
-                'median': round(abs(target_price - median_price), 3),
+                'median': self.p.round_price(abs(target_price - median_price)),
                 "total_strength": sum(float(x['peak_strength']) for x in items),
                 'count': len(items),
                 "ave_strength": round(sum(float(x['peak_strength']) for x in items) / len(items) if items else 0, 1),
                 'prices': prices,
-                'range_min': round(group_key, 5),
-                'range_max': round(group_key + width, 5),
+                'range_min': self.p.round_price(group_key),
+                'range_max': self.p.round_price(group_key + width),
                 'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
                 'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
             })

@@ -1,44 +1,21 @@
-
 import datetime
-import fAnalysis_order_Main as am
+
 import classInspection as ci
-import fTurnInspection as ti
 
 
+memo = "大量22_23 flipped H1 line inspection"
 
-memo = "大量22_23LONG"
+inspection = ci.Inspection(
+    is_exist_data=False,
+    start_time=datetime.datetime(2026, 6, 15, 0, 0, 0),
+    end_time=datetime.datetime(2026, 6, 16, 10, 0, 0),
+    h1_data_path="C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_h1_df.csv",
+    m5_data_path="C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv",
+    m30_data_path=None,
+    s5_data_path="C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv",
+    memo=memo,
+    anaN=60,  # 1時間足何足分かで指定する
+    insN=8640,  # 5秒足何足分かで指定する 12時間で8640
+)
 
-intest = ci.Inspection(
-                        # pred.wrap_predict_turn_inspection_test,
-                       ti.MainAnalysis,
-                       True,
-                       datetime.datetime(2025, 5, 22, 15, 55, 0),
-                       'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv',
-                       'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv',
-                       600,
-                       1,
-                       memo + "2のみ",
-                       False,  # グラフの描画あり
-                       "")
-
-# intest = ci.Inspection(pi.wrap_predict_turn_inspection_test,
-#                        False,
-#                        datetime.datetime(2025, 6, 25, 18, 55, 0),
-#                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv',
-#                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv',
-#                        600,
-#                        1,
-#                        memo + "2のみ",
-#                        False, # グラフの描画あり
-#                        "")
-#
-# intest = ci.Inspection(pi.for_test_wrap_upALL,
-#                        True,
-#                        datetime.datetime(2025, 5, 22, 15, 55, 0),
-#                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv',
-#                        'C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv',
-#                        600,
-#                        1,
-#                        memo + "両方の方法",
-#                         False)  # グラフの描画あり
-
+print(inspection.result_df)

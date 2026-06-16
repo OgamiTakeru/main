@@ -1711,7 +1711,7 @@ class order_information:
             print("       1時間足でのCandleLcChange")
             peaks_class = candle_analysis_class.peaks_class_hour  # peaks_classだけを抽出
             peaks = peaks_class.peaks_original
-            df_r = candle_analysis_class.d60_df_r[:5]
+            df_r = candle_analysis_class.h1_df_r[:5]
         else:
             return 0
             # print("       (その他）5分足でのCandleLcChange")

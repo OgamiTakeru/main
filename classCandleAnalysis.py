@@ -18,14 +18,23 @@ class candleAnalysis:
     latest_df_d5_df_r = None
     latest_peaks_class = None  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
     latest_candle_meta_class = None
-    latest_df_d60_df_r = None
+    latest_h1_df_r = None
     latest_peaks_class_hour = None  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
     latest_candle_meta_class_hour = None
     latest_df_d30_df_r = None
     latest_peaks_class_m30 = None  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
     latest_candle_meta_class_m30 = None
 
-    def __init__(self, base_oa, target_time_jp):
+    def __init__(
+            self,
+            base_oa=None,
+            target_time_jp=0,
+            m5_df_r=None,
+            h1_df_r=None,
+            m30_df_r=None,
+            s5_df_r=None,
+            current_price=None
+    ):
         """
         target_time_jpまでの時間を取得する
         """
@@ -38,12 +47,32 @@ class candleAnalysis:
 
         # データ入れる用
         self.d5_df_r = None
-        self.d60_df_r = None
+        self.h1_df_r = None
         self.s5_df_r = None
         self.d30_df_r = None
 
+        if m5_df_r is not None:
+            self.d5_df_r = m5_df_r
+            self.h1_df_r = h1_df_r
+            self.d30_df_r = m30_df_r
+            self.s5_df_r = s5_df_r
+            if self.h1_df_r is None:
+                raise ValueError("h1_df_r is required when m5_df_r is passed.")
+            if self.d30_df_r is None:
+                print("m30_df_r is not passed. h1_df_r is used as a temporary fallback for M30 analysis.")
+                self.d30_df_r = self.h1_df_r
+            if current_price is not None:
+                self.current_price = current_price
+            elif len(self.d5_df_r) >= 2:
+                self.current_price = self.d5_df_r.iloc[1]['close']
+            else:
+                self.current_price = self.d5_df_r.iloc[0]['close']
+            self.current_price_by_df = self.current_price
+
         # # ■■　重複でAPIを打つことを避けたい
-        if candleAnalysis.latest_df_d5_df_r is None:
+        if m5_df_r is not None:
+            pass
+        elif candleAnalysis.latest_df_d5_df_r is None:
             print("データ取得（同じデータがないため、新規で取得）")
             t1 = 0
             pass
@@ -64,7 +93,7 @@ class candleAnalysis:
                 self.peaks_class = candleAnalysis.latest_peaks_class
                 self.candle_meta_class = candleAnalysis.latest_candle_meta_class
                 # データを移植する（60分足）
-                self.d60_df_r = candleAnalysis.latest_df_d60_df_r
+                self.h1_df_r = candleAnalysis.latest_h1_df_r
                 self.peaks_class_hour = candleAnalysis.latest_peaks_class_hour
                 self.candle_meta_class_hour = candleAnalysis.latest_candle_meta_class_hour
                 # データを移植する（30分足）
@@ -74,7 +103,8 @@ class candleAnalysis:
                 return
 
         # ■■データ取得
-        self.get_date_df(target_time_jp)  # 現在価格と、self.d5_df_rとself.d60_df_rを取得
+        if m5_df_r is None:
+            self.get_date_df(target_time_jp)  # 現在価格と、self.d5_df_rとself.h1_df_rを取得
         if self.d5_df_r is None:
             print("データ取得＆Peaks生成 失敗？？")
         else:
@@ -95,13 +125,16 @@ class candleAnalysis:
 
         # データを取得する（60分足）
         granularity = "H1"
-        self.peaks_class_hour = peaksClass.PeaksClass(self.d60_df_r, granularity, self.current_price)
+        self.peaks_class_hour = peaksClass.PeaksClass(self.h1_df_r, granularity, self.current_price)
         self.candle_meta_class_hour = CandleMeta(self.peaks_class_hour, granularity)
 
         # データを取得する（30分足）
         granularity = "M30"
         self.peaks_class_m30 = peaksClass.PeaksClass(self.d30_df_r, granularity, self.current_price)
         self.candle_meta_class_m30 = CandleMeta(self.peaks_class_m30, granularity)
+
+        if m5_df_r is not None:
+            return
 
         # ■■重複作業防止用に、クラス変数に5分足の最初と最後の情報、今回算出した情報を入れておく
         if self.d5_df_r is None:
@@ -114,7 +147,7 @@ class candleAnalysis:
             candleAnalysis.latest_df_d5_df_r = self.d5_df_r
             candleAnalysis.latest_peaks_class = self.peaks_class  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
             candleAnalysis.latest_candle_meta_class = self.candle_meta_class
-            candleAnalysis.latest_df_d60_df_r = self.d60_df_r
+            candleAnalysis.latest_h1_df_r = self.h1_df_r
             candleAnalysis.latest_peaks_class_hour = self.peaks_class_hour  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
             candleAnalysis.latest_candle_meta_class_hour = self.candle_meta_class_hour
             candleAnalysis.latest_df_d30_df_r = self.d30_df_r
@@ -159,16 +192,16 @@ class candleAnalysis:
             self.d5_df_r = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
             # 60分足のデータ
-            d60_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+            h1_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
                                                                    {"granularity": "H1", "count": self.need_df_num},
                                                                    1)  # 時間昇順(直近が最後尾）
-            if d60_df_res['error'] == -1:
+            if h1_df_res['error'] == -1:
                 print("error Candle")
                 tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
-                d60_df_latest_bottom = d60_df_res['data']
-            self.d60_df_r = d60_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+                h1_df_latest_bottom = h1_df_res['data']
+            self.h1_df_r = h1_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
             # 5秒足で
             s5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
@@ -221,14 +254,14 @@ class candleAnalysis:
 
             # 60分足のデータ
             param = {"granularity": "H1", "count": self.need_df_num, "to": euro_time_datetime_iso}
-            d60_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param) # 時間昇順(直近が最後尾）
-            if d60_df_res['error'] == -1:
+            h1_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param) # 時間昇順(直近が最後尾）
+            if h1_df_res['error'] == -1:
                 print("error Candle")
                 tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
-                d60_df_latest_bottom = d60_df_res['data']
-            self.d60_df_r = d60_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
+                h1_df_latest_bottom = h1_df_res['data']
+            self.h1_df_r = h1_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
             # 最短の５秒足も取得しておく
             param = {"granularity": "S5", "count": 5, "to": euro_time_datetime_iso}
@@ -290,42 +323,6 @@ class CandleMeta:
 
         #
         self.cal_move_size()
-        self.current_place()
-
-    def current_place(self):
-        """
-        1時間足でメイン。いま動きの中のどのくらいにいるか
-        """
-        res = self.peaks_class.peak_strength_sort()
-        # print("    current price")
-        # print("マイナス方向")
-        # # v = [d["latest_body_peak_price"] for d in res["-1"]]
-        # gene.print_arr(res["-1"])
-        # # gene.print_arr(v)
-        #
-        # print("プラス方向")
-        # # m = [d["latest_body_peak_price"] for d in res["1"]]
-        # gene.print_arr(res["1"])
-        # # gene.print_arr(m)
-
-        # print("個数", len(self.peaks_class.peaks_with_same_price_list))
-        #
-        # print("山頂点")
-        # m = [d for d in self.peaks_class.peaks_with_same_price_list if d.get("direction") == 1]
-        # for i, item in enumerate(m):
-        #     print(i, item['latest_time_jp'], item['latest_body_peak_price'])
-        #     print("    ", len(item['same_price_list']), item['same_price_list'])
-        #     gene.print_arr(item['same_price_list'])
-        #     for m, mmm in enumerate(item['same_price_list']):
-        #         print("      ", mmm['item']['latest_time_jp'])
-        #
-        # print("谷頂点")
-        # v = [d for d in self.peaks_class.peaks_with_same_price_list if d.get("direction") == -1]
-        # for i, item in enumerate(v):
-        #     print(i, item['latest_time_jp'], item['latest_body_peak_price'])
-        #     print("    ", len(item['same_price_list']), item['same_price_list'])
-        #     for m, mmm in enumerate(item['same_price_list']):
-        #         print("      ", mmm['item']['latest_time_jp'])
 
     def cal_move_size(self):
         # ■データフレームの状態で、サイズ感を色々求める

@@ -6,6 +6,39 @@ import plotly.graph_objects as go  # draw_graph
 basic_unit = 1000
 
 
+class CurrencyPair:
+    def __init__(self, name: str, pip_value: float, round_keta: int | None = None):
+        self.name = name
+        self.pip_value = pip_value
+        self.round_keta = round_keta if round_keta is not None else self.default_round_keta(pip_value)
+
+    @staticmethod
+    def default_round_keta(pip_value):
+        return 3 if pip_value >= 0.01 else 5
+
+    def round_price(self, price):
+        return round(price, self.round_keta)
+
+    def price_to_str(self, price):
+        return str(self.round_price(price))
+
+    def pips_to_price(self, pips: int | float) -> float:
+        return self.round_price(pips * self.pip_value)
+
+    def price_to_pips(self, price_diff: float) -> float:
+        return round(price_diff / self.pip_value, 2)
+
+    def exchange(self, unknown_num):
+        if unknown_num >= self.pip_value * 100:
+            result = round(unknown_num, 2)
+        else:
+            result = self.price_to_pips(unknown_num)
+        return result
+
+
+USD_JPY = CurrencyPair("USD_JPY", 0.01, 3)
+
+
 def draw_graph(mid_df):
     """
     ローソクチャーを表示する関数。
