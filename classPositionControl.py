@@ -72,6 +72,88 @@ class position_control:
         # for i, item in enumerate(allowed_position_slot):
         #     print(" ", i, "OaMode:", item.oa_mode, "Pno:", item.t_id, ",name:", item.name, ",life:", item.life)
 
+    def filter_similar_order_classes(self, order_classes, threshold_pips=3):
+        p = gene.USD_JPY
+        candidates = []
+        for order_class in order_classes:
+            plan = getattr(order_class, "exe_order_plan", None) or {}
+            direction = plan.get("direction")
+            target_price = plan.get("target_price")
+            if direction is None or target_price is None:
+                candidates.append({
+                    "order_class": order_class,
+                    "direction": direction,
+                    "target_price": target_price,
+                    "distance_pips": 0,
+                    "can_compare": False,
+                })
+                continue
+
+            current_price = getattr(order_class, "current_price", target_price)
+            distance_pips = abs(p.price_to_pips(float(current_price) - float(target_price)))
+            candidates.append({
+                "order_class": order_class,
+                "direction": direction,
+                "target_price": target_price,
+                "distance_pips": distance_pips,
+                "can_compare": True,
+            })
+
+        selected = []
+        for candidate in sorted(candidates, key=lambda x: x["distance_pips"]):
+            order_class = candidate["order_class"]
+            plan = getattr(order_class, "exe_order_plan", None) or {}
+            if not candidate["can_compare"]:
+                selected.append(candidate)
+                continue
+
+            duplicate_new_order = False
+            for selected_candidate in selected:
+                if not selected_candidate["can_compare"]:
+                    continue
+                if int(selected_candidate["direction"]) != int(candidate["direction"]):
+                    continue
+                gap_pips = abs(p.price_to_pips(float(candidate["target_price"]) - float(selected_candidate["target_price"])))
+                if gap_pips <= threshold_pips:
+                    print(
+                        "Skip similar new order:",
+                        plan.get("name"),
+                        "target",
+                        candidate["target_price"],
+                        "near",
+                        selected_candidate["target_price"],
+                        "gap_pips",
+                        round(gap_pips, 1),
+                    )
+                    duplicate_new_order = True
+                    break
+            if duplicate_new_order:
+                continue
+
+            active_result = self.find_similar_active_order(
+                candidate["direction"],
+                candidate["target_price"],
+                threshold_pips,
+            )
+            if active_result["is_exist"]:
+                print(
+                    "Skip similar active order:",
+                    plan.get("name"),
+                    "target",
+                    candidate["target_price"],
+                    "active",
+                    active_result.get("name"),
+                    "active_target",
+                    active_result.get("target_price"),
+                    "gap_pips",
+                    round(active_result.get("gap_pips", 0), 1),
+                )
+                continue
+
+            selected.append(candidate)
+
+        return [candidate["order_class"] for candidate in selected]
+
     def order_class_add(self, order_classes):
         """
         調査結果を受け取り、他のオーダーを比較し、オーダーを追加するかを判定する
@@ -81,6 +163,11 @@ class position_control:
         # max_dict = max(order_dic_list, key=lambda d: d["priority"], default=None)
         # max_dict = max(order_dic_list, key=lambda d: d.get("priority", float("-inf")))
         # order_max_priority = max_dict['priority']
+        order_classes = self.filter_similar_order_classes(order_classes, threshold_pips=3)
+        if len(order_classes) == 0:
+            print("No order classes after similar-order filter.")
+            return 0
+
         max_instance = max(order_classes, key=lambda x: x.exe_order_plan["priority"])
         order_max_priority = max_instance.exe_order_plan['priority']
         if order_max_priority >=100:
@@ -360,6 +447,49 @@ class position_control:
 
         return {"life_exist": ans, "one_line_comment": comment}
 
+    def find_similar_active_order(self, direction, target_price, threshold_pips=3, source=None, line_strategy=None):
+        p = gene.USD_JPY
+        for item in self.position_classes:
+            if not getattr(item, "life", False):
+                continue
+
+            plan = getattr(item, "plan_json", None) or {}
+            if int(plan.get("direction", 0)) != int(direction):
+                continue
+            if source is not None and plan.get("source") != source:
+                continue
+            if line_strategy is not None and plan.get("line_strategy") != line_strategy:
+                continue
+
+            other_price = plan.get("target_price")
+            if other_price is None:
+                continue
+
+            gap_pips = abs(p.price_to_pips(float(target_price) - float(other_price)))
+            if gap_pips <= threshold_pips:
+                return {
+                    "is_exist": True,
+                    "name": item.name,
+                    "target_price": float(other_price),
+                    "direction": plan.get("direction"),
+                    "gap_pips": gap_pips,
+                    "o_state": getattr(item, "o_state", None),
+                    "t_state": getattr(item, "t_state", None),
+                    "source": plan.get("source"),
+                    "line_strategy": plan.get("line_strategy"),
+                }
+
+        return {"is_exist": False}
+
+    def has_similar_active_order(self, direction, target_price, threshold_pips=3, source=None, line_strategy=None):
+        return self.find_similar_active_order(
+            direction,
+            target_price,
+            threshold_pips,
+            source=source,
+            line_strategy=line_strategy,
+        )["is_exist"]
+
     def position_check(self):
         # 実処理
         open_positions = []
@@ -399,8 +529,11 @@ class position_control:
                         "pl": item.t_pl_u,
                         "o_json": item.o_json,
                         "o_time": item.o_time,
+                        "target_price": item.plan_json.get('target_price'),
+                        "direction": item.plan_json.get('direction'),
+                        "source": item.plan_json.get('source'),
+                        "line_strategy": item.plan_json.get('line_strategy'),
                         "unrealizedPL": item.t_json['unrealizedPL'],
-                        # "direction": item.plan_json['direction'],
                         "t_time_past_sec": item.t_time_past_sec
                     })
                     # ポジションの所有時間（ポジションがある中で最大）も取得しておく
@@ -427,7 +560,10 @@ class position_control:
                         "o_json": item.o_json,
                         "o_time": item.o_time,
                         "realizedPL": 0,
-                        "direction": item.plan_json['direction']
+                        "target_price": item.plan_json.get('target_price'),
+                        "direction": item.plan_json.get('direction'),
+                        "source": item.plan_json.get('source'),
+                        "line_strategy": item.plan_json.get('line_strategy'),
                     })
                     # ポジションの所有時間（ポジションがある中で最大）も取得しておく
                     if item.o_time_past_sec > max_order_time_sec:

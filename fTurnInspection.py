@@ -24,6 +24,254 @@ gl_latest_trend_trigger_time = None
 gl_unis_std = 0.1  # OrderCreateのベーシックUnitは10000ドル。それにかける倍率
 
 
+class LineOrderStrategy:
+    timeframe = ""
+    name_prefix = ""
+    line_strategy = ""
+    lc_pips = 0
+    tp_pips = 0
+    units_multiplier = 1
+    order_timeout_min = 0
+
+    def is_target(self, line_side, line):
+        raise NotImplementedError
+
+    def get_tp_pips(self):
+        return self.tp_pips
+
+    def build_candidates(self, line_class, current_price):
+        p = gene.USD_JPY
+        candidates = []
+        for line_side, direction, lines in (
+            ("upper", -1, line_class.upper_lines),
+            ("lower", 1, line_class.lower_lines),
+        ):
+            for line_index, line in enumerate(lines):
+                if not self.is_target(line_side, line):
+                    continue
+
+                line_price = p.round_price(line["median_price"])
+                candidates.append({
+                    "timeframe": self.timeframe,
+                    "line_side": line_side,
+                    "direction": direction,
+                    "line": line,
+                    "line_index": line_index,
+                    "line_price": line_price,
+                    "line_strategy": self.line_strategy,
+                    "distance_pips": abs(
+                        p.price_to_pips(float(current_price) - float(line_price))
+                    ),
+                    "strategy": self,
+                })
+        return candidates
+
+
+class H1LineOrderStrategy(LineOrderStrategy):
+    timeframe = "h1"
+    name_prefix = "H1LineLimit"
+    line_strategy = "lower_c3_core1or3"
+    lc_pips = 15
+    units_multiplier = 0.5
+    order_timeout_min = 60
+
+    def get_tp_pips(self):
+        spread_pips = 0.8
+        rr = 1.65
+        return round(rr * (self.lc_pips + spread_pips) + spread_pips, 1)
+
+    def is_target(self, line_side, line):
+        is_flipped = line.get("is_flipped_line")
+        count = int(line.get("count") or 0)
+        core_count = int(line.get("core_count") or 0)
+        return (
+            is_flipped is False
+            and line_side == "lower"
+            and count == 3
+            and core_count in (1, 3)
+        )
+
+
+class M5LineOrderStrategy(LineOrderStrategy):
+    timeframe = "m5"
+    name_prefix = "M5LineLimit"
+    line_strategy = "m5_line_test_c2_core"
+    lc_pips = 7.5
+    tp_pips = 13
+    units_multiplier = 0.25
+    order_timeout_min = 15
+
+    def is_target(self, line_side, line):
+        is_flipped = line.get("is_flipped_line")
+        count = int(line.get("count") or 0)
+        core_count = int(line.get("core_count") or 0)
+        core_total_strength = float(line.get("core_total_strength") or 0)
+        return (
+            is_flipped is False
+            and line_side in ("upper", "lower")
+            and count >= 2
+            and core_count >= 1
+            and core_total_strength >= 5
+        )
+
+
+class LineOrderCoordinator:
+    duplicate_threshold_pips = 3
+
+    def __init__(self, analysis):
+        self.analysis = analysis
+
+    def create_orders(self, strategy_lines, current_price, decision_time, rsi_info=None):
+        if self.analysis.mode != "inspection":
+            return []
+
+        candidates = []
+        for strategy, line_class in strategy_lines:
+            candidates.extend(strategy.build_candidates(line_class, current_price))
+
+        selected_candidates = self._remove_near_candidates(candidates)
+        orders = []
+        for candidate in selected_candidates:
+            if self.analysis.has_similar_order(
+                candidate["direction"],
+                candidate["line_price"],
+                orders,
+                self.duplicate_threshold_pips,
+                source="line",
+                line_strategy=candidate["line_strategy"],
+            ):
+                print(
+                    "Skip similar line order:",
+                    candidate["timeframe"],
+                    candidate["line_side"],
+                    candidate["line_price"],
+                    "direction",
+                    candidate["direction"],
+                )
+                continue
+
+            orders.append(
+                self._create_order(
+                    candidate,
+                    selected_candidates,
+                    current_price,
+                    decision_time,
+                    rsi_info,
+                )
+            )
+
+        if orders:
+            timeframe_counts = Counter(
+                order.exe_order_plan.get("line_timeframe") for order in orders
+            )
+            print("Line limit orders:", dict(timeframe_counts))
+            self.analysis.add_order_to_this_class(orders)
+        return orders
+
+    def _remove_near_candidates(self, candidates):
+        p = gene.USD_JPY
+        selected = []
+        for candidate in sorted(candidates, key=lambda x: x["distance_pips"]):
+            duplicate = None
+            for other in selected:
+                if int(other["direction"]) != int(candidate["direction"]):
+                    continue
+                if other["line_strategy"] != candidate["line_strategy"]:
+                    continue
+                gap_pips = abs(
+                    p.price_to_pips(
+                        float(candidate["line_price"]) - float(other["line_price"])
+                    )
+                )
+                if gap_pips <= self.duplicate_threshold_pips:
+                    duplicate = (other, gap_pips)
+                    break
+
+            if duplicate is None:
+                selected.append(candidate)
+                continue
+
+            other, gap_pips = duplicate
+            print(
+                "Skip farther line candidate:",
+                candidate["timeframe"],
+                candidate["line_side"],
+                candidate["line_price"],
+                "near",
+                other["line_price"],
+                "gap_pips",
+                round(gap_pips, 1),
+            )
+        return selected
+
+    def _get_units_multiplier(self, candidate, selected_candidates):
+        # Timeframe agreement rules will be added here after M5 validation.
+        return candidate["strategy"].units_multiplier
+
+    def _create_order(
+        self,
+        candidate,
+        selected_candidates,
+        current_price,
+        decision_time,
+        rsi_info,
+    ):
+        p = gene.USD_JPY
+        strategy = candidate["strategy"]
+        line = candidate["line"]
+        lc_range = p.pips_to_price(strategy.lc_pips)
+        tp_range = p.pips_to_price(strategy.get_tp_pips())
+        units = int(
+            self.analysis.cal_units(
+                lc_range,
+                tk.setting_json["l_units"],
+                "l",
+            )
+            * self._get_units_multiplier(candidate, selected_candidates)
+        )
+
+        order_class = OCreate.Order({
+            "name": (
+                strategy.name_prefix
+                + "_"
+                + candidate["line_side"]
+                + "_"
+                + str(candidate["line_index"])
+            ),
+            "current_price": current_price,
+            "target": candidate["line_price"],
+            "direction": candidate["direction"],
+            "type": "LIMIT",
+            "tp": tp_range,
+            "lc": lc_range,
+            "lc_change": [],
+            "units": units,
+            "priority": int(line.get("total_strength", 0)),
+            "decision_time": decision_time,
+            "candle_analysis_class": self.analysis.candle_analysis_all,
+            "lc_change_candle_type": "M5",
+            "order_timeout_min": strategy.order_timeout_min,
+            "memo": "virtual " + strategy.timeframe.upper() + " line limit order",
+        })
+        order_plan = order_class.exe_order_plan
+        order_plan["source"] = "line"
+        order_plan["line_timeframe"] = strategy.timeframe
+        order_plan["line_side"] = candidate["line_side"]
+        order_plan["line_price"] = candidate["line_price"]
+        order_plan["line_total_strength"] = line.get("total_strength")
+        order_plan["line_count"] = line.get("count")
+        order_plan["line_ave_strength"] = line.get("ave_strength")
+        order_plan["line_is_flipped"] = line.get("is_flipped_line")
+        order_plan["line_oldest_time"] = line.get("oldest_time")
+        order_plan["core_median_price"] = line.get("core_median_price")
+        order_plan["core_count"] = line.get("core_count")
+        order_plan["core_total_strength"] = line.get("core_total_strength")
+        order_plan["line_strategy"] = strategy.line_strategy
+        if rsi_info is not None:
+            order_plan.update(rsi_info)
+        return order_class
+
+
 class MainAnalysis:
     def __init__(self, candle_analysis, position_control_class=None, mode="inspection"):
         print(" ■メインアナリシス", mode)
@@ -205,7 +453,7 @@ class MainAnalysis:
         # print("発行したオーダー2↓　(turn255)")
         # print(order_class.exe_order)
 
-    def add_h1_line_limit_orders(self, line_class, current_price, decision_time):
+    def _legacy_add_h1_line_limit_orders(self, line_class, current_price, decision_time, rsi_info=None):
         if self.mode != "inspection":
             return
 
@@ -219,42 +467,308 @@ class MainAnalysis:
         units = int(self.cal_units(lc_range, tk.setting_json['l_units'], "l") * 0.5)
 
         line_orders = []
+        line_candidates = []
+        duplicate_threshold_pips = 3
         for line_side, direction, lines in (
             ("upper", -1, line_class.upper_lines),
             ("lower", 1, line_class.lower_lines),
         ):
             for i, line in enumerate(lines):
+                if not self.is_h1_line_limit_order_target(line_side, line):
+                    continue
+
                 line_price = p.round_price(line["median_price"])
-                order_class = OCreate.Order({
-                    "name": "H1LineLimit_" + line_side + "_" + str(i),
-                    "current_price": current_price,
-                    "target": line_price,
+                line_strategy = "lower_c3_core1or3"
+                distance_pips = abs(p.price_to_pips(float(current_price) - float(line_price)))
+                line_candidates.append({
+                    "line_side": line_side,
                     "direction": direction,
-                    "type": "LIMIT",
-                    "tp": tp_range,
-                    "lc": lc_range,
-                    "lc_change": [],
-                    "units": units,
-                    "priority": int(line.get("total_strength", 0)),
-                    "decision_time": decision_time,
-                    "candle_analysis_class": self.candle_analysis_all,
-                    "lc_change_candle_type": "M5",
-                    "order_timeout_min": 60,
-                    "memo": "virtual H1 line limit order",
+                    "line": line,
+                    "line_index": i,
+                    "line_price": line_price,
+                    "line_strategy": line_strategy,
+                    "distance_pips": distance_pips,
                 })
-                order_class.exe_order_plan["source"] = "line"
-                order_class.exe_order_plan["line_side"] = line_side
-                order_class.exe_order_plan["line_price"] = line_price
-                order_class.exe_order_plan["line_total_strength"] = line.get("total_strength")
-                order_class.exe_order_plan["line_count"] = line.get("count")
-                order_class.exe_order_plan["line_ave_strength"] = line.get("ave_strength")
-                order_class.exe_order_plan["line_is_flipped"] = line.get("is_flipped_line")
-                order_class.exe_order_plan["line_oldest_time"] = line.get("oldest_time")
-                line_orders.append(order_class)
+
+        selected_candidates = []
+        for candidate in sorted(line_candidates, key=lambda x: x["distance_pips"]):
+            is_duplicate = False
+            for selected in selected_candidates:
+                if int(selected["direction"]) != int(candidate["direction"]):
+                    continue
+                if selected["line_strategy"] != candidate["line_strategy"]:
+                    continue
+                gap_pips = abs(p.price_to_pips(float(candidate["line_price"]) - float(selected["line_price"])))
+                if gap_pips <= duplicate_threshold_pips:
+                    print(
+                        "Skip farther H1 line candidate:",
+                        candidate["line_side"],
+                        candidate["line_price"],
+                        "near",
+                        selected["line_price"],
+                        "gap_pips",
+                        round(gap_pips, 1),
+                    )
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                selected_candidates.append(candidate)
+
+        for candidate in selected_candidates:
+            line_side = candidate["line_side"]
+            direction = candidate["direction"]
+            line = candidate["line"]
+            i = candidate["line_index"]
+            line_price = candidate["line_price"]
+            line_strategy = candidate["line_strategy"]
+
+            if self.has_similar_order(
+                direction,
+                line_price,
+                [],
+                duplicate_threshold_pips,
+                source="line",
+                line_strategy=line_strategy,
+            ):
+                print("Skip similar H1 line order:", line_side, line_price, "direction", direction)
+                continue
+
+            order_class = OCreate.Order({
+                "name": "H1LineLimit_" + line_side + "_" + str(i),
+                "current_price": current_price,
+                "target": line_price,
+                "direction": direction,
+                "type": "LIMIT",
+                "tp": tp_range,
+                "lc": lc_range,
+                "lc_change": [],
+                "units": units,
+                "priority": int(line.get("total_strength", 0)),
+                "decision_time": decision_time,
+                "candle_analysis_class": self.candle_analysis_all,
+                "lc_change_candle_type": "M5",
+                "order_timeout_min": 60,
+                "memo": "virtual H1 line limit order",
+            })
+            order_class.exe_order_plan["source"] = "line"
+            order_class.exe_order_plan["line_timeframe"] = "h1"
+            order_class.exe_order_plan["line_side"] = line_side
+            order_class.exe_order_plan["line_price"] = line_price
+            order_class.exe_order_plan["line_total_strength"] = line.get("total_strength")
+            order_class.exe_order_plan["line_count"] = line.get("count")
+            order_class.exe_order_plan["line_ave_strength"] = line.get("ave_strength")
+            order_class.exe_order_plan["line_is_flipped"] = line.get("is_flipped_line")
+            order_class.exe_order_plan["line_oldest_time"] = line.get("oldest_time")
+            order_class.exe_order_plan["core_median_price"] = line.get("core_median_price")
+            order_class.exe_order_plan["core_count"] = line.get("core_count")
+            order_class.exe_order_plan["core_total_strength"] = line.get("core_total_strength")
+            order_class.exe_order_plan["line_strategy"] = line_strategy
+            if rsi_info is not None:
+                order_class.exe_order_plan.update(rsi_info)
+            line_orders.append(order_class)
 
         if line_orders:
             print("H1 line limit orders:", len(line_orders))
             self.add_order_to_this_class(line_orders)
+
+    def _legacy_add_m5_line_limit_orders(self, line_class, current_price, decision_time, rsi_info=None):
+        if self.mode != "inspection":
+            return
+
+        p = gene.USD_JPY
+        lc_pips = 7.5
+        tp_pips = 13
+        lc_range = p.pips_to_price(lc_pips)
+        tp_range = p.pips_to_price(tp_pips)
+        units = int(self.cal_units(lc_range, tk.setting_json['l_units'], "l") * 0.25)
+
+        line_orders = []
+        line_candidates = []
+        duplicate_threshold_pips = 3
+        for line_side, direction, lines in (
+            ("upper", -1, line_class.upper_lines),
+            ("lower", 1, line_class.lower_lines),
+        ):
+            for i, line in enumerate(lines):
+                if not self.is_m5_line_limit_order_target(line_side, line):
+                    continue
+
+                line_price = p.round_price(line["median_price"])
+                line_strategy = "m5_line_test_c2_core"
+                distance_pips = abs(p.price_to_pips(float(current_price) - float(line_price)))
+                line_candidates.append({
+                    "line_side": line_side,
+                    "direction": direction,
+                    "line": line,
+                    "line_index": i,
+                    "line_price": line_price,
+                    "line_strategy": line_strategy,
+                    "distance_pips": distance_pips,
+                })
+
+        selected_candidates = []
+        for candidate in sorted(line_candidates, key=lambda x: x["distance_pips"]):
+            is_duplicate = False
+            for selected in selected_candidates:
+                if int(selected["direction"]) != int(candidate["direction"]):
+                    continue
+                if selected["line_strategy"] != candidate["line_strategy"]:
+                    continue
+                gap_pips = abs(p.price_to_pips(float(candidate["line_price"]) - float(selected["line_price"])))
+                if gap_pips <= duplicate_threshold_pips:
+                    print(
+                        "Skip farther M5 line candidate:",
+                        candidate["line_side"],
+                        candidate["line_price"],
+                        "near",
+                        selected["line_price"],
+                        "gap_pips",
+                        round(gap_pips, 1),
+                    )
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                selected_candidates.append(candidate)
+
+        for candidate in selected_candidates:
+            line_side = candidate["line_side"]
+            direction = candidate["direction"]
+            line = candidate["line"]
+            i = candidate["line_index"]
+            line_price = candidate["line_price"]
+            line_strategy = candidate["line_strategy"]
+
+            if self.has_similar_order(
+                direction,
+                line_price,
+                [],
+                duplicate_threshold_pips,
+                source="line",
+                line_strategy=line_strategy,
+            ):
+                print("Skip similar M5 line order:", line_side, line_price, "direction", direction)
+                continue
+
+            order_class = OCreate.Order({
+                "name": "M5LineLimit_" + line_side + "_" + str(i),
+                "current_price": current_price,
+                "target": line_price,
+                "direction": direction,
+                "type": "LIMIT",
+                "tp": tp_range,
+                "lc": lc_range,
+                "lc_change": [],
+                "units": units,
+                "priority": int(line.get("total_strength", 0)),
+                "decision_time": decision_time,
+                "candle_analysis_class": self.candle_analysis_all,
+                "lc_change_candle_type": "M5",
+                "order_timeout_min": 15,
+                "memo": "virtual M5 line limit order",
+            })
+            order_class.exe_order_plan["source"] = "line"
+            order_class.exe_order_plan["line_timeframe"] = "m5"
+            order_class.exe_order_plan["line_side"] = line_side
+            order_class.exe_order_plan["line_price"] = line_price
+            order_class.exe_order_plan["line_total_strength"] = line.get("total_strength")
+            order_class.exe_order_plan["line_count"] = line.get("count")
+            order_class.exe_order_plan["line_ave_strength"] = line.get("ave_strength")
+            order_class.exe_order_plan["line_is_flipped"] = line.get("is_flipped_line")
+            order_class.exe_order_plan["line_oldest_time"] = line.get("oldest_time")
+            order_class.exe_order_plan["core_median_price"] = line.get("core_median_price")
+            order_class.exe_order_plan["core_count"] = line.get("core_count")
+            order_class.exe_order_plan["core_total_strength"] = line.get("core_total_strength")
+            order_class.exe_order_plan["line_strategy"] = line_strategy
+            if rsi_info is not None:
+                order_class.exe_order_plan.update(rsi_info)
+            line_orders.append(order_class)
+
+        if line_orders:
+            print("M5 line limit orders:", len(line_orders))
+            self.add_order_to_this_class(line_orders)
+
+    def add_line_limit_orders(
+        self,
+        line_class_m5,
+        line_class_h1,
+        current_price,
+        decision_time,
+        rsi_info=None,
+    ):
+        coordinator = LineOrderCoordinator(self)
+        return coordinator.create_orders(
+            [
+                (M5LineOrderStrategy(), line_class_m5),
+                (H1LineOrderStrategy(), line_class_h1),
+            ],
+            current_price,
+            decision_time,
+            rsi_info,
+        )
+
+    def add_h1_line_limit_orders(self, line_class, current_price, decision_time, rsi_info=None):
+        coordinator = LineOrderCoordinator(self)
+        return coordinator.create_orders(
+            [(H1LineOrderStrategy(), line_class)],
+            current_price,
+            decision_time,
+            rsi_info,
+        )
+
+    def add_m5_line_limit_orders(self, line_class, current_price, decision_time, rsi_info=None):
+        coordinator = LineOrderCoordinator(self)
+        return coordinator.create_orders(
+            [(M5LineOrderStrategy(), line_class)],
+            current_price,
+            decision_time,
+            rsi_info,
+        )
+
+    def has_similar_order(self, direction, target_price, new_orders, threshold_pips=3, source=None, line_strategy=None):
+        p = gene.USD_JPY
+        for order_class in list(self.exe_order_classes) + list(new_orders):
+            order_plan = getattr(order_class, "exe_order_plan", None)
+            if not order_plan:
+                continue
+            if int(order_plan.get("direction", 0)) != int(direction):
+                continue
+            if source is not None and order_plan.get("source") != source:
+                continue
+            if line_strategy is not None and order_plan.get("line_strategy") != line_strategy:
+                continue
+            other_price = order_plan.get("target_price")
+            if other_price is None:
+                continue
+            if abs(p.price_to_pips(float(target_price) - float(other_price))) <= threshold_pips:
+                return True
+
+        if self.position_control_class is not None and hasattr(self.position_control_class, "find_similar_active_order"):
+            result = self.position_control_class.find_similar_active_order(
+                direction,
+                target_price,
+                threshold_pips,
+                source=source,
+                line_strategy=line_strategy,
+            )
+            if result["is_exist"]:
+                print(
+                    "Skip similar active order:",
+                    result.get("name"),
+                    "target",
+                    result.get("target_price"),
+                    "gap_pips",
+                    round(result.get("gap_pips", 0), 1),
+                )
+                return True
+        return False
+
+    @staticmethod
+    def is_h1_line_limit_order_target(line_side, line):
+        return H1LineOrderStrategy().is_target(line_side, line)
+
+    @staticmethod
+    def is_m5_line_limit_order_target(line_side, line):
+        return M5LineOrderStrategy().is_target(line_side, line)
 
     def main(self):
         """
@@ -403,7 +917,25 @@ class MainAnalysis:
         line_class_h1_s = LineStrengthCal(self.candle_analysis_all, "h1", 30)  # 画面半分くらい（直近のレンジを見れる）
         self.line_class_h1_l = line_class_h1_l
         self.line_class_h1_s = line_class_h1_s
-        self.add_h1_line_limit_orders(line_class_h1_l, current_price, df.iloc[0]['time_jp'])
+        rsi_info = {
+            "rsi_1": f_low.get("RSI"),
+            "rsi_2": s_low.get("RSI"),
+            "rsi_3": t_low.get("RSI"),
+            "rsi_time_1": f_low.get("time_jp"),
+            "rsi_time_2": s_low.get("time_jp"),
+            "rsi_time_3": t_low.get("time_jp"),
+            "rsi_upper_border": upper_border,
+            "rsi_lower_border": lower_border,
+            "rsi_is_high": f_low.get("RSI") >= upper_border,
+            "rsi_is_low": f_low.get("RSI") <= lower_border,
+        }
+        self.add_line_limit_orders(
+            line_class_m5_l,
+            line_class_h1_l,
+            current_price,
+            df.iloc[0]['time_jp'],
+            rsi_info,
+        )
         result = self.compare_lines(line_class_h1_l, line_class_h1_s, threshold=0.5)
         peaks_h1 = self.candle_analysis_all.peaks_class_hour.peaks_original
         # gene.print_peaks(peaks_h1)
@@ -427,19 +959,19 @@ class MainAnalysis:
 
             if max_upper3 <= 10 and max_upper6 <= 10:
                 print("    RSI>=",  "かつ line_class3/line_class6 の upper_lines がともに弱い⇒突破予想")
-                tk.line_send("RSI>=70 かつ line_class3/line_class6 の upper_lines がともに弱い⇒突破予想")
+                # tk.line_send("RSI>=70 かつ line_class3/line_class6 の upper_lines がともに弱い⇒突破予想")
                 order_pattern = 1
             elif max_upper3 <= 10:
                 print("    RSI>=70 かつ line_class3 の upper_lines だけが弱い⇒突破予想")
-                tk.line_send("RSI>=70 かつ line_class3/line_class6 の upper_lines がともに弱い⇒突破予想")
+                # tk.line_send("RSI>=70 かつ line_class3/line_class6 の upper_lines がともに弱い⇒突破予想")
                 order_pattern = 1
             elif max_upper3 >= 10 and max_upper6 >= 10:
                 print("    RSI>=",  "かつ line_class3/line_class6 の upper_lines がともに強い⇒抵抗され下がる予想")
-                tk.line_send("RSI>=70 かつ line_class3/line_class6 の upper_lines がともに強い⇒抵抗され下がる予想")
+                # tk.line_send("RSI>=70 かつ line_class3/line_class6 の upper_lines がともに強い⇒抵抗され下がる予想")
                 order_pattern = 2
             elif max_upper3 >= 10:
                 print("    RSI>=70 かつ line_class3 の upper_lines だけが強い")
-                tk.line_send("RSI>=70 かつ line_class3がともに強い⇒抵抗され下がる予想")
+                # tk.line_send("RSI>=70 かつ line_class3がともに強い⇒抵抗され下がる予想")
                 order_pattern = 2
         elif f_low['RSI'] <= lower_border:
             lower3_strengths = [line['total_strength'] for line in line_class_m5_s.lower_lines]
@@ -457,19 +989,19 @@ class MainAnalysis:
             max_lower6 = max(lower6_strengths) if lower6_strengths else 0
             if max_lower3 <= 10 and max_lower6 <= 10:
                 print("    RSI<=",  "かつ line_class3/line_class6 の lower_lines がともに弱い⇒突破予想")
-                tk.line_send("RSI<=30 かつ line_class3/line_class6 の lower_lines がともに弱い⇒突破予想")
+                # tk.line_send("RSI<=30 かつ line_class3/line_class6 の lower_lines がともに弱い⇒突破予想")
                 order_pattern = 1
             elif max_lower3 <= 10:
                 print("    RSI<=30 かつ line_class3 の lower_lines だけが弱い")
-                tk.line_send("RSI<=30 かつ line_class3/line_class6 の lower_lines がともに弱い⇒突破予想")
+                # tk.line_send("RSI<=30 かつ line_class3/line_class6 の lower_lines がともに弱い⇒突破予想")
                 order_pattern = 1
             elif max_lower3 >= 10 and max_lower6 >= 10:
                 print("    RSI<=",  "かつ line_class3/line_class6 の lower_lines がともに強い⇒抵抗され上がる予想")
-                tk.line_send("RSI<=30 かつ line_class3/line_class6 の lower_lines がともに強い⇒抵抗され上がる予想")
+                # tk.line_send("RSI<=30 かつ line_class3/line_class6 の lower_lines がともに強い⇒抵抗され上がる予想")
                 order_pattern = 2
             elif max_lower3 >= 10:
                 print("    RSI<=30 かつ line_class3 の lower_lines だけが強い")
-                tk.line_send("RSI<=30 かつ line_class3が強い⇒抵抗され上がる予想")
+                # tk.line_send("RSI<=30 かつ line_class3が強い⇒抵抗され上がる予想")
                 order_pattern = 2
         else:
             print("    RSIはどちらのラインも越えていない", f_low['RSI'])
@@ -809,13 +1341,14 @@ class LineStrengthCal:
             self.peaks_class = self.peaks_class_h1
             self.peaks = self.peaks_h1
             self.df_r = self.df_r_h1
-            self.threshold = 2
+            self.threshold = 2.5
         elif foot == "m30":
             self.peaks_class = self.peaks_class_m30
             self.peaks = self.peaks_m30
             self.df_r = self.df_r_m30
             self.threshold = 3
 
+        self.min_line_peak_strength = 2
         self.current_time = candle_analysis_class.d5_df_r.iloc[0]['time_jp']  # 5分足で判断(0行目を利用）
         self.current_price = candle_analysis_class.current_price  # candleAnalysisからとる（本番の場合はAPIで最新、解析の場合はclose価格)
         self.latest_peak_dir = self.peaks[0]['direction']
@@ -860,16 +1393,16 @@ class LineStrengthCal:
                 f"dirs_grouped = {', '.join(map(str, g['dirs_grouped']))}"
                 # f"is_flipped_line_st = {g['is_flipped_line_st']},  "
             )
-            # for j, info in enumerate(g['prices_info']):
-            #     print(
-            #         self.s,
-            #         "  ",
-            #         f"time={info['latest_time_jp']}"
-            #         f"  [{j}] price={info['latest_body_peak_price']}, "
-            #         f"direction={info['direction']}, "
-            #         f"strength={info['peak_strength']}, "
-            #         f"time={info['latest_time_jp']}"
-            #     )
+            for j, info in enumerate(g['prices_info']):
+                print(
+                    self.s,
+                    "  ",
+                    f"time={info['latest_time_jp']}"
+                    f"  [{j}] price={info['latest_body_peak_price']}, "
+                    f"direction={info['direction']}, "
+                    f"strength={info['peak_strength']}, "
+                    f"time={info['latest_time_jp']}"
+                )
 
     def line_each_analysis(self):
         print("    個別LINE分析")
@@ -995,10 +1528,16 @@ class LineStrengthCal:
         current_time = datetime.strptime(self.df_r.iloc[0]['time_jp'], "%Y/%m/%d %H:%M:%S")
         time_diff = (current_time - oldest_time).total_seconds() / 3600  # 時間差を時間単位で計算
         border_time = datetime.strptime(self.current_time, '%Y/%m/%d %H:%M:%S') - timedelta(hours=time_diff)  # peakを算出するための
-        peaks = [
+        peaks = [  # peakを時間で絞る（絶対必要）
             d for d in peaks
             if datetime.strptime(d['latest_time_jp'], '%Y/%m/%d %H:%M:%S') > border_time
         ]
+        peaks_before_strength_filter = len(peaks)
+        peaks = [  # peakをStrengthで1より大きいものに絞る（テスト）
+            d for d in peaks
+            if float(d.get('peak_strength', 0)) >= 0
+        ]
+        print("    Line peak strength filter", self.min_line_peak_strength, peaks_before_strength_filter, "->", len(peaks))
         self.filtered_peaks = peaks
         self.filterd_df = df_filterd
 
@@ -1124,7 +1663,7 @@ class LineStrengthCal:
     def search_upper_lines(self, base_price, peaks, threshold=None):
         # print("    UpperLines検索")
         # グループ化
-        minus_groups = self.make_same_price_group(
+        minus_groups = self.make_same_price_group_core_first(
             peaks=peaks,
             upper_lower=1,  # base_priceより下側
             target_price=base_price,
@@ -1132,14 +1671,14 @@ class LineStrengthCal:
             sort_direction=1  # 昇順
         )
         # 弱すぎるグループは排除する
-        filtered = [d for d in minus_groups if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
-        # filtered = [d for d in minus_groups if d["ave_strength"] >= 0 and d['count'] >= 1]
+        # filtered = [d for d in minus_groups if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
+        filtered = [d for d in minus_groups if d["ave_strength"] >= 0 and d['count'] >= 1]
         return filtered
 
     def search_lower_lines(self, base_price, peaks, threshold=None):
         # print("    LowerLines検索")
         # グループ化
-        minus_groups = self.make_same_price_group(
+        minus_groups = self.make_same_price_group_core_first(
             peaks=peaks,
             upper_lower=-1,  # base_priceより下側
             target_price=base_price,
@@ -1147,9 +1686,137 @@ class LineStrengthCal:
             sort_direction=-1  # 降順
         )
         # 弱すぎるグループは排除する
-        filtered = [d for d in minus_groups if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
-        # filtered = [d for d in minus_groups if d["ave_strength"] >= 0 and d['count'] >= 1]
+        # filtered = [d for d in minus_groups if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
+        filtered = [d for d in minus_groups if d["ave_strength"] >= 0 and d['count'] >= 1]
         return filtered
+
+    def make_same_price_group_core_first(self, peaks,
+                            upper_lower,
+                            target_price,
+                            threshold=3,
+                            direction_filter=None,
+                            sort_direction=-1,
+                            core_strength=5,
+                            attach_strength=2,
+                            ):
+        if upper_lower == -1:
+            filtered_peaks = [
+                p for p in peaks
+                if float(p['latest_body_peak_price']) < target_price
+            ]
+        else:
+            filtered_peaks = [
+                p for p in peaks
+                if float(p['latest_body_peak_price']) >= target_price
+            ]
+
+        if direction_filter is not None:
+            filtered_peaks = [
+                p for p in filtered_peaks
+                if p['direction'] == direction_filter
+            ]
+
+        if not filtered_peaks:
+            return []
+
+        core_peaks = [
+            p for p in filtered_peaks
+            if float(p.get('peak_strength', 0)) >= core_strength
+        ]
+        attach_peaks = [
+            p for p in filtered_peaks
+            if float(p.get('peak_strength', 0)) <= attach_strength
+        ]
+
+        if not core_peaks:
+            return []
+
+        results = self.make_same_price_group(
+            peaks=core_peaks,
+            upper_lower=upper_lower,
+            target_price=target_price,
+            threshold=threshold,
+            direction_filter=direction_filter,
+            sort_direction=sort_direction,
+        )
+
+        for result in results:
+            result["core_median_price"] = result["median_price"]
+            result["core_count"] = result["count"]
+            result["core_total_strength"] = result["total_strength"]
+
+        attached_peak_ids = set()
+        for peak in attach_peaks:
+            peak_price_pips = self.p.price_to_pips(float(peak['latest_body_peak_price']))
+            nearest_result = None
+            nearest_gap = None
+            for result in results:
+                core_price_pips = self.p.price_to_pips(float(result["core_median_price"]))
+                gap = abs(peak_price_pips - core_price_pips)
+                if gap <= threshold and (nearest_gap is None or gap < nearest_gap):
+                    nearest_result = result
+                    nearest_gap = gap
+
+            if nearest_result is None:
+                continue
+
+            peak_id = (peak.get("latest_time_jp"), peak.get("latest_body_peak_price"), peak.get("direction"))
+            if peak_id in attached_peak_ids:
+                continue
+            attached_peak_ids.add(peak_id)
+            nearest_result["prices_info"].append(peak)
+            self.refresh_line_group(nearest_result, target_price, threshold)
+
+        results = sorted(
+            results,
+            key=lambda x: x['median_price'],
+            reverse=(sort_direction == -1)
+        )
+        print(
+            "    Core line grouping",
+            "core>=", core_strength,
+            "attach<=", attach_strength,
+            "peaks", len(filtered_peaks),
+            "core", len(core_peaks),
+            "attach", len(attach_peaks),
+            "lines", len(results),
+        )
+        return results
+
+    def refresh_line_group(self, result, target_price, threshold):
+        from itertools import groupby
+
+        sorted_group_items = sorted(
+            result["prices_info"],
+            key=lambda x: datetime.strptime(x['latest_time_jp'], '%Y/%m/%d %H:%M:%S'),
+            reverse=True
+        )
+        prices = [float(x['latest_body_peak_price']) for x in sorted_group_items]
+        dirs = [x['direction'] for x in sorted_group_items]
+        prices_pips = [self.p.price_to_pips(p) for p in prices]
+        latest_times = [
+            datetime.strptime(x['latest_time_jp'], '%Y/%m/%d %H:%M:%S')
+            for x in sorted_group_items
+        ]
+        median_price = median(prices)
+        median_price_pips = median(prices_pips)
+        target_price_pips = self.p.price_to_pips(target_price)
+
+        result["median_price"] = median_price
+        result["median_p"] = self.p.price_to_pips(abs(target_price - median_price))
+        result["median"] = abs(target_price_pips - median_price_pips)
+        result["total_strength"] = sum(float(x['peak_strength']) for x in sorted_group_items)
+        result["count"] = len(sorted_group_items)
+        result["ave_strength"] = round(result["total_strength"] / result["count"] if result["count"] else 0, 1)
+        result["prices"] = prices
+        result["price_gap"] = self.p.price_to_pips(max(prices) - min(prices))
+        result["prices_info"] = sorted_group_items
+        result["dirs"] = dirs
+        result["dirs_grouped"] = [sum(group) for key, group in groupby(dirs)]
+        result["range_min"] = self.p.price_to_pips(median_price) - threshold
+        result["range_max"] = self.p.price_to_pips(median_price) + threshold
+        result["newest_time"] = max(latest_times).strftime('%Y/%m/%d %H:%M:%S')
+        result["oldest_time"] = min(latest_times).strftime('%Y/%m/%d %H:%M:%S')
 
     def make_same_price_group(self, peaks,
                             upper_lower,
@@ -1307,254 +1974,253 @@ class LineStrengthCal:
         
         return results
 
+    # def make_same_price_group2(self, peaks,
+    #                         direction,
+    #                         target_price,
+    #                         threshold=3,
+    #                         direction_filter=None,
+    #                         ):
+    #     # target_priceをpipsに変換（基準点として）
+    #     target_price_pips = self.p.price_to_pips(target_price)
 
-    def make_same_price_group2(self, peaks,
-                            direction,
-                            target_price,
-                            threshold=3,
-                            direction_filter=None,
-                            ):
-        # target_priceをpipsに変換（基準点として）
-        target_price_pips = self.p.price_to_pips(target_price)
+    #     if direction_filter is not None:
+    #         filtered_peaks = [
+    #             p for p in peaks
+    #             if p['direction'] == direction_filter
+    #         ]
+    #     else:
+    #         filtered_peaks = peaks
 
-        if direction_filter is not None:
-            filtered_peaks = [
-                p for p in peaks
-                if p['direction'] == direction_filter
-            ]
-        else:
-            filtered_peaks = peaks
+    #     if not filtered_peaks:
+    #         return []
+    #     print('1287')
+    #     gene.print_peaks(filtered_peaks)
 
-        if not filtered_peaks:
-            return []
-        print('1287')
-        gene.print_peaks(filtered_peaks)
+    #     # 価格は既に降順で並んでいるので、ソート不要
+    #     sorted_peaks = filtered_peaks
 
-        # 価格は既に降順で並んでいるので、ソート不要
-        sorted_peaks = filtered_peaks
+    #     used_indices = set()
+    #     results = []
 
-        used_indices = set()
-        results = []
+    #     for i, p in enumerate(sorted_peaks):
+    #         if i in used_indices:
+    #             continue
 
-        for i, p in enumerate(sorted_peaks):
-            if i in used_indices:
-                continue
-
-            center_price = float(p['latest_body_peak_price'])
-            center_price_pips = self.p.price_to_pips(center_price)
+    #         center_price = float(p['latest_body_peak_price'])
+    #         center_price_pips = self.p.price_to_pips(center_price)
             
-            # 中心価格の前後thresholdの範囲にあるものを集める
-            group_items = []
-            group_indices = []
+    #         # 中心価格の前後thresholdの範囲にあるものを集める
+    #         group_items = []
+    #         group_indices = []
 
-            for j, candidate in enumerate(sorted_peaks):
-                if j not in used_indices:
-                    candidate_price = float(candidate['latest_body_peak_price'])
-                    candidate_price_pips = self.p.price_to_pips(candidate_price)
+    #         for j, candidate in enumerate(sorted_peaks):
+    #             if j not in used_indices:
+    #                 candidate_price = float(candidate['latest_body_peak_price'])
+    #                 candidate_price_pips = self.p.price_to_pips(candidate_price)
                     
-                    # pips単位で前後thresholdの範囲内か確認
-                    if abs(candidate_price_pips - center_price_pips) <= threshold:
-                        group_items.append(candidate)
-                        group_indices.append(j)
+    #                 # pips単位で前後thresholdの範囲内か確認
+    #                 if abs(candidate_price_pips - center_price_pips) <= threshold:
+    #                     group_items.append(candidate)
+    #                     group_indices.append(j)
 
-            if group_items:
-                # 時系列順に戻る（新しい順）
-                sorted_group_items = sorted(
-                    group_items,
-                    key=lambda x: datetime.strptime(x['latest_time_jp'], '%Y/%m/%d %H:%M:%S'),
-                    reverse=True
-                )
+    #         if group_items:
+    #             # 時系列順に戻る（新しい順）
+    #             sorted_group_items = sorted(
+    #                 group_items,
+    #                 key=lambda x: datetime.strptime(x['latest_time_jp'], '%Y/%m/%d %H:%M:%S'),
+    #                 reverse=True
+    #             )
                 
-                prices = [float(x['latest_body_peak_price']) for x in sorted_group_items]
-                dirs = [x['direction'] for x in sorted_group_items]
-                prices_pips = [self.p.price_to_pips(p) for p in prices]
+    #             prices = [float(x['latest_body_peak_price']) for x in sorted_group_items]
+    #             dirs = [x['direction'] for x in sorted_group_items]
+    #             prices_pips = [self.p.price_to_pips(p) for p in prices]
 
-                latest_times = [
-                    datetime.strptime(
-                        x['latest_time_jp'],
-                        '%Y/%m/%d %H:%M:%S'
-                    )
-                    for x in sorted_group_items
-                ]
+    #             latest_times = [
+    #                 datetime.strptime(
+    #                     x['latest_time_jp'],
+    #                     '%Y/%m/%d %H:%M:%S'
+    #                 )
+    #                 for x in sorted_group_items
+    #             ]
 
-                median_price = median(prices)
-                median_price_pips = median(prices_pips)
+    #             median_price = median(prices)
+    #             median_price_pips = median(prices_pips)
                 
-                # ★ direction に応じて median の値を変える
-                if direction == 1:
-                    # 上側：median_price - target_price
-                    median_value = median_price - target_price
-                else:  # direction == -1
-                    # 下側：target_price - median_price
-                    median_value = target_price - median_price
+    #             # ★ direction に応じて median の値を変える
+    #             if direction == 1:
+    #                 # 上側：median_price - target_price
+    #                 median_value = median_price - target_price
+    #             else:  # direction == -1
+    #                 # 下側：target_price - median_price
+    #                 median_value = target_price - median_price
                 
-                price_gap = self.p.price_to_pips(max(prices) - min(prices))
+    #             price_gap = self.p.price_to_pips(max(prices) - min(prices))
 
-                results.append({
-                    'median_price': median_price,
-                    'median_p': self.p.price_to_pips(median_value),
-                    'median': self.p.round_price(median_value),
-                    "total_strength": sum(float(x['peak_strength']) for x in sorted_group_items),
-                    'count': len(sorted_group_items),
-                    "ave_strength": round(
-                        sum(float(x['peak_strength']) for x in sorted_group_items) / len(sorted_group_items) 
-                        if sorted_group_items else 0, 1
-                    ),
-                    'prices': prices,
-                    'price_gap': price_gap,
-                    'prices_info': sorted_group_items,
-                    'dirs': dirs,
-                    'range_min': center_price_pips - threshold,
-                    'range_max': center_price_pips + threshold,
-                    'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
-                    'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
-                })
+    #             results.append({
+    #                 'median_price': median_price,
+    #                 'median_p': self.p.price_to_pips(median_value),
+    #                 'median': self.p.round_price(median_value),
+    #                 "total_strength": sum(float(x['peak_strength']) for x in sorted_group_items),
+    #                 'count': len(sorted_group_items),
+    #                 "ave_strength": round(
+    #                     sum(float(x['peak_strength']) for x in sorted_group_items) / len(sorted_group_items)
+    #                     if sorted_group_items else 0, 1
+    #                 ),
+    #                 'prices': prices,
+    #                 'price_gap': price_gap,
+    #                 'prices_info': sorted_group_items,
+    #                 'dirs': dirs,
+    #                 'range_min': center_price_pips - threshold,
+    #                 'range_max': center_price_pips + threshold,
+    #                 'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
+    #                 'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
+    #             })
                 
-                # このグループに属するものを使用済みに
-                used_indices.update(group_indices)
+    #             # このグループに属するものを使用済みに
+    #             used_indices.update(group_indices)
 
-        # 連続した同じ値をグループ化して合計
-        from itertools import groupby
-        for r in results:
-            r['dirs_grouped'] = [sum(group) for key, group in groupby(r['dirs'])]
+    #     # 連続した同じ値をグループ化して合計
+    #     from itertools import groupby
+    #     for r in results:
+    #         r['dirs_grouped'] = [sum(group) for key, group in groupby(r['dirs'])]
 
-        # グループ化されなかったものを1個のグループとして追加
-        for i, peak in enumerate(sorted_peaks):
-            if i not in used_indices:
-                price = float(peak['latest_body_peak_price'])
-                price_pips = self.p.price_to_pips(price)
+    #     # グループ化されなかったものを1個のグループとして追加
+    #     for i, peak in enumerate(sorted_peaks):
+    #         if i not in used_indices:
+    #             price = float(peak['latest_body_peak_price'])
+    #             price_pips = self.p.price_to_pips(price)
                 
-                latest_time = datetime.strptime(
-                    peak['latest_time_jp'],
-                    '%Y/%m/%d %H:%M:%S'
-                )
+    #             latest_time = datetime.strptime(
+    #                 peak['latest_time_jp'],
+    #                 '%Y/%m/%d %H:%M:%S'
+    #             )
                 
-                # ★ direction に応じて median の値を変える
-                if direction == 1:
-                    median_value = price - target_price
-                else:
-                    median_value = target_price - price
+    #             # ★ direction に応じて median の値を変える
+    #             if direction == 1:
+    #                 median_value = price - target_price
+    #             else:
+    #                 median_value = target_price - price
                 
-                results.append({
-                    'median_price': price,
-                    'median_p': self.p.price_to_pips(abs(target_price - price)),
-                    'median': self.p.round_price(median_value),  # ★ 修正
-                    "total_strength": float(peak['peak_strength']),
-                    'count': 1,
-                    "ave_strength": float(peak['peak_strength']),
-                    'prices': [price],
-                    'price_gap': 0,
-                    'prices_info': [peak],
-                    'dirs': [peak['direction']],
-                    'dirs_grouped': [peak['direction']],
-                    'range_min': price_pips - threshold,
-                    'range_max': price_pips + threshold,
-                    'newest_time': latest_time.strftime('%Y/%m/%d %H:%M:%S'),
-                    'oldest_time': latest_time.strftime('%Y/%m/%d %H:%M:%S'),
-                })
+    #             results.append({
+    #                 'median_price': price,
+    #                 'median_p': self.p.price_to_pips(abs(target_price - price)),
+    #                 'median': self.p.round_price(median_value),  # ★ 修正
+    #                 "total_strength": float(peak['peak_strength']),
+    #                 'count': 1,
+    #                 "ave_strength": float(peak['peak_strength']),
+    #                 'prices': [price],
+    #                 'price_gap': 0,
+    #                 'prices_info': [peak],
+    #                 'dirs': [peak['direction']],
+    #                 'dirs_grouped': [peak['direction']],
+    #                 'range_min': price_pips - threshold,
+    #                 'range_max': price_pips + threshold,
+    #                 'newest_time': latest_time.strftime('%Y/%m/%d %H:%M:%S'),
+    #                 'oldest_time': latest_time.strftime('%Y/%m/%d %H:%M:%S'),
+    #             })
 
-        # フィルタ（よわいものは除外）      
-        # results = [d for d in results if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
+    #     # フィルタ（よわいものは除外）
+    #     # results = [d for d in results if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
     
-        # 並び替え
-        results.sort(key=lambda x: x['median_price'], reverse=True)
+    #     # 並び替え
+    #     results.sort(key=lambda x: x['median_price'], reverse=True)
 
-        return results
+    #     return results
 
-        # def make_same_price_group(self, peaks,
-        #                         upper_lower,
-        #                         target_price,
-        #                         threshold=3,  # pips単位
-        #                         direction_filter=None,
-        #                         sort_direction=-1,
-        #                         ):
-        #     # target_priceをpipsに変換（基準点として）
-        #     target_price_pips = self.p.price_to_pips(target_price)
+    #     # def make_same_price_group(self, peaks,
+    #     #                         upper_lower,
+    #     #                         target_price,
+    #     #                         threshold=3,  # pips単位
+    #     #                         direction_filter=None,
+    #     #                         sort_direction=-1,
+    #     #                         ):
+    #     #     # target_priceをpipsに変換（基準点として）
+    #     #     target_price_pips = self.p.price_to_pips(target_price)
 
-        #     if upper_lower == -1:
-        #         # 下側の場合
-        #         filtered_peaks = [
-        #             p for p in peaks
-        #             if float(p['latest_body_peak_price']) < target_price
-        #         ]
-        #     else:
-        #         # 上側の場合
-        #         filtered_peaks = [
-        #             p for p in peaks
-        #             if float(p['latest_body_peak_price']) >= target_price
-        #         ]
+    #     #     if upper_lower == -1:
+    #     #         # 下側の場合
+    #     #         filtered_peaks = [
+    #     #             p for p in peaks
+    #     #             if float(p['latest_body_peak_price']) < target_price
+    #     #         ]
+    #     #     else:
+    #     #         # 上側の場合
+    #     #         filtered_peaks = [
+    #     #             p for p in peaks
+    #     #             if float(p['latest_body_peak_price']) >= target_price
+    #     #         ]
 
-        #     if direction_filter is not None:
-        #         filtered_peaks = [
-        #             p for p in filtered_peaks
-        #             if p['direction'] == direction_filter
-        #         ]
+    #     #     if direction_filter is not None:
+    #     #         filtered_peaks = [
+    #     #             p for p in filtered_peaks
+    #     #             if p['direction'] == direction_filter
+    #     #         ]
 
-        #     groups = defaultdict(list)
+    #     #     groups = defaultdict(list)
             
-        #     for p in filtered_peaks:
-        #         price = float(p['latest_body_peak_price'])
-        #         price_pips = self.p.price_to_pips(price)
+    #     #     for p in filtered_peaks:
+    #     #         price = float(p['latest_body_peak_price'])
+    #     #         price_pips = self.p.price_to_pips(price)
                 
-        #         group_key = round(
-        #             math.floor(price_pips / threshold) * threshold,
-        #             5
-        #         )
-        #         groups[group_key].append(p)
+    #     #         group_key = round(
+    #     #             math.floor(price_pips / threshold) * threshold,
+    #     #             5
+    #     #         )
+    #     #         groups[group_key].append(p)
             
-        #     results = []
+    #     #     results = []
 
-        #     for group_key, items in groups.items():
-        #         prices = [
-        #             float(x['latest_body_peak_price'])
-        #             for x in items
-        #         ]
-        #         dirs = [
-        #             x['direction']
-        #             for x in items
-        #         ]
-        #         prices_pips = [self.p.price_to_pips(p) for p in prices]
+    #     #     for group_key, items in groups.items():
+    #     #         prices = [
+    #     #             float(x['latest_body_peak_price'])
+    #     #             for x in items
+    #     #         ]
+    #     #         dirs = [
+    #     #             x['direction']
+    #     #             for x in items
+    #     #         ]
+    #     #         prices_pips = [self.p.price_to_pips(p) for p in prices]
 
-        #         latest_times = [
-        #             datetime.strptime(
-        #                 x['latest_time_jp'],
-        #                 '%Y/%m/%d %H:%M:%S'
-        #             )
-        #             for x in items
-        #         ]
+    #     #         latest_times = [
+    #     #             datetime.strptime(
+    #     #                 x['latest_time_jp'],
+    #     #                 '%Y/%m/%d %H:%M:%S'
+    #     #             )
+    #     #             for x in items
+    #     #         ]
 
-        #         median_price_pips = median(prices_pips)
-        #         median_diff_pips = abs(target_price_pips - median_price_pips)
+    #     #         median_price_pips = median(prices_pips)
+    #     #         median_diff_pips = abs(target_price_pips - median_price_pips)
 
-        #         results.append({
-        #             'median_price': median(prices),
-        #             'median_p': round(abs(target_price - median(prices)), 3),
-        #             'median': median_diff_pips,
-        #             "total_strength": sum(float(x['peak_strength']) for x in items),
-        #             'count': len(items),
-        #             "ave_strength": round(sum(float(x['peak_strength']) for x in items) / len(items) if items else 0, 1),
-        #             'prices': prices,
-        #             'dirs': dirs,  # ★ 追加
-        #             'range_min': group_key,
-        #             'range_max': group_key + threshold,
-        #             'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
-        #             'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
-        #         })
-        #     # 連続した同じ値をグループ化して合計
-        #     from itertools import groupby
-        #     for r in results:
-        #         r['dirs_grouped'] = [sum(group) for key, group in groupby(r['dirs'])]
+    #     #         results.append({
+    #     #             'median_price': median(prices),
+    #     #             'median_p': round(abs(target_price - median(prices)), 3),
+    #     #             'median': median_diff_pips,
+    #     #             "total_strength": sum(float(x['peak_strength']) for x in items),
+    #     #             'count': len(items),
+    #     #             "ave_strength": round(sum(float(x['peak_strength']) for x in items) / len(items) if items else 0, 1),
+    #     #             'prices': prices,
+    #     #             'dirs': dirs,  # ★ 追加
+    #     #             'range_min': group_key,
+    #     #             'range_max': group_key + threshold,
+    #     #             'newest_time': max(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
+    #     #             'oldest_time': min(latest_times).strftime('%Y/%m/%d %H:%M:%S'),
+    #     #         })
+    #     #     # 連続した同じ値をグループ化して合計
+    #     #     from itertools import groupby
+    #     #     for r in results:
+    #     #         r['dirs_grouped'] = [sum(group) for key, group in groupby(r['dirs'])]
 
-        #     print("TEST表示")
-        #     for i, item in enumerate(results):
-        #         print(" ", item)
+    #     #     print("TEST表示")
+    #     #     for i, item in enumerate(results):
+    #     #         print(" ", item)
 
-        #     results = sorted(
-        #         results,
-        #         key=lambda x: x['median_price'],  # 価格で並び替え
-        #         reverse=(sort_direction == -1)
-        #     )
-        #     return results
+    #     #     results = sorted(
+    #     #         results,
+    #     #         key=lambda x: x['median_price'],  # 価格で並び替え
+    #     #         reverse=(sort_direction == -1)
+    #     #     )
+    #     #     return results
 
 
 class OrderPoints:

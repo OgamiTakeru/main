@@ -53,6 +53,7 @@ class Inspection:
         self.gl_m30_df_r = pd.DataFrame()
         self.result_df = pd.DataFrame()
         self.results = []
+        self.process_start_time = datetime.datetime.now()
 
         print("Inspection start")
         self.get_data()
@@ -202,7 +203,8 @@ class Inspection:
     def df_covers_range(df, start_time, end_time):
         if df is None or df.empty or "time_jp_dt" not in df.columns:
             return False
-        return df["time_jp_dt"].min() <= start_time and df["time_jp_dt"].max() >= end_time
+        tolerance = datetime.timedelta(seconds=5)
+        return df["time_jp_dt"].min() <= start_time and df["time_jp_dt"].max() + tolerance >= end_time
 
     @staticmethod
     def print_df_range(label, df):
@@ -227,6 +229,14 @@ class Inspection:
         self.result_df = pd.DataFrame(self.results)
         print("Inspection result rows:", len(self.result_df))
         self.save_result_data()
+        self.print_elapsed_time()
+
+    def print_elapsed_time(self):
+        elapsed_seconds = (datetime.datetime.now() - self.process_start_time).total_seconds()
+        elapsed_minutes = elapsed_seconds / 60
+        print("Inspection elapsed seconds:", round(elapsed_seconds, 1))
+        print("Inspection elapsed minutes:", round(elapsed_minutes, 2))
+        tk.line_send("終了しました", str(round(elapsed_minutes, 2)) + "分")
 
     def build_target_times(self):
         target_times = []
@@ -301,8 +311,11 @@ class Inspection:
             return
 
         lines = self.extract_lines(analysis_result)
+        rsi_info = self.build_rsi_info(analysis_m5_df_r)
         for line_side, line in lines:
-            order_plan = self.line_to_order_plan(target_time, line_side, line)
+            if not ti.MainAnalysis.is_h1_line_limit_order_target(line_side, line):
+                continue
+            order_plan = self.line_to_order_plan(target_time, line_side, line, rsi_info)
             self.results.append(self.inspect_order_after(target_time, order_plan, inspection_s5_df))
 
     @staticmethod
@@ -454,6 +467,7 @@ class Inspection:
             "max_minus_pips": max_minus_pips,
             **first_reach_results,
             "source": order_plan.get("source"),
+            "line_timeframe": order_plan.get("line_timeframe"),
             "line_side": order_plan.get("line_side"),
             "line_price": order_plan.get("line_price"),
             "line_total_strength": order_plan.get("line_total_strength"),
@@ -461,6 +475,20 @@ class Inspection:
             "line_ave_strength": order_plan.get("line_ave_strength"),
             "line_is_flipped": order_plan.get("line_is_flipped"),
             "line_oldest_time": order_plan.get("line_oldest_time"),
+            "core_median_price": order_plan.get("core_median_price"),
+            "core_count": order_plan.get("core_count"),
+            "core_total_strength": order_plan.get("core_total_strength"),
+            "line_strategy": order_plan.get("line_strategy"),
+            "rsi_1": order_plan.get("rsi_1"),
+            "rsi_2": order_plan.get("rsi_2"),
+            "rsi_3": order_plan.get("rsi_3"),
+            "rsi_time_1": order_plan.get("rsi_time_1"),
+            "rsi_time_2": order_plan.get("rsi_time_2"),
+            "rsi_time_3": order_plan.get("rsi_time_3"),
+            "rsi_upper_border": order_plan.get("rsi_upper_border"),
+            "rsi_lower_border": order_plan.get("rsi_lower_border"),
+            "rsi_is_high": order_plan.get("rsi_is_high"),
+            "rsi_is_low": order_plan.get("rsi_is_low"),
             "for_api_json": order_plan.get("for_api_json"),
             "memo": order_plan.get("memo"),
         }
@@ -488,7 +516,42 @@ class Inspection:
             lines.append(("lower", line))
         return lines
 
-    def line_to_order_plan(self, target_time, line_side, line):
+    @staticmethod
+    def build_rsi_info(df_r):
+        upper_border = 67.5
+        lower_border = 30
+        if len(df_r) <= 3 or "RSI" not in df_r.columns:
+            return {
+                "rsi_1": None,
+                "rsi_2": None,
+                "rsi_3": None,
+                "rsi_time_1": None,
+                "rsi_time_2": None,
+                "rsi_time_3": None,
+                "rsi_upper_border": upper_border,
+                "rsi_lower_border": lower_border,
+                "rsi_is_high": None,
+                "rsi_is_low": None,
+            }
+
+        f_low = df_r.iloc[1]
+        s_low = df_r.iloc[2]
+        t_low = df_r.iloc[3]
+        rsi_1 = f_low.get("RSI")
+        return {
+            "rsi_1": rsi_1,
+            "rsi_2": s_low.get("RSI"),
+            "rsi_3": t_low.get("RSI"),
+            "rsi_time_1": f_low.get("time_jp"),
+            "rsi_time_2": s_low.get("time_jp"),
+            "rsi_time_3": t_low.get("time_jp"),
+            "rsi_upper_border": upper_border,
+            "rsi_lower_border": lower_border,
+            "rsi_is_high": rsi_1 >= upper_border,
+            "rsi_is_low": rsi_1 <= lower_border,
+        }
+
+    def line_to_order_plan(self, target_time, line_side, line, rsi_info=None):
         pair = gene.USD_JPY
         line_price = line["median_price"]
         direction = -1 if line_side == "upper" else 1
@@ -514,6 +577,7 @@ class Inspection:
             "for_api_json": None,
             "memo": "virtual line order",
             "source": "line",
+            "line_timeframe": "h1",
             "line_side": line_side,
             "line_price": pair.round_price(line_price),
             "line_total_strength": line.get("total_strength"),
@@ -521,6 +585,11 @@ class Inspection:
             "line_ave_strength": line.get("ave_strength"),
             "line_is_flipped": line.get("is_flipped_line"),
             "line_oldest_time": line.get("oldest_time"),
+            "core_median_price": line.get("core_median_price"),
+            "core_count": line.get("core_count"),
+            "core_total_strength": line.get("core_total_strength"),
+            "line_strategy": "lower_c3_core1or3",
+            **(rsi_info or {}),
         }
 
     @staticmethod

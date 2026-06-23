@@ -7,8 +7,10 @@ memo = "大量22_23 flipped H1 line inspection"
 
 inspection = ci.Inspection(
     is_exist_data=False,
-    start_time=datetime.datetime(2026, 6, 15, 0, 0, 0),
+    start_time=datetime.datetime(2025, 6, 15, 0, 0, 0),
     end_time=datetime.datetime(2026, 6, 16, 10, 0, 0),
+    # start_time=datetime.datetime(2024, 6, 15, 0, 0, 0),
+    # end_time=datetime.datetime(2025, 6, 16, 10, 0, 0),
     h1_data_path="C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_h1_df.csv",
     m5_data_path="C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv",
     m30_data_path=None,
