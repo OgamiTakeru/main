@@ -28,6 +28,9 @@ class LineOrderStrategy:
     timeframe = ""
     name_prefix = ""
     line_strategy = ""
+    entry_type = ""
+    order_type = "LIMIT"
+    entry_offset_pips = 0
     lc_pips = 0
     tp_pips = 0
     units_multiplier = 1
@@ -39,28 +42,42 @@ class LineOrderStrategy:
     def get_tp_pips(self):
         return self.tp_pips
 
+    def get_direction(self, line_side):
+        return -1 if line_side == "upper" else 1
+
+    def get_target_price(self, line_price, line_side):
+        return line_price
+
     def build_candidates(self, line_class, current_price):
         p = gene.USD_JPY
         candidates = []
-        for line_side, direction, lines in (
-            ("upper", -1, line_class.upper_lines),
-            ("lower", 1, line_class.lower_lines),
+        for line_side, lines in (
+            ("upper", line_class.upper_lines),
+            ("lower", line_class.lower_lines),
         ):
             for line_index, line in enumerate(lines):
                 if not self.is_target(line_side, line):
                     continue
 
                 line_price = p.round_price(line["median_price"])
+                target_price = p.round_price(
+                    self.get_target_price(line_price, line_side)
+                )
+                if line_side == "upper" and target_price <= float(current_price):
+                    continue
+                if line_side == "lower" and target_price >= float(current_price):
+                    continue
                 candidates.append({
                     "timeframe": self.timeframe,
                     "line_side": line_side,
-                    "direction": direction,
+                    "direction": self.get_direction(line_side),
                     "line": line,
                     "line_index": line_index,
                     "line_price": line_price,
+                    "target_price": target_price,
                     "line_strategy": self.line_strategy,
                     "distance_pips": abs(
-                        p.price_to_pips(float(current_price) - float(line_price))
+                        p.price_to_pips(float(current_price) - float(target_price))
                     ),
                     "strategy": self,
                 })
@@ -71,6 +88,8 @@ class H1LineOrderStrategy(LineOrderStrategy):
     timeframe = "h1"
     name_prefix = "H1LineLimit"
     line_strategy = "lower_c3_core1or3"
+    entry_type = "reversal"
+    order_type = "LIMIT"
     lc_pips = 15
     units_multiplier = 0.5
     order_timeout_min = 60
@@ -94,10 +113,12 @@ class H1LineOrderStrategy(LineOrderStrategy):
 
 class M5LineOrderStrategy(LineOrderStrategy):
     timeframe = "m5"
-    name_prefix = "M5LineLimit"
-    line_strategy = "m5_line_test_c2_core"
+    name_prefix = "M5LineReversal"
+    line_strategy = "m5_reversal_c2_core"
+    entry_type = "reversal"
+    order_type = "LIMIT"
     lc_pips = 7.5
-    tp_pips = 13
+    tp_pips = 14.1
     units_multiplier = 0.25
     order_timeout_min = 15
 
@@ -115,26 +136,58 @@ class M5LineOrderStrategy(LineOrderStrategy):
         )
 
 
+class M5BreakoutLineOrderStrategy(M5LineOrderStrategy):
+    name_prefix = "M5LineBreakout"
+    line_strategy = "m5_breakout_c2_core"
+    entry_type = "breakout"
+    order_type = "STOP"
+    entry_offset_pips = 1.5
+
+    def get_direction(self, line_side):
+        return 1 if line_side == "upper" else -1
+
+    def get_target_price(self, line_price, line_side):
+        p = gene.USD_JPY
+        direction = self.get_direction(line_side)
+        return line_price + (
+            direction * p.pips_to_price(self.entry_offset_pips)
+        )
+
 class LineOrderCoordinator:
     duplicate_threshold_pips = 3
+    h1_strong_threshold = 10
 
     def __init__(self, analysis):
         self.analysis = analysis
 
-    def create_orders(self, strategy_lines, current_price, decision_time, rsi_info=None):
+    def create_orders(
+        self,
+        strategy_lines,
+        current_price,
+        decision_time,
+        rsi_info=None,
+        h1_line_class=None,
+    ):
         if self.analysis.mode != "inspection":
             return []
 
         candidates = []
         for strategy, line_class in strategy_lines:
             candidates.extend(strategy.build_candidates(line_class, current_price))
+        if h1_line_class is not None:
+            self._add_h1_context(candidates, h1_line_class)
 
+        candidates = self._filter_recommended_candidates(
+            candidates,
+            rsi_info,
+            decision_time,
+        )
         selected_candidates = self._remove_near_candidates(candidates)
         orders = []
         for candidate in selected_candidates:
             if self.analysis.has_similar_order(
                 candidate["direction"],
-                candidate["line_price"],
+                candidate["target_price"],
                 orders,
                 self.duplicate_threshold_pips,
                 source="line",
@@ -143,30 +196,224 @@ class LineOrderCoordinator:
                 print(
                     "Skip similar line order:",
                     candidate["timeframe"],
+                    candidate["strategy"].entry_type,
                     candidate["line_side"],
-                    candidate["line_price"],
+                    candidate["target_price"],
                     "direction",
                     candidate["direction"],
                 )
                 continue
 
-            orders.append(
-                self._create_order(
-                    candidate,
-                    selected_candidates,
-                    current_price,
-                    decision_time,
-                    rsi_info,
-                )
+            order_class = self._create_order(
+                candidate,
+                selected_candidates,
+                current_price,
+                decision_time,
+                rsi_info,
             )
+            order_class = self.adjust_order_by_session(order_class, decision_time)
+            if order_class is None:
+                continue
+
+            orders.append(order_class)
 
         if orders:
             timeframe_counts = Counter(
                 order.exe_order_plan.get("line_timeframe") for order in orders
             )
-            print("Line limit orders:", dict(timeframe_counts))
+            print("Line orders:", dict(timeframe_counts))
             self.analysis.add_order_to_this_class(orders)
         return orders
+
+    def _filter_recommended_candidates(self, candidates, rsi_info, decision_time):
+        filtered = []
+        for candidate in candidates:
+            reasons = self._recommended_reasons(candidate, rsi_info, decision_time)
+            if not reasons:
+                print(
+                    "Skip line order by condition:",
+                    candidate["timeframe"],
+                    candidate["line_strategy"],
+                    candidate["line_side"],
+                    candidate["line_price"],
+                )
+                continue
+
+            candidate["recommended_reasons"] = reasons
+            candidate["memo"] = self._build_condition_memo(candidate, rsi_info, reasons)
+            filtered.append(candidate)
+        return filtered
+
+    def _recommended_reasons(self, candidate, rsi_info, decision_time):
+        if candidate["timeframe"] != "m5":
+            return ["H1 lower count3 core1or3"]
+
+        line_side = candidate["line_side"]
+        line = candidate["line"]
+        h1_context = candidate.get("h1_context", {})
+        count = int(line.get("count") or 0)
+        strength = float(line.get("total_strength") or 0)
+        core_count = int(line.get("core_count") or 0)
+        core_strength = float(line.get("core_total_strength") or 0)
+        h1_distance = h1_context.get("h1_nearest_distance_pips")
+        h1_strength = h1_context.get("h1_nearest_total_strength")
+        h1_side = h1_context.get("h1_nearest_side")
+        rsi_1 = None if rsi_info is None else rsi_info.get("rsi_1")
+        hour = int(pd.to_datetime(decision_time).hour)
+
+        h1_is_strong = (
+            h1_strength is not None
+            and float(h1_strength) >= self.h1_strong_threshold
+        )
+        h1_over_3 = h1_distance is not None and float(h1_distance) > 3
+        h1_3_to_10 = (
+            h1_distance is not None
+            and 3 < float(h1_distance) <= 10
+        )
+        h1_same_side = h1_side == line_side
+        rsi_30_40 = rsi_1 is not None and 30 <= float(rsi_1) < 40
+        night = 18 <= hour <= 23
+        day = 12 <= hour <= 17
+
+        reasons = []
+        if line_side == "upper" and h1_over_3 and h1_is_strong and night:
+            reasons.append("Upper H1>3 strong night")
+        if line_side == "lower" and count == 5 and h1_is_strong:
+            reasons.append("Lower count5 H1 strong")
+        if line_side == "upper" and core_strength <= 5 and h1_over_3 and h1_is_strong:
+            reasons.append("Upper coreStrength<=5 H1>3 strong")
+        if line_side == "lower" and 11 <= strength <= 15 and h1_is_strong and day:
+            reasons.append("Lower strength11-15 H1 strong day")
+        if line_side == "upper" and h1_3_to_10 and h1_is_strong and night:
+            reasons.append("Upper H1 3-10 strong night")
+        if line_side == "upper" and core_count == 1 and h1_over_3 and h1_is_strong:
+            reasons.append("Upper coreCount1 H1>3 strong")
+        if line_side == "upper" and core_count == 2 and h1_over_3 and rsi_30_40:
+            reasons.append("Upper coreCount2 H1>3 RSI30-40")
+        if line_side == "upper" and 6 <= core_strength <= 10 and rsi_30_40:
+            reasons.append("Upper coreStrength6-10 RSI30-40")
+        if line_side == "upper" and h1_same_side and h1_over_3 and h1_is_strong:
+            reasons.append("Upper H1 same side >3 strong")
+        if line_side == "upper" and h1_same_side and h1_3_to_10 and h1_is_strong:
+            reasons.append("Upper H1 same side 3-10 strong")
+
+        return reasons
+
+    @staticmethod
+    def _build_condition_memo(candidate, rsi_info, reasons):
+        line = candidate["line"]
+        h1_context = candidate.get("h1_context", {})
+        parts = [
+            "top10",
+            candidate["timeframe"],
+            candidate["line_side"],
+            candidate["strategy"].entry_type,
+            "strength=" + str(line.get("total_strength")),
+            "count=" + str(line.get("count")),
+            "core_count=" + str(line.get("core_count")),
+            "core_strength=" + str(line.get("core_total_strength")),
+        ]
+
+        h1_distance = h1_context.get("h1_nearest_distance_pips")
+        h1_strength = h1_context.get("h1_nearest_total_strength")
+        h1_side = h1_context.get("h1_nearest_side")
+        if h1_distance is not None:
+            parts.append("H1_near=" + str(round(float(h1_distance), 1)) + "p")
+        if h1_strength is not None:
+            parts.append("H1_strength=" + str(h1_strength))
+        if h1_side is not None:
+            parts.append("H1_side=" + str(h1_side))
+
+        if rsi_info is not None and rsi_info.get("rsi_1") is not None:
+            parts.append("RSI=" + str(round(float(rsi_info["rsi_1"]), 1)))
+
+        parts.append("reason=" + " / ".join(reasons))
+        return "; ".join(parts)
+
+    def _add_h1_context(self, candidates, h1_line_class):
+        p = gene.USD_JPY
+        h1_lines = []
+        for line_side, lines in (
+            ("upper", h1_line_class.upper_lines),
+            ("lower", h1_line_class.lower_lines),
+        ):
+            for line in lines:
+                h1_lines.append({
+                    "side": line_side,
+                    "price": p.round_price(line["median_price"]),
+                    "line": line,
+                })
+
+        for candidate in candidates:
+            base_price = float(candidate["line_price"])
+            direction = int(candidate["direction"])
+            upper_lines = [x for x in h1_lines if x["side"] == "upper"]
+            lower_lines = [x for x in h1_lines if x["side"] == "lower"]
+            ahead_lines = [
+                x
+                for x in h1_lines
+                if (float(x["price"]) - base_price) * direction > 0
+            ]
+            behind_lines = [
+                x
+                for x in h1_lines
+                if (float(x["price"]) - base_price) * direction < 0
+            ]
+
+            nearest_upper = self._nearest_h1_line(upper_lines, base_price)
+            nearest_lower = self._nearest_h1_line(lower_lines, base_price)
+            nearest_any = self._nearest_h1_line(h1_lines, base_price)
+            nearest_ahead = self._nearest_h1_line(ahead_lines, base_price)
+            nearest_behind = self._nearest_h1_line(behind_lines, base_price)
+
+            context = {}
+            context.update(self._h1_line_fields("h1_upper", nearest_upper, base_price))
+            context.update(self._h1_line_fields("h1_lower", nearest_lower, base_price))
+            context.update(self._h1_line_fields("h1_nearest", nearest_any, base_price))
+            context.update(self._h1_line_fields("h1_ahead", nearest_ahead, base_price))
+            context.update(self._h1_line_fields("h1_behind", nearest_behind, base_price))
+            nearest_gap = context.get("h1_nearest_distance_pips")
+            context["h1_near_same_line"] = (
+                nearest_gap is not None and nearest_gap <= self.duplicate_threshold_pips
+            )
+            context["h1_blocks_trade_direction"] = (
+                context.get("h1_ahead_total_strength") is not None
+                and context["h1_ahead_total_strength"] >= 10
+            )
+            candidate["h1_context"] = context
+
+    @staticmethod
+    def _nearest_h1_line(lines, base_price):
+        if not lines:
+            return None
+        return min(lines, key=lambda x: abs(float(x["price"]) - base_price))
+
+    @staticmethod
+    def _h1_line_fields(prefix, item, base_price):
+        if item is None:
+            return {
+                prefix + "_side": None,
+                prefix + "_price": None,
+                prefix + "_distance_pips": None,
+                prefix + "_total_strength": None,
+                prefix + "_count": None,
+                prefix + "_core_total_strength": None,
+                prefix + "_is_flipped": None,
+            }
+
+        p = gene.USD_JPY
+        line = item["line"]
+        return {
+            prefix + "_side": item["side"],
+            prefix + "_price": item["price"],
+            prefix + "_distance_pips": abs(
+                p.price_to_pips(float(item["price"]) - base_price)
+            ),
+            prefix + "_total_strength": line.get("total_strength"),
+            prefix + "_count": line.get("count"),
+            prefix + "_core_total_strength": line.get("core_total_strength"),
+            prefix + "_is_flipped": line.get("is_flipped_line"),
+        }
 
     def _remove_near_candidates(self, candidates):
         p = gene.USD_JPY
@@ -208,6 +455,123 @@ class LineOrderCoordinator:
         # Timeframe agreement rules will be added here after M5 validation.
         return candidate["strategy"].units_multiplier
 
+    @staticmethod
+    def get_session_info(decision_time):
+        dt = pd.to_datetime(decision_time)
+        hour = int(dt.hour)
+
+        if 6 <= hour < 12:
+            session_name = "morning"
+        elif 12 <= hour < 18:
+            session_name = "day"
+        else:
+            session_name = "night"
+
+        return {
+            "session_name": session_name,
+            "session_hour": hour,
+            "session_time": dt.strftime("%Y/%m/%d %H:%M:%S"),
+        }
+
+    @staticmethod
+    def session_order_policy(session_name):
+        # Keep all sessions neutral for now. Change these values after validation.
+        policies = {
+            "morning": {
+                "order_permission": True,
+                "units_multiplier": 1.0,
+                "rr": 1.3,
+                "tp_multiplier": 1.0,
+                "lc_multiplier": 1.0,
+            },
+            "day": {
+                "order_permission": True,
+                "units_multiplier": 1.0,
+                "rr": None,
+                "tp_multiplier": 1.0,
+                "lc_multiplier": 1.0,
+            },
+            "night": {
+                "order_permission": True,
+                "units_multiplier": 1.0,
+                "rr": None,
+                "tp_multiplier": 1.0,
+                "lc_multiplier": 1.0,
+            },
+        }
+        return policies.get(session_name, policies["night"])
+
+    def adjust_order_by_session(self, order_class, decision_time):
+        session_info = self.get_session_info(decision_time)
+        policy = self.session_order_policy(session_info["session_name"])
+
+        order_plan = order_class.exe_order_plan
+        order_plan["session_name"] = session_info["session_name"]
+        order_plan["session_hour"] = session_info["session_hour"]
+        order_plan["session_time"] = session_info["session_time"]
+        order_plan["session_units_multiplier"] = policy["units_multiplier"]
+        order_plan["session_rr"] = policy["rr"]
+        order_plan["session_tp_multiplier"] = policy["tp_multiplier"]
+        order_plan["session_lc_multiplier"] = policy["lc_multiplier"]
+        order_plan["session_skip_reason"] = None
+
+        if not policy["order_permission"]:
+            order_plan["order_permission"] = False
+            order_plan["session_skip_reason"] = "session_order_permission_false"
+            print(
+                "Skip session order:",
+                order_plan.get("name"),
+                session_info["session_name"],
+            )
+            return None
+
+        if policy["units_multiplier"] != 1.0:
+            self._apply_units_multiplier(order_class, policy["units_multiplier"])
+
+        if policy["rr"] is not None:
+            self._apply_rr_to_tp(order_class, policy["rr"])
+
+        return order_class
+
+    @staticmethod
+    def _apply_units_multiplier(order_class, units_multiplier):
+        order_plan = order_class.exe_order_plan
+        old_units = int(order_plan.get("units") or 0)
+        new_units = int(old_units * units_multiplier)
+        if new_units == 0 and old_units != 0:
+            new_units = 1 if old_units > 0 else -1
+
+        order_class.units = abs(new_units)
+        order_plan["units"] = abs(new_units)
+        for_api_json = order_plan.get("for_api_json")
+        if for_api_json and "order" in for_api_json:
+            direction = int(order_plan.get("direction") or 1)
+            for_api_json["order"]["units"] = str(abs(new_units) * direction)
+
+    @staticmethod
+    def _apply_rr_to_tp(order_class, rr):
+        p = gene.USD_JPY
+        order_plan = order_class.exe_order_plan
+        direction = int(order_plan.get("direction") or 1)
+        target_price = float(order_plan["target_price"])
+        lc_range = float(order_plan["lc_range"])
+        lc_pips = p.price_to_pips(lc_range)
+        tp_pips = round(lc_pips * rr, 1)
+        tp_range = p.pips_to_price(tp_pips)
+        tp_price = p.round_price(target_price + (tp_range * direction))
+
+        order_class.tp_range = tp_range
+        order_class.tp_price = tp_price
+        order_plan["tp_range"] = tp_range
+        order_plan["tp_price"] = tp_price
+        order_plan["session_tp_pips"] = tp_pips
+
+        for_api_json = order_plan.get("for_api_json")
+        if for_api_json and "order" in for_api_json:
+            take_profit = for_api_json["order"].get("takeProfitOnFill")
+            if take_profit is not None:
+                take_profit["price"] = str(tp_price)
+
     def _create_order(
         self,
         candidate,
@@ -239,9 +603,9 @@ class LineOrderCoordinator:
                 + str(candidate["line_index"])
             ),
             "current_price": current_price,
-            "target": candidate["line_price"],
+            "target": candidate["target_price"],
             "direction": candidate["direction"],
-            "type": "LIMIT",
+            "type": strategy.order_type,
             "tp": tp_range,
             "lc": lc_range,
             "lc_change": [],
@@ -251,11 +615,13 @@ class LineOrderCoordinator:
             "candle_analysis_class": self.analysis.candle_analysis_all,
             "lc_change_candle_type": "M5",
             "order_timeout_min": strategy.order_timeout_min,
-            "memo": "virtual " + strategy.timeframe.upper() + " line limit order",
+            "memo": candidate.get("memo", ""),
         })
         order_plan = order_class.exe_order_plan
         order_plan["source"] = "line"
         order_plan["line_timeframe"] = strategy.timeframe
+        order_plan["line_entry_type"] = strategy.entry_type
+        order_plan["line_entry_offset_pips"] = strategy.entry_offset_pips
         order_plan["line_side"] = candidate["line_side"]
         order_plan["line_price"] = candidate["line_price"]
         order_plan["line_total_strength"] = line.get("total_strength")
@@ -267,6 +633,7 @@ class LineOrderCoordinator:
         order_plan["core_count"] = line.get("core_count")
         order_plan["core_total_strength"] = line.get("core_total_strength")
         order_plan["line_strategy"] = strategy.line_strategy
+        order_plan.update(candidate.get("h1_context", {}))
         if rsi_info is not None:
             order_plan.update(rsi_info)
         return order_class
@@ -699,11 +1066,13 @@ class MainAnalysis:
         return coordinator.create_orders(
             [
                 (M5LineOrderStrategy(), line_class_m5),
+                (M5BreakoutLineOrderStrategy(), line_class_m5),
                 (H1LineOrderStrategy(), line_class_h1),
             ],
             current_price,
             decision_time,
             rsi_info,
+            h1_line_class=line_class_h1,
         )
 
     def add_h1_line_limit_orders(self, line_class, current_price, decision_time, rsi_info=None):
@@ -722,6 +1091,26 @@ class MainAnalysis:
             current_price,
             decision_time,
             rsi_info,
+        )
+
+    def add_m5_line_test_orders(
+        self,
+        line_class,
+        h1_line_class,
+        current_price,
+        decision_time,
+        rsi_info=None,
+    ):
+        coordinator = LineOrderCoordinator(self)
+        return coordinator.create_orders(
+            [
+                (M5LineOrderStrategy(), line_class),
+                (M5BreakoutLineOrderStrategy(), line_class),
+            ],
+            current_price,
+            decision_time,
+            rsi_info,
+            h1_line_class=h1_line_class,
         )
 
     def has_similar_order(self, direction, target_price, new_orders, threshold_pips=3, source=None, line_strategy=None):
@@ -929,7 +1318,7 @@ class MainAnalysis:
             "rsi_is_high": f_low.get("RSI") >= upper_border,
             "rsi_is_low": f_low.get("RSI") <= lower_border,
         }
-        self.add_line_limit_orders(
+        self.add_m5_line_test_orders(
             line_class_m5_l,
             line_class_h1_l,
             current_price,

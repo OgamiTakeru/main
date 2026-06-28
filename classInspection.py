@@ -2,6 +2,7 @@ import datetime
 import math
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 import classCandleAnalysis as ca
@@ -27,6 +28,7 @@ class Inspection:
         memo="",
         anaN=60,
         insN=500,
+        target_interval_minutes=60,
     ):
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")
         self.gl_exist_data = is_exist_data
@@ -38,6 +40,7 @@ class Inspection:
         self.memo = memo
         self.anaN = anaN
         self.insN = insN
+        self.target_interval_minutes = target_interval_minutes
 
         self.gl_h1_csv_path = h1_data_path
         self.gl_main_csv_path = m5_data_path
@@ -149,6 +152,8 @@ class Inspection:
         for df in (self.gl_d5_df, self.gl_h1_df, self.gl_m30_df, self.gl_s5_df):
             if df is not None and not df.empty and "time_jp" in df.columns:
                 df["time_jp_dt"] = pd.to_datetime(df["time_jp"], format="%Y/%m/%d %H:%M:%S")
+                df.sort_values("time_jp_dt", inplace=True)
+                df.reset_index(drop=True, inplace=True)
 
     def print_loaded_data_range(self):
         self.print_df_range("M5 all", self.gl_d5_df)
@@ -190,7 +195,7 @@ class Inspection:
         return (
             self.df_covers_range(self.gl_h1_df, fetch_from, self.end_time)
             and self.df_covers_range(self.gl_d5_df, fetch_from, self.end_time)
-            and self.df_covers_range(self.gl_s5_df, self.start_time + datetime.timedelta(seconds=5), fetch_to)
+            and self.df_covers_range(self.gl_s5_df, self.start_time, fetch_to)
         )
 
     def save_result_data(self):
@@ -244,17 +249,49 @@ class Inspection:
         end_time = min(self.end_time, datetime.datetime.now().replace(microsecond=0))
         while target_time <= end_time:
             target_times.append(target_time)
-            target_time = target_time + datetime.timedelta(hours=1)
+            target_time = target_time + datetime.timedelta(
+                minutes=self.target_interval_minutes
+            )
         return target_times
 
     def inspect_one_time(self, target_time):
-        analysis_h1_df_r = self.slice_past_df_r(self.gl_h1_df, target_time, self.anaN)
+        analysis_h1_df_r = self.slice_past_df_r(
+            self.gl_h1_df,
+            target_time,
+            self.anaN + 1,
+        )
         analysis_m30_df_r = self.slice_past_df_r(
             self.gl_m30_df if not self.gl_m30_df.empty else self.gl_h1_df,
             target_time,
-            self.anaN * 2,
+            (self.anaN * 2) + 1,
         )
-        analysis_m5_df_r = self.slice_past_df_r(self.gl_d5_df, target_time, self.anaN * 12)
+        analysis_m5_df_r = self.slice_past_df_r(
+            self.gl_d5_df,
+            target_time,
+            (self.anaN * 12) + 1,
+        )
+        self.validate_analysis_boundary(
+            analysis_m5_df_r,
+            target_time,
+            datetime.timedelta(minutes=5),
+            "M5",
+        )
+        self.validate_analysis_boundary(
+            analysis_h1_df_r,
+            target_time,
+            datetime.timedelta(hours=1),
+            "H1",
+        )
+        self.validate_analysis_boundary(
+            analysis_m30_df_r,
+            target_time,
+            (
+                datetime.timedelta(minutes=30)
+                if not self.gl_m30_df.empty
+                else datetime.timedelta(hours=1)
+            ),
+            "M30",
+        )
         inspection_s5_df = self.slice_inspection_s5_df(target_time)
         print(
             "  M5 df:",
@@ -299,8 +336,8 @@ class Inspection:
             m5_df_r=analysis_m5_df_r,
             h1_df_r=analysis_h1_df_r,
             m30_df_r=analysis_m30_df_r,
-            s5_df_r=inspection_s5_df.sort_index(ascending=False).reset_index(drop=True),
-            current_price=analysis_m5_df_r.iloc[0]["close"],
+            s5_df_r=None,
+            current_price=self.current_price_at(target_time, analysis_m5_df_r),
         )
         analysis_result = am.wrap_all_analysis(candle_analysis_class, None, "inspection")
         order_plans = self.extract_order_plans(analysis_result)
@@ -375,37 +412,49 @@ class Inspection:
     @staticmethod
     def find_order_fill_index(df, target_price, direction, order_type):
         order_type = order_type.upper()
-        for i, row in df.iterrows():
-            if order_type == "STOP":
-                if direction == 1 and row["high"] >= target_price:
-                    return i
-                if direction == -1 and row["low"] <= target_price:
-                    return i
-            elif order_type == "LIMIT":
-                if direction == 1 and row["low"] <= target_price:
-                    return i
-                if direction == -1 and row["high"] >= target_price:
-                    return i
-            elif order_type == "MARKET":
-                return i
-        return None
+        if df.empty:
+            return None
+        if order_type == "MARKET":
+            return 0
+        if order_type == "STOP":
+            hit = (
+                df["high"].to_numpy() >= target_price
+                if direction == 1
+                else df["low"].to_numpy() <= target_price
+            )
+        elif order_type == "LIMIT":
+            hit = (
+                df["low"].to_numpy() <= target_price
+                if direction == 1
+                else df["high"].to_numpy() >= target_price
+            )
+        else:
+            return None
+        indexes = np.flatnonzero(hit)
+        return int(indexes[0]) if indexes.size else None
 
     @staticmethod
     def find_order_close(df, tp_price, lc_price, direction):
-        for i, row in df.iterrows():
-            if direction == 1:
-                tp_hit = row["high"] >= tp_price
-                lc_hit = row["low"] <= lc_price
-            else:
-                tp_hit = row["low"] <= tp_price
-                lc_hit = row["high"] >= lc_price
+        if df.empty:
+            return "not_closed", None, None, None
+        high = df["high"].to_numpy()
+        low = df["low"].to_numpy()
+        if direction == 1:
+            tp_hit = high >= tp_price
+            lc_hit = low <= lc_price
+        else:
+            tp_hit = low <= tp_price
+            lc_hit = high >= lc_price
 
-            if tp_hit and lc_hit:
-                return "both_tp_lc_same_candle", row["time_jp"], None, i
-            if tp_hit:
-                return "tp", row["time_jp"], tp_price, i
-            if lc_hit:
-                return "lc", row["time_jp"], lc_price, i
+        indexes = np.flatnonzero(tp_hit | lc_hit)
+        if indexes.size:
+            i = int(indexes[0])
+            close_time = df.iloc[i]["time_jp"]
+            if tp_hit[i] and lc_hit[i]:
+                return "both_tp_lc_same_candle", close_time, None, i
+            if tp_hit[i]:
+                return "tp", close_time, tp_price, i
+            return "lc", close_time, lc_price, i
         return "not_closed", None, None, None
 
     @staticmethod
@@ -468,6 +517,8 @@ class Inspection:
             **first_reach_results,
             "source": order_plan.get("source"),
             "line_timeframe": order_plan.get("line_timeframe"),
+            "line_entry_type": order_plan.get("line_entry_type"),
+            "line_entry_offset_pips": order_plan.get("line_entry_offset_pips"),
             "line_side": order_plan.get("line_side"),
             "line_price": order_plan.get("line_price"),
             "line_total_strength": order_plan.get("line_total_strength"),
@@ -479,6 +530,50 @@ class Inspection:
             "core_count": order_plan.get("core_count"),
             "core_total_strength": order_plan.get("core_total_strength"),
             "line_strategy": order_plan.get("line_strategy"),
+            "h1_upper_price": order_plan.get("h1_upper_price"),
+            "h1_upper_distance_pips": order_plan.get("h1_upper_distance_pips"),
+            "h1_upper_total_strength": order_plan.get("h1_upper_total_strength"),
+            "h1_upper_count": order_plan.get("h1_upper_count"),
+            "h1_upper_core_total_strength": order_plan.get("h1_upper_core_total_strength"),
+            "h1_upper_is_flipped": order_plan.get("h1_upper_is_flipped"),
+            "h1_lower_price": order_plan.get("h1_lower_price"),
+            "h1_lower_distance_pips": order_plan.get("h1_lower_distance_pips"),
+            "h1_lower_total_strength": order_plan.get("h1_lower_total_strength"),
+            "h1_lower_count": order_plan.get("h1_lower_count"),
+            "h1_lower_core_total_strength": order_plan.get("h1_lower_core_total_strength"),
+            "h1_lower_is_flipped": order_plan.get("h1_lower_is_flipped"),
+            "h1_nearest_side": order_plan.get("h1_nearest_side"),
+            "h1_nearest_price": order_plan.get("h1_nearest_price"),
+            "h1_nearest_distance_pips": order_plan.get("h1_nearest_distance_pips"),
+            "h1_nearest_total_strength": order_plan.get("h1_nearest_total_strength"),
+            "h1_nearest_count": order_plan.get("h1_nearest_count"),
+            "h1_nearest_core_total_strength": order_plan.get("h1_nearest_core_total_strength"),
+            "h1_nearest_is_flipped": order_plan.get("h1_nearest_is_flipped"),
+            "h1_ahead_side": order_plan.get("h1_ahead_side"),
+            "h1_ahead_price": order_plan.get("h1_ahead_price"),
+            "h1_ahead_distance_pips": order_plan.get("h1_ahead_distance_pips"),
+            "h1_ahead_total_strength": order_plan.get("h1_ahead_total_strength"),
+            "h1_ahead_count": order_plan.get("h1_ahead_count"),
+            "h1_ahead_core_total_strength": order_plan.get("h1_ahead_core_total_strength"),
+            "h1_ahead_is_flipped": order_plan.get("h1_ahead_is_flipped"),
+            "h1_behind_side": order_plan.get("h1_behind_side"),
+            "h1_behind_price": order_plan.get("h1_behind_price"),
+            "h1_behind_distance_pips": order_plan.get("h1_behind_distance_pips"),
+            "h1_behind_total_strength": order_plan.get("h1_behind_total_strength"),
+            "h1_behind_count": order_plan.get("h1_behind_count"),
+            "h1_behind_core_total_strength": order_plan.get("h1_behind_core_total_strength"),
+            "h1_behind_is_flipped": order_plan.get("h1_behind_is_flipped"),
+            "h1_near_same_line": order_plan.get("h1_near_same_line"),
+            "h1_blocks_trade_direction": order_plan.get("h1_blocks_trade_direction"),
+            "session_name": order_plan.get("session_name"),
+            "session_hour": order_plan.get("session_hour"),
+            "session_time": order_plan.get("session_time"),
+            "session_units_multiplier": order_plan.get("session_units_multiplier"),
+            "session_rr": order_plan.get("session_rr"),
+            "session_tp_pips": order_plan.get("session_tp_pips"),
+            "session_tp_multiplier": order_plan.get("session_tp_multiplier"),
+            "session_lc_multiplier": order_plan.get("session_lc_multiplier"),
+            "session_skip_reason": order_plan.get("session_skip_reason"),
             "rsi_1": order_plan.get("rsi_1"),
             "rsi_2": order_plan.get("rsi_2"),
             "rsi_3": order_plan.get("rsi_3"),
@@ -607,20 +702,26 @@ class Inspection:
     def find_first_reach(df, target_price, direction, threshold_pips):
         pair = gene.USD_JPY
         threshold_price = pair.pips_to_price(threshold_pips)
-        for i, row in df.iterrows():
-            if direction == 1:
-                plus_hit = row["high"] >= target_price + threshold_price
-                minus_hit = row["low"] <= target_price - threshold_price
-            else:
-                plus_hit = row["low"] <= target_price - threshold_price
-                minus_hit = row["high"] >= target_price + threshold_price
+        if df.empty:
+            return "none", None, None
+        high = df["high"].to_numpy()
+        low = df["low"].to_numpy()
+        if direction == 1:
+            plus_hit = high >= target_price + threshold_price
+            minus_hit = low <= target_price - threshold_price
+        else:
+            plus_hit = low <= target_price - threshold_price
+            minus_hit = high >= target_price + threshold_price
 
-            if plus_hit and minus_hit:
-                return "both", row["time_jp"], i
-            if plus_hit:
-                return "plus", row["time_jp"], i
-            if minus_hit:
-                return "minus", row["time_jp"], i
+        indexes = np.flatnonzero(plus_hit | minus_hit)
+        if indexes.size:
+            i = int(indexes[0])
+            reach_time = df.iloc[i]["time_jp"]
+            if plus_hit[i] and minus_hit[i]:
+                return "both", reach_time, i
+            if plus_hit[i]:
+                return "plus", reach_time, i
+            return "minus", reach_time, i
         return "none", None, None
 
     def required_data_range(self):
@@ -632,15 +733,49 @@ class Inspection:
 
     @staticmethod
     def slice_past_df_r(df, target_time, row_count=None):
-        sliced_df = df[df["time_jp_dt"] <= target_time].sort_values("time_jp_dt", ascending=False)
-        if row_count is not None:
-            sliced_df = sliced_df.head(row_count)
-        return sliced_df.reset_index(drop=True)
+        if df is None or df.empty:
+            return pd.DataFrame()
+        end_index = int(df["time_jp_dt"].searchsorted(target_time, side="right"))
+        start_index = 0 if row_count is None else max(0, end_index - row_count)
+        return df.iloc[start_index:end_index].iloc[::-1].reset_index(drop=True)
+
+    def current_price_at(self, target_time, analysis_m5_df_r):
+        if self.gl_s5_df is not None and not self.gl_s5_df.empty:
+            completed_s5_open_time = target_time - datetime.timedelta(seconds=5)
+            end_index = int(
+                self.gl_s5_df["time_jp_dt"].searchsorted(
+                    completed_s5_open_time,
+                    side="right",
+                )
+            )
+            if end_index > 0:
+                return self.gl_s5_df.iloc[end_index - 1]["close"]
+        return analysis_m5_df_r.iloc[0]["close"]
+
+    @staticmethod
+    def validate_analysis_boundary(df_r, target_time, candle_duration, label):
+        if df_r is None or len(df_r) < 2:
+            return
+        forming_open_time = df_r.iloc[0]["time_jp_dt"]
+        latest_analysis_open_time = df_r.iloc[1]["time_jp_dt"]
+        if forming_open_time > target_time:
+            raise ValueError(
+                label + " forming candle starts after target_time: "
+                + str(forming_open_time)
+            )
+        if latest_analysis_open_time + candle_duration > target_time:
+            raise ValueError(
+                label + " analysis contains incomplete candle: "
+                + str(latest_analysis_open_time)
+            )
 
     def slice_inspection_s5_df(self, target_time):
-        start_time = target_time + datetime.timedelta(seconds=5)
-        inspection_df = self.gl_s5_df[self.gl_s5_df["time_jp_dt"] >= start_time].sort_values("time_jp_dt")
-        return inspection_df.head(self.insN).reset_index(drop=True)
+        start_time = target_time
+        start_index = int(
+            self.gl_s5_df["time_jp_dt"].searchsorted(start_time, side="left")
+        )
+        end_index = min(start_index + self.insN, len(self.gl_s5_df))
+        return self.gl_s5_df.iloc[start_index:end_index].reset_index(drop=True)
 
     @staticmethod
     def cal_oanda_count_and_loop(need_rows):
