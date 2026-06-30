@@ -57,6 +57,11 @@ class Inspection:
         self.result_df = pd.DataFrame()
         self.results = []
         self.process_start_time = datetime.datetime.now()
+        self.progress_notice_months = 2
+        self.next_progress_notice_time = self.add_months(
+            self.start_time,
+            self.progress_notice_months,
+        )
 
         print("Inspection start")
         self.get_data()
@@ -230,6 +235,7 @@ class Inspection:
                 self.inspect_one_time(target_time)
             except Exception as e:
                 print("Inspection error:", target_time, e)
+            self.send_progress_notice_if_needed(i + 1, len(target_times), target_time)
 
         self.result_df = pd.DataFrame(self.results)
         print("Inspection result rows:", len(self.result_df))
@@ -242,6 +248,50 @@ class Inspection:
         print("Inspection elapsed seconds:", round(elapsed_seconds, 1))
         print("Inspection elapsed minutes:", round(elapsed_minutes, 2))
         tk.line_send("終了しました", str(round(elapsed_minutes, 2)) + "分")
+
+    @staticmethod
+    def add_months(base_time, months):
+        month_index = base_time.month - 1 + months
+        year = base_time.year + month_index // 12
+        month = month_index % 12 + 1
+        day = min(base_time.day, Inspection.last_day_of_month(year, month))
+        return base_time.replace(year=year, month=month, day=day)
+
+    @staticmethod
+    def last_day_of_month(year, month):
+        if month == 12:
+            next_month = datetime.datetime(year + 1, 1, 1)
+        else:
+            next_month = datetime.datetime(year, month + 1, 1)
+        return (next_month - datetime.timedelta(days=1)).day
+
+    def send_progress_notice_if_needed(self, completed_count, total_count, target_time):
+        while (
+            self.next_progress_notice_time is not None
+            and target_time >= self.next_progress_notice_time
+        ):
+            elapsed_minutes = (
+                datetime.datetime.now() - self.process_start_time
+            ).total_seconds() / 60
+            message = (
+                "検証進捗 "
+                + str(self.progress_notice_months)
+                + "ヶ月区切り完了 "
+                + str(self.next_progress_notice_time)
+                + " / "
+                + str(completed_count)
+                + "/"
+                + str(total_count)
+                + "件 "
+                + str(round(elapsed_minutes, 2))
+                + "分"
+            )
+            print(message)
+            tk.line_send(message)
+            self.next_progress_notice_time = self.add_months(
+                self.next_progress_notice_time,
+                self.progress_notice_months,
+            )
 
     def build_target_times(self):
         target_times = []
@@ -519,6 +569,10 @@ class Inspection:
             "line_timeframe": order_plan.get("line_timeframe"),
             "line_entry_type": order_plan.get("line_entry_type"),
             "line_entry_offset_pips": order_plan.get("line_entry_offset_pips"),
+            "latest_peak_dir": order_plan.get("latest_peak_dir"),
+            "latest_peak_count": order_plan.get("latest_peak_count"),
+            "latest_peak_gap": order_plan.get("latest_peak_gap"),
+            "latest_peak_time": order_plan.get("latest_peak_time"),
             "line_side": order_plan.get("line_side"),
             "line_price": order_plan.get("line_price"),
             "line_total_strength": order_plan.get("line_total_strength"),

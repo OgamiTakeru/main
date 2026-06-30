@@ -48,7 +48,7 @@ class PeaksClass:
             # MakePeaks時、ピークの強さを付与する場合、以下の数値以下の場合はピークの強さが弱くなる。makePeaksで利用。
             self.analysis_num = 180  # この足の分のデータフレームを処理する（足ごとに設定）
             self.peak_strength_border_min = self.pips_to_price(1)
-            self.peak_strength_border = self.pips_to_price(3)  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
+            self.peak_strength_border = self.pips_to_price(2)  # この数字以下のピークは、問答無用で点数を下げる（self.ps_most_minにする）
             self.peak_strength_border_second = self.pips_to_price(7)  # この数字より下（かつ上の数字より大きい）場合、countが少なければ強度弱となる。
             # SkipPeaksの際の基準(SkipPeaks関数）
             self.skip_gap_border = self.pips_to_price(4.5)  # 0.045  # この値以下のGapをもつPeakは、スキップ処理の対象（これ以上の場合は、スキップ対象外）
