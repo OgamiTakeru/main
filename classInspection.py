@@ -9,7 +9,7 @@ import classCandleAnalysis as ca
 import classOanda
 import fAnalysis_order_Main as am
 import fGeneric as gene
-import fTurnInspection as ti
+import fLineAnalysis as ti
 import tokens as tk
 
 
