@@ -247,7 +247,7 @@ class Inspection:
         elapsed_minutes = elapsed_seconds / 60
         print("Inspection elapsed seconds:", round(elapsed_seconds, 1))
         print("Inspection elapsed minutes:", round(elapsed_minutes, 2))
-        tk.line_send("終了しました", str(round(elapsed_minutes, 2)) + "分")
+        tk.line_send("検証 終了しました", str(round(elapsed_minutes, 2)) + "分")
 
     @staticmethod
     def add_months(base_time, months):
@@ -398,7 +398,7 @@ class Inspection:
             return
 
         lines = self.extract_lines(analysis_result)
-        rsi_info = self.build_rsi_info(analysis_m5_df_r)
+        rsi_info = self.build_rsi_info(analysis_m5_df_r, analysis_h1_df_r)
         for line_side, line in lines:
             if not ti.MainAnalysis.is_h1_line_limit_order_target(line_side, line):
                 continue
@@ -638,6 +638,14 @@ class Inspection:
             "rsi_lower_border": order_plan.get("rsi_lower_border"),
             "rsi_is_high": order_plan.get("rsi_is_high"),
             "rsi_is_low": order_plan.get("rsi_is_low"),
+            "h1_rsi_1": order_plan.get("h1_rsi_1"),
+            "h1_rsi_2": order_plan.get("h1_rsi_2"),
+            "h1_rsi_3": order_plan.get("h1_rsi_3"),
+            "h1_rsi_time_1": order_plan.get("h1_rsi_time_1"),
+            "h1_rsi_time_2": order_plan.get("h1_rsi_time_2"),
+            "h1_rsi_time_3": order_plan.get("h1_rsi_time_3"),
+            "h1_rsi_is_high": order_plan.get("h1_rsi_is_high"),
+            "h1_rsi_is_low": order_plan.get("h1_rsi_is_low"),
             "for_api_json": order_plan.get("for_api_json"),
             "memo": order_plan.get("memo"),
         }
@@ -666,9 +674,15 @@ class Inspection:
         return lines
 
     @staticmethod
-    def build_rsi_info(df_r):
+    def build_rsi_info(df_r, h1_df_r=None):
         upper_border = 67.5
         lower_border = 30
+        h1_info = Inspection.build_prefixed_rsi_info(
+            h1_df_r,
+            "h1",
+            upper_border,
+            lower_border,
+        )
         if len(df_r) <= 3 or "RSI" not in df_r.columns:
             return {
                 "rsi_1": None,
@@ -681,6 +695,7 @@ class Inspection:
                 "rsi_lower_border": lower_border,
                 "rsi_is_high": None,
                 "rsi_is_low": None,
+                **h1_info,
             }
 
         f_low = df_r.iloc[1]
@@ -698,7 +713,39 @@ class Inspection:
             "rsi_lower_border": lower_border,
             "rsi_is_high": rsi_1 >= upper_border,
             "rsi_is_low": rsi_1 <= lower_border,
+            **h1_info,
         }
+
+    @staticmethod
+    def build_prefixed_rsi_info(df_r, prefix, upper_border, lower_border):
+        info = {
+            f"{prefix}_rsi_1": None,
+            f"{prefix}_rsi_2": None,
+            f"{prefix}_rsi_3": None,
+            f"{prefix}_rsi_time_1": None,
+            f"{prefix}_rsi_time_2": None,
+            f"{prefix}_rsi_time_3": None,
+            f"{prefix}_rsi_is_high": None,
+            f"{prefix}_rsi_is_low": None,
+        }
+        if df_r is None or len(df_r) <= 3 or "RSI" not in df_r.columns:
+            return info
+
+        f_low = df_r.iloc[1]
+        s_low = df_r.iloc[2]
+        t_low = df_r.iloc[3]
+        rsi_1 = f_low.get("RSI")
+        info.update({
+            f"{prefix}_rsi_1": rsi_1,
+            f"{prefix}_rsi_2": s_low.get("RSI"),
+            f"{prefix}_rsi_3": t_low.get("RSI"),
+            f"{prefix}_rsi_time_1": f_low.get("time_jp"),
+            f"{prefix}_rsi_time_2": s_low.get("time_jp"),
+            f"{prefix}_rsi_time_3": t_low.get("time_jp"),
+            f"{prefix}_rsi_is_high": rsi_1 >= upper_border,
+            f"{prefix}_rsi_is_low": rsi_1 <= lower_border,
+        })
+        return info
 
     def line_to_order_plan(self, target_time, line_side, line, rsi_info=None):
         pair = gene.USD_JPY

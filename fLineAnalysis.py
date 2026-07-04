@@ -276,6 +276,7 @@ class LineOrderCoordinator:
         h1_same_side = h1_side == line_side
 
         reasons = []
+
         if self._is_top7_condition(
             candidate,
             count,
@@ -424,6 +425,168 @@ class LineOrderCoordinator:
         ):
             reasons.append("Top7 upper reversal c1 str0-5 H1same6-10 RSI40-50")
 
+        if self._is_top7_condition(
+            candidate,
+            count,
+            strength,
+            core_count,
+            core_strength,
+            h1_same_side,
+            h1_distance,
+            h1_blocks,
+            rsi_1,
+            "m5_reversal_peakdir_allcount",
+            2,
+            (5, 10),
+            2,
+            (5, 10),
+            True,
+            (0, 3),
+            True,
+            (30, 40),
+            "lower",
+            -1,
+        ):
+            reasons.append("Top1 lower reversal c2 str5-10 core2 H1same0-3 RSI30-40")
+        if self._is_top7_condition(
+            candidate,
+            count,
+            strength,
+            core_count,
+            core_strength,
+            h1_same_side,
+            h1_distance,
+            h1_blocks,
+            rsi_1,
+            "m5_reversal_peakdir_allcount",
+            1,
+            (0, 5),
+            1,
+            (0, 5),
+            True,
+            (6, 10),
+            True,
+            (50, 60),
+            "lower",
+            -1,
+        ):
+            reasons.append("Top2 lower reversal c1 str0-5 H1same6-10 RSI50-60")
+        if self._is_top7_condition(
+            candidate,
+            count,
+            strength,
+            core_count,
+            core_strength,
+            h1_same_side,
+            h1_distance,
+            h1_blocks,
+            rsi_1,
+            "m5_reversal_peakdir_allcount",
+            1,
+            (5, 10),
+            1,
+            (5, 10),
+            False,
+            (15, None),
+            True,
+            (50, 60),
+            "lower",
+            -1,
+        ):
+            reasons.append("Top3 lower reversal c1 str5-10 H1far15+ RSI50-60")
+        if self._is_top7_condition(
+            candidate,
+            count,
+            strength,
+            core_count,
+            core_strength,
+            h1_same_side,
+            h1_distance,
+            h1_blocks,
+            rsi_1,
+            "m5_reversal_peakdir_allcount",
+            1,
+            (0, 5),
+            1,
+            (0, 5),
+            True,
+            (3, 6),
+            True,
+            (30, 40),
+            "lower",
+            -1,
+        ):
+            reasons.append("Top4 lower reversal c1 str0-5 H1same3-6 RSI30-40")
+        if self._is_top7_condition(
+            candidate,
+            count,
+            strength,
+            core_count,
+            core_strength,
+            h1_same_side,
+            h1_distance,
+            h1_blocks,
+            rsi_1,
+            "m5_reversal_peakdir_allcount",
+            1,
+            (0, 5),
+            1,
+            (0, 5),
+            True,
+            (3, 6),
+            False,
+            (40, 50),
+            "lower",
+            -1,
+        ):
+            reasons.append("Top5 lower reversal c1 str0-5 H1same3-6 noBlock RSI40-50")
+        if self._is_top7_condition(
+            candidate,
+            count,
+            strength,
+            core_count,
+            core_strength,
+            h1_same_side,
+            h1_distance,
+            h1_blocks,
+            rsi_1,
+            "m5_breakout_peakdir_allcount",
+            1,
+            (0, 5),
+            1,
+            (0, 5),
+            True,
+            (3, 6),
+            True,
+            (40, 50),
+            "lower",
+            -1,
+        ):
+            reasons.append("Top6 lower breakout c1 str0-5 H1same3-6 RSI40-50")
+        if self._is_top7_condition(
+            candidate,
+            count,
+            strength,
+            core_count,
+            core_strength,
+            h1_same_side,
+            h1_distance,
+            h1_blocks,
+            rsi_1,
+            "m5_reversal_peakdir_allcount",
+            1,
+            (0, 5),
+            1,
+            (0, 5),
+            True,
+            (6, 10),
+            True,
+            (40, 50),
+            "lower",
+            -1,
+        ):
+            reasons.append("Top7 lower reversal c1 str0-5 H1same6-10 RSI40-50")
+
         return reasons
 
     @staticmethod
@@ -446,12 +609,14 @@ class LineOrderCoordinator:
         h1_distance_range,
         target_h1_blocks,
         rsi_range,
+        target_side="upper",
+        target_peak_dir=1,
     ):
         if candidate["line_strategy"] != line_strategy:
             return False
-        if candidate["line_side"] != "upper":
+        if candidate["line_side"] != target_side:
             return False
-        if candidate.get("latest_peak_dir") != 1:
+        if candidate.get("latest_peak_dir") != target_peak_dir:
             return False
         if count != target_count:
             return False
@@ -1368,6 +1533,37 @@ class MainAnalysis:
     def is_m5_line_limit_order_target(line_side, line):
         return M5LineOrderStrategy().is_target(line_side, line)
 
+    @staticmethod
+    def build_timeframe_rsi_info(prefix, df_r, upper_border, lower_border):
+        keys = {
+            f"{prefix}_rsi_1": None,
+            f"{prefix}_rsi_2": None,
+            f"{prefix}_rsi_3": None,
+            f"{prefix}_rsi_time_1": None,
+            f"{prefix}_rsi_time_2": None,
+            f"{prefix}_rsi_time_3": None,
+            f"{prefix}_rsi_is_high": None,
+            f"{prefix}_rsi_is_low": None,
+        }
+        if df_r is None or len(df_r) <= 3 or "RSI" not in df_r.columns:
+            return keys
+
+        f_low = df_r.iloc[1]
+        s_low = df_r.iloc[2]
+        t_low = df_r.iloc[3]
+        rsi_1 = f_low.get("RSI")
+        keys.update({
+            f"{prefix}_rsi_1": rsi_1,
+            f"{prefix}_rsi_2": s_low.get("RSI"),
+            f"{prefix}_rsi_3": t_low.get("RSI"),
+            f"{prefix}_rsi_time_1": f_low.get("time_jp"),
+            f"{prefix}_rsi_time_2": s_low.get("time_jp"),
+            f"{prefix}_rsi_time_3": t_low.get("time_jp"),
+            f"{prefix}_rsi_is_high": rsi_1 >= upper_border,
+            f"{prefix}_rsi_is_low": rsi_1 <= lower_border,
+        })
+        return keys
+
     def main(self):
         """
         ターン直後での判断。
@@ -1496,13 +1692,16 @@ class MainAnalysis:
             print("    2個連続でRSI越えている")
         elif f_low['RSI'] <= lower_border and s_low['RSI'] <= lower_border:
             print("    2個連続でRSI30切っている")
-            return 0
+            if self.mode != "inspection":
+                return 0
         elif  f_low['RSI'] >= upper_border and s_low['RSI'] <= upper_border and t_low['RSI'] >= upper_border:
             print("    直近と2個前は越えているが、中央は越えていない⇒継続して越えていきそう？")
-            return 0
+            if self.mode != "inspection":
+                return 0
         elif f_low['RSI'] <= lower_border and s_low['RSI'] >= lower_border and t_low['RSI'] <= lower_border:
             print("    直近と2個前は30切っているが、中央は切っていない⇒継続して30切っていきそう？")
-            return 0
+            if self.mode != "inspection":
+                return 0
         
         # ■ラインの検証
         line_class_m5_l = LineStrengthCal(self.candle_analysis_all, "m5", 60)
@@ -1526,6 +1725,12 @@ class MainAnalysis:
             "rsi_is_high": f_low.get("RSI") >= upper_border,
             "rsi_is_low": f_low.get("RSI") <= lower_border,
         }
+        rsi_info.update(self.build_timeframe_rsi_info(
+            "h1",
+            self.candle_analysis_all.h1_df_r,
+            upper_border,
+            lower_border,
+        ))
         m5_line_orders = self.add_m5_line_test_orders(
             line_class_m5_l,
             line_class_h1_l,
