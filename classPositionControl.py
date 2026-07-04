@@ -5,7 +5,7 @@ import classOanda
 import tokens as tk
 import fGeneric as gene
 import classPosition as classPosition  # とりあえずの関数集
-import classPositionForTest as testClassPosition
+import archive.classPositionForTest as testClassPosition
 
 from collections import deque  # 最大10個の情報を持つためのもの。
 import copy

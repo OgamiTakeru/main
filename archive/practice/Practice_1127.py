@@ -1,4 +1,4 @@
-import programs.fTurnInspection as f  # とりあえずの関数集
+import programs.fLineAnalysis as f  # とりあえずの関数集
 import pandas as pd
 import json
 import datetime
@@ -6,9 +6,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import programs.tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import programs.classOanda as oanda_class
-import programs.fTurnInspection as t  # とりあえずの関数集
+import programs.fLineAnalysis as t  # とりあえずの関数集
 import programs.fPeakLineInspection as p  # とりあえずの関数集
-import programs.fTurnInspection as fTurn
+import programs.fLineAnalysis as fTurn
 import programs.fGeneric as f
 
 oa = oanda_class.Oanda(tk.accountIDl, tk.access_tokenl, "live")  # クラスの定義

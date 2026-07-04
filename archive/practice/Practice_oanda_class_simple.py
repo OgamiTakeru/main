@@ -10,7 +10,7 @@ import pandas as pd
 # 自作ファイルインポート
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-import programs.fTurnInspection as t  # とりあえずの関数集
+import programs.fLineAnalysis as t  # とりあえずの関数集
 import programs.tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import programs.classOanda as oanda_class
 import programs.fGeneric as f

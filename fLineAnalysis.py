@@ -153,6 +153,7 @@ class M5BreakoutLineOrderStrategy(M5LineOrderStrategy):
             direction * p.pips_to_price(self.entry_offset_pips)
         )
 
+
 class LineOrderCoordinator:
     duplicate_threshold_pips = 3
     h1_strong_threshold = 10
@@ -1998,6 +1999,7 @@ class MainAnalysis:
             units = int(adjusted)
 
         return units
+    
     
 class LineStrengthCal:
     def __init__(self, candle_analysis_class, foot, time_before_foot_count=30):
