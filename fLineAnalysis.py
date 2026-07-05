@@ -12,6 +12,13 @@ import requests
 from statistics import median
 from collections import defaultdict
 import math
+from fLineStrategyEurUsd import LineStrategyProfileEurUsd
+from fLineStrategyUsdJpy import (
+    LineStrategyProfileUsdJpy,
+    UsdJpyH1LineOrderStrategy,
+    UsdJpyM5BreakoutLineOrderStrategy,
+    UsdJpyM5LineOrderStrategy,
+)
 import statistics
 from collections import Counter
 
@@ -24,233 +31,26 @@ gl_latest_trend_trigger_time = None
 gl_unis_std = 0.1  # OrderCreateのベーシックUnitは10000ドル。それにかける倍率
 
 
-class LineStrategyConfigBase:
-    pair = "USD_JPY"
-    duplicate_threshold_pips = 3
-    h1_strong_threshold = 10
-
-    h1_lc_pips = 15
-    h1_spread_pips = 0.8
-    h1_rr = 1.65
-    h1_units_multiplier = 0.5
-    h1_order_timeout_min = 60
-    h1_core_count_min = 1
-    h1_core_total_strength_min = 5
-
-    m5_lc_pips = 7.5
-    m5_tp_pips = 14.1
-    m5_units_multiplier = 0.25
-    m5_order_timeout_min = 15
-    m5_count_min = 1
-    m5_core_count_min = 1
-    m5_core_total_strength_min = 5
-    m5_breakout_entry_offset_pips = 1.5
-    top7_conditions = None
-
-    session_policies = {
-        "morning": {
-            "order_permission": True,
-            "units_multiplier": 1.0,
-            "rr": 1.3,
-            "tp_multiplier": 1.0,
-            "lc_multiplier": 1.0,
-        },
-        "day": {
-            "order_permission": True,
-            "units_multiplier": 1.0,
-            "rr": None,
-            "tp_multiplier": 1.0,
-            "lc_multiplier": 1.0,
-        },
-        "night": {
-            "order_permission": True,
-            "units_multiplier": 1.0,
-            "rr": None,
-            "tp_multiplier": 1.0,
-            "lc_multiplier": 1.0,
-        },
-    }
-
-
-class LineStrategyConfigUsdJpy(LineStrategyConfigBase):
-    pair = "USD_JPY"
-
-
-class LineStrategyConfigEurUsd(LineStrategyConfigBase):
-    pair = "EUR_USD"
-
-
-def line_strategy_config(pair):
+def line_strategy_profile(pair):
+    """Return the line strategy profile for each currency pair."""
     if pair == "EUR_USD":
-        return LineStrategyConfigEurUsd()
-    return LineStrategyConfigUsdJpy()
-
-
-class LineOrderStrategy:
-    timeframe = ""
-    name_prefix = ""
-    line_strategy = ""
-    entry_type = ""
-    order_type = "LIMIT"
-    entry_offset_pips = 0
-    lc_pips = 0
-    tp_pips = 0
-    units_multiplier = 1
-    order_timeout_min = 0
-
-    def __init__(self, config=None):
-        self.config = config or LineStrategyConfigUsdJpy()
-
-    def pair_info(self):
-        return gene.currency_pair(getattr(self, "pair", "USD_JPY"))
-
-    def is_target(self, line_side, line):
-        raise NotImplementedError
-
-    def get_tp_pips(self):
-        return self.tp_pips
-
-    def get_direction(self, line_side):
-        return -1 if line_side == "upper" else 1
-
-    def get_target_price(self, line_price, line_side):
-        return line_price
-
-    def build_candidates(self, line_class, current_price):
-        self.pair = getattr(line_class, "pair", getattr(self, "pair", "USD_JPY"))
-        p = self.pair_info()
-        candidates = []
-        for line_side, lines in (
-            ("upper", line_class.upper_lines),
-            ("lower", line_class.lower_lines),
-        ):
-            for line_index, line in enumerate(lines):
-                if not self.is_target(line_side, line):
-                    continue
-
-                line_price = p.round_price(line["median_price"])
-                target_price = p.round_price(
-                    self.get_target_price(line_price, line_side)
-                )
-                if line_side == "upper" and target_price <= float(current_price):
-                    continue
-                if line_side == "lower" and target_price >= float(current_price):
-                    continue
-                candidates.append({
-                    "timeframe": self.timeframe,
-                    "line_side": line_side,
-                    "direction": self.get_direction(line_side),
-                    "line": line,
-                    "line_index": line_index,
-                    "line_price": line_price,
-                    "target_price": target_price,
-                    "line_strategy": self.line_strategy,
-                    "distance_pips": abs(
-                        p.price_to_pips(float(current_price) - float(target_price))
-                    ),
-                    "strategy": self,
-                })
-        return candidates
-
-
-class H1LineOrderStrategy(LineOrderStrategy):
-    timeframe = "h1"
-    name_prefix = "H1LineLimit"
-    line_strategy = "h1_reversal_peakdir_allcount"
-    entry_type = "reversal"
-    order_type = "LIMIT"
-    lc_pips = 15
-    units_multiplier = 0.5
-    order_timeout_min = 60
-
-    def __init__(self, config=None):
-        super().__init__(config)
-        self.lc_pips = self.config.h1_lc_pips
-        self.units_multiplier = self.config.h1_units_multiplier
-        self.order_timeout_min = self.config.h1_order_timeout_min
-
-    def get_tp_pips(self):
-        spread_pips = self.config.h1_spread_pips
-        rr = self.config.h1_rr
-        return round(rr * (self.lc_pips + spread_pips) + spread_pips, 1)
-
-    def is_target(self, line_side, line):
-        is_flipped = line.get("is_flipped_line")
-        core_count = int(line.get("core_count") or 0)
-        core_total_strength = float(line.get("core_total_strength") or 0)
-        return (
-            is_flipped is False
-            and line_side in ("upper", "lower")
-            and core_count >= self.config.h1_core_count_min
-            and core_total_strength >= self.config.h1_core_total_strength_min
-        )
-
-
-class M5LineOrderStrategy(LineOrderStrategy):
-    timeframe = "m5"
-    name_prefix = "M5LineReversal"
-    line_strategy = "m5_reversal_peakdir_allcount"
-    entry_type = "reversal"
-    order_type = "LIMIT"
-    lc_pips = 7.5
-    tp_pips = 14.1
-    units_multiplier = 0.25
-    order_timeout_min = 15
-
-    def __init__(self, config=None):
-        super().__init__(config)
-        self.lc_pips = self.config.m5_lc_pips
-        self.tp_pips = self.config.m5_tp_pips
-        self.units_multiplier = self.config.m5_units_multiplier
-        self.order_timeout_min = self.config.m5_order_timeout_min
-
-    def is_target(self, line_side, line):
-        is_flipped = line.get("is_flipped_line")
-        count = int(line.get("count") or 0)
-        core_count = int(line.get("core_count") or 0)
-        core_total_strength = float(line.get("core_total_strength") or 0)
-        return (
-            is_flipped is False
-            and line_side in ("upper", "lower")
-            and count >= self.config.m5_count_min
-            and core_count >= self.config.m5_core_count_min
-            and core_total_strength >= self.config.m5_core_total_strength_min
-        )
-
-
-class M5BreakoutLineOrderStrategy(M5LineOrderStrategy):
-    name_prefix = "M5LineBreakout"
-    line_strategy = "m5_breakout_peakdir_allcount"
-    entry_type = "breakout"
-    order_type = "STOP"
-    entry_offset_pips = 1.5
-
-    def __init__(self, config=None):
-        super().__init__(config)
-        self.entry_offset_pips = self.config.m5_breakout_entry_offset_pips
-
-    def get_direction(self, line_side):
-        return 1 if line_side == "upper" else -1
-
-    def get_target_price(self, line_price, line_side):
-        p = self.pair_info()
-        direction = self.get_direction(line_side)
-        return line_price + (
-            direction * p.pips_to_price(self.entry_offset_pips)
-        )
+        return LineStrategyProfileEurUsd()
+    return LineStrategyProfileUsdJpy()
 
 
 class LineOrderCoordinator:
     duplicate_threshold_pips = 3
-    h1_strong_threshold = 10
 
     def __init__(self, analysis):
         self.analysis = analysis
         self.pair = getattr(analysis, "pair", "USD_JPY")
         self.p = gene.currency_pair(self.pair)
-        self.config = getattr(analysis, "line_strategy_config", line_strategy_config(self.pair))
-        self.duplicate_threshold_pips = self.config.duplicate_threshold_pips
-        self.h1_strong_threshold = self.config.h1_strong_threshold
+        self.profile = getattr(
+            analysis,
+            "each_pair_line_strategy_profile",
+            line_strategy_profile(self.pair),
+        )
+        self.duplicate_threshold_pips = self.profile.duplicate_threshold_pips
 
     def create_orders(
         self,
@@ -335,462 +135,16 @@ class LineOrderCoordinator:
         return filtered
 
     def _recommended_reasons(self, candidate, rsi_info, decision_time):
-        line_side = candidate["line_side"]
         latest_peak_info = self._latest_peak_info(candidate["timeframe"])
-        latest_peak_dir = latest_peak_info["direction"]
-        candidate["latest_peak_dir"] = latest_peak_dir
+        candidate["latest_peak_dir"] = latest_peak_info["direction"]
         candidate["latest_peak_count"] = latest_peak_info["count"]
         candidate["latest_peak_gap"] = latest_peak_info["gap"]
         candidate["latest_peak_time"] = latest_peak_info["time"]
-        if latest_peak_dir == 1 and line_side != "upper":
-            return []
-        if latest_peak_dir == -1 and line_side != "lower":
-            return []
-
-        if candidate["timeframe"] == "h1":
-            return ["H1 peak direction all count"]
-
-        line = candidate["line"]
-        h1_context = candidate.get("h1_context", {})
-        count = int(line.get("count") or 0)
-        strength = float(line.get("total_strength") or 0)
-        core_count = int(line.get("core_count") or 0)
-        core_strength = float(line.get("core_total_strength") or 0)
-        h1_distance = h1_context.get("h1_nearest_distance_pips")
-        h1_strength = h1_context.get("h1_nearest_total_strength")
-        h1_side = h1_context.get("h1_nearest_side")
-        h1_blocks = h1_context.get("h1_blocks_trade_direction")
-        rsi_1 = None if rsi_info is None else rsi_info.get("rsi_1")
-
-        h1_is_strong = (
-            h1_strength is not None
-            and float(h1_strength) >= self.h1_strong_threshold
+        return self.profile.recommended_reasons(
+            candidate,
+            rsi_info,
+            latest_peak_info,
         )
-        h1_same_side = h1_side == line_side
-
-        reasons = []
-        top7_conditions = getattr(self.config, "top7_conditions", None)
-        if top7_conditions is not None:
-            return self._configured_top7_reasons(
-                candidate,
-                count,
-                strength,
-                core_count,
-                core_strength,
-                h1_same_side,
-                h1_distance,
-                h1_blocks,
-                rsi_1,
-                top7_conditions,
-            )
-
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            2,
-            (5, 10),
-            2,
-            (5, 10),
-            True,
-            (0, 3),
-            True,
-            (30, 40),
-        ):
-            reasons.append("Top1 upper reversal c2 str5-10 core2 H1same0-3 RSI30-40")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            1,
-            (0, 5),
-            1,
-            (0, 5),
-            True,
-            (6, 10),
-            True,
-            (50, 60),
-        ):
-            reasons.append("Top2 upper reversal c1 str0-5 H1same6-10 RSI50-60")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            1,
-            (5, 10),
-            1,
-            (5, 10),
-            False,
-            (15, None),
-            True,
-            (50, 60),
-        ):
-            reasons.append("Top3 upper reversal c1 str5-10 H1far15+ RSI50-60")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            1,
-            (0, 5),
-            1,
-            (0, 5),
-            True,
-            (3, 6),
-            True,
-            (30, 40),
-        ):
-            reasons.append("Top4 upper reversal c1 str0-5 H1same3-6 RSI30-40")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            1,
-            (0, 5),
-            1,
-            (0, 5),
-            True,
-            (3, 6),
-            False,
-            (40, 50),
-        ):
-            reasons.append("Top5 upper reversal c1 str0-5 H1same3-6 noBlock RSI40-50")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_breakout_peakdir_allcount",
-            1,
-            (0, 5),
-            1,
-            (0, 5),
-            True,
-            (3, 6),
-            True,
-            (40, 50),
-        ):
-            reasons.append("Top6 upper breakout c1 str0-5 H1same3-6 RSI40-50")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            1,
-            (0, 5),
-            1,
-            (0, 5),
-            True,
-            (6, 10),
-            True,
-            (40, 50),
-        ):
-            reasons.append("Top7 upper reversal c1 str0-5 H1same6-10 RSI40-50")
-
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            2,
-            (5, 10),
-            2,
-            (5, 10),
-            True,
-            (0, 3),
-            True,
-            (30, 40),
-            "lower",
-            -1,
-        ):
-            reasons.append("Top1 lower reversal c2 str5-10 core2 H1same0-3 RSI30-40")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            1,
-            (0, 5),
-            1,
-            (0, 5),
-            True,
-            (6, 10),
-            True,
-            (50, 60),
-            "lower",
-            -1,
-        ):
-            reasons.append("Top2 lower reversal c1 str0-5 H1same6-10 RSI50-60")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            1,
-            (5, 10),
-            1,
-            (5, 10),
-            False,
-            (15, None),
-            True,
-            (50, 60),
-            "lower",
-            -1,
-        ):
-            reasons.append("Top3 lower reversal c1 str5-10 H1far15+ RSI50-60")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            1,
-            (0, 5),
-            1,
-            (0, 5),
-            True,
-            (3, 6),
-            True,
-            (30, 40),
-            "lower",
-            -1,
-        ):
-            reasons.append("Top4 lower reversal c1 str0-5 H1same3-6 RSI30-40")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            1,
-            (0, 5),
-            1,
-            (0, 5),
-            True,
-            (3, 6),
-            False,
-            (40, 50),
-            "lower",
-            -1,
-        ):
-            reasons.append("Top5 lower reversal c1 str0-5 H1same3-6 noBlock RSI40-50")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_breakout_peakdir_allcount",
-            1,
-            (0, 5),
-            1,
-            (0, 5),
-            True,
-            (3, 6),
-            True,
-            (40, 50),
-            "lower",
-            -1,
-        ):
-            reasons.append("Top6 lower breakout c1 str0-5 H1same3-6 RSI40-50")
-        if self._is_top7_condition(
-            candidate,
-            count,
-            strength,
-            core_count,
-            core_strength,
-            h1_same_side,
-            h1_distance,
-            h1_blocks,
-            rsi_1,
-            "m5_reversal_peakdir_allcount",
-            1,
-            (0, 5),
-            1,
-            (0, 5),
-            True,
-            (6, 10),
-            True,
-            (40, 50),
-            "lower",
-            -1,
-        ):
-            reasons.append("Top7 lower reversal c1 str0-5 H1same6-10 RSI40-50")
-
-        return reasons
-
-    def _configured_top7_reasons(
-        self,
-        candidate,
-        count,
-        strength,
-        core_count,
-        core_strength,
-        h1_same_side,
-        h1_distance,
-        h1_blocks,
-        rsi_1,
-        top7_conditions,
-    ):
-        reasons = []
-        for condition in top7_conditions:
-            if self._is_top7_condition(
-                candidate,
-                count,
-                strength,
-                core_count,
-                core_strength,
-                h1_same_side,
-                h1_distance,
-                h1_blocks,
-                rsi_1,
-                condition["line_strategy"],
-                condition["target_count"],
-                condition["strength_range"],
-                condition["target_core_count"],
-                condition["core_strength_range"],
-                condition["target_h1_same_side"],
-                condition["h1_distance_range"],
-                condition["target_h1_blocks"],
-                condition["rsi_range"],
-                condition.get("target_side", "upper"),
-                condition.get("target_peak_dir", 1),
-            ):
-                reasons.append(condition["label"])
-        return reasons
-
-    @staticmethod
-    def _is_top7_condition(
-        candidate,
-        count,
-        strength,
-        core_count,
-        core_strength,
-        h1_same_side,
-        h1_distance,
-        h1_blocks,
-        rsi_1,
-        line_strategy,
-        target_count,
-        strength_range,
-        target_core_count,
-        core_strength_range,
-        target_h1_same_side,
-        h1_distance_range,
-        target_h1_blocks,
-        rsi_range,
-        target_side="upper",
-        target_peak_dir=1,
-    ):
-        if candidate["line_strategy"] != line_strategy:
-            return False
-        if candidate["line_side"] != target_side:
-            return False
-        if candidate.get("latest_peak_dir") != target_peak_dir:
-            return False
-        if count != target_count:
-            return False
-        if core_count != target_core_count:
-            return False
-        if h1_same_side != target_h1_same_side:
-            return False
-        if bool(h1_blocks) != target_h1_blocks:
-            return False
-        if h1_distance is None or rsi_1 is None:
-            return False
-
-        return (
-            LineOrderCoordinator._in_range(strength, strength_range)
-            and LineOrderCoordinator._in_range(core_strength, core_strength_range)
-            and LineOrderCoordinator._in_range(float(h1_distance), h1_distance_range)
-            and LineOrderCoordinator._in_range(float(rsi_1), rsi_range)
-        )
-
-    @staticmethod
-    def _in_range(value, value_range):
-        low, high = value_range
-        if low is not None and value < low:
-            return False
-        if high is not None and value > high:
-            return False
-        return True
 
     def _latest_peak_info(self, timeframe):
         try:
@@ -990,7 +344,7 @@ class LineOrderCoordinator:
         }
 
     def session_order_policy(self, session_name):
-        policies = self.config.session_policies
+        policies = self.profile.session_policies
         return policies.get(session_name, policies["night"])
 
     def adjust_order_by_session(self, order_class, decision_time):
@@ -1174,7 +528,7 @@ class MainAnalysis:
         self.mode = mode  # 検証かどうか
         self.pair = getattr(candle_analysis, "pair", "USD_JPY")
         self.p = gene.currency_pair(self.pair)
-        self.line_strategy_config = line_strategy_config(self.pair)
+        self.each_pair_line_strategy_profile = line_strategy_profile(self.pair)
         print("current_priceの確認(main_analysis)", self.current_price, "移動平均", self.ca5.cal_move_ave(1))
         # 抵抗線関係
         self.exist_strong_line = False
@@ -1241,12 +595,6 @@ class MainAnalysis:
         r = peaks[0]
         t = peaks[1]
         f = peaks[2]
-        # RiverとTurnの解析
-        # self.rt = TuneAnalysisInformation(self.peaks_class, 1, "rt")  # peak情報源生成
-        # # FlopとTurn
-        # self.tf = TuneAnalysisInformation(self.peaks_class, 2, "tf")  # peak情報源生成
-        # # preFlopとflopの解析
-        # self.fp = TuneAnalysisInformation(self.peaks_class, 2, "fp")  # peak情報源生成
         # 各価格に使うかもしれない物
         self.latest_turn_resistance_gap = abs(t['latest_body_peak_price'] - self.current_price)
         self.latest_flop_resistance_gap = abs(f['latest_body_peak_price'] - self.current_price)
@@ -1565,9 +913,9 @@ class MainAnalysis:
         coordinator = LineOrderCoordinator(self)
         return coordinator.create_orders(
             [
-                (M5LineOrderStrategy(self.line_strategy_config), line_class_m5),
-                (M5BreakoutLineOrderStrategy(self.line_strategy_config), line_class_m5),
-                (H1LineOrderStrategy(self.line_strategy_config), line_class_h1),
+                (UsdJpyM5LineOrderStrategy(self.each_pair_line_strategy_profile), line_class_m5),
+                (UsdJpyM5BreakoutLineOrderStrategy(self.each_pair_line_strategy_profile), line_class_m5),
+                (UsdJpyH1LineOrderStrategy(self.each_pair_line_strategy_profile), line_class_h1),
             ],
             current_price,
             decision_time,
@@ -1575,10 +923,27 @@ class MainAnalysis:
             h1_line_class=line_class_h1,
         )
 
+    def create_line_orders_from_strategy_lines(
+        self,
+        strategy_lines,
+        current_price,
+        decision_time,
+        rsi_info=None,
+        h1_line_class=None,
+    ):
+        coordinator = LineOrderCoordinator(self)
+        return coordinator.create_orders(
+            strategy_lines,
+            current_price,
+            decision_time,
+            rsi_info,
+            h1_line_class=h1_line_class,
+        )
+
     def add_h1_line_limit_orders(self, line_class, current_price, decision_time, rsi_info=None):
         coordinator = LineOrderCoordinator(self)
         return coordinator.create_orders(
-            [(H1LineOrderStrategy(self.line_strategy_config), line_class)],
+            [(UsdJpyH1LineOrderStrategy(self.each_pair_line_strategy_profile), line_class)],
             current_price,
             decision_time,
             rsi_info,
@@ -1587,7 +952,7 @@ class MainAnalysis:
     def add_m5_line_limit_orders(self, line_class, current_price, decision_time, rsi_info=None):
         coordinator = LineOrderCoordinator(self)
         return coordinator.create_orders(
-            [(M5LineOrderStrategy(self.line_strategy_config), line_class)],
+            [(UsdJpyM5LineOrderStrategy(self.each_pair_line_strategy_profile), line_class)],
             current_price,
             decision_time,
             rsi_info,
@@ -1604,8 +969,8 @@ class MainAnalysis:
         coordinator = LineOrderCoordinator(self)
         return coordinator.create_orders(
             [
-                (M5LineOrderStrategy(self.line_strategy_config), line_class),
-                (M5BreakoutLineOrderStrategy(self.line_strategy_config), line_class),
+                (UsdJpyM5LineOrderStrategy(self.each_pair_line_strategy_profile), line_class),
+                (UsdJpyM5BreakoutLineOrderStrategy(self.each_pair_line_strategy_profile), line_class),
             ],
             current_price,
             decision_time,
@@ -1652,10 +1017,10 @@ class MainAnalysis:
         return False
 
     def is_h1_line_limit_order_target(self, line_side, line):
-        return H1LineOrderStrategy(self.line_strategy_config).is_target(line_side, line)
+        return UsdJpyH1LineOrderStrategy(self.each_pair_line_strategy_profile).is_target(line_side, line)
 
     def is_m5_line_limit_order_target(self, line_side, line):
-        return M5LineOrderStrategy(self.line_strategy_config).is_target(line_side, line)
+        return UsdJpyM5LineOrderStrategy(self.each_pair_line_strategy_profile).is_target(line_side, line)
 
     @staticmethod
     def build_timeframe_rsi_info(prefix, df_r, upper_border, lower_border):
@@ -1715,7 +1080,7 @@ class MainAnalysis:
 
         # (4)大本命
         # (5)ターン時以外
-        self.predict_analysis()
+        self.line_analysis()
 
     def get_strongest_line(self, lines):
         """最強のLINEを取得"""
@@ -1776,6 +1141,9 @@ class MainAnalysis:
 
 
     def predict_analysis(self):
+        return self.line_analysis()
+
+    def line_analysis(self):
         # ターン時以外でも実行される
         print("■予測オーダー")
         s = self.s
@@ -1855,9 +1223,12 @@ class MainAnalysis:
             upper_border,
             lower_border,
         ))
-        m5_line_orders = self.add_m5_line_test_orders(
+        m5_line_orders = self.each_pair_line_strategy_profile.create_orders_from_lines(
+            self,
             line_class_m5_l,
+            line_class_m5_s,
             line_class_h1_l,
+            line_class_h1_s,
             current_price,
             df.iloc[0]['time_jp'],
             rsi_info,
