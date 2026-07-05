@@ -546,16 +546,25 @@ class Inspection:
     ):
         res = self.cal_order_result_pips(order_plan, close_price)
         first_reach_results = first_reach_results or {}
+        tp_range = order_plan.get("tp_range")
+        lc_range = order_plan.get("lc_range")
+        tp_pips = self.p.price_to_pips(tp_range) if tp_range is not None else None
+        lc_pips = self.p.price_to_pips(lc_range) if lc_range is not None else None
+        rr = tp_pips / lc_pips if tp_pips is not None and lc_pips not in (None, 0) else None
         return {
             "result_type": "order",
             "target_time": target_time,
             "name": order_plan.get("name"),
+            "pair": order_plan.get("pair", self.pair),
             "res": res,
             "order_type": order_plan.get("type"),
             "direction": order_plan.get("direction"),
             "target_price": order_plan.get("target_price"),
             "tp_price": order_plan.get("tp_price"),
             "lc_price": order_plan.get("lc_price"),
+            "tp_pips": tp_pips,
+            "lc_pips": lc_pips,
+            "rr": rr,
             "units": order_plan.get("units"),
             "priority": order_plan.get("priority"),
             "order_result": result,

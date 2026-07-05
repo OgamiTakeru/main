@@ -3,26 +3,33 @@ import datetime
 import classInspection as ci
 
 
-memo = "大量22_23 flipped H1 line inspection"
+PAIR = "EUR_USD"
+# Previous inspection ranges kept for quick switching.
+# START_TIME = datetime.datetime(2025, 6, 15, 0, 0, 0)
+# END_TIME = datetime.datetime(2026, 6, 16, 10, 0, 0)
+START_TIME = datetime.datetime(2025, 12, 24, 0, 0, 0)
+END_TIME = datetime.datetime(2026, 6, 24, 0, 0, 0)
+# START_TIME = datetime.datetime(2026, 6, 30, 0, 0, 0)
+# END_TIME = datetime.datetime.now().replace(microsecond=0)
+# START_TIME = datetime.datetime(2024, 6, 15, 0, 0, 0)
+# END_TIME = datetime.datetime(2025, 6, 16, 10, 0, 0)
+
+memo = f"{PAIR} line inspection"
+cache_name = f"{PAIR}_{START_TIME:%Y%m%d%H%M%S}_{END_TIME:%Y%m%d%H%M%S}"
 
 inspection = ci.Inspection(
     is_exist_data=False,
-    # start_time=datetime.datetime(2025, 6, 15, 0, 0, 0),
-    # end_time=datetime.datetime(2026, 6, 16, 10, 0, 0),
-    start_time=datetime.datetime(2025, 12, 24, 0, 0, 0),
-    end_time=datetime.datetime(2026, 6, 24, 0, 0, 0),
-    # start_time=datetime.datetime(2026, 6, 30, 0, 0, 0),
-    # end_time=datetime.datetime.now().replace(microsecond=0),
-    # start_time=datetime.datetime(2024, 6, 15, 0, 0, 0),
-    # end_time=datetime.datetime(2025, 6, 16, 10, 0, 0),
-    h1_data_path="C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_h1_df.csv",
-    m5_data_path="C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_m5_df.csv",
+    start_time=START_TIME,
+    end_time=END_TIME,
+    h1_data_path=f"C:/Users/taker/OneDrive/Desktop/oanda_logs/h1_{cache_name}.csv",
+    m5_data_path=f"C:/Users/taker/OneDrive/Desktop/oanda_logs/m5_{cache_name}.csv",
     m30_data_path=None,
-    s5_data_path="C:/Users/taker/OneDrive/Desktop/oanda_logs/大量22_23_s5_df.csv",
+    s5_data_path=f"C:/Users/taker/OneDrive/Desktop/oanda_logs/s5_{cache_name}.csv",
     memo=memo,
-    anaN=60,  # 1時間足何足分かで指定する
-    insN=8640,  # 5秒足何足分かで指定する 12時間で8640
+    anaN=60,
+    insN=8640,
     target_interval_minutes=5,
+    pair=PAIR,
 )
 
 print(inspection.result_df)
