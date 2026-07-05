@@ -90,7 +90,9 @@ class order_information:
         self.linkage_order_classes = []  # リンクオーダーのオーダー情報
         self.linkage_class_slots = []  # リンクオーダーのポジションコントールクラスのスロットの一覧
         self.linkage_done = False
-        self.u = 3
+        self.pair = "USD_JPY"
+        self.p = gene.currency_pair(self.pair)
+        self.u = self.p.round_keta
         self.lc_ensure_range_border = 0.01  # lc_changeで確保できる利益が、この値以下の場合は、実施しない。
         # self.reset()
         self.ORDER_TIMEOUT_MIN_DEFAULT = 40  # 分単位で指定
@@ -415,6 +417,9 @@ class order_information:
         # Jsonをそのまま入れるもの
         self.plan_json = plan  # 受け取ったプラン情報(そのままOrderできる状態が基本）
         self.for_api_json = plan['for_api_json']
+        self.pair = plan.get("pair", self.for_api_json.get("order", {}).get("instrument", "USD_JPY"))
+        self.p = gene.currency_pair(self.pair)
+        self.u = self.p.round_keta
         self.select_oa(plan['oa_mode'])
 
         # (1)クラスの名前＋情報の整流化（オアンダクラスに合う形に）
@@ -1075,7 +1080,7 @@ class order_information:
                     # 初回の場合はやる
                     self.is_first_time_lc_change_candle = False  # 二回目以降はFalseにFalseを入れることになるが、、
 
-                    d5_df = self.oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": self.lc_change_candle_num},
+                    d5_df = self.oa.InstrumentsCandles_multi_exe(self.pair, {"granularity": "M5", "count": self.lc_change_candle_num},
                                                                  1)  # 時間昇順(直近が最後尾）
                     if d5_df['error'] == -1:
                         print("error Candle")
@@ -1274,7 +1279,7 @@ class order_information:
         self.candle_analysis_class = candle_analysis_class
 
         # (0)現在価格の取得
-        temp_current_price = self.oa.NowPrice_exe("USD_JPY")
+        temp_current_price = self.oa.NowPrice_exe(self.pair)
         self.current_price_all = temp_current_price
         # print("@@@@@@@@@@@@@@@@@1280 pasition", self.current_price_all)
         if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
@@ -1449,7 +1454,7 @@ class order_information:
             return 0  # LifeがFalse（＝オーダーが発行されていない状態）では実行しない
 
         # (0)現在価格の取得
-        temp_current_price = self.oa.NowPrice_exe("USD_JPY")
+        temp_current_price = self.oa.NowPrice_exe(self.pair)
         if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
             print("API異常で現在価格が取得できず（ポジションクラス）")
             return 0
@@ -1671,10 +1676,10 @@ class order_information:
         o_dir = self.plan_json['direction']
         if o_dir == 1:
             # 買いの場合　askプライス
-            now_price = self.oa.NowPrice_exe("USD_JPY")['data']['ask']
+            now_price = self.oa.NowPrice_exe(self.pair)['data']['ask']
         else:
             # 売りの場合　bidプライス
-            now_price = self.oa.NowPrice_exe("USD_JPY")['data']['bid']
+            now_price = self.oa.NowPrice_exe(self.pair)['data']['bid']
         # 必要情報の取得
         temp_price = self.plan_json['target_price']
 
@@ -2083,7 +2088,7 @@ class order_information:
         価格ではなく、マージンで取得"
         """
         tp_price = round(float(self.t_execution_price) + (tp_margin * self.plan_json['direction']), self.u)
-        data = {"takeProfit": {"price": str(tp_price), "timeInForce": "GTC"}, }
+        data = {"instrument": self.pair, "takeProfit": {"price": str(tp_price), "timeInForce": "GTC"}, }
         res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
         if res['error'] == -1:
             self.send_line("    TP変更ミス＠change_tp")
@@ -2178,7 +2183,7 @@ class order_information:
                 item['done'] = True
                 item['time_done'] = datetime.datetime.now()
                 new_lc_price = round(float(self.t_execution_price) + (lc_ensure_range * self.plan_json['direction']), self.u)
-                data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+                data = {"instrument": self.pair, "stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
                 res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
                 if res['error'] == -1:
                     self.send_line("    LC変更ミス＠lc_change")
@@ -2322,7 +2327,7 @@ class order_information:
                 # tk.line_send("LCChangeCandle_dir1 価格合わず未遂", new_lc_price, "<", self.plan_json['lc_price'])
                 return 0
 
-        data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+        data = {"instrument": self.pair, "stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
         res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
         if res['error'] == -1:
             self.send_line("    LC変更ミス＠lc_change")
@@ -2444,7 +2449,7 @@ class order_information:
         リンケージからのみの利用（リンケージフラグの取り下げあり）
         """
 
-        data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+        data = {"instrument": self.pair, "stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
         res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
         if res['error'] == -1:
             self.send_line("    LC変更ミス＠lc_change")
@@ -2462,7 +2467,7 @@ class order_information:
         リンケージからのみの利用（リンケージフラグの取り下げあり）
         """
 
-        data = {"takeProfit": {"price": str(new_tp_price), "timeInForce": "GTC"}, }
+        data = {"instrument": self.pair, "takeProfit": {"price": str(new_tp_price), "timeInForce": "GTC"}, }
         res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行
         if res['error'] == -1:
             self.send_line("    TP変更ミス＠lc_change")
@@ -2545,7 +2550,7 @@ class order_information:
                     tp_range_ratio = ratio - 0.39
                     new_tp_range = round(tp_range_ratio * tp_range, 3)  # オーダーとしてはlcだたtp域のためTPと命名
                     new_lc_price = round(float(self.t_execution_price) + (new_tp_range * self.plan_json['direction']), self.u)
-                    data = {"stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
+                    data = {"instrument": self.pair, "stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
                     print(s, "確認用@classPosition 2555 NewTpRange", new_tp_range, new_lc_price)
                     print(s, "確認用@classPosition 2555 NewTpRange", ratio, tp_range_ratio)
                     res = self.oa.TradeCRCDO_exe(self.t_id, data)  # LCライン変更の実行

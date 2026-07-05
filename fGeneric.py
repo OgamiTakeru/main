@@ -7,10 +7,19 @@ basic_unit = 1000
 
 
 class CurrencyPair:
-    def __init__(self, name: str, pip_value: float, round_keta: int | None = None):
+    def __init__(
+            self,
+            name: str,
+            pip_value: float,
+            round_keta: int | None = None,
+            price_min: float | None = None,
+            price_max: float | None = None,
+    ):
         self.name = name
         self.pip_value = pip_value
         self.round_keta = round_keta if round_keta is not None else self.default_round_keta(pip_value)
+        self.price_min = price_min
+        self.price_max = price_max
 
     @staticmethod
     def default_round_keta(pip_value):
@@ -28,6 +37,11 @@ class CurrencyPair:
     def price_to_pips(self, price_diff: float) -> float:
         return round(price_diff / self.pip_value, 2)
 
+    def is_price(self, value: int | float) -> bool:
+        if self.price_min is None or self.price_max is None:
+            return False
+        return self.price_min <= float(value) <= self.price_max
+
     def exchange(self, unknown_num):
         if unknown_num >= self.pip_value * 100:
             result = round(unknown_num, 2)
@@ -36,7 +50,19 @@ class CurrencyPair:
         return result
 
 
-USD_JPY = CurrencyPair("USD_JPY", 0.01, 3)
+USD_JPY = CurrencyPair("USD_JPY", 0.01, 3, price_min=80, price_max=200)
+EUR_USD = CurrencyPair("EUR_USD", 0.0001, 5, price_min=0.5, price_max=2.0)
+
+CURRENCY_PAIRS = {
+    USD_JPY.name: USD_JPY,
+    EUR_USD.name: EUR_USD,
+}
+
+
+def currency_pair(pair_name: str) -> CurrencyPair:
+    if pair_name not in CURRENCY_PAIRS:
+        raise ValueError(f"Unsupported currency pair: {pair_name}")
+    return CURRENCY_PAIRS[pair_name]
 
 
 def draw_graph(mid_df):

@@ -11,7 +11,7 @@ import copy
 
 class PeaksClass:
 
-    def __init__(self, original_df_r, granularity, current_price, pair=gene.USD_JPY):
+    def __init__(self, original_df_r, granularity, current_price, pair=None):
         """
         処理解説
         make_peakでdf_rの直近一つのブロック（Peakと呼ぶ。同方向へローソクが進む範囲のこと。）を取得する。
@@ -36,7 +36,7 @@ class PeaksClass:
         self.ps_min = 4  # 若干弱いピークに付与する値
         self.ps_most_max = 8  # 強いピークとみなす（直近数時間で最も高い（または低い）ピークの場合)　
         self.minimum = 0.0000001
-        self.pair = pair
+        self.pair = pair or gene.currency_pair("USD_JPY")
         self.pip_value = self.pair.pip_value
         self.round_keta = self.pair.round_keta
 

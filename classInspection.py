@@ -29,8 +29,11 @@ class Inspection:
         anaN=60,
         insN=500,
         target_interval_minutes=60,
+        pair="USD_JPY",
     ):
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, "live")
+        self.pair = pair
+        self.p = gene.currency_pair(self.pair)
         self.gl_exist_data = is_exist_data
         self.start_time = start_time
         self.end_time = end_time
@@ -129,28 +132,28 @@ class Inspection:
         m5_rows = math.ceil(total_seconds / (5 * 60)) + 5
         m5_count, m5_loop = self.cal_oanda_count_and_loop(m5_rows)
         params = {"granularity": "M5", "count": m5_count, "to": end_time_iso}
-        data_response = self.oa.InstrumentsCandles_multi_exe("USD_JPY", params, m5_loop)
+        data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, m5_loop)
         self.gl_d5_df = data_response["data"]
         self.gl_d5_df_r = self.gl_d5_df.sort_index(ascending=False)
 
         h1_rows = math.ceil(total_seconds / (60 * 60)) + 5
         h1_count, h1_loop = self.cal_oanda_count_and_loop(h1_rows)
         params = {"granularity": "H1", "count": h1_count, "to": end_time_iso}
-        data_response = self.oa.InstrumentsCandles_multi_exe("USD_JPY", params, h1_loop)
+        data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, h1_loop)
         self.gl_h1_df = data_response["data"]
         self.gl_h1_df_r = self.gl_h1_df.sort_index(ascending=False)
 
         m30_rows = math.ceil(total_seconds / (30 * 60)) + 5
         m30_count, m30_loop = self.cal_oanda_count_and_loop(m30_rows)
         params = {"granularity": "M30", "count": m30_count, "to": end_time_iso}
-        data_response = self.oa.InstrumentsCandles_multi_exe("USD_JPY", params, m30_loop)
+        data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, m30_loop)
         self.gl_m30_df = data_response["data"]
         self.gl_m30_df_r = self.gl_m30_df.sort_index(ascending=False)
 
         s5_rows = math.ceil(total_seconds / 5) + 5
         s5_count, s5_loop = self.cal_oanda_count_and_loop(s5_rows)
         params = {"granularity": "S5", "count": s5_count, "to": end_time_iso}
-        data_response = self.oa.InstrumentsCandles_multi_exe("USD_JPY", params, s5_loop)
+        data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, s5_loop)
         self.gl_s5_df = data_response["data"]
 
     def normalize_time_columns(self):
@@ -186,7 +189,7 @@ class Inspection:
     def cache_base_name(self):
         start_name = self.start_time.strftime("%Y%m%d%H%M%S")
         end_name = self.end_time.strftime("%Y%m%d%H%M%S")
-        return f"{start_name}_{end_name}"
+        return f"{self.pair}_{start_name}_{end_name}"
 
     @staticmethod
     def save_df(df, path):
@@ -382,7 +385,8 @@ class Inspection:
 
         candle_analysis_class = ca.candleAnalysis(
             self.oa,
-            target_time,
+            self.pair,
+            target_time_jp=target_time,
             m5_df_r=analysis_m5_df_r,
             h1_df_r=analysis_h1_df_r,
             m30_df_r=analysis_m30_df_r,
@@ -415,7 +419,6 @@ class Inspection:
         return order_plans
 
     def inspect_order_after(self, target_time, order_plan, inspection_s5_df):
-        pair = gene.USD_JPY
         direction = int(order_plan["direction"])
         order_type = order_plan["type"]
         target_price = float(order_plan["target_price"])
@@ -515,9 +518,8 @@ class Inspection:
             return max(len(after_fill_df) - 1, 0)
         return close_index
 
-    @staticmethod
-    def cal_order_max_plus_minus(df, target_price, direction):
-        pair = gene.USD_JPY
+    def cal_order_max_plus_minus(self, df, target_price, direction):
+        pair = self.p
         if df.empty:
             return 0, 0
         if direction == 1:
@@ -528,8 +530,8 @@ class Inspection:
             max_minus = pair.price_to_pips(target_price - df["high"].max())
         return max_plus, max_minus
 
-    @staticmethod
     def order_result_row(
+        self,
         target_time,
         order_plan,
         result,
@@ -542,7 +544,7 @@ class Inspection:
         max_minus_pips,
         first_reach_results=None,
     ):
-        res = Inspection.cal_order_result_pips(order_plan, close_price)
+        res = self.cal_order_result_pips(order_plan, close_price)
         first_reach_results = first_reach_results or {}
         return {
             "result_type": "order",
@@ -650,12 +652,11 @@ class Inspection:
             "memo": order_plan.get("memo"),
         }
 
-    @staticmethod
-    def cal_order_result_pips(order_plan, close_price):
+    def cal_order_result_pips(self, order_plan, close_price):
         if close_price is None:
             return None
 
-        pair = gene.USD_JPY
+        pair = self.p
         direction = int(order_plan["direction"])
         target_price = float(order_plan["target_price"])
         return pair.price_to_pips((float(close_price) - target_price) * direction)
@@ -748,7 +749,7 @@ class Inspection:
         return info
 
     def line_to_order_plan(self, target_time, line_side, line, rsi_info=None):
-        pair = gene.USD_JPY
+        pair = self.p
         line_price = line["median_price"]
         direction = -1 if line_side == "upper" else 1
         spread_pips = 0.8
@@ -788,20 +789,18 @@ class Inspection:
             **(rsi_info or {}),
         }
 
-    @staticmethod
-    def cal_first_reach_results(df, target_price, direction):
+    def cal_first_reach_results(self, df, target_price, direction):
         thresholds = (5, 10, 15, 20, 25, 30)
         results = {}
         for pips in thresholds:
-            side, reach_time, elapsed_s5 = Inspection.find_first_reach(df, target_price, direction, pips)
+            side, reach_time, elapsed_s5 = self.find_first_reach(df, target_price, direction, pips)
             results[f"first_{pips}pips_side"] = side
             results[f"first_{pips}pips_time"] = reach_time
             results[f"first_{pips}pips_elapsed_s5"] = elapsed_s5
         return results
 
-    @staticmethod
-    def find_first_reach(df, target_price, direction, threshold_pips):
-        pair = gene.USD_JPY
+    def find_first_reach(self, df, target_price, direction, threshold_pips):
+        pair = self.p
         threshold_price = pair.pips_to_price(threshold_pips)
         if df.empty:
             return "none", None, None

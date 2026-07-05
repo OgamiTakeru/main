@@ -28,16 +28,19 @@ class candleAnalysis:
     def __init__(
             self,
             base_oa=None,
+            pair="USD_JPY",
             target_time_jp=0,
             m5_df_r=None,
             h1_df_r=None,
             m30_df_r=None,
             s5_df_r=None,
-            current_price=None
+            current_price=None,
     ):
         """
         target_time_jpまでの時間を取得する
         """
+        # pair 
+        self.pair = pair  # 通貨ペア
         # オアンダクラス
         self.base_oa = base_oa
         self.need_df_num = 250
@@ -120,17 +123,17 @@ class candleAnalysis:
         # ■■処理
         # データを取得する(5分足系）
         granularity = "M5"
-        self.peaks_class = peaksClass.PeaksClass(self.d5_df_r, granularity, self.current_price)  # ★peaks_classの生成
+        self.peaks_class = peaksClass.PeaksClass(self.d5_df_r, granularity, self.current_price, gene.currency_pair(self.pair))  # ★peaks_classの生成
         self.candle_meta_class = CandleMeta(self.peaks_class, granularity)
 
         # データを取得する（60分足）
         granularity = "H1"
-        self.peaks_class_hour = peaksClass.PeaksClass(self.h1_df_r, granularity, self.current_price)
+        self.peaks_class_hour = peaksClass.PeaksClass(self.h1_df_r, granularity, self.current_price, gene.currency_pair(self.pair))
         self.candle_meta_class_hour = CandleMeta(self.peaks_class_hour, granularity)
 
         # データを取得する（30分足）
         granularity = "M30"
-        self.peaks_class_m30 = peaksClass.PeaksClass(self.d30_df_r, granularity, self.current_price)
+        self.peaks_class_m30 = peaksClass.PeaksClass(self.d30_df_r, granularity, self.current_price, gene.currency_pair(self.pair))
         self.candle_meta_class_m30 = CandleMeta(self.peaks_class_m30, granularity)
 
         if m5_df_r is not None:
@@ -160,12 +163,12 @@ class candleAnalysis:
 
         if target_time_jp == 0:
             # 現在時刻でやる場合
-            s5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY", param, 1)
+            s5_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair, param, 1)
         else:
             # 指定の時刻でやる場合
             euro_time_datetime = target_time_jp - datetime.timedelta(hours=9)
             param["to"] = f"{euro_time_datetime.isoformat()}.000000000Z"
-            s5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)
+            s5_df_res = self.base_oa.InstrumentsCandles_exe(self.pair, param)
 
         # エラーチェック
         if s5_df_res['error'] == -1:
@@ -180,7 +183,7 @@ class candleAnalysis:
         if target_time_jp == 0:
             # ■■■nowでやる場合（リアルトレード環境がメイン）
             # 5分足のデータ
-            d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+            d5_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
                                                                   {"granularity": "M5", "count": self.need_df_num},
                                                                   1)  # 時間昇順(直近が最後尾）
             if d5_df_res['error'] == -1:
@@ -192,7 +195,7 @@ class candleAnalysis:
             self.d5_df_r = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
             # 60分足のデータ
-            h1_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+            h1_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
                                                                    {"granularity": "H1", "count": self.need_df_num},
                                                                    1)  # 時間昇順(直近が最後尾）
             if h1_df_res['error'] == -1:
@@ -204,7 +207,7 @@ class candleAnalysis:
             self.h1_df_r = h1_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
             # 5秒足で
-            s5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+            s5_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
                                                                   {"granularity": "S5", "count": 5},
                                                                   1)  # 時間昇順(直近が最後尾）
             if s5_df_res['error'] == -1:
@@ -216,7 +219,7 @@ class candleAnalysis:
             self.s5_df_r = s5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
             # 30分足のデータ
-            d30_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+            d30_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
                                                                    {"granularity": "M30", "count": self.need_df_num},
                                                                    1)  # 時間昇順(直近が最後尾）
             if d30_df_res['error'] == -1:
@@ -228,7 +231,7 @@ class candleAnalysis:
             self.d30_df_r = m30_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
 
             # ★★現在価格の取得（API）
-            price_dic = self.base_oa.NowPrice_exe("USD_JPY")
+            price_dic = self.base_oa.NowPrice_exe(self.pair)
             if price_dic['error'] == -1:  # APIエラーの場合はスキップ
                 print("API異常発生の可能性@candleAnalysis")
                 return -1  # 終了
@@ -243,7 +246,7 @@ class candleAnalysis:
 
             # ５分足データ
             param = {"granularity": "M5", "count": self.need_df_num, "to": euro_time_datetime_iso}
-            d5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param) # 時間昇順(直近が最後尾）
+            d5_df_res = self.base_oa.InstrumentsCandles_exe(self.pair, param) # 時間昇順(直近が最後尾）
             if d5_df_res['error'] == -1:
                 print("error Candle")
                 tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
@@ -254,7 +257,7 @@ class candleAnalysis:
 
             # 60分足のデータ
             param = {"granularity": "H1", "count": self.need_df_num, "to": euro_time_datetime_iso}
-            h1_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param) # 時間昇順(直近が最後尾）
+            h1_df_res = self.base_oa.InstrumentsCandles_exe(self.pair, param) # 時間昇順(直近が最後尾）
             if h1_df_res['error'] == -1:
                 print("error Candle")
                 tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
@@ -265,7 +268,7 @@ class candleAnalysis:
 
             # 最短の５秒足も取得しておく
             param = {"granularity": "S5", "count": 5, "to": euro_time_datetime_iso}
-            s5_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間昇順(直近が最後尾）
+            s5_df_res = self.base_oa.InstrumentsCandles_exe(self.pair, param)  # 時間昇順(直近が最後尾）
             if s5_df_res['error'] == -1:
                 print("error Candle")
                 tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
@@ -276,7 +279,7 @@ class candleAnalysis:
 
             # 最短の30分足も取得しておく
             param = {"granularity": "M30", "count": self.need_df_num, "to": euro_time_datetime_iso}
-            d30_df_res = self.base_oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間昇順(直近が最後尾）
+            d30_df_res = self.base_oa.InstrumentsCandles_exe(self.pair, param)  # 時間昇順(直近が最後尾）
             if d30_df_res['error'] == -1:
                 print("error Candle")
                 tk.line_send("30分ごと調査最初のデータフレーム取得に失敗（エラー）")
@@ -298,26 +301,27 @@ class CandleMeta:
         # データ入れる用
         self.df_r = peaks_class.df_r_original
         self.peaks_class = peaks_class
-        self.u = 3
+        self.pair = peaks_class.pair
+        self.u = peaks_class.pair.round_keta
         # 初期値
         self.ave_move = 0
         self.ave_move_for_lc = 0
-        self.dependence_large_body_criteria = 0.1
+        self.dependence_large_body_criteria = self.pair.pips_to_price(10)
 
         # データを取得する(5分足系）
         if granularity == "M5":
             self.recent_fluctuation_range = 0  # 指定ではなく、計算で算出される。直近N足分以内での最大変動幅（最高値ー最低値）round済み
-            self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
+            self.fluctuation_gap = self.pair.pips_to_price(30)  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
             self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
             self.is_big_move_candle = False
         elif granularity == "H1":
             self.recent_fluctuation_range = 0  # 指定ではなく、計算で算出される。直近N足分以内での最大変動幅（最高値ー最低値）round済み
-            self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
+            self.fluctuation_gap = self.pair.pips_to_price(30)  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
             self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
             self.is_big_move_candle = False
         elif granularity == "M30":
             self.recent_fluctuation_range = 0  # 指定ではなく、計算で算出される。直近N足分以内での最大変動幅（最高値ー最低値）round済み
-            self.fluctuation_gap = 0.3  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
+            self.fluctuation_gap = self.pair.pips_to_price(30)  # 急変動とみなす1足の変動は30pips以上。（1足でPeakの変動ではない）
             self.fluctuation_count = 3  # 3カウント以下でfluctuation_gapが起きた場合、急変動とみなす
             self.is_big_move_candle = False
 

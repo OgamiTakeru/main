@@ -20,11 +20,13 @@ class position_control:
 
 
     # 履歴ファイル
-    def __init__(self, is_live):
+    def __init__(self, is_live, pair="USD_JPY"):
         self.result_class_arr = deque(maxlen=10)
+        self.pair = pair
+        self.p = gene.currency_pair(self.pair)
 
         # 変数の宣言
-        self.u = 3
+        self.u = self.p.round_keta
         self.position_classes = []
         self.count_true = 0
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)
@@ -73,7 +75,7 @@ class position_control:
         #     print(" ", i, "OaMode:", item.oa_mode, "Pno:", item.t_id, ",name:", item.name, ",life:", item.life)
 
     def filter_similar_order_classes(self, order_classes, threshold_pips=3):
-        p = gene.USD_JPY
+        p = self.p
         candidates = []
         for order_class in order_classes:
             plan = getattr(order_class, "exe_order_plan", None) or {}
@@ -448,7 +450,7 @@ class position_control:
         return {"life_exist": ans, "one_line_comment": comment}
 
     def find_similar_active_order(self, direction, target_price, threshold_pips=3, source=None, line_strategy=None):
-        p = gene.USD_JPY
+        p = self.p
         for item in self.position_classes:
             if not getattr(item, "life", False):
                 continue

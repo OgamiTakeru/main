@@ -9,8 +9,9 @@ import fGeneric as f
 
 
 # グローバルでの宣言
+gl_pair = "USD_JPY"
 oa = oanda_class.Oanda(tk.accountIDl2, tk.access_tokenl, "live")  # クラスの定義g
-print(oa.NowPrice_exe("USD_JPY"))
+print(oa.NowPrice_exe(gl_pair))
 gl_start_time = datetime.datetime.now()
 gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
 gl_now_str = str(gl_now.month).zfill(2) + str(gl_now.day).zfill(2) + "_" + \
@@ -49,13 +50,13 @@ def main():
     if now_time:
         # 直近の時間で検証
         # df = oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": gr, "count": count}, times)
-        gl_candleAnalysisClass = ca.candleAnalysis(oa, 0)
+        gl_candleAnalysisClass = ca.candleAnalysis(oa, gl_pair, target_time_jp=0)
     else:
-        gl_candleAnalysisClass = ca.candleAnalysis(oa, gl_target_time)
+        gl_candleAnalysisClass = ca.candleAnalysis(oa, gl_pair, target_time_jp=gl_target_time)
         # df = oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間指定
     # データの成型と表示
     df = gl_candleAnalysisClass.d5_df_r  # data部のみを取得
-    df.to_csv(tk.folder_path + 'main_analysis_original_data.csv', index=False, encoding="utf-8")  # 直近保存用
+    df.to_csv(tk.folder_path + gl_pair + '_main_analysis_original_data.csv', index=False, encoding="utf-8")  # 直近保存用
     df_r = df.sort_index(ascending=False)  # 逆順に並び替え（直近が上側に来るように）
     # print("全", len(df_r), "行(test用表示↓")
     # print(df_r.head(2))

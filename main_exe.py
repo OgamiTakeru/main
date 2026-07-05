@@ -20,6 +20,7 @@ class main():
         self.exe_mode = tk.environmentl
 
         # ■変数の宣言
+        self.pair = "USD_JPY"  # 通貨ペア
         # 変更なし群
         self.ARROW_SPREAD = 0.011  # 実行を許容するスプレッド　＠ここ以外で変更なし
         self.NEED_DF_NUM = 250  # 解析に必要な行数（元々５０行だったが、１００にしたほうが、取引回数が多くなりそう）
@@ -50,7 +51,7 @@ class main():
 
         # ■■■処理の開始
         # ■ポジションクラスの生成
-        self.positions_control_class = classPositionControl.position_control(True)  # ポジションリストの用意
+        self.positions_control_class = classPositionControl.position_control(True, self.pair)  # ポジションリストの用意
         # self.positions_control_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
         self.positions_control_class.reset_all_position()
         self.positions_control_class.catch_up_position_and_del_order()
@@ -85,7 +86,7 @@ class main():
 
     def force_order(self):
         # ■■オーダーの生成
-        price_dic = self.base_oa.NowPrice_exe("USD_JPY")
+        price_dic = self.base_oa.NowPrice_exe(self.pair)
         if price_dic['error'] == -1:  # APIエラーの場合はスキップ
             print("API異常発生の可能性")
             return -1  # 終了
@@ -109,6 +110,7 @@ class main():
             "units": 150,
             "priority": 1,
             "decision_time": '2025/07/11 23:30:00',
+            "pair": self.pair,
         })
         order_class2 = OCreate.Order({
             "name": "強制オーダーテスト逆",
@@ -122,6 +124,7 @@ class main():
             "units": 250,
             "priority": 1,
             "decision_time": '2025/07/11 23:30:00',
+            "pair": self.pair,
         })
         order_class.add_linkage(order_class2)
         order_class2.add_linkage(order_class)
@@ -142,7 +145,7 @@ class main():
     #     データを取得する
     #     """
     #     # 5分足のデータ
-    #     d5_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+    #     d5_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
     #                                             {"granularity": "M5", "count": self.need_df_num},
     #                                             1)  # 時間昇順(直近が最後尾）
     #     if d5_df_res['error'] == -1:
@@ -163,10 +166,10 @@ class main():
     #         print("取得したデータは正常と思われる")
     #
     #     self.d5_df = d5_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
-    #     self.d5_df.to_csv(tk.folder_path + 'main_data5.csv', index=False, encoding="utf-8")  # 直近保存用
+    #     self.d5_df.to_csv(tk.folder_path + self.pair + '_main_data5.csv', index=False, encoding="utf-8")  # 直近保存用
     #
     #     # 60分足のデータ
-    #     d60_df_res = self.base_oa.InstrumentsCandles_multi_exe("USD_JPY",
+    #     d60_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
     #                                             {"granularity": "H1", "count": self.need_df_num},
     #                                             1)  # 時間昇順(直近が最後尾）
     #     if d60_df_res['error'] == -1:
@@ -187,7 +190,7 @@ class main():
     #         print("取得したデータは正常と思われる")
     #
     #     self.d60_df = d60_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
-    #     self.d60_df.to_csv(tk.folder_path + 'main_data60.csv', index=False, encoding="utf-8")  # 直近保存用
+    #     self.d60_df.to_csv(tk.folder_path + self.pair + '_main_data60.csv', index=False, encoding="utf-8")  # 直近保存用
 
     def mode1(self):
         """
@@ -200,9 +203,9 @@ class main():
             # 初回は、manageで取得したデータで実行する
             pass
         else:
-            self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, 0)  # Watchingがある場合、キャンドルを先にやる
+            self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, self.pair, 0)  # Watchingがある場合、キャンドルを先にやる
             self.positions_control_class.all_update_information(self.candleAnalysisClass)  # positionの更新
-            # self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, 0)  # 現在時刻（０）でデータ取得　←もともとupdateの後にキャンドル
+            # self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, self.pair, 0)  # 現在時刻（０）でデータ取得　←もともとupdateの後にキャンドル
             # self.get_df_data()  # データの取得
 
         # ■調査実行
@@ -295,7 +298,7 @@ class main():
         #     self.midnight_close_flag = 0  # 実行可能開始時以降は深夜フラグを解除（毎回やってしまうけどいいや）
 
         # ■時間内でスプレッドが広がっている場合は強制終了し実行しない　（現価を取得しスプレッドを算出する＋グローバル価格情報を取得する）
-        price_dic = self.base_oa.NowPrice_exe("USD_JPY")
+        price_dic = self.base_oa.NowPrice_exe(self.pair)
         if price_dic['error'] == -1:  # APIエラーの場合はスキップ
             print("API異常発生の可能性")
             return -1  # 終了
@@ -339,9 +342,9 @@ class main():
             tk.line_send("start")
 
             # 現時刻を使う
-            self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, 0)  # 現在時刻（０）でデータ取得
+            self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, self.pair, 0)  # 現在時刻（０）でデータ取得
             # 指定時刻を使う
-            # self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, datetime.datetime(2025, 9, 1, 8, 5, 6))
+            # self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, self.pair, datetime.datetime(2025, 9, 1, 8, 5, 6))
             self.mode1()
 
             # 強制オーダーを入れる場合は、以下コメントイン

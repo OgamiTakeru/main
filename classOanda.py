@@ -100,12 +100,13 @@ class Oanda:
         try:
             res_json = json.dumps(self.api.request(ep), indent=2)
             res_json = json.loads(res_json)  # 何故かこれだけevalが使えないのでloadsで文字列⇒jsonを実施
+            pair = gene.currency_pair(instrument)
             res_dic = {
-                'bid': gene.USD_JPY.round_price(float(res_json['prices'][0]['bids'][0]['price'])),
-                'ask': gene.USD_JPY.round_price(float(res_json['prices'][0]['asks'][0]['price'])),
-                'mid': gene.USD_JPY.round_price((float(res_json['prices'][0]['asks'][0]['price']) +
+                'bid': pair.round_price(float(res_json['prices'][0]['bids'][0]['price'])),
+                'ask': pair.round_price(float(res_json['prices'][0]['asks'][0]['price'])),
+                'mid': pair.round_price((float(res_json['prices'][0]['asks'][0]['price']) +
                                                  float(res_json['prices'][0]['bids'][0]['price'])) / 2),
-                'spread': gene.USD_JPY.round_price(float(res_json['prices'][0]['asks'][0]['price']) -
+                'spread': pair.round_price(float(res_json['prices'][0]['asks'][0]['price']) -
                                                    float(res_json['prices'][0]['bids'][0]['price'])),
             }
             return {"data": res_dic, "error": 0}
@@ -143,9 +144,9 @@ class Oanda:
             res_json = self.api.request(ep)  # 結果をjsonで取得
             data_df = pd.DataFrame(res_json['candles'])  # Jsonの一部(candles)をDataframeに変換
             data_df['time_jp'] = data_df.apply(lambda x: iso_to_jstdt(x, 'time'), axis=1)  # 日本時刻の表示
-            data_df = add_basic_data(data_df)  # 【関数/必須】基本項目を追加する
+            data_df = add_basic_data(data_df, gene.currency_pair(instrument))  # 【関数/必須】基本項目を追加する
             data_df = add_rsi(data_df)
-            data_df = add_bb_data(data_df)
+            data_df = add_bb_data(data_df, gene.currency_pair(instrument))
             # 返却
             return {"data": data_df, "error": 0}
         except Exception as e:
@@ -182,10 +183,10 @@ class Oanda:
         temp_df = candles.reset_index()  # インデックスをリセットし、ML用のデータフレームへ
         temp_df.drop(['index'], axis=1, inplace=True)  # 不要項目の削除
         # 解析用の列を追加する（不要列の削除も含む）
-        data_df = add_basic_data(temp_df)  # 【関数/必須】基本項目を追加する
+        data_df = add_basic_data(temp_df, gene.currency_pair(pair))  # 【関数/必須】基本項目を追加する
         data_df = add_rsi(data_df)
         # data_df = add_ema_data(data_df)
-        data_df = add_bb_data(data_df)
+        data_df = add_bb_data(data_df, gene.currency_pair(pair))
         # data_df = self.add_peak(data_df)
         # print("classOanda")
         # print(data_df.iloc[0])
@@ -222,14 +223,14 @@ class Oanda:
                     "units": str(self.units * self.direction),
                     "type": self.ls_type,  # "STOP(逆指)" or "LIMIT" or "MARKET"
                     "positionFill": "DEFAULT",
-                    "price": gene.USD_JPY.price_to_str(self.target_price),  # 小数点3桁の文字列（それ以外はエラーとなる）
+                    "price": pair.price_to_str(self.target_price),  # 通貨ペアに合わせた小数桁の文字列
                     "takeProfitOnFill": {
                         "timeInForce": "GTC",
-                        "price": gene.USD_JPY.price_to_str(self.tp_price)  # 小数点3桁の文字列（それ以外はエラーとなる）
+                        "price": pair.price_to_str(self.tp_price)  # 通貨ペアに合わせた小数桁の文字列
                     },
                     "stopLossOnFill": {
                         "timeInForce": "GTC",
-                        "price": gene.USD_JPY.price_to_str(self.lc_price)  # 小数点3桁の文字列（それ以外はエラーとなる）
+                        "price": pair.price_to_str(self.lc_price)  # 通貨ペアに合わせた小数桁の文字列
                     },
                     # "trailingStopLossOnFill": {
                     #     "timeInForce": "GTC",
@@ -245,6 +246,14 @@ class Oanda:
         start_time = datetime.datetime.now().replace(microsecond=0)  # エラー頻発の為、ログ
         # print(" 最終オーダー@classOanda 241")
         # print(for_api_json)
+        pair = gene.currency_pair(for_api_json["order"].get("instrument", "USD_JPY"))
+        order = for_api_json["order"]
+        if "price" in order:
+            order["price"] = pair.price_to_str(float(order["price"]))
+        if "takeProfitOnFill" in order and "price" in order["takeProfitOnFill"]:
+            order["takeProfitOnFill"]["price"] = pair.price_to_str(float(order["takeProfitOnFill"]["price"]))
+        if "stopLossOnFill" in order and "price" in order["stopLossOnFill"]:
+            order["stopLossOnFill"]["price"] = pair.price_to_str(float(order["stopLossOnFill"]["price"]))
         # ★★実行
         try:
             ep = OrderCreate(accountID=self.accountID, data=for_api_json)  #
@@ -633,10 +642,11 @@ class Oanda:
             res_json['trade']['time_past'] = cal_past_time_single(iso_to_jstdt_single(res_json['trade']['openTime']))
             # PL / unit を追加する(Open時はunrealizedPL,Close時はrealizePLを利用する)
             temp = res_json['trade']
+            pair = gene.currency_pair(temp.get("instrument", "USD_JPY"))
             if temp['state'] == "OPEN":
-                res_json['trade']['PLu'] = gene.USD_JPY.round_price(float(temp['unrealizedPL']) / abs(float(temp['initialUnits'])))
+                res_json['trade']['PLu'] = pair.round_price(float(temp['unrealizedPL']) / abs(float(temp['initialUnits'])))
             elif temp['state'] == "CLOSED":
-                res_json['trade']['PLu'] = gene.USD_JPY.round_price(float(temp['realizedPL']) / abs(float(temp['initialUnits'])))
+                res_json['trade']['PLu'] = pair.round_price(float(temp['realizedPL']) / abs(float(temp['initialUnits'])))
             else:
                 print("    Tradeの状態を確認＠oandaClass TradeDetails_exe")
                 res_json['trade']['PLu'] == 0
@@ -653,8 +663,8 @@ class Oanda:
         :param trade_id:
         :param data:　以下の形式
             data = {
-                "takeProfit": {"price": gene.USD_JPY.price_to_str(line),"timeInForce": "GTC",},
-                "stopLoss": {"price": gene.USD_JPY.price_to_str(line),"timeInForce": "GTC",},
+                "takeProfit": {"price": pair.price_to_str(line),"timeInForce": "GTC",},
+                "stopLoss": {"price": pair.price_to_str(line),"timeInForce": "GTC",},
                 "trailingStopLoss": {"distance": 0.05, "timeInForce": "GTC"},
             }
         :return:
@@ -662,12 +672,13 @@ class Oanda:
         # データの価格情報をStrに変更しておく（priceがstrでもfloatで来ても、いいように。。）
         start_time = datetime.datetime.now().replace(microsecond=0)  # エラー頻発の為、ログ
 
+        pair = gene.currency_pair(data.get("instrument", "USD_JPY"))
         if 'stopLoss' in data:
-            data['stopLoss']['price'] = gene.USD_JPY.price_to_str(float(data['stopLoss']['price']))
+            data['stopLoss']['price'] = pair.price_to_str(float(data['stopLoss']['price']))
         if 'takeProfit' in data:
-            data['takeProfit']['price'] = gene.USD_JPY.price_to_str(float(data['takeProfit']['price']))
+            data['takeProfit']['price'] = pair.price_to_str(float(data['takeProfit']['price']))
         if 'trailingStopLoss' in data:
-            data['trailingStopLoss']['distance'] = gene.USD_JPY.price_to_str(float(data['trailingStopLoss']['distance']))
+            data['trailingStopLoss']['distance'] = pair.price_to_str(float(data['trailingStopLoss']['distance']))
 
         try:
             ep = TradeCRCDO(accountID=self.accountID, tradeID=trade_id, data=data)
@@ -1217,17 +1228,18 @@ def cal_past_time_single(x):
 
 
 # 【ローソクへの情報追加】 ★★基本的なデータの追加
-def add_basic_data(data_df):
+def add_basic_data(data_df, pair=None):
     """
     InstrumentsCandles_exeで取得したデータ（最新時刻が下にある降順データ）に情報を付与する。
     引数はInstrumentsCandles_exeで取得したデータフレーム。返却値は、それに下記列を付与した情報
     """
+    pair = pair or gene.currency_pair("USD_JPY")
     data_df = data_df.copy()  # 謎のスライスウォーニング対策
     data_df['open'] = data_df.apply(lambda x: o_func(x), axis=1)  # open価格
     data_df['close'] = data_df.apply(lambda x: c_func(x), axis=1)
     data_df['high'] = data_df.apply(lambda x: h_func(x), axis=1)
     data_df['low'] = data_df.apply(lambda x: l_func(x), axis=1)
-    data_df['mid_outer'] = gene.USD_JPY.round_price((data_df['high'] + data_df['low']) / 2)  # 最高値と再低値の長さ
+    data_df['mid_outer'] = pair.round_price((data_df['high'] + data_df['low']) / 2)  # 最高値と再低値の長さ
     data_df['inner_high'] = data_df.apply(lambda x: ih_func(x), axis=1)  # ローソク本体で高い方（OpenかClose価格）
     data_df['inner_low'] = data_df.apply(lambda x: il_func(x), axis=1)  # ローソク本体で低い方（OpenかClose価格）
     data_df['body'] = data_df['close'] - data_df['open']  # 胴体の長さ（正負あり）
@@ -1237,9 +1249,9 @@ def add_basic_data(data_df):
     data_df['up_rod'] = data_df.apply(lambda x: for_upper(x), axis=1)  # 上髭の長さを取得
     data_df['low_rod'] = data_df.apply(lambda x: for_lower(x), axis=1)  # 下髭の長さを取得
     data_df['highlow'] = data_df['high'] - data_df['low']  # 最高値と再低値の長さ
-    # data_df['middle_price'] = gene.USD_JPY.round_price(data_df['inner_low'] + (data_df['body_abs'] / 2))  # 最高値と再低値の長さ
-    data_df['middle_price'] = gene.USD_JPY.round_price((data_df['inner_low'] + data_df['inner_high']) / 2)  # 最高値と再低値の長さ
-    data_df['middle_price_wick'] = gene.USD_JPY.round_price((data_df['high'] + data_df['low']) / 2)  # 最高値と再低値の長さ
+    # data_df['middle_price'] = pair.round_price(data_df['inner_low'] + (data_df['body_abs'] / 2))  # 最高値と再低値の長さ
+    data_df['middle_price'] = pair.round_price((data_df['inner_low'] + data_df['inner_high']) / 2)  # 最高値と再低値の長さ
+    data_df['middle_price_wick'] = pair.round_price((data_df['high'] + data_df['low']) / 2)  # 最高値と再低値の長さ
     data_df = data_df[[col for col in data_df.columns if col != "time"] + ["time"]]  # timeを最終列に
 
     # 不要項目の削除（timeは連続取得時に利用するため、削除+ない）
@@ -1355,11 +1367,12 @@ def add_ema_data(data_df):
 
 
 # 【ローソクへの情報追加】ボリンジャーバンドを追加する関数
-def add_bb_data(data_df):
+def add_bb_data(data_df, pair=None):
     """
     InstrumentsCandles_exeで取得したデータ（最新時刻が下にある降順データ）に情報を付与する。（ボリンジャーバンド）
     引数はInstrumentsCandles_exeで取得したデータフレーム。返却値は、それに下記列を付与した情報
     """
+    pair = pair or gene.currency_pair("USD_JPY")
     data_df = data_df.copy()  # 謎のスライスウォーニング対策
     bb_range = 30
     # ボリバン基本項目
@@ -1367,7 +1380,7 @@ def add_bb_data(data_df):
     data_df['std'] = data_df['close'].rolling(window=bb_range).std()  # BB用（直後に削除）
     data_df['bb_upper'] = data_df['mean'] + (data_df['std'] * 2)  # BB用
     data_df['bb_lower'] = data_df['mean'] - (data_df['std'] * 2)  # BB用
-    data_df['bb_middle'] = gene.USD_JPY.round_price((data_df['bb_lower'] + data_df['bb_upper']) / 2)
+    data_df['bb_middle'] = pair.round_price((data_df['bb_lower'] + data_df['bb_upper']) / 2)
     data_df['bb_range'] = data_df['bb_upper'] - data_df['bb_lower']  # BB幅
     # 不要項目の削除（timeは連続取得時に利用するため、削除しない）
     data_df.drop(['mean', 'std'], axis=1, inplace=True)  # 不要項目の削除

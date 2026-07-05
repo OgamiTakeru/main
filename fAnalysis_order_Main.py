@@ -134,6 +134,7 @@ class time_analysis():
                 "units": self.units_str,
                 "priority": 100,
                 "decision_time": self.peaks_class.df_r_original.iloc[0]['time_jp'],
+                "pair": getattr(self.ca, "pair", "USD_JPY"),
                 "candle_analysis_class": self.ca
             })
             self.add_order_and_flag_inspecion_class(order_class1)

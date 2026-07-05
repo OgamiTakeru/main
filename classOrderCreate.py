@@ -20,6 +20,7 @@ class Order:
         # ■■
         # 色々なオーダーに必要になる初期値
         self.instrument = "USD_JPY"
+        self.pair_info = gene.currency_pair(self.instrument)
         self.base_oa_mode = 2  # デフォルトの口座は2(両建て用）
         self.basic_unit = 10000
         self.basic_lc_range = 1  # 1円
@@ -27,9 +28,9 @@ class Order:
         self.order_timeout_min_base = 60
         self.lc_change_base = 3  # ベースは０（LCchangeなし）
         # 判定に利用する、初期値
-        self.u = 3  # round時の有効桁数
-        self.dependence_price_or_range_criteria = 80  # ドル円の場合、80以上は価格とみなし、それ以下はrangeとみなす
-        self.dependence_tp_lc_margin = 0.01  # targetとTP/LCとの間が極端に狭いときはウォーニングを出す（すぐ決済になってしまうため）
+        self.u = self.pair_info.round_keta  # round時の有効桁数
+        self.dependence_tp_lc_margin_pips = 1
+        self.dependence_tp_lc_margin = self.pair_info.pips_to_price(self.dependence_tp_lc_margin_pips)  # targetとTP/LCとの間が極端に狭いときはウォーニングを出す
 
         # ■■
         self.data = {}  # Oanda API用のにはこのJsonを送信することでオーダーを発行可能
@@ -90,14 +91,14 @@ class Order:
                     "units": str(self.units * self.direction),
                     "type": self.ls_type,  # "STOP(逆指)" or "LIMIT" or "MARKET"
                     "positionFill": "DEFAULT",
-                    "price": str(round(self.target_price, self.u)),  # 小数点3桁の文字列（それ以外はエラーとなる）
+                    "price": self.pair_info.price_to_str(self.target_price),  # 小数点3桁の文字列（それ以外はエラーとなる）
                     "takeProfitOnFill": {
                         "timeInForce": "GTC",
-                        "price": str(round(self.tp_price, self.u))  # 小数点3桁の文字列（それ以外はエラーとなる）
+                        "price": self.pair_info.price_to_str(self.tp_price)  # 小数点3桁の文字列（それ以外はエラーとなる）
                     },
                     "stopLossOnFill": {
                         "timeInForce": "GTC",
-                        "price": str(round(self.lc_price, self.u))  # 小数点3桁の文字列（それ以外はエラーとなる）
+                        "price": self.pair_info.price_to_str(self.lc_price)  # 小数点3桁の文字列（それ以外はエラーとなる）
                     },
                     # "trailingStopLossOnFill": {
                     #     "timeInForce": "GTC",
@@ -109,8 +110,9 @@ class Order:
         self.exe_order_plan = {
             "decision_time": self.decision_time,
             "units": self.units,
+            "pair": self.instrument,
             "direction": self.direction,
-            "target_price": round(self.target_price, self.u),
+            "target_price": self.pair_info.round_price(self.target_price),
             "lc_price": self.lc_price,  # 途中で変更される可能性あり（常に最新のLC価格を保持する物）
             "lc_range": self.lc_range,
             "tp_price": self.tp_price,  # 途中で変更される可能性あり（常に最新のTP価格を保持する物）
@@ -150,6 +152,7 @@ class Order:
         # ■■
         # 色々なオーダーに必要になる初期値
         self.instrument = "USD_JPY"
+        self.pair_info = gene.currency_pair(self.instrument)
         self.base_oa_mode = 2  # デフォルトの口座は2(両建て用）
         self.basic_unit = 10000
         self.basic_lc_range = 1  # 1円
@@ -157,9 +160,9 @@ class Order:
         self.order_timeout_min_base = 60
         self.lc_change_base = 3  # ベースは０（LCchangeなし）
         # 判定に利用する、初期値
-        self.u = 3  # round時の有効桁数
-        self.dependence_price_or_range_criteria = 80  # ドル円の場合、80以上は価格とみなし、それ以下はrangeとみなす
-        self.dependence_tp_lc_margin = 0.01  # targetとTP/LCとの間が極端に狭いときはウォーニングを出す（すぐ決済になってしまうため）
+        self.u = self.pair_info.round_keta  # round時の有効桁数
+        self.dependence_tp_lc_margin_pips = 1
+        self.dependence_tp_lc_margin = self.pair_info.pips_to_price(self.dependence_tp_lc_margin_pips)  # targetとTP/LCとの間が極端に狭いときはウォーニングを出す
 
         # ■■
         # OandaAPI用のにはこのJsonを送信することでオーダーを発行可能
@@ -215,12 +218,12 @@ class Order:
         最低限必要な情報
         order_base_dic = {
             # 必須項目群
-            "target": 0.00,  # 価格(80以上の値) or Range で正の値。Rangeの場合、decision_priceを基準にPrice(APIに必須）に換算される。
+            "target": 0.00,  # 通貨ペアごとの価格レンジ内なら価格、それ以外はRange。Rangeの場合、decision_priceを基準にPrice(APIに必須）に換算される。
             "type": "STOP",  # 文字列。計算時は数字のほうが楽なため、stop_or_limit変数で数字に置き換えたものも算出（finalize関数)
             "units": OrderCreateClass.basic_unit,
             "expected_direction": 1,
-            "tp": 0.9,  # 80以上の値は価格とみなし、それ以外ならRange(target価格+tpRange。正の値）とする
-            "lc": 0.03,  # 80以上の値は価格とみなし、それ以外ならRange(target価格+lcRange。正の値）とする
+            "tp": 0.9,  # 通貨ペアごとの価格レンジ内なら価格、それ以外ならRange(target価格+tpRange。正の値）とする
+            "lc": 0.03,  # 通貨ペアごとの価格レンジ内なら価格、それ以外ならRange(target価格+lcRange。正の値）とする
             'priority': 0,
             "decision_price": 0,  # "Now"という文字列の場合、この関数で即時取得する。targetがRangeの場合必須。
             "decision_time": "",
@@ -296,6 +299,12 @@ class Order:
         self.name = order_json['name'] + "_" + str(gene.delYearDay(order_json['decision_time']))
         self.name_ymdhms = order_json['name'] + "_" + order_json['decision_time']
 
+        # 通貨の登録(何もなかったらドル円)
+        self.instrument = order_json['pair'] if "pair" in order_json else self.instrument
+        self.pair_info = gene.currency_pair(self.instrument)
+        self.u = self.pair_info.round_keta
+        self.dependence_tp_lc_margin = self.pair_info.pips_to_price(self.dependence_tp_lc_margin_pips)
+
         # priority
         self.priority = order_json['priority']
 
@@ -331,7 +340,7 @@ class Order:
         # ①TargetPriceを確実に取得する
         if 'target' in order_json:
             # 価格で指定されている、と判断される時
-            if order_json['target'] >= self.dependence_price_or_range_criteria:
+            if self.pair_info.is_price(order_json['target']):
                 self.target_price = order_json['target']
             # 現在価格との差分で指定されている、と判断されるとき
             else:
@@ -359,13 +368,13 @@ class Order:
         # TP情報を取得する（TPの値は、クライテリアより小さい値ならRange指定、それ以上は価格直接指定と読み替える）
         if 'tp' in order_json:
             # 価格で指定されている場合
-            if order_json['tp'] >= self.dependence_price_or_range_criteria:
-                self.tp_range = round(abs(self.target_price - order_json['tp']), self.u)  # Rangeを算出
-                self.tp_price = round(order_json['tp'], self.u)  # Priceはそのまま代入
+            if self.pair_info.is_price(order_json['tp']):
+                self.tp_range = self.pair_info.round_price(abs(self.target_price - order_json['tp']))  # Rangeを算出
+                self.tp_price = self.pair_info.round_price(order_json['tp'])  # Priceはそのまま代入
             # レンジで指定されている場合
             else:
-                self.tp_range = round(order_json['tp'], self.u)  # Rangeはそのまま代入
-                self.tp_price = round(self.target_price + (self.tp_range * self.direction), self.u)
+                self.tp_range = self.pair_info.round_price(order_json['tp'])  # Rangeはそのまま代入
+                self.tp_price = self.pair_info.round_price(self.target_price + (self.tp_range * self.direction))
 
             # TPRangeが狭すぎる場合はウォーニングを出す
             if self.tp_range < self.dependence_tp_lc_margin:
@@ -374,13 +383,13 @@ class Order:
         # LC情報を取得する（LCの値は、正の値で指定される。クライテリアより小さい値ならRange指定、それ以上は価格直接指定と読み替える）
         if 'lc' in order_json:
             # 価格で指定されている場合
-            if order_json['lc'] >= self.dependence_price_or_range_criteria:
-                self.lc_range = round(abs(self.target_price - order_json['lc']), self.u) # Rangeを算出
-                self.lc_price = round(order_json['lc'], self.u)  # Priceはそのまま代入
+            if self.pair_info.is_price(order_json['lc']):
+                self.lc_range = self.pair_info.round_price(abs(self.target_price - order_json['lc'])) # Rangeを算出
+                self.lc_price = self.pair_info.round_price(order_json['lc'])  # Priceはそのまま代入
             # レンジで指定されている場合
             else:
-                self.lc_range = round(order_json['lc'], self.u)  # Rangeはそのまま代入
-                self.lc_price = round(self.target_price - (self.lc_range * self.direction), self.u)
+                self.lc_range = self.pair_info.round_price(order_json['lc'])  # Rangeはそのまま代入
+                self.lc_price = self.pair_info.round_price(self.target_price - (self.lc_range * self.direction))
 
             # LCRangeが狭すぎる場合はウォーニングを出す
             if self.lc_range < self.dependence_tp_lc_margin:
@@ -440,14 +449,7 @@ class Order:
         pipsを受け取り、価格で返却する。pips_exchangeに関数名にしたかったけど、式の途中で使うため短めに。
         """
 
-        if pair == "dy":
-            # ドル円ペアの場合
-            yen = pips / 100
-            print("ドル円レートでpipsを円単位に変換", pips, "⇒", yen)
-        else:
-            yen = 0
-            print("おかしなことになっている")
-        return yen
+        return self.pair_info.pips_to_price(pips)
 
 
 

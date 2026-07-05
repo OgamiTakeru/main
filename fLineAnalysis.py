@@ -36,6 +36,9 @@ class LineOrderStrategy:
     units_multiplier = 1
     order_timeout_min = 0
 
+    def pair_info(self):
+        return gene.currency_pair(getattr(self, "pair", "USD_JPY"))
+
     def is_target(self, line_side, line):
         raise NotImplementedError
 
@@ -49,7 +52,8 @@ class LineOrderStrategy:
         return line_price
 
     def build_candidates(self, line_class, current_price):
-        p = gene.USD_JPY
+        self.pair = getattr(line_class, "pair", getattr(self, "pair", "USD_JPY"))
+        p = self.pair_info()
         candidates = []
         for line_side, lines in (
             ("upper", line_class.upper_lines),
@@ -147,7 +151,7 @@ class M5BreakoutLineOrderStrategy(M5LineOrderStrategy):
         return 1 if line_side == "upper" else -1
 
     def get_target_price(self, line_price, line_side):
-        p = gene.USD_JPY
+        p = self.pair_info()
         direction = self.get_direction(line_side)
         return line_price + (
             direction * p.pips_to_price(self.entry_offset_pips)
@@ -160,6 +164,8 @@ class LineOrderCoordinator:
 
     def __init__(self, analysis):
         self.analysis = analysis
+        self.pair = getattr(analysis, "pair", "USD_JPY")
+        self.p = gene.currency_pair(self.pair)
 
     def create_orders(
         self,
@@ -171,6 +177,7 @@ class LineOrderCoordinator:
     ):
         candidates = []
         for strategy, line_class in strategy_lines:
+            strategy.pair = self.pair
             candidates.extend(strategy.build_candidates(line_class, current_price))
         if h1_line_class is not None:
             self._add_h1_context(candidates, h1_line_class)
@@ -702,7 +709,7 @@ class LineOrderCoordinator:
         return "; ".join(parts)
 
     def _add_h1_context(self, candidates, h1_line_class):
-        p = gene.USD_JPY
+        p = self.p
         h1_lines = []
         for line_side, lines in (
             ("upper", h1_line_class.upper_lines),
@@ -759,8 +766,7 @@ class LineOrderCoordinator:
             return None
         return min(lines, key=lambda x: abs(float(x["price"]) - base_price))
 
-    @staticmethod
-    def _h1_line_fields(prefix, item, base_price):
+    def _h1_line_fields(self, prefix, item, base_price):
         if item is None:
             return {
                 prefix + "_side": None,
@@ -772,7 +778,7 @@ class LineOrderCoordinator:
                 prefix + "_is_flipped": None,
             }
 
-        p = gene.USD_JPY
+        p = self.p
         line = item["line"]
         return {
             prefix + "_side": item["side"],
@@ -787,7 +793,7 @@ class LineOrderCoordinator:
         }
 
     def _remove_near_candidates(self, candidates):
-        p = gene.USD_JPY
+        p = self.p
         selected = []
         for candidate in sorted(candidates, key=lambda x: x["distance_pips"]):
             duplicate = None
@@ -919,9 +925,8 @@ class LineOrderCoordinator:
             direction = int(order_plan.get("direction") or 1)
             for_api_json["order"]["units"] = str(abs(new_units) * direction)
 
-    @staticmethod
-    def _apply_rr_to_tp(order_class, rr):
-        p = gene.USD_JPY
+    def _apply_rr_to_tp(self, order_class, rr):
+        p = self.p
         order_plan = order_class.exe_order_plan
         direction = int(order_plan.get("direction") or 1)
         target_price = float(order_plan["target_price"])
@@ -951,7 +956,7 @@ class LineOrderCoordinator:
         decision_time,
         rsi_info,
     ):
-        p = gene.USD_JPY
+        p = self.p
         strategy = candidate["strategy"]
         line = candidate["line"]
         lc_range = p.pips_to_price(strategy.lc_pips)
@@ -983,6 +988,7 @@ class LineOrderCoordinator:
             "units": units,
             "priority": int(line.get("total_strength", 0)),
             "decision_time": decision_time,
+            "pair": self.pair,
             "candle_analysis_class": self.analysis.candle_analysis_all,
             "lc_change_candle_type": "M5",
             "order_timeout_min": strategy.order_timeout_min,
@@ -1051,7 +1057,8 @@ class MainAnalysis:
         self.current_time = candle_analysis.d5_df_r.iloc[0]['time_jp']  # 5分足で判断(0行目を利用）
         self.current_price = candle_analysis.current_price  # candleAnalysisからとる（本番の場合はAPIで最新、解析の場合はclose価格)
         self.mode = mode  # 検証かどうか
-        self.pair = "USD_JPY"
+        self.pair = getattr(candle_analysis, "pair", "USD_JPY")
+        self.p = gene.currency_pair(self.pair)
         print("current_priceの確認(main_analysis)", self.current_price, "移動平均", self.ca5.cal_move_ave(1))
         # 抵抗線関係
         self.exist_strong_line = False
@@ -1199,7 +1206,7 @@ class MainAnalysis:
         if self.mode != "inspection":
             return
 
-        p = gene.USD_JPY
+        p = self.p
         spread_pips = 0.8
         lc_pips = 15
         rr = 1.65
@@ -1287,6 +1294,7 @@ class MainAnalysis:
                 "units": units,
                 "priority": int(line.get("total_strength", 0)),
                 "decision_time": decision_time,
+                "pair": self.pair,
                 "candle_analysis_class": self.candle_analysis_all,
                 "lc_change_candle_type": "M5",
                 "order_timeout_min": 60,
@@ -1317,7 +1325,7 @@ class MainAnalysis:
         if self.mode != "inspection":
             return
 
-        p = gene.USD_JPY
+        p = self.p
         lc_pips = 7.5
         tp_pips = 13
         lc_range = p.pips_to_price(lc_pips)
@@ -1403,6 +1411,7 @@ class MainAnalysis:
                 "units": units,
                 "priority": int(line.get("total_strength", 0)),
                 "decision_time": decision_time,
+                "pair": self.pair,
                 "candle_analysis_class": self.candle_analysis_all,
                 "lc_change_candle_type": "M5",
                 "order_timeout_min": 15,
@@ -1489,7 +1498,7 @@ class MainAnalysis:
         )
 
     def has_similar_order(self, direction, target_price, new_orders, threshold_pips=3, source=None, line_strategy=None):
-        p = gene.USD_JPY
+        p = self.p
         for order_class in list(self.exe_order_classes) + list(new_orders):
             order_plan = getattr(order_class, "exe_order_plan", None)
             if not order_plan:
@@ -1641,7 +1650,7 @@ class MainAnalysis:
         return {
             'status': status,
             'line_type': line_type,
-            'median_diff': gene.USD_JPY.round_price(median_diff),
+            'median_diff': self.p.round_price(median_diff),
             'threshold': threshold,
             'median_3h': median_3h,
             'median_6h': median_6h,
@@ -1656,7 +1665,7 @@ class MainAnalysis:
         # ターン時以外でも実行される
         print("■予測オーダー")
         s = self.s
-        p = gene.USD_JPY
+        p = self.p
         current_price = self.current_price  # self.ca = candle_analysis
         foot = 5
         if foot == 5:
@@ -1922,7 +1931,7 @@ class MainAnalysis:
 
     @staticmethod
     def line_summary_for_message(label, line_class, current_price):
-        p = gene.USD_JPY
+        p = getattr(line_class, "p", gene.currency_pair(getattr(line_class, "pair", "USD_JPY")))
         lines = []
         for side, side_lines in (
             ("upper", line_class.upper_lines),
@@ -1951,7 +1960,7 @@ class MainAnalysis:
             label
             + ": "
             + str(nearest["side"])
-            + " price=" + str(gene.USD_JPY.round_price(float(nearest["price"])))
+            + " price=" + str(p.round_price(float(nearest["price"])))
             + " gap=" + str(round(nearest["distance"], 1)) + "p"
             + " count=" + str(nearest["count"])
             + " strength=" + str(nearest["strength"])
@@ -1969,7 +1978,7 @@ class MainAnalysis:
         """
         # 基本的なUNIT計算
         doller_yen = 10000
-        lc_pips = max(lc_range / 0.01, 0.000000001)  # 下のdeveide0を防ぎたい
+        lc_pips = max(self.p.price_to_pips(lc_range), 0.000000001)  # 下のdeveide0を防ぎたい
         # print("　UNITSを計算する lc_range", lc_range, "pips", lc_pips, "許容損失", risk_yen)
         lot = risk_yen / (lc_pips * yen_per_pip_per_lot)
         units = int(lot * doller_yen)
@@ -2013,12 +2022,11 @@ class LineStrengthCal:
         else:
             from_i = 1
             self.mode = "inspection"
-        self.p = gene.USD_JPY
-
         self.s = "     "
         self.foot = foot
         self.max_line_price_gap_pips = None
-        self.pair = "USD_JPY"
+        self.pair = getattr(candle_analysis_class, "pair", "USD_JPY")
+        self.p = gene.currency_pair(self.pair)
         self.candle_analysis_class = candle_analysis_class  # ローソク情報の全て
         self.time_before_foot_count = time_before_foot_count
 
