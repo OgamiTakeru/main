@@ -3,7 +3,7 @@ import datetime
 import classInspection as ci
 
 
-PAIR = "EUR_USD"
+PAIR = "AUD_USD"
 # Previous inspection ranges kept for quick switching.
 # START_TIME = datetime.datetime(2025, 6, 15, 0, 0, 0)
 # END_TIME = datetime.datetime(2026, 6, 16, 10, 0, 0)

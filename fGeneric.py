@@ -54,10 +54,12 @@ class CurrencyPair:
 
 USD_JPY = CurrencyPair("USD_JPY", 0.01, 3, price_min=80, price_max=200, spread_limit_pips=1.1)
 EUR_USD = CurrencyPair("EUR_USD", 0.0001, 5, price_min=0.5, price_max=2.0, spread_limit_pips=1.5)
+AUD_USD = CurrencyPair("AUD_USD", 0.0001, 5, price_min=0.3, price_max=1.5, spread_limit_pips=1.8)
 
 CURRENCY_PAIRS = {
     USD_JPY.name: USD_JPY,
     EUR_USD.name: EUR_USD,
+    AUD_USD.name: AUD_USD,
 }
 
 

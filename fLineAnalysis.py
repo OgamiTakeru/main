@@ -13,6 +13,7 @@ import requests
 from statistics import median
 from collections import defaultdict
 import math
+from fLineStrategyAudUsd import LineStrategyProfileAudUsd
 from fLineStrategyEurUsd import LineStrategyProfileEurUsd
 from fLineStrategyUsdJpy import (
     LineStrategyProfileUsdJpy,
@@ -34,6 +35,8 @@ gl_unis_std = 0.1  # OrderCreateのベーシックUnitは10000ドル。それに
 
 def line_strategy_profile(pair):
     """Return the line strategy profile for each currency pair."""
+    if pair == "AUD_USD":
+        return LineStrategyProfileAudUsd()
     if pair == "EUR_USD":
         return LineStrategyProfileEurUsd()
     return LineStrategyProfileUsdJpy()
