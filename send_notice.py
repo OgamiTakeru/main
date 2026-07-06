@@ -30,6 +30,8 @@ def is_inspection_notice_message(message):
 
 
 def notice_pair(message=""):
+    if "AUD_USD" in message:
+        return "AUD_USD"
     if "EUR_USD" in message:
         return "EUR_USD"
     if "USD_JPY" in message:
@@ -38,6 +40,8 @@ def notice_pair(message=""):
 
 
 def webhook_url_for_pair(pair):
+    if pair == "AUD_USD":
+        return getattr(tk, "WEBHOOK_URL_audusd", "")
     if pair == "EUR_USD":
         return getattr(tk, "WEBHOOK_URL_eurousd", getattr(tk, "WEBHOOK_URL_friend", ""))
     return getattr(tk, "WEBHOOK_URL_usdyen", getattr(tk, "WEBHOOK_URL_main", ""))
