@@ -1,5 +1,6 @@
 import fGeneric as gene
 import tokens as tk
+import send_notice as notice
 import copy
 
 class Order:
@@ -69,7 +70,7 @@ class Order:
             self.move_ave = order_json['candle_analysis_class'].candle_meta_class.cal_move_ave(1)
             self.candle_analysis = order_json['candle_analysis_class']
         else:
-            tk.line_send("【注意】キャンドルアナリシスが添付されていない注文が発生")
+            notice.line_send("【注意】キャンドルアナリシスが添付されていない注文が発生")
             print("candle_analysis_classがない")
             print(order_json)
 
@@ -201,7 +202,7 @@ class Order:
             self.move_ave = order_json['candle_analysis_class'].candle_meta_class.cal_move_ave(1)
             self.candle_analysis = order_json['candle_analysis_class']
         else:
-            tk.line_send("【注意】キャンドルアナリシスが添付されていない注文が発生 in updatePlan")
+            notice.line_send("【注意】キャンドルアナリシスが添付されていない注文が発生 in updatePlan")
             print("candle_analysis_classがない")
             print(order_json)
 

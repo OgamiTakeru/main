@@ -17,6 +17,7 @@ import oandapyV20.endpoints.transactions as trans
 import fGeneric as gene
 
 import tokens as tk  # エラーをLINEするため。。
+import send_notice as notice
 
 
 class Oanda:
@@ -263,7 +264,7 @@ class Oanda:
             if 'orderCancelTransaction' in res_json:
                 print("   ■■■OrderCANCELあり(エラーによるorderReject)")
                 print(res_json)
-                tk.line_send("オーダーエラー", res_json)
+                notice.line_send("オーダーエラー", res_json)
                 canceled = True
                 order_id = 0
                 order_time = 0
@@ -934,7 +935,7 @@ class Oanda:
         # エラーの種類によって表示やLINE送信を行う。
         if "OrderDetail" in name and not self.already_error_send1:
             self.already_error_send1 = True  # 一度きりの送信
-            tk.line_send("オーダーDetailエラー ", id_errered)
+            notice.line_send("オーダーDetailエラー ", id_errered)
             # tk.line_send("おかしなオーダーdetailエラー発生⇒", e)
 
         # if name == "価格情報取得":
@@ -944,7 +945,7 @@ class Oanda:
         if past_sec > 10:
             print("   時間切れエラー？")
         elif name == "オーダー" or name == "TradeClose":
-            tk.line_send("オーダーエラー")
+            notice.line_send("オーダーエラー")
         else:
             pass
             # tk.line_send("エラー")

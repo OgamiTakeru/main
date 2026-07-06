@@ -11,6 +11,7 @@ import fAnalysis_order_Main as am
 import fGeneric as gene
 import fLineAnalysis as ti
 import tokens as tk
+import send_notice as notice
 
 
 class Inspection:
@@ -250,7 +251,7 @@ class Inspection:
         elapsed_minutes = elapsed_seconds / 60
         print("Inspection elapsed seconds:", round(elapsed_seconds, 1))
         print("Inspection elapsed minutes:", round(elapsed_minutes, 2))
-        tk.line_send("検証 終了しました", str(round(elapsed_minutes, 2)) + "分")
+        notice.line_send("検証 終了しました", str(round(elapsed_minutes, 2)) + "分")
 
     @staticmethod
     def add_months(base_time, months):
@@ -290,7 +291,7 @@ class Inspection:
                 + "分"
             )
             print(message)
-            tk.line_send(message)
+            notice.line_send(message)
             self.next_progress_notice_time = self.add_months(
                 self.next_progress_notice_time,
                 self.progress_notice_months,

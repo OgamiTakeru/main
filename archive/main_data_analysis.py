@@ -1,5 +1,6 @@
 import datetime
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
+import send_notice as notice
 import classOanda as oanda_class
 import fAnalysis_order_Main as am
 import classCandleAnalysis as ca
@@ -42,7 +43,7 @@ for _, row in df_part.iterrows():
 lines.append(f"{a_sum:>{max_width}}, 合計, -")
 output_str = "\n".join(lines)
 print(output_str)
-tk.line_send("■■■検証期間LONG:", "\n", output_str)
+notice.line_send("■■■検証期間LONG:", "\n", output_str)
 
 # pivot送信
 # ピボット：A列でまとめ、resは合計、woは件数（count）
@@ -63,7 +64,7 @@ for _, row in summary.iterrows():
 
 pivot_str = "\n".join(lines)
 # print(pivot_str)
-tk.line_send("■■■検証期間LONG:", "\n", pivot_str)
+notice.line_send("■■■検証期間LONG:", "\n", pivot_str)
 
 # res = oa.OpenTrades_exe()
 # print(res['json'])

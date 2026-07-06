@@ -4,6 +4,7 @@ from datetime import timedelta
 import pandas as pd
 from collections import defaultdict
 import tokens as tk
+import send_notice as notice
 import fGeneric as gene
 import fGeneric as f
 import copy
@@ -140,7 +141,7 @@ class PeaksClass:
 
         # たまに起きる謎のエラー対応
         if len(self.peaks_original) <= 2:
-            tk.line_send("データがうまくとれていない。", len(original_df_r), "行のみ")
+            notice.line_send("データがうまくとれていない。", len(original_df_r), "行のみ")
         self.skipped_peaks = self.skip_peaks()  # スキップピークの算出
         self.skipped_peaks_hard = self.skip_peaks_hard()
         self.recalculation_peak_strength_for_peaks(self.peaks_original)  # ピークストレングスの算出

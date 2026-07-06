@@ -3,6 +3,7 @@ from datetime import timedelta
 import pandas as pd
 from collections import defaultdict
 import tokens as tk
+import send_notice as notice
 import fGeneric as gene
 import fGeneric as f
 import copy
@@ -188,7 +189,7 @@ class candleAnalysis:
                                                                   1)  # 時間昇順(直近が最後尾）
             if d5_df_res['error'] == -1:
                 print("error Candle")
-                tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                notice.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 d5_df_latest_bottom = d5_df_res['data']
@@ -200,7 +201,7 @@ class candleAnalysis:
                                                                    1)  # 時間昇順(直近が最後尾）
             if h1_df_res['error'] == -1:
                 print("error Candle")
-                tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                notice.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 h1_df_latest_bottom = h1_df_res['data']
@@ -212,7 +213,7 @@ class candleAnalysis:
                                                                   1)  # 時間昇順(直近が最後尾）
             if s5_df_res['error'] == -1:
                 print("error Candle")
-                tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                notice.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 s5_df_latest_bottom = s5_df_res['data']
@@ -224,7 +225,7 @@ class candleAnalysis:
                                                                    1)  # 時間昇順(直近が最後尾）
             if d30_df_res['error'] == -1:
                 print("error Candle")
-                tk.line_send("30分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                notice.line_send("30分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 m30_df_latest_bottom = d30_df_res['data']
@@ -249,7 +250,7 @@ class candleAnalysis:
             d5_df_res = self.base_oa.InstrumentsCandles_exe(self.pair, param) # 時間昇順(直近が最後尾）
             if d5_df_res['error'] == -1:
                 print("error Candle")
-                tk.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                notice.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 d5_df_latest_bottom = d5_df_res['data']
@@ -260,7 +261,7 @@ class candleAnalysis:
             h1_df_res = self.base_oa.InstrumentsCandles_exe(self.pair, param) # 時間昇順(直近が最後尾）
             if h1_df_res['error'] == -1:
                 print("error Candle")
-                tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                notice.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 h1_df_latest_bottom = h1_df_res['data']
@@ -271,7 +272,7 @@ class candleAnalysis:
             s5_df_res = self.base_oa.InstrumentsCandles_exe(self.pair, param)  # 時間昇順(直近が最後尾）
             if s5_df_res['error'] == -1:
                 print("error Candle")
-                tk.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                notice.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 s5_df_latest_bottom = s5_df_res['data']
@@ -282,7 +283,7 @@ class candleAnalysis:
             d30_df_res = self.base_oa.InstrumentsCandles_exe(self.pair, param)  # 時間昇順(直近が最後尾）
             if d30_df_res['error'] == -1:
                 print("error Candle")
-                tk.line_send("30分ごと調査最初のデータフレーム取得に失敗（エラー）")
+                notice.line_send("30分ごと調査最初のデータフレーム取得に失敗（エラー）")
                 return -1
             else:
                 m30_df_latest_bottom = d30_df_res['data']

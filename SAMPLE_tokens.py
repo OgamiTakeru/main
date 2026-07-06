@@ -22,7 +22,11 @@ TOKEN_dic = {'Authorization': 'Bearer' + ' ' + TOKEN}
 send_dic = {'message': 'Order'}
 
 # DiscordURL
-WEBHOOK_URL_main = ""
+WEBHOOK_URL_usdyen = ""
+WEBHOOK_URL_inspection = ""
+WEBHOOK_URL_eurousd = ""
+WEBHOOK_URL_main = WEBHOOK_URL_usdyen
+WEBHOOK_URL_friend = WEBHOOK_URL_eurousd
 
 def line_send(*msg):
     # 関数は可変複数のコンマ区切りの引数を受け付ける

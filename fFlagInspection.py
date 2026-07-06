@@ -4,6 +4,7 @@ import fPeakInspection as p  # とりあえずの関数集
 import fGeneric as gene
 import fDoublePeaks as dp
 import tokens as tk
+import send_notice as notice
 import classPosition as classPosition  # とりあえずの関数集
 
 import fPeakInspection as peak_inspection
@@ -493,7 +494,7 @@ def yobi_cal_strength_of_same_price_list(same_price_list, peaks, base_price, lat
     # 当面の検証用
     if len_of_same_price_list >= 4:
         print("４個以上のLINE形成ポイント有！！！！", base_price)
-        tk.line_send("４個以上のLINE形成ポイント有！！！！", base_price)
+        notice.line_send("４個以上のLINE形成ポイント有！！！！", base_price)
 
     # print("テスト用", remark)
     # 返却値の整理

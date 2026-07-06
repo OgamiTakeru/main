@@ -7,6 +7,7 @@ import pandas as pd
 import classCandleAnalysis as ca
 import classOrderCreate as OCreate
 import tokens as tk
+import send_notice as notice
 from datetime import datetime, timedelta
 import requests
 from statistics import median
@@ -135,6 +136,10 @@ class LineOrderCoordinator:
         return filtered
 
     def _recommended_reasons(self, candidate, rsi_info, decision_time):
+        session_info = self.get_session_info(decision_time)
+        candidate["session_name"] = session_info["session_name"]
+        candidate["session_hour"] = session_info["session_hour"]
+        candidate["session_time"] = session_info["session_time"]
         latest_peak_info = self._latest_peak_info(candidate["timeframe"])
         candidate["latest_peak_dir"] = latest_peak_info["direction"]
         candidate["latest_peak_count"] = latest_peak_info["count"]
@@ -650,7 +655,7 @@ class MainAnalysis:
                     "parse": ["everyone"]
                 }
                 }
-        requests.post(tk.WEBHOOK_URL_main, json=data)
+        requests.post(notice.webhook_url_for_pair(self.pair), json=data)
         print("     [Disc]", message)  # コマンドラインにも表示
 
     def add_order_to_this_class(self, order_class):
@@ -1295,7 +1300,7 @@ class MainAnalysis:
             current_price,
             decision_time,
         )
-        tk.line_send(message)
+        notice.line_send(message)
 
     def build_count2_line_no_order_message(
         self,

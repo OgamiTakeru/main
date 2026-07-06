@@ -180,7 +180,7 @@ class order_information:
 
             if order_ans['cancel']:  # キャンセルされている場合は、リセットする
                 print("      ↑オーダーキャンセル発生", self.name)
-                tk.line_send(" 　Order不成立（今後ループの可能性）", order_ans['order_id'])
+                notice.line_send(" 　Order不成立（今後ループの可能性）", order_ans['order_id'])
             else:
                 print("      ↑オーダー発行完了")
                 self.life_set(True)  # LIFEのONはここでのみ実施
@@ -218,7 +218,7 @@ class order_information:
             else:
                 self.position['state'] = "CLOSED"
                 self.life_set(False)
-                tk.line_send("  ポジション解消", self.position['id'], self.position['pips'])
+                notice.line_send("  ポジション解消", self.position['id'], self.position['pips'])
         else:
             # print("    position無し")
             oa.print_i("    position無し")
@@ -242,11 +242,11 @@ class order_information:
             if self.order['state'] == "PENDING" and temp['order_state'] == 'FILLED':  # 現orderあり⇒約定（取得時）
                 gl_position_num = gl_position_num + 1
                 oa.print_i("  ★position取得！", self.name, gl_position_num, self.order['direction'])
-                tk.line_send("  (取得)", self.name, gl_position_num, "個目", datetime.datetime.now().replace(microsecond=0))
+                notice.line_send("  (取得)", self.name, gl_position_num, "個目", datetime.datetime.now().replace(microsecond=0))
             elif self.order['state'] == "PENDING" and temp['position_state'] == 'CLOSED':  # 現orderあり⇒ポジクローズ
                 oa.print_i("  ★即ポジ即解消済！")
                 self.life_set(False)
-                tk.line_send("即ポジ即解消！", self.name, datetime.datetime.now().replace(microsecond=0))
+                notice.line_send("即ポジ即解消！", self.name, datetime.datetime.now().replace(microsecond=0))
             elif self.position['state'] == "OPEN" and temp['position_state'] == "CLOSED":  # 現ポジあり⇒ポジ無し（終了時）
                 oa.print_i("  ★position解消")
                 self.life_set(False)
@@ -265,13 +265,13 @@ class order_information:
                 res5 = "【合計】計" + str(gl_total_pips) + ",計" + str(gl_total_yen) + "円"
                 now_time_only = oanda_class.str_to_time_hms(str(datetime.datetime.now().replace(microsecond=0)))
                 # res4 = "【Win/All】" + str(gl_trade_win) + "/" + str(gl_trade_num)
-                tk.line_send(" ▲解消:", gl_live, now_time_only, '\n',
+                notice.line_send(" ▲解消:", gl_live, now_time_only, '\n',
                              res4, res5, res1, id_info, res2, res3)
                 # 逆思想のLCを抑える（将来的には広げる試験もしたい）
             elif self.order['state'] == "PENDING" and temp['order_state'] == 'CANCELLED':  # （取得時）
                 # oa.print_i("  ★orderCancel")
                 # self.life_set(False)
-                # tk.line_send("　　orderCancel！", self.name, datetime.datetime.now().replace(microsecond=0))
+                # notice.line_send("　　orderCancel！", self.name, datetime.datetime.now().replace(microsecond=0))
                 pass
             else:
                 # print(" 　　状態変化なし")
@@ -308,7 +308,7 @@ class order_information:
             # (4)矛盾系の状態を解消する（部分解消などが起きた場合に、idがあるのにStateがないなど、矛盾があるケースあり。
             if self.position['id'] != 0 and self.position['state'] == 0:
                 # positionIDがあるのにStateが登録されていない⇒エラー
-                tk.line_send("  ID矛盾発生⇒強制解消処理", self.position['id'], self.position['state'])
+                notice.line_send("  ID矛盾発生⇒強制解消処理", self.position['id'], self.position['state'])
                 self.print_all()  # 何が起きているのか確認用の表示
                 self.reset()
 
@@ -322,7 +322,7 @@ class order_information:
             # 時間による解消を行う
             if self.order['time_past'] > self.order_timeout * 60 and self.order['state'] == "PENDING":
                 print("   時間解消@")
-                tk.line_send("   時間解消@", self.name, self.order['time_past'])
+                notice.line_send("   時間解消@", self.name, self.order['time_past'])
                 self.close_order()
         else:
             # LifeがFalseの場合
@@ -356,11 +356,11 @@ class order_information:
                     res = oa.TradeCRCDO_exe(p['id'], data)  # ポジションを変更する
                     # CDCRO結果の判定
                     if res['error'] == -1:
-                        tk.line_send("CRCDミス", self.api_try_num, res['past_sec'])
+                        notice.line_send("CRCDミス", self.api_try_num, res['past_sec'])
                     else:
                         self.crcdo_sec_counter = p['time_past']  # 変更時の経過時点を記録しておく
                         self.crcdo_history = True
-                        tk.line_send("　(LC底上げ)", self.name, self.order['lc_price'],  "⇒", self.crcdo_lc_price,
+                        notice.line_send("　(LC底上げ)", self.name, self.order['lc_price'],  "⇒", self.crcdo_lc_price,
                                      "Border:", self.crcdo_border, "保証", self.crcdo_guarantee)
                 # （２）深いマイナスから復帰した場合
                 if abs(self.pips_lose_max) > 0.05 and self.position['pips'] > 0.03:
@@ -372,11 +372,11 @@ class order_information:
                     res = oa.TradeCRCDO_exe(p['id'], data)  # ポジションを変更する
                     # CDCRO結果の判定
                     if res['error'] == -1:
-                        tk.line_send("CRCDミス", self.api_try_num, res['past_sec'])
+                        notice.line_send("CRCDミス", self.api_try_num, res['past_sec'])
                     else:
                         self.crcdo_sec_counter = p['time_past']  # 変更時の経過時点を記録しておく
                         self.crcdo_history = True
-                        tk.line_send("　(LC底上げ★)", self.name, self.order['lc_price'],  "⇒", self.crcdo_lc_price,
+                        notice.line_send("　(LC底上げ★)", self.name, self.order['lc_price'],  "⇒", self.crcdo_lc_price,
                                      "Border:", self.crcdo_border, "保証", self.crcdo_guarantee)
 
     def lc_change_by_time(self):  # ポジションのLC底上げを実施 (最初の数分(秒単位で指定）はLC幅を広げておく、等で利用可能）
@@ -413,14 +413,14 @@ class order_information:
                 # res = oa.TradeCRCDO_exe(p['id'], data)  # ポジションを変更する
                 # # CDCRO結果の判定
                 # if res['error'] == -1:
-                #     tk.line_send("CRCDミス(時間)", self.api_try_num, res['past_sec'])
+                #     notice.line_send("CRCDミス(時間)", self.api_try_num, res['past_sec'])
                 # else:
                 #     self.crcdo_history_by_time = True
-                #     tk.line_send("　(時間LC底上げ)", self.order['lc_price'], "(", self.plan['lc_range'] + ")"
+                #     notice.line_send("　(時間LC底上げ)", self.order['lc_price'], "(", self.plan['lc_range'] + ")"
                 #         , "⇒", lc_price, "(",  target_lc, ")", self.name, crcdo_lc_price_o, crcdo_lc_price_n, "now", p['price'])
 
                 self.crcdo_history_by_time = True  # 時間によるLC短縮処理の完了
-                tk.line_send("　(時間LC底上げ)", self.order['lc_price'], "(", self.plan['lc_range'] , ")"
+                notice.line_send("　(時間LC底上げ)", self.order['lc_price'], "(", self.plan['lc_range'] , ")"
                              , "⇒", lc_price, "(",  target_lc, ")", self.name, crcdo_lc_price_o, crcdo_lc_price_n, "now", p['price'])
 
     def trail(self):  # ポジションのトレールを設定（LCの底上げとは別に考える）
@@ -451,12 +451,12 @@ class order_information:
                         self.crcdo_lc_price = temp_lc_price  # ロスカ変更後のLCラインを保存
                         # CDCRO結果の判定
                         if res['error'] == -1:
-                            tk.line_send("CRCDミス", self.api_try_num, res['past_sec'])
+                            notice.line_send("CRCDミス", self.api_try_num, res['past_sec'])
                         else:
                             self.crcdo_set = True  # main本体で、ポジションを取る関数で解除する
                             self.crcdo_sec_counter = p['time_past']  # 変更時の経過時点を記録しておく
                             print("[TR]" + self.name + str(self.crcdo_lc_price))
-                            # tk.line_send("　(TR)", self.name, before_lc_price, "⇒", self.changedLcPrice, ",確保:",
+                            # notice.line_send("　(TR)", self.name, before_lc_price, "⇒", self.changedLcPrice, ",確保:",
                             #              round(temp_lc_range, 3), ",全:", p['pips'],
                             #              datetime.datetime.now().replace(microsecond=0))
                     else:
@@ -550,7 +550,7 @@ def order_setting(class_order_arr, info_l):
         target_class.crcdo_self_trail_exe = order_info_temp["crcdo_self_trail_exe"]  # トレールは実施しない
 
     # 送信は一回だけにしておく。
-    tk.line_send("■折返Position！", gl_live, gl_trade_num, "回目(", datetime.datetime.now().replace(microsecond=0), ")",
+    notice.line_send("■折返Position！", gl_live, gl_trade_num, "回目(", datetime.datetime.now().replace(microsecond=0), ")",
                  "トリガー:", trigger, "指定価格",price, "情報:", memo, ",オーダー:", '\n', o_memo,
                  "Range:", info_l, "プラスLC調整", adj_flag,
                  "初回時間", gl_first_time, "com")

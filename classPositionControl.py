@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import classOanda
 import tokens as tk
+import send_notice as notice
 import fGeneric as gene
 import classPosition as classPosition  # とりあえずの関数集
 import archive.classPositionForTest as testClassPosition
@@ -196,11 +197,11 @@ class position_control:
             print(" プログラム上既存のオーダーは存在しないため、オーダー発行へ")
             pass
         elif len(alive_classes) == len(allowed_position_slot):
-            tk.line_send("許容スロットがいっぱい（オーダー発行せず)", len(alive_classes), len(allowed_position_slot))
+            notice.line_send("許容スロットがいっぱい（オーダー発行せず)", len(alive_classes), len(allowed_position_slot))
             self.print_classes_and_count()
             return 0
         elif len(order_classes) + len(alive_classes) > len(allowed_position_slot):
-            tk.line_send("オーダー入れるとオーバーフロー（オーダー発行せず)", len(order_classes), len(alive_classes), len(allowed_position_slot))
+            notice.line_send("オーダー入れるとオーバーフロー（オーダー発行せず)", len(order_classes), len(alive_classes), len(allowed_position_slot))
             self.print_classes_and_count()
             return 0
         else:
@@ -389,7 +390,7 @@ class position_control:
             if tk.setting_json['hedge_close_on']:
                 pass
             else:
-                tk.line_send(te)
+                notice.line_send(te)
                 l.close_trade()
                 s.close_trade()
 
@@ -582,13 +583,13 @@ class position_control:
                     # tk.line_send(" 謎の状態(分岐前）　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:", item.name, ",life=", item.life, ",try_num", item.try_update_num)
                     if item.try_update_num <= item.try_update_limit:
                         # まだ何回か確認するまで、LifeはFalseにしない
-                        tk.line_send(" 謎の状態(pc_438)　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:",
+                        notice.line_send(" 謎の状態(pc_438)　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:",
                                      item.name,
                                      ",life=", item.life, ",try_num", item.try_update_num, "回目　⇒再トライ")
                         item.count_up_position_check()  # 対象ポジションのtry_update_numをカウントアップする
                     else:
                         item.life_set(False)  # 強制的にクローズ
-                        tk.line_send(" 謎の状態(pc_438)　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:",
+                        notice.line_send(" 謎の状態(pc_438)　t_state=", item.t_state, ",o_state=", item.o_state, ", 名前:",
                                      item.name,
                                      ",life=", item.life, ",try_num", item.try_update_num, "回目のため終了（lifeFalse)")
             # else:

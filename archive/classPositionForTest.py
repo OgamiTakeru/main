@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import classOanda
 import tokens as tk
+import send_notice as notice
 import fGeneric as gene
 import gc
 import numpy as np
@@ -323,7 +324,7 @@ class order_information:
         各メソッドからsendすると、「本番環境の場合はLINE送ってPracticeの場合に送らない」が面倒くさいので、いったんここを噛ませる
         """
         if self.is_live:  # is_liveがTrueは本番（lifeと紛らわしいが、、）
-            tk.line_send(*args)
+            notice.line_send(*args)
         else:
             print(" 練習用送信関数")
             # 練習用であることの接頭語の追加
@@ -332,14 +333,14 @@ class order_information:
                 # 中身を編集するため、一度リストに変換
                 args_list = list(args)
                 args_list[1] = "□□□解消:"  # ぱっとわかりやすいように変更
-                tk.line_send(*tuple(args_list))
+                notice.line_send(*tuple(args_list))
             elif args[1] == "■■■オーダー解消":
                 # 中身を編集するため、一度リストに変換
                 args_list = list(args)
                 args_list[1] = "□□□解消:"  # ぱっとわかりやすいように変更
-                tk.line_send(*tuple(args_list))
+                notice.line_send(*tuple(args_list))
             else:
-                tk.line_send(*args)
+                notice.line_send(*args)
 
     def order_plan_registration(self, order_class):
         """
@@ -407,9 +408,9 @@ class order_information:
             self.lc_change_dic_arr = plan['lc_change']  # 辞書を丸ごと
             # おかしいのでテスト用
             if 'time_done' in self.lc_change_dic_arr[0]:
-                tk.line_send("最初からLCChangeのDone時間が入っているNG classPosition.py ３３０行目付近")
+                notice.line_send("最初からLCChangeのDone時間が入っているNG classPosition.py ３３０行目付近")
         else:
-            tk.line_send("lcLineミス classPosition.py ３３０行目付近")
+            notice.line_send("lcLineミス classPosition.py ３３０行目付近")
 
         # (7)ポジションがある基準を超えている時間を継続する(デフォルトではコンストラクタで０が入る）
         if "win_lose_border_range" in plan:
@@ -735,7 +736,7 @@ class order_information:
         # # 改行で結合
         # lines.append(f"{a_sum:>{max_width}}")
         # output_str = "\n".join(lines)
-        # tk.line_send("■■■:", "\n", output_str)
+        # notice.line_send("■■■:", "\n", output_str)
         #
         # # ③ピボット結果の送信
         # temp = pd.read_csv(path)
@@ -752,7 +753,7 @@ class order_information:
         #     lines.append(line)
         # pivot_str = "\n".join(lines)
         # print(pivot_str)
-        # tk.line_send("■■■:", "\n", pivot_str)
+        # notice.line_send("■■■:", "\n", pivot_str)
 
     def update_dataframe(self, new_data_dic):
         """
@@ -1225,7 +1226,7 @@ class order_information:
                         "(" + str(round(self.alert_price, 3)) + ")" + \
                         ", 取得価格:" + str(
                 order_res['order_result']['execution_price']) + ",\n"
-            # tk.line_send(line_send)
+            # notice.line_send(line_send)
         else:
             order_res['order_result'] = "この処理はオーダー失敗の可能性大"
 
@@ -1291,7 +1292,7 @@ class order_information:
                     # print("オーダー/ウォッチタイムアウト(またはgap_seconds_from_start_watchingが０でウォッチ状態ではない)",
                     #       self.order_register_time, "から", self.order_timeout_min ,"分経過,", gap_seconds_from_start_watching)
                     self.close_order()
-                    # tk.line_send("ウォンチングのみのオーダーを解消", self.name)
+                    # notice.line_send("ウォンチングのみのオーダーを解消", self.name)
                     return 0
                 else:
                     # ウォッチの時間は時間内、または０ではなないため、このまま継続
@@ -1348,7 +1349,7 @@ class order_information:
                     exe_order = True
             # ■状態通知用
             if not self.watching_position_done_send_line:
-                # tk.line_send("初回のポジションウォッチング状態(STOP):", self.name)
+                # notice.line_send("初回のポジションウォッチング状態(STOP):", self.name)
                 self.watching_position_done_send_line = True
             # ■実行
             if exe_order:
@@ -1395,7 +1396,7 @@ class order_information:
                     #     self.order_register_time, "から", self.order_timeout_min, "分経過,",
                     #     gap_seconds_from_start_watching)
                     self.close_order()
-                    # tk.line_send("ウォンチングのみのオーダーを解消", self.name)
+                    # notice.line_send("ウォンチングのみのオーダーを解消", self.name)
                     return 0
                 else:
                     # ウォッチの時間は時間内、または０ではなないため、このまま継続
@@ -1438,13 +1439,13 @@ class order_information:
                         self.step1_filled_time = now_time
                         self.step1_filled_over_price = temp_price - now_price
                         # print("　STEP1初回成立　買い方向の逆張りで、初めて下回った　⇒逆方向伸び状態", now_time)
-                        # tk.line_send("LIMIT step1達成（買い逆）", self.name)
+                        # notice.line_send("LIMIT step1達成（買い逆）", self.name)
                     if o_dir == -1 and now_price > temp_price:
                         self.step1_filled = True
                         self.step1_filled_time = now_time
                         self.step1_filled_over_price = now_price - temp_price
                         # print("　STEP1初回成立　売り方向の逆張りで、初めて上回っている　⇒逆方向伸び状態", now_time)
-                        # tk.line_send("LIMIT　step1達成（売り逆）", self.name)
+                        # notice.line_send("LIMIT　step1達成（売り逆）", self.name)
 
             # ■Step2(一度ボーダーをオーダーと逆方向に越えた後、オーダーしたい方向に戻ってきている)の状況を確認
             order_exe = False
@@ -1612,7 +1613,7 @@ class order_information:
                 seconds = diff_seconds.total_seconds()
                 # 2時間 = 7200 秒以上離れているか判定
                 # if seconds >= 2 * 60 * 60 and self.no_lc_change:
-                #     tk.line_send("LC_CHANGEがうまく発動しない可能性あり[", i, "]過去実行時間,", item['time_done'], self.name,
+                #     notice.line_send("LC_CHANGEがうまく発動しない可能性あり[", i, "]過去実行時間,", item['time_done'], self.name,
                 #                  self.first_lc_change_time, self.no_lc_change, "1519行目cPosi")
                 #     gene.print_arr(self.lc_change_dic_arr)
                 #     self.no_lc_change = False  # 念のため
@@ -1621,7 +1622,7 @@ class order_information:
                 #     # print("  　LCChange　確認用(おかしくない）　最初のLC時刻", self.first_lc_change_time, i)
                 #
                 # if i == 0 and self.no_lc_change:
-                #     tk.line_send("LC_CHANGEがうまく発動しない可能性あり", i, "過去実行時間,", item['time_done'])
+                #     notice.line_send("LC_CHANGEがうまく発動しない可能性あり", i, "過去実行時間,", item['time_done'])
                 #     gene.print_arr(self.lc_change_dic_arr)
                 #     self.no_lc_change = False  # 念のため
                 continue
@@ -1841,7 +1842,7 @@ class order_information:
                 # tp_range = tp_up_border_minus  # とりあえずそこそこをTPにする場合
                 tp_range = abs(latest_plu * 0.8)  # 負け分をそのままTPにする場合
                 lc_change_type = 4  # LCchangeの設定なし
-                # tk.line_send("取り返し調整発生")
+                # notice.line_send("取り返し調整発生")
             else:
                 # 直近がプラスの場合プラスの場合、普通。
                 print("  ★前回プラスのため、通常TP設定")

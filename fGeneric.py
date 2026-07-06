@@ -14,12 +14,14 @@ class CurrencyPair:
             round_keta: int | None = None,
             price_min: float | None = None,
             price_max: float | None = None,
+            spread_limit_pips: float = 1.1,
     ):
         self.name = name
         self.pip_value = pip_value
         self.round_keta = round_keta if round_keta is not None else self.default_round_keta(pip_value)
         self.price_min = price_min
         self.price_max = price_max
+        self.spread_limit_pips = spread_limit_pips
 
     @staticmethod
     def default_round_keta(pip_value):
@@ -50,8 +52,8 @@ class CurrencyPair:
         return result
 
 
-USD_JPY = CurrencyPair("USD_JPY", 0.01, 3, price_min=80, price_max=200)
-EUR_USD = CurrencyPair("EUR_USD", 0.0001, 5, price_min=0.5, price_max=2.0)
+USD_JPY = CurrencyPair("USD_JPY", 0.01, 3, price_min=80, price_max=200, spread_limit_pips=1.1)
+EUR_USD = CurrencyPair("EUR_USD", 0.0001, 5, price_min=0.5, price_max=2.0, spread_limit_pips=1.5)
 
 CURRENCY_PAIRS = {
     USD_JPY.name: USD_JPY,
@@ -63,6 +65,15 @@ def currency_pair(pair_name: str) -> CurrencyPair:
     if pair_name not in CURRENCY_PAIRS:
         raise ValueError(f"Unsupported currency pair: {pair_name}")
     return CURRENCY_PAIRS[pair_name]
+
+
+currentPair = USD_JPY
+
+
+def set_current_pair(pair_name: str) -> CurrencyPair:
+    global currentPair
+    currentPair = currency_pair(pair_name)
+    return currentPair
 
 
 def draw_graph(mid_df):

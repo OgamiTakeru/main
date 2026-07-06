@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import classOanda
 import tokens as tk
+import send_notice as notice
 import fGeneric as gene
 import gc
 import traceback
@@ -369,7 +370,7 @@ class order_information:
         各メソッドからsendすると、「本番環境の場合はLINE送ってPracticeの場合に送らない」が面倒くさいので、いったんここを噛ませる
         """
         if self.is_live:  # is_liveがTrueは本番（lifeと紛らわしいが、、）
-            tk.line_send(*args)
+            notice.line_send(*args)
         else:
             print(" 練習用送信関数")
             # 練習用であることの接頭語の追加
@@ -378,14 +379,14 @@ class order_information:
                 # 中身を編集するため、一度リストに変換
                 args_list = list(args)
                 args_list[1] = "□□□解消:"  # ぱっとわかりやすいように変更
-                tk.line_send(*tuple(args_list))
+                notice.line_send(*tuple(args_list))
             elif args[1] == "■■■オーダー解消":
                 # 中身を編集するため、一度リストに変換
                 args_list = list(args)
                 args_list[1] = "□□□解消:"  # ぱっとわかりやすいように変更
-                tk.line_send(*tuple(args_list))
+                notice.line_send(*tuple(args_list))
             else:
-                tk.line_send(*args)
+                notice.line_send(*args)
 
     def order_plan_registration(self, order_class):
         """
@@ -458,7 +459,7 @@ class order_information:
             else:
                 self.lc_change_dic_arr = plan['lc_change']  # 辞書を丸ごと
         else:
-            tk.line_send("lcLineミス classPosition.py ３３０行目付近")
+            notice.line_send("lcLineミス classPosition.py ３３０行目付近")
 
         # (7)ポジションがある基準を超えている時間を継続する(デフォルトではコンストラクタで０が入る）
         if "win_lose_border_range" in plan:
@@ -902,7 +903,7 @@ class order_information:
         # if len(self.linkage_order_classes) != 0:
         #     target_order = self.linkage_order_classes[0]
         #     if "_r_" in self.name and self.t_realize_pl >= 0:
-        #         tk.line_send("rがプラスで終わったので、ポジションリンケージ先を解消", self.t_realize_pl, "解消先",
+        #         notice.line_send("rがプラスで終わったので、ポジションリンケージ先を解消", self.t_realize_pl, "解消先",
         #                      target_order)
         #         target_position_class =
 
@@ -1130,7 +1131,7 @@ class order_information:
                 # まだ相手がオーダーの状態であれば、クローズしてしまう
                 pass
                 linkage_class.close_order()
-                tk.line_send("リンケージオーダーのクローズ", linkage_class.name, "　約定した方⇒", self.name)
+                notice.line_send("リンケージオーダーのクローズ", linkage_class.name, "　約定した方⇒", self.name)
             else:
                 # 相手の状態が既にキャンセルか約定済みの場合
                 print(" リンケージオーダークローズ　相手の状態", linkage_class.name, linkage_class.o_state,
@@ -1281,8 +1282,19 @@ class order_information:
         # (0)現在価格の取得
         temp_current_price = self.oa.NowPrice_exe(self.pair)
         self.current_price_all = temp_current_price
+        now_price_error_detail = (
+            "NowPrice_exe error detail(update_information):",
+            "pair=", self.pair,
+            "name=", self.name,
+            "method=", temp_current_price.get("method"),
+            "past_sec=", temp_current_price.get("past_sec"),
+            "now_time=", temp_current_price.get("now_time"),
+            "error_code=", repr(temp_current_price.get("error_code")),
+            "raw=", temp_current_price,
+        )
         # print("@@@@@@@@@@@@@@@@@1280 pasition", self.current_price_all)
         if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
+            print(*now_price_error_detail)
             print("API異常で現在価格が取得できず（ポジションクラス）")
             return 0
         else:
@@ -1301,7 +1313,7 @@ class order_information:
         # [分岐]初期にオーダー確定しない場合は、life=Trueだがオーダー等がない。
         if self.waiting_order:
             if candle_analysis_class is None:
-                tk.line_send("waitingにキャンドルが渡されていない")
+                notice.line_send("waitingにキャンドルが渡されていない")
             self.watching_for_position(candle_analysis_class)
             return 0
 
@@ -1323,7 +1335,7 @@ class order_information:
                     # エラー対応
                     if self.update_information_error_o_id_num >= 3 and self.o_id == self.update_information_error_o_id:
                         # 3回以上、同じIDでエラーが発生している場合、キャンセル
-                        tk.line_send("オーダーDetailエラー(繰り返し)⇒Orderクローズ", self.o_id)
+                        notice.line_send("オーダーDetailエラー(繰り返し)⇒Orderクローズ", self.o_id)
                         self.close_order()
                         self.update_information_error_o_id_num = 0
                         self.update_information_error_o_id = 0
@@ -1353,7 +1365,7 @@ class order_information:
                         # ただし、tradeCloseIDsもある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
                         # ★トレード有かつ相殺有の場合は、このオーダーがトレードよりも多いユニット注文があったことを意味する。
                         #  その為、オーダーのユニットの一部が相殺され、残るユニットがトレードとして存在する（その為Lifeを消さない）
-                        tk.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
+                        notice.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
                                      self.name, "(",
                                      self.o_json['id'], ")")
                     #
@@ -1379,7 +1391,7 @@ class order_information:
                     # print("トレード")
                     # print(trade_latest)
                     # 以下相殺発生分のみの情報に置き換え
-                    tk.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
+                    notice.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
                                  "相殺したトレード", str(reduced_trade_id) + ",相殺したUNIT",
                                  transaction_info['transactions'][0]['requestedUnits'])
                     trade_latest['state'] = "CLOSE"
@@ -1398,7 +1410,7 @@ class order_information:
                     # tradeCloseIDsがある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
                     # ★この場合は、このオーダーでの通知（クローズ処理）は実施不要で、Lifeをクローズにする
                     self.life_set(False)
-                    tk.line_send("■■■オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
+                    notice.line_send("■■■オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
                                  self.o_json['id'], ")")
                     return 0
                 else:
@@ -1455,7 +1467,18 @@ class order_information:
 
         # (0)現在価格の取得
         temp_current_price = self.oa.NowPrice_exe(self.pair)
+        now_price_error_detail = (
+            "NowPrice_exe error detail(update_information_at_out_time):",
+            "pair=", self.pair,
+            "name=", self.name,
+            "method=", temp_current_price.get("method"),
+            "past_sec=", temp_current_price.get("past_sec"),
+            "now_time=", temp_current_price.get("now_time"),
+            "error_code=", repr(temp_current_price.get("error_code")),
+            "raw=", temp_current_price,
+        )
         if temp_current_price['error'] == -1:  # APIエラーの場合はスキップ
+            print(*now_price_error_detail)
             print("API異常で現在価格が取得できず（ポジションクラス）")
             return 0
         else:
@@ -1474,7 +1497,7 @@ class order_information:
         # [分岐]初期にオーダー確定しない場合は、life=Trueだがオーダー等がない。
         if self.waiting_order:
             if candle_analysis_class is None:
-                tk.line_send("waitingにキャンドルが渡されていない")
+                notice.line_send("waitingにキャンドルが渡されていない")
             self.watching_for_position(candle_analysis_class)
             return 0
 
@@ -1496,7 +1519,7 @@ class order_information:
                     # エラー対応
                     if self.update_information_error_o_id_num >= 3 and self.o_id == self.update_information_error_o_id:
                         # 3回以上、同じIDでエラーが発生している場合、キャンセル
-                        tk.line_send("オーダーDetailエラー(繰り返し)⇒Orderクローズ", self.o_id)
+                        notice.line_send("オーダーDetailエラー(繰り返し)⇒Orderクローズ", self.o_id)
                         self.close_order()
                         self.update_information_error_o_id_num = 0
                         self.update_information_error_o_id = 0
@@ -1526,7 +1549,7 @@ class order_information:
                         # ただし、tradeCloseIDsもある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
                         # ★トレード有かつ相殺有の場合は、このオーダーがトレードよりも多いユニット注文があったことを意味する。
                         #  その為、オーダーのユニットの一部が相殺され、残るユニットがトレードとして存在する（その為Lifeを消さない）
-                        tk.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
+                        notice.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
                                      self.name, "(",
                                      self.o_json['id'], ")")
                     #
@@ -1552,7 +1575,7 @@ class order_information:
                     # print("トレード")
                     # print(trade_latest)
                     # 以下相殺発生分のみの情報に置き換え
-                    tk.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
+                    notice.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
                                  "相殺したトレード", str(reduced_trade_id) + ",相殺したUNIT",
                                  transaction_info['transactions'][0]['requestedUnits'])
                     trade_latest['state'] = "CLOSE"
@@ -1571,7 +1594,7 @@ class order_information:
                     # tradeCloseIDsがある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
                     # ★この場合は、このオーダーでの通知（クローズ処理）は実施不要で、Lifeをクローズにする
                     self.life_set(False)
-                    tk.line_send("■■■オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
+                    notice.line_send("■■■オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
                                  self.o_json['id'], ")")
                     return 0
                 else:
@@ -1650,7 +1673,7 @@ class order_information:
                         "(" + str(round(self.alert_price, self.u)) + ")" + \
                         ", 取得価格:" + str(
                 order_res['order_result']['execution_price']) + ",\n"
-            tk.line_send(line_send)
+            notice.line_send(line_send)
         else:
             order_res['order_result'] = "この処理はオーダー失敗の可能性大"
 
@@ -1718,7 +1741,7 @@ class order_information:
                     # print("オーダー/ウォッチタイムアウト(またはgap_seconds_from_start_watchingが０でウォッチ状態ではない)",
                     #       self.order_register_time, "から", self.order_timeout_min ,"分経過,", gap_seconds_from_start_watching)
                     self.close_order()
-                    tk.line_send("ウォンチングのみのオーダーを解消", self.name)
+                    notice.line_send("ウォンチングのみのオーダーを解消", self.name)
                     return 0
                 else:
                     # ウォッチの時間は時間内、または０ではなないため、このまま継続
@@ -1775,7 +1798,7 @@ class order_information:
                     exe_order = True
             # ■状態通知用
             if not self.watching_position_done_send_line:
-                tk.line_send("初回のポジションウォッチング状態(STOP):", self.name, self.plan_json['direction'],
+                notice.line_send("初回のポジションウォッチング状態(STOP):", self.name, self.plan_json['direction'],
                              self.plan_json['target_price'], self.current_price)
                 self.watching_position_done_send_line = True
             # ■実行
@@ -1823,7 +1846,7 @@ class order_information:
                     #     self.order_register_time, "から", self.order_timeout_min, "分経過,",
                     #     gap_seconds_from_start_watching)
                     self.close_order()
-                    tk.line_send("ウォンチングのみのオーダーを解消", self.name)
+                    notice.line_send("ウォンチングのみのオーダーを解消", self.name)
                     return 0
                 else:
                     # ウォッチの時間は時間内、または０ではなないため、このまま継続
@@ -1866,13 +1889,13 @@ class order_information:
                         self.step1_filled_time = now_time
                         self.step1_filled_over_price = temp_price - now_price
                         # print("　STEP1初回成立　買い方向の逆張りで、初めて下回った　⇒逆方向伸び状態", now_time)
-                        # tk.line_send("LIMIT step1達成（買い逆）", self.name)
+                        # notice.line_send("LIMIT step1達成（買い逆）", self.name)
                     if o_dir == -1 and now_price > temp_price:
                         self.step1_filled = True
                         self.step1_filled_time = now_time
                         self.step1_filled_over_price = now_price - temp_price
                         # print("　STEP1初回成立　売り方向の逆張りで、初めて上回っている　⇒逆方向伸び状態", now_time)
-                        # tk.line_send("LIMIT　step1達成（売り逆）", self.name)
+                        # notice.line_send("LIMIT　step1達成（売り逆）", self.name)
 
             # ■Step2(一度ボーダーをオーダーと逆方向に越えた後、オーダーしたい方向に戻ってきている)の状況を確認
             order_exe = False
@@ -2044,7 +2067,7 @@ class order_information:
     #         alert_pl = self.alert_price - current_price
     #     # ■状態通知用
     #     if not self.alert_line_send_done:
-    #         tk.line_send("初回のウアラートォッチモード突入:", self.name, "ボーダー", round(self.alert_price, 3), "現在価格", current_price,
+    #         notice.line_send("初回のウアラートォッチモード突入:", self.name, "ボーダー", round(self.alert_price, 3), "現在価格", current_price,
     #                      "ポジション方向", direction, "越えPips", round(alert_pl, 4))
     #         self.alert_line_send_done = True
     #
@@ -2317,14 +2340,14 @@ class order_information:
             if new_lc_price < self.plan_json['lc_price']:
                 pass
             else:
-                # tk.line_send("LCChangeCandle_dir-1 価格合わず未遂", new_lc_price , ">", self.plan_json['lc_price'])
+                # notice.line_send("LCChangeCandle_dir-1 価格合わず未遂", new_lc_price , ">", self.plan_json['lc_price'])
                 return 0
         else:
             # 買いポジションの場合、現在のLC価格よりも高い場合、実行する
             if new_lc_price > self.plan_json['lc_price']:
                 pass
             else:
-                # tk.line_send("LCChangeCandle_dir1 価格合わず未遂", new_lc_price, "<", self.plan_json['lc_price'])
+                # notice.line_send("LCChangeCandle_dir1 価格合わず未遂", new_lc_price, "<", self.plan_json['lc_price'])
                 return 0
 
         data = {"instrument": self.pair, "stopLoss": {"price": str(new_lc_price), "timeInForce": "GTC"}, }
@@ -2574,7 +2597,7 @@ class order_information:
                 else:
                     pass
                     # data = {"stopLoss": {"price": str(self.plan_json["target_price"]), "timeInForce": "GTC"}, }
-                    # tk.line_send("時間がたったため、強制的に終了", self.name)
+                    # notice.line_send("時間がたったため、強制的に終了", self.name)
                     # res = self.oa.TradeCRCDO_exe(self.t_id, data)
                     # self.close_consider_done = True
                     # self.close_trade()

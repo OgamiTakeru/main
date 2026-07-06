@@ -156,7 +156,7 @@ price_dic = oa.NowPrice_exe("USD_JPY")['data']
 print("【現在価格live】", price_dic['mid'], price_dic['ask'], price_dic['bid'], price_dic['spread'])
 now_price = oa.NowPrice_exe("USD_JPY")['data']['mid']
 
-tk.line_send("■■新規スタート", gl_live)
+notice.line_send("■■新規スタート", gl_live)
 # main()
 oa.OrderCancel_All_exe()  # 露払い(classesに依存せず、オアンダクラスで全部を消す）
 oa.TradeAllClose_exe()  # 露払い(classesに依存せず、オアンダクラスで全部を消す）

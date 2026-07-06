@@ -4,6 +4,7 @@ import datetime
 
 # 自作ファイルインポート
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
+import send_notice as notice
 import classOanda as classOanda
 import classPosition as classPosition  # とりあえずの関数集
 import classOrderCreate as OCreate
@@ -14,15 +15,17 @@ import classPositionControl as classPositionControl
 import copy
 
 class main():
-    def __init__(self):
+    def __init__(self, pair_info=None):
         print("Mainインスタンスの生成")
         self.base_oa = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
         self.exe_mode = tk.environmentl
 
         # ■変数の宣言
-        self.pair = "USD_JPY"  # 通貨ペア
+        self.pair_info = pair_info or f.currentPair
+        self.pair = self.pair_info.name  # 通貨ペア
         # 変更なし群
-        self.ARROW_SPREAD = 0.011  # 実行を許容するスプレッド　＠ここ以外で変更なし
+        self.ARROW_SPREAD_PIPS = self.pair_info.spread_limit_pips
+        self.ARROW_SPREAD = self.pair_info.pips_to_price(self.ARROW_SPREAD_PIPS)  # 実行を許容するスプレッド
         self.NEED_DF_NUM = 250  # 解析に必要な行数（元々５０行だったが、１００にしたほうが、取引回数が多くなりそう）
         # 時刻系
         self.now = 0
@@ -133,9 +136,9 @@ class main():
         print("test")
         exe_res = self.positions_control_class.order_class_add([order_class, order_class2])
         if exe_res == 0:
-            tk.line_send(" オーダー発行失敗　main 131")
+            notice.line_send(" オーダー発行失敗　main 131")
         else:
-            tk.line_send("★★★オーダー発行", "ForceOrder回目: ", " 　　　", exe_res,
+            notice.line_send("★★★オーダー発行", "ForceOrder回目: ", " 　　　", exe_res,
                          ", 現在価格:", self.now_price_mid, "スプレッド", str(self.now_spread),
                          "直前の結果:", classPosition.order_information.before_latest_plu, ",開始時間",
                          self.start_time_str)
@@ -221,7 +224,7 @@ class main():
                 pass
                 # tk.line_send(" オーダー発行せず　or 失敗　main 175")
             else:
-                tk.line_send("★★★オーダー発行", self.trade_num, "回目: ", " 　　　", exe_res,
+                notice.line_send("★★★オーダー発行", self.trade_num, "回目: ", " 　　　", exe_res,
                              ", 現在価格(微古):", self.now_price_mid, "スプレッド", str(self.now_spread),
                              "直前の結果:", classPosition.order_information.before_latest_plu, ",開始時間",
                              self.start_time_str)  # , "memo", classPosition.)
@@ -339,7 +342,7 @@ class main():
         else:
             # ■　初回だけ実行と同時に行う特殊処理
             print("■■■初回", self.exe_mode)  # 表示用（実行時）
-            tk.line_send("start")
+            notice.line_send("start")
 
             # 現時刻を使う
             self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, self.pair, 0)  # 現在時刻（０）でデータ取得
@@ -356,5 +359,12 @@ class main():
             print("ーーー初回の処理終了ーーー")
 
 
-main_exe = main()  # インスタンスの生成
-main_exe.exe_loop(1)  # ループ処理の実行
+def run(pair=None):
+    if pair is not None:
+        f.set_current_pair(pair)
+    main_exe = main()  # インスタンスの生成
+    main_exe.exe_loop(1)  # ループ処理の実行
+
+
+if __name__ == "__main__":
+    run()
