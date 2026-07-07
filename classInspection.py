@@ -836,7 +836,8 @@ class Inspection:
 
     def required_data_range(self):
         data_from = self.start_time - datetime.timedelta(hours=self.anaN)
-        data_to_by_inspection = self.end_time + datetime.timedelta(seconds=self.insN * 5)
+        inspection_seconds = max(self.insN - 1, 0) * 5
+        data_to_by_inspection = self.end_time + datetime.timedelta(seconds=inspection_seconds)
         now = datetime.datetime.now().replace(microsecond=0)
         data_to = min(data_to_by_inspection, now)
         return data_from, data_to
