@@ -201,10 +201,16 @@ class Inspection:
 
     def loaded_data_covers_required_range(self):
         fetch_from, fetch_to = self.required_data_range()
+        s5_cache_tolerance = datetime.timedelta(days=1)
         return (
             self.df_covers_range(self.gl_h1_df, fetch_from, self.end_time)
             and self.df_covers_range(self.gl_d5_df, fetch_from, self.end_time)
-            and self.df_covers_range(self.gl_s5_df, self.start_time, fetch_to)
+            and self.df_covers_range(
+                self.gl_s5_df,
+                self.start_time,
+                fetch_to,
+                s5_cache_tolerance,
+            )
         )
 
     def save_result_data(self):
@@ -214,11 +220,15 @@ class Inspection:
 
 
     @staticmethod
-    def df_covers_range(df, start_time, end_time):
+    def df_covers_range(df, start_time, end_time, tolerance=None):
         if df is None or df.empty or "time_jp_dt" not in df.columns:
             return False
-        tolerance = datetime.timedelta(seconds=5)
-        return df["time_jp_dt"].min() <= start_time and df["time_jp_dt"].max() + tolerance >= end_time
+        if tolerance is None:
+            tolerance = datetime.timedelta(seconds=5)
+        return (
+            df["time_jp_dt"].min() <= start_time + tolerance
+            and df["time_jp_dt"].max() + tolerance >= end_time
+        )
 
     @staticmethod
     def print_df_range(label, df):
@@ -278,7 +288,8 @@ class Inspection:
                 datetime.datetime.now() - self.process_start_time
             ).total_seconds() / 60
             message = (
-                "検証進捗 "
+                self.pair
+                + " 検証進捗 "
                 + str(self.progress_notice_months)
                 + "ヶ月区切り完了 "
                 + str(self.next_progress_notice_time)
