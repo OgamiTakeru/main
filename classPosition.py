@@ -10,6 +10,7 @@ import traceback
 import sys
 import classCandleAnalysis as ca
 import os
+import math
 import pandas as pd
 from collections import deque  # 最大10個の情報を持つためのもの。
 import copy
@@ -24,6 +25,9 @@ class order_information:
     total_PLu = 0  # PL/Unitの累計値
     total_PLu_max = 0  # これは０以上を検出したいので、float(-inf)ではNG
     total_PLu_min = float('inf')
+    total_pips = 0
+    total_pips_max = 0
+    total_pips_min = float('inf')
     position_num = 0  # 何個のポジションを持ったか
     minus_yen_position_num = 0
     plus_yen_position_num = 0
@@ -561,6 +565,43 @@ class order_information:
 
         return {"order_name": "", "order_id": order_ans['order_id'], "order_result": order_ans}
 
+    def pips_text(self, price_diff):
+        try:
+            value = float(price_diff)
+            if not math.isfinite(value):
+                return str(price_diff)
+            return str(self.p.price_to_pips(abs(value))) + "p"
+        except (TypeError, ValueError):
+            return str(price_diff)
+
+    def signed_pips_text(self, pips):
+        try:
+            value = float(pips)
+            if not math.isfinite(value):
+                return str(pips)
+            return str(round(value, 2)) + "p"
+        except (TypeError, ValueError):
+            return str(pips)
+
+    def trade_latest_price_diff(self, trade_latest):
+        try:
+            open_price = float(trade_latest['price'])
+            if trade_latest['state'] in ["CLOSED", "CLOSE"] and "averageClosePrice" in trade_latest:
+                close_price = float(trade_latest['averageClosePrice'])
+            else:
+                close_price = float(self.current_price)
+            direction = float(trade_latest['initialUnits']) / abs(float(trade_latest['initialUnits']))
+            return self.p.round_price((close_price - open_price) * direction)
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            return self.p.round_price(0)
+
+    def trade_latest_pips(self, trade_latest):
+        return self.p.price_to_pips(self.trade_latest_price_diff(trade_latest))
+
+    def normalize_trade_latest_plu(self, trade_latest):
+        trade_latest['PLu'] = self.trade_latest_price_diff(trade_latest)
+        return trade_latest
+
     def make_order_info(self):
         """
         オーダーに関する情報を生成する（LINE送信用）
@@ -570,14 +611,17 @@ class order_information:
         for i, item in enumerate(self.lc_change_dic_arr):
             if i == 2:
                 break
-            tr = str(round(item['trigger'], self.u))
-            ens = str(round(item['ensure'], self.u))
+            tr = self.pips_text(item['trigger'])
+            ens = self.pips_text(item['ensure'])
             lc_change_str = lc_change_str + ",(" + tr + "-" + ens + ")"
         self.lc_change_str = lc_change_str
         # lc_changeのTP　rangeを取得
         if len(self.lc_change_dic_arr) > 0:
             lc_change_tp_range = round(self.lc_change_dic_arr[0].get("ensure"), 3)
-            lc_change_comment = "Tr:" + str(round(self.lc_change_dic_arr[0].get("trigger"), 3)) + ",En:" + str(lc_change_tp_range)
+            lc_change_comment = (
+                "Tr:" + self.pips_text(self.lc_change_dic_arr[0].get("trigger"))
+                + ",En:" + self.pips_text(lc_change_tp_range)
+            )
         else:
             lc_change_tp_range = 0
             lc_change_comment = "Tr:0, En:0"
@@ -585,12 +629,15 @@ class order_information:
         # 価格変動の強さ）現在価格と、ピークの最新価格（取得に６秒の差がある）
         cu = self.current_price
         cu_by_ca = self.current_price_by_candle
-        cu_gap = round(abs(cu - cu_by_ca), 3)
+        cu_gap = round(abs(cu - cu_by_ca), self.u)
         self.current_candle_price_gap = cu_gap
-        current_price_info = ", 現在価格:" + str(cu) + "現在価格byピーク:" + str(cu_by_ca) + ", 現価格との差:" + str(cu_gap) + " "
-        # current_price_info = "現在価格byピーク:" + str(cu_by_ca) + ", 現価格との差:" + str(cu_gap)
+        current_price_gap_pips = self.pips_text(cu_gap)
+        target_current_gap_pips = self.pips_text(abs(float(self.plan_json['target_price']) - float(cu)))
+        current_price_info = ", 現在価格:" + str(cu) + "現在価格byピーク:" + str(cu_by_ca) + ", 現在価格-ピーク差:" + str(cu_gap) + " "
+        # current_price_info = "現在価格byピーク:" + str(cu_by_ca) + ", 現在価格-ピーク差:" + str(cu_gap)
 
         # オーダー情報
+        current_price_info = current_price_info.rsplit(str(cu_gap), 1)[0] + current_price_gap_pips + " "
         if self.o_id == 0:
             self.for_line_send_order_info = "Order失敗"
         elif self.o_id == -1:
@@ -601,24 +648,25 @@ class order_information:
             # print(order_dic['order_name'])
             # print(order_dic)
             self.for_line_send_order_info = "◆【" + str(self.name) + "】を即時ポジションなしで発行" + \
-                        "指定価格:【" + str(round(self.plan_json['target_price'], self.u)) + "】" + \
+                        "指定価格:【" + str(round(self.plan_json['target_price'], self.u)) + "】(" + target_current_gap_pips + ")" + \
                         ",DIR:" + str(self.plan_json['direction']) + \
                         ", 数量:" + str(self.plan_json['units']) + \
                         ", TP:" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLC_C:" + lc_change_comment + ")" + \
+                        "(" + self.pips_text(self.plan_json['tp_range']) + ",1stLC_C:" + lc_change_comment + ")" + \
                         ", LC:" + str(round(self.plan_json['lc_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
+                        "(" + self.pips_text(self.plan_json['lc_range']) + ")" + \
                         ", RR_tp:" + str(round(self.plan_json['tp_range']/self.plan_json['lc_range'], 2)) + \
                         ", RR(LcChange):" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
                         "" + current_price_info + \
-                        ", AveMove:" + str(round(self.plan_json['move_ave'], self.u)) + \
+                        ", AveMove:" + self.pips_text(self.plan_json['move_ave']) + \
+                        ", オーダー維持時間:0分" + \
                         ", memo:" + str(self.plan_json['memo']) + \
                         ",lc_change" + str(lc_change_str)
             # クローズの時にも送るよう
             self.for_line_send_order_info_at_close = "【TP】" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLcChange" + lc_change_comment + ")" + \
+                        "(" + self.pips_text(self.plan_json['tp_range']) + ",1stLcChange" + lc_change_comment + ")" + \
                         "【LC】" + str(round(self.plan_json['lc_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
+                        "(" + self.pips_text(self.plan_json['lc_range']) + ")" + \
                         "【lc_change】" + str(lc_change_str) + \
                         "【RR_tp】" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
                         "【RR_tp(LcChange)】" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
@@ -630,30 +678,31 @@ class order_information:
             order_result = self.order_result_wrap_up
             oanda_res = self.order_result_from_oanda['orderCreateTransaction']  # =self.order_result_wrap_up['json']
             # tempの計算
-            tp_range = round(abs(float(oanda_res['takeProfitOnFill']['price']) - float(order_result['price'])), self.u)
-            lc_range = round(abs(float(oanda_res['stopLossOnFill']['price']) - float(order_result['price'])), self.u)
+            tp_range = abs(float(oanda_res['takeProfitOnFill']['price']) - float(order_result['price']))
+            lc_range = abs(float(oanda_res['stopLossOnFill']['price']) - float(order_result['price']))
             self.for_line_send_order_info = "【" + str(self.name) + "】,\n" + \
-                        "指定価格:【" + str(self.plan_json['target_price']) + "】" + \
+                        "指定価格:【" + str(self.plan_json['target_price']) + "】(" + target_current_gap_pips + ")" + \
                         ", 数量:" + str(oanda_res['units']) + \
                         ", タイプ:" + str(self.plan_json['type']) + \
                         ", TP:" + str(oanda_res['takeProfitOnFill']['price']) + \
-                        "(" + str(tp_range) + ",1stLC_C:" + lc_change_comment + ")" + \
+                        "(" + self.pips_text(tp_range) + ",1stLC_C:" + lc_change_comment + ")" + \
                         ", LC:" + str(oanda_res['stopLossOnFill']['price']) + \
-                        "(" + str(lc_range) + ")" + \
+                        "(" + self.pips_text(lc_range) + ")" + \
                         ", RR:" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
                         ", RR(LcChange)" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
-                        ", AveMove:" + str(round(self.plan_json['move_ave'], self.u)) + \
+                        ", AveMove:" + self.pips_text(self.plan_json['move_ave']) + \
                         ", OrderID:" + str(self.o_id) + \
                         ", 取得価格:" + str(order_result['execution_price']) + ",\n" + \
                         "" + current_price_info + \
+                        ", オーダー維持時間:" + str(self.order_timeout_min) + "分" + \
                         ", memo:" + str(self.plan_json['memo']) + \
                         ", lc_change" + str(lc_change_str)
 
             # クローズの時にも送るよう
             self.for_line_send_order_info_at_close = "【TP】" + str(round(self.plan_json['tp_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['tp_range'], self.u)) + ",1stLcChange" + lc_change_comment + ")" + \
+                        "(" + self.pips_text(self.plan_json['tp_range']) + ",1stLcChange" + lc_change_comment + ")" + \
                         "【LC】" + str(round(self.plan_json['lc_price'], self.u)) + \
-                        "(" + str(round(self.plan_json['lc_range'], self.u)) + ")" + \
+                        "(" + self.pips_text(self.plan_json['lc_range']) + ")" + \
                         "【lc_change】" + str(lc_change_str) + \
                         "【RR_tp】" + str(round(self.plan_json['tp_range'] / self.plan_json['lc_range'], 2)) + \
                         "【RR_tp(LcChange)】" + str(round(lc_change_tp_range / self.plan_json['lc_range'], 2)) + \
@@ -715,6 +764,8 @@ class order_information:
         :return:
         """
         trade_latest = self.t_json
+        latest_price_diff = self.trade_latest_price_diff(trade_latest)
+        latest_pips = self.trade_latest_pips(trade_latest)
         # (0)　改めてLifeを殺す
         self.life_set(False)
         print(" after_close_function", self.life, trade_latest['state'])
@@ -747,6 +798,11 @@ class order_information:
                 order_information.total_PLu_max = order_information.total_PLu
             elif order_information.total_PLu < order_information.total_PLu_min:
                 order_information.total_PLu_min = order_information.total_PLu
+            order_information.total_pips = round(order_information.total_pips + latest_pips, 2)
+            if order_information.total_pips > order_information.total_pips_max:
+                order_information.total_pips_max = order_information.total_pips
+            if order_information.total_pips < order_information.total_pips_min:
+                order_information.total_pips_min = order_information.total_pips
             # 回数の算出　決済が完了し、realizedPLが算出されている場合。
             if float(trade_latest['realizedPL']) < 0:
                 order_information.minus_yen_position_num = order_information.minus_yen_position_num + 1
@@ -757,6 +813,11 @@ class order_information:
             order_information.total_yen = round(order_information.total_yen + float(trade_latest['unrealizedPL']), 2)
             order_information.total_PLu = round(order_information.total_PLu + trade_latest['PLu'], self.u)
             # 計算する（回数）
+            order_information.total_pips = round(order_information.total_pips + latest_pips, 2)
+            if order_information.total_pips > order_information.total_pips_max:
+                order_information.total_pips_max = order_information.total_pips
+            if order_information.total_pips < order_information.total_pips_min:
+                order_information.total_pips_min = order_information.total_pips
             if float(trade_latest['unrealizedPL']) <= 0:
                 order_information.minus_yen_position_num = order_information.minus_yen_position_num + 1
             elif float(trade_latest['unrealizedPL']) > 0:
@@ -791,16 +852,16 @@ class order_information:
             res1 = "【Unit】" + str(units_for_view * direction)
             id_info = "【orderID】" + str(self.o_id) + "【tradeID】" + str(self.t_id)
             res2 = "【決:" + str(trade_latest['averageClosePrice']) + ", " + "取:" + str(trade_latest['price']) + "】"
-            res3 = ("【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "@" + str(self.win_max_price)
-                    + "/ー域:" + str(self.lose_max_plu) + "@" + str(self.lose_max_price))
+            res3 = ("【ポジション期間の最大/小の振れ幅】 ＋域:" + self.pips_text(self.win_max_plu) + "@" + str(self.win_max_price)
+                    + "/ー域:" + self.pips_text(self.lose_max_plu) + "@" + str(self.lose_max_price))
             res3 = res3 + "【ポジション期間の最大/小の振れ幅(円)】 ＋域:" + str(self.win_max_plu_yen) + "/ー域:" + str(self.lose_max_plu_yen)
             res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past'])
-            res4 = "【今回結果】" + str(trade_latest['PLu']) + "," + str(trade_latest['realizedPL']) + "円\n"
-            res5 = "【合計】計" + str(order_information.total_PLu) + ",計" + str(order_information.total_yen) + "円"
+            res4 = "【今回結果】" + str(latest_price_diff) + "(" + self.signed_pips_text(latest_pips) + ")," + str(trade_latest['realizedPL']) + "円\n"
+            res5 = "【合計】計" + self.signed_pips_text(order_information.total_pips) + ",計" + str(order_information.total_yen) + "円"
             res6 = "【合計】累積最大円:" + str(order_information.total_yen_max) + ",最小円:" + str(
                 order_information.total_yen_min)
-            res7 = "【合計】累計最大PL:" + str(order_information.total_PLu_max) + ",最小PL:" + str(
-                order_information.total_PLu_min)
+            res7 = "【合計】累計最大PL:" + self.signed_pips_text(order_information.total_pips_max) + ",最小PL:" + self.signed_pips_text(
+                order_information.total_pips_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
                 order_information.minus_yen_position_num) + ", lcChange回数" + str(order_information.lc_change_num)
             self.send_line("■■■ 解消:", self.name, '\n',
@@ -810,6 +871,7 @@ class order_information:
             # print(trade_latest)
             result_dic = {
                 "name": self.name,
+                "pair": self.pair,
                 "res": str(trade_latest['realizedPL']),
                 "pl_per_units": str(trade_latest['PLu']),  # 以下追加
                 "units": str(units_for_view * direction),
@@ -848,16 +910,16 @@ class order_information:
             res1 = "【Unit】" + str(trade_latest['currentUnits'])  # )str(units_for_view * direction)
             id_info = "【orderID】" + str(self.o_id) + "【tradeID】" + str(self.t_id)
             res2 = "【決:" + str(self.current_price) + ", " + "取:" + str(trade_latest['price']) + "】"
-            res3 = ("【ポジション期間の最大/小の振れ幅】 ＋域:" + str(self.win_max_plu) + "@" + str(self.win_max_price)
-                    + "/ー域:" + str(self.lose_max_plu) + "@=" + str(self.lose_max_price))
+            res3 = ("【ポジション期間の最大/小の振れ幅】 ＋域:" + self.pips_text(self.win_max_plu) + "@" + str(self.win_max_price)
+                    + "/ー域:" + self.pips_text(self.lose_max_plu) + "@=" + str(self.lose_max_price))
             res3 = res3 + "【ポジション期間の最大/小の振れ幅(円)】 ＋域:" + str(self.win_max_plu_yen) + "/ー域:" + str(self.lose_max_plu_yen)
             res3 = res3 + " 保持時間(秒)" + str(trade_latest['time_past'])
-            res4 = "【今回結果】" + str(trade_latest['PLu']) + "," + str(trade_latest['unrealizedPL']) + "円\n"
-            res5 = "【合計】計" + str(order_information.total_PLu) + ",計" + str(order_information.total_yen) + "円"
+            res4 = "【今回結果】" + str(latest_price_diff) + "(" + self.signed_pips_text(latest_pips) + ")," + str(trade_latest['unrealizedPL']) + "円\n"
+            res5 = "【合計】計" + self.signed_pips_text(order_information.total_pips) + ",計" + str(order_information.total_yen) + "円"
             res6 = "【合計】累積最大円" + str(order_information.total_yen_max) + ",最小円" + str(
                 order_information.total_yen_min)
-            res7 = "【合計】累計最大PL" + str(order_information.total_PLu_max) + ",最小PL" + str(
-                order_information.total_PLu_min)
+            res7 = "【合計】累計最大PL" + self.signed_pips_text(order_information.total_pips_max) + ",最小PL" + self.signed_pips_text(
+                order_information.total_pips_min)
             res8 = "【回数】＋:" + str(order_information.plus_yen_position_num) + ",―:" + str(
                 order_information.minus_yen_position_num) + ", lcChange回数" + str(order_information.lc_change_num)
 
@@ -866,6 +928,7 @@ class order_information:
 
             result_dic = {
                 "name": self.name,
+                "pair": self.pair,
                 "res": str(trade_latest['unrealizedPL']),  # 上と違う部分
                 "pl_per_units": str(trade_latest['PLu']),  # 以下追加
                 "units": str(units_for_view * direction),
@@ -1012,15 +1075,20 @@ class order_information:
         :param new_pl:
         :return:
         """
+        current_price_diff = self.trade_latest_price_diff({
+            "state": "OPEN",
+            "price": self.t_execution_price,
+            "initialUnits": self.t_initial_units,
+        })
         # (1)PLu(価格差相当)の推移を記録する(プラス域維持時間とマイナス維持時間を求める）
-        if new_pl >= self.win_lose_border_range:  # 今回プラス域である場合
+        if current_price_diff >= self.win_lose_border_range:  # 今回プラス域である場合
             self.lose_hold_time_sec = 0  # Lose継続時間は必ず０に初期化（すでに０の場合もあるけれど）
             if self.t_pl_u <= 0:  # 前回がマイナスだった場合
                 self.win_hold_time_sec = 0  # ０を入れるだけ（Win計測スタート地点）
             else:
                 # 前回もプラスの場合
                 self.win_hold_time_sec += 2  # 前回もプラスの場合、継続時間をプラスする（実行スパンが２秒ごとの為＋２）
-        elif new_pl < self.win_lose_border_range:  # 今回マイナス域である場合
+        elif current_price_diff < self.win_lose_border_range:  # 今回マイナス域である場合
             self.win_hold_time_sec = 0  # Win継続時間は必ず０に初期化
             if self.t_pl_u >= 0:  # 前回がマイナスだった場合
                 self.lose_hold_time_sec = 0  # ０を入れるだけ（Lose計測スタート地点）
@@ -1029,11 +1097,11 @@ class order_information:
 
         # (2)プラスマイナスの最大値情報を取得しておく
         # PLu(価格差相当)。USD_JPYでは0.01が1pip相当。
-        if self.lose_max_plu > self.t_pl_u:  # 最小値更新時
-            self.lose_max_plu = self.t_pl_u
+        if self.lose_max_plu > current_price_diff:  # 最小値更新時
+            self.lose_max_plu = current_price_diff
             self.lose_max_price = self.current_price
-        if self.win_max_plu < self.t_pl_u:  # 最大値更新時
-            self.win_max_plu = self.t_pl_u
+        if self.win_max_plu < current_price_diff:  # 最大値更新時
+            self.win_max_plu = current_price_diff
             self.win_max_price = self.current_price
         # yen(なぜfloatここはいるんだ？上はいらないのに）
         # print(self.lose_max_plu_yen, self.t_unrealize_pl)
@@ -1176,6 +1244,7 @@ class order_information:
                                , name_list)
                 result_dic = {
                     "name": self.name,
+                    "pair": self.pair,
                     "res": 0,  # 上と違う部分
                     "pl_per_units": 0,  # 以下追加
                     "units": str(self.for_api_json['order']['units']),
@@ -1324,7 +1393,7 @@ class order_information:
             if trade_ans['error'] == 1:
                 print("    トレード情報取得Error＠update_information", self.t_id)
                 return 0
-            trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
+            trade_latest = self.normalize_trade_latest_plu(trade_ans['data']['trade'])  # Jsonデータの取得
             self.t_json = trade_latest  # Json自体も格納
         else:
             # 通常のオーダーの場合（基本的にはこっち）
@@ -1374,7 +1443,7 @@ class order_information:
                     if trade_ans['error'] == 1:
                         print("    トレード情報取得Error＠update_information", self.t_id)
                         return 0
-                    trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
+                    trade_latest = self.normalize_trade_latest_plu(trade_ans['data']['trade'])  # Jsonデータの取得
                     self.t_json = trade_latest  # Json自体も格納
                     # print("ポジション詳細", self.t_json)
                 elif "tradeReducedID" in order_latest:
@@ -1400,8 +1469,8 @@ class order_information:
                     trade_latest['currentUnits'] = float(
                         transaction_info['transactions'][0]['requestedUnits'])  # 暫定的に相殺した分に置き換え
                     trade_latest['state'] = "CLOSE"
-                    trade_latest['PLu'] = round(float(trade_latest['unrealizedPL']) / abs(
-                        float(transaction_info['transactions'][0]['requestedUnits'])), 2)
+                    trade_latest['averageClosePrice'] = transaction_info['transactions'][0].get('price', self.current_price)
+                    trade_latest = self.normalize_trade_latest_plu(trade_latest)
                     self.t_json = trade_latest  # Json自体も格納
                     # ★この場合に限り、このオーダーは存在しなくなるため、Close処理を実施する
                     self.life_set(False)
@@ -1508,7 +1577,7 @@ class order_information:
             if trade_ans['error'] == 1:
                 print("    トレード情報取得Error＠update_information", self.t_id)
                 return 0
-            trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
+            trade_latest = self.normalize_trade_latest_plu(trade_ans['data']['trade'])  # Jsonデータの取得
             self.t_json = trade_latest  # Json自体も格納
         else:
             # 通常のオーダーの場合（基本的にはこっち）
@@ -1558,7 +1627,7 @@ class order_information:
                     if trade_ans['error'] == 1:
                         print("    トレード情報取得Error＠update_information", self.t_id)
                         return 0
-                    trade_latest = trade_ans['data']['trade']  # Jsonデータの取得
+                    trade_latest = self.normalize_trade_latest_plu(trade_ans['data']['trade'])  # Jsonデータの取得
                     self.t_json = trade_latest  # Json自体も格納
                     # print("ポジション詳細", self.t_json)
                 elif "tradeReducedID" in order_latest:
@@ -1584,8 +1653,8 @@ class order_information:
                     trade_latest['currentUnits'] = float(
                         transaction_info['transactions'][0]['requestedUnits'])  # 暫定的に相殺した分に置き換え
                     trade_latest['state'] = "CLOSE"
-                    trade_latest['PLu'] = round(float(trade_latest['unrealizedPL']) / abs(
-                        float(transaction_info['transactions'][0]['requestedUnits'])), 2)
+                    trade_latest['averageClosePrice'] = transaction_info['transactions'][0].get('price', self.current_price)
+                    trade_latest = self.normalize_trade_latest_plu(trade_latest)
                     self.t_json = trade_latest  # Json自体も格納
                     # ★この場合に限り、このオーダーは存在しなくなるため、Close処理を実施する
                     self.life_set(False)
@@ -1658,18 +1727,16 @@ class order_information:
         line_send = "　"
         if "order_result" in order_res:
             o_trans = order_res['order_result']['json']['orderCreateTransaction']
+            target_current_gap_pips = self.pips_text(abs(float(self.plan_json['target_price']) - float(self.current_price)))
             line_send = line_send + "◆ Watchingオーダー発行【" + str(self.name) + "】,\n" + \
-                        "指定価格:【" + str(self.plan_json['target_price']) + "】" + \
+                        "指定価格:【" + str(self.plan_json['target_price']) + "】(" + target_current_gap_pips + ")" + \
                         ", 数量:" + str(o_trans['units']) + \
                         ", TP:" + str(o_trans['takeProfitOnFill']['price']) + \
-                        "(" + str(round(abs(float(o_trans['takeProfitOnFill']['price']) - float(self.plan_json['target_price'])),
-                                        self.u)) + ")" + \
+                        "(" + self.pips_text(abs(float(o_trans['takeProfitOnFill']['price']) - float(self.plan_json['target_price']))) + ")" + \
                         ", LC:" + str(o_trans['stopLossOnFill']['price']) + \
-                        "(" + str(
-                round(abs(float(o_trans['stopLossOnFill']['price']) - float(self.plan_json['target_price'])),
-                      self.u)) + ")" + \
+                        "(" + self.pips_text(abs(float(o_trans['stopLossOnFill']['price']) - float(self.plan_json['target_price']))) + ")" + \
                         ", OrderID:" + str(order_res['order_id']) + \
-                        ", Alert:" + str(self.alert_range) + \
+                        ", Alert:" + self.pips_text(self.alert_range) + \
                         "(" + str(round(self.alert_price, self.u)) + ")" + \
                         ", 取得価格:" + str(
                 order_res['order_result']['execution_price']) + ",\n"
@@ -2385,6 +2452,10 @@ class order_information:
             lc_price = 0
 
         price = json['price']
+
+        self.pair = json.get("instrument", self.pair)
+        self.p = gene.currency_pair(self.pair)
+        self.u = self.p.round_keta
 
         self.plan_json['target_price'] = float(price)
         self.plan_json['tp_price'] = float(tp_price)

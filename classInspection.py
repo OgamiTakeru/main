@@ -129,6 +129,13 @@ class Inspection:
         fetch_from, fetch_to = self.required_data_range()
         end_time_iso = gene.time_to_euro_iso(fetch_to)
         total_seconds = max((fetch_to - fetch_from).total_seconds(), 0)
+        notice.line_send(
+            "検証データをOANDAから取得開始",
+            self.pair,
+            str(fetch_from),
+            "->",
+            str(fetch_to),
+        )
 
         m5_rows = math.ceil(total_seconds / (5 * 60)) + 5
         m5_count, m5_loop = self.cal_oanda_count_and_loop(m5_rows)
@@ -136,6 +143,7 @@ class Inspection:
         data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, m5_loop)
         self.gl_d5_df = data_response["data"]
         self.gl_d5_df_r = self.gl_d5_df.sort_index(ascending=False)
+        notice.line_send("検証データ取得", self.pair, "M5", len(self.gl_d5_df), "rows")
 
         h1_rows = math.ceil(total_seconds / (60 * 60)) + 5
         h1_count, h1_loop = self.cal_oanda_count_and_loop(h1_rows)
@@ -143,6 +151,7 @@ class Inspection:
         data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, h1_loop)
         self.gl_h1_df = data_response["data"]
         self.gl_h1_df_r = self.gl_h1_df.sort_index(ascending=False)
+        notice.line_send("検証データ取得", self.pair, "H1", len(self.gl_h1_df), "rows")
 
         m30_rows = math.ceil(total_seconds / (30 * 60)) + 5
         m30_count, m30_loop = self.cal_oanda_count_and_loop(m30_rows)
@@ -150,12 +159,15 @@ class Inspection:
         data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, m30_loop)
         self.gl_m30_df = data_response["data"]
         self.gl_m30_df_r = self.gl_m30_df.sort_index(ascending=False)
+        notice.line_send("検証データ取得", self.pair, "M30", len(self.gl_m30_df), "rows")
 
         s5_rows = math.ceil(total_seconds / 5) + 5
         s5_count, s5_loop = self.cal_oanda_count_and_loop(s5_rows)
         params = {"granularity": "S5", "count": s5_count, "to": end_time_iso}
         data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, s5_loop)
         self.gl_s5_df = data_response["data"]
+        notice.line_send("検証データ取得", self.pair, "S5", len(self.gl_s5_df), "rows")
+        notice.line_send("検証データOANDA取得完了", self.pair)
 
     def normalize_time_columns(self):
         for df in (self.gl_d5_df, self.gl_h1_df, self.gl_m30_df, self.gl_s5_df):
@@ -261,7 +273,15 @@ class Inspection:
         elapsed_minutes = elapsed_seconds / 60
         print("Inspection elapsed seconds:", round(elapsed_seconds, 1))
         print("Inspection elapsed minutes:", round(elapsed_minutes, 2))
-        notice.line_send("検証 終了しました", str(round(elapsed_minutes, 2)) + "分")
+        notice.line_send(
+            "検証 終了しました",
+            self.pair,
+            str(self.start_time),
+            "->",
+            str(self.end_time),
+            str(len(self.result_df)) + "件",
+            str(round(elapsed_minutes, 2)) + "分",
+        )
 
     @staticmethod
     def add_months(base_time, months):
@@ -437,7 +457,19 @@ class Inspection:
         tp_price = float(order_plan["tp_price"])
         lc_price = float(order_plan["lc_price"])
 
-        fill_index = self.find_order_fill_index(inspection_s5_df, target_price, direction, order_type)
+        fill_search_df = inspection_s5_df
+        order_timeout_min = order_plan.get("order_timeout_min")
+        if order_type.upper() != "MARKET" and order_timeout_min is not None:
+            fill_deadline = pd.to_datetime(target_time) + datetime.timedelta(
+                minutes=float(order_timeout_min)
+            )
+            fill_times = pd.to_datetime(
+                fill_search_df["time_jp"],
+                format="%Y/%m/%d %H:%M:%S",
+            )
+            fill_search_df = fill_search_df[fill_times <= fill_deadline]
+
+        fill_index = self.find_order_fill_index(fill_search_df, target_price, direction, order_type)
         if fill_index is None:
             return self.order_result_row(
                 target_time,
@@ -451,6 +483,7 @@ class Inspection:
                 0,
                 0,
                 {},
+                {},
             )
 
         after_fill_df = inspection_s5_df.iloc[fill_index:].reset_index(drop=True)
@@ -459,6 +492,13 @@ class Inspection:
         first_reach_results = self.cal_first_reach_results(after_fill_df, target_price, direction)
         close_result, close_time, close_price, close_index = self.find_order_close(after_fill_df, tp_price, lc_price, direction)
         elapsed_s5 = self.cal_elapsed_s5_after_fill(after_fill_df, close_index)
+        force_results = self.cal_force_close_results_multi(
+            after_fill_df,
+            order_plan,
+            tp_price,
+            lc_price,
+            direction,
+        )
 
         return self.order_result_row(
             target_time,
@@ -472,6 +512,7 @@ class Inspection:
             max_plus_pips,
             max_minus_pips,
             first_reach_results,
+            force_results,
         )
 
     @staticmethod
@@ -542,6 +583,87 @@ class Inspection:
             max_minus = pair.price_to_pips(target_price - df["high"].max())
         return max_plus, max_minus
 
+    def cal_force_close_results_multi(self, after_fill_df, order_plan, tp_price, lc_price, direction):
+        results = {}
+        for minutes in (15, 30, 45, 60):
+            results.update(self.cal_force_close_results(
+                after_fill_df,
+                order_plan,
+                tp_price,
+                lc_price,
+                direction,
+                limit_seconds=minutes * 60,
+                prefix=f"force{minutes}",
+            ))
+        return results
+
+    def cal_force_close_results(self, after_fill_df, order_plan, tp_price, lc_price, direction, limit_seconds, prefix):
+        if after_fill_df.empty:
+            return self.empty_force_close_results(prefix)
+
+        limit_s5 = int(limit_seconds / 5)
+        end_index = min(limit_s5, len(after_fill_df) - 1)
+        limited_df = after_fill_df.iloc[:end_index + 1].reset_index(drop=True)
+        close_result, close_time, close_price, close_index = self.find_order_close(
+            limited_df,
+            tp_price,
+            lc_price,
+            direction,
+        )
+        max_plus_pips, max_minus_pips = self.cal_order_max_plus_minus(
+            limited_df,
+            float(order_plan["target_price"]),
+            direction,
+        )
+
+        if close_result in ("tp", "lc"):
+            force_result = close_result
+            force_close_time = close_time
+            force_close_price = close_price
+            force_elapsed_s5 = close_index
+        elif close_result == "both_tp_lc_same_candle":
+            force_result = close_result
+            force_close_time = close_time
+            force_close_price = None
+            force_elapsed_s5 = close_index
+        else:
+            force_result = "time_close"
+            force_close_time = limited_df.iloc[end_index]["time_jp"]
+            force_close_price = float(limited_df.iloc[end_index]["close"])
+            force_elapsed_s5 = end_index
+
+        return {
+            prefix + "_result": force_result,
+            prefix + "_close_time": force_close_time,
+            prefix + "_close_price": force_close_price,
+            prefix + "_res_pips": self.cal_order_result_pips(order_plan, force_close_price),
+            prefix + "_elapsed_s5": force_elapsed_s5,
+            prefix + "_elapsed_seconds": None if force_elapsed_s5 is None else force_elapsed_s5 * 5,
+            prefix + "_max_plus_pips": max_plus_pips,
+            prefix + "_max_minus_pips": max_minus_pips,
+            prefix + "_is_time_close": force_result == "time_close",
+            prefix + "_is_plus": (
+                None
+                if force_close_price is None
+                else self.cal_order_result_pips(order_plan, force_close_price) > 0
+            ),
+        }
+
+    @staticmethod
+    def empty_force_close_results(prefix):
+        return {
+            prefix + "_result": None,
+            prefix + "_close_time": None,
+            prefix + "_close_price": None,
+            prefix + "_res_pips": None,
+            prefix + "_elapsed_s5": None,
+            prefix + "_elapsed_seconds": None,
+            prefix + "_max_plus_pips": None,
+            prefix + "_max_minus_pips": None,
+            prefix + "_is_time_close": None,
+            prefix + "_is_plus": None,
+        }
+
     def order_result_row(
         self,
         target_time,
@@ -555,9 +677,14 @@ class Inspection:
         max_plus_pips,
         max_minus_pips,
         first_reach_results=None,
+        force_results=None,
     ):
         res = self.cal_order_result_pips(order_plan, close_price)
         first_reach_results = first_reach_results or {}
+        if force_results is None:
+            force_results = {}
+            for minutes in (15, 30, 45, 60):
+                force_results.update(self.empty_force_close_results(f"force{minutes}"))
         tp_range = order_plan.get("tp_range")
         lc_range = order_plan.get("lc_range")
         tp_pips = self.p.price_to_pips(tp_range) if tp_range is not None else None
@@ -572,6 +699,9 @@ class Inspection:
             "order_type": order_plan.get("type"),
             "direction": order_plan.get("direction"),
             "target_price": order_plan.get("target_price"),
+            "decision_price": order_plan.get("decision_price"),
+            "target_distance_pips": order_plan.get("target_distance_pips"),
+            "order_timeout_min": order_plan.get("order_timeout_min"),
             "tp_price": order_plan.get("tp_price"),
             "lc_price": order_plan.get("lc_price"),
             "tp_pips": tp_pips,
@@ -588,6 +718,7 @@ class Inspection:
             "max_plus_pips": max_plus_pips,
             "max_minus_pips": max_minus_pips,
             **first_reach_results,
+            **force_results,
             "source": order_plan.get("source"),
             "line_timeframe": order_plan.get("line_timeframe"),
             "line_entry_type": order_plan.get("line_entry_type"),
@@ -596,6 +727,34 @@ class Inspection:
             "latest_peak_count": order_plan.get("latest_peak_count"),
             "latest_peak_gap": order_plan.get("latest_peak_gap"),
             "latest_peak_time": order_plan.get("latest_peak_time"),
+            "latest_peak_strength": order_plan.get("latest_peak_strength"),
+            "latest_peak_price": order_plan.get("latest_peak_price"),
+            "previous_peak_dir": order_plan.get("previous_peak_dir"),
+            "previous_peak_count": order_plan.get("previous_peak_count"),
+            "previous_peak_gap": order_plan.get("previous_peak_gap"),
+            "previous_peak_time": order_plan.get("previous_peak_time"),
+            "previous_peak_strength": order_plan.get("previous_peak_strength"),
+            "previous_peak_price": order_plan.get("previous_peak_price"),
+            "m5_previous_peak_line_side": order_plan.get("m5_previous_peak_line_side"),
+            "m5_previous_peak_line_price": order_plan.get("m5_previous_peak_line_price"),
+            "m5_previous_peak_line_distance_pips": order_plan.get("m5_previous_peak_line_distance_pips"),
+            "m5_previous_peak_line_total_strength": order_plan.get("m5_previous_peak_line_total_strength"),
+            "m5_previous_peak_line_count": order_plan.get("m5_previous_peak_line_count"),
+            "m5_previous_peak_line_core_total_strength": order_plan.get("m5_previous_peak_line_core_total_strength"),
+            "m5_previous_peak_line_is_flipped": order_plan.get("m5_previous_peak_line_is_flipped"),
+            "m5_previous_peak_line_contains_peak": order_plan.get("m5_previous_peak_line_contains_peak"),
+            "m5_previous_peak_line_is_near": order_plan.get("m5_previous_peak_line_is_near"),
+            "m5_previous_peak_line_is_near_strong": order_plan.get("m5_previous_peak_line_is_near_strong"),
+            "h1_previous_peak_line_side": order_plan.get("h1_previous_peak_line_side"),
+            "h1_previous_peak_line_price": order_plan.get("h1_previous_peak_line_price"),
+            "h1_previous_peak_line_distance_pips": order_plan.get("h1_previous_peak_line_distance_pips"),
+            "h1_previous_peak_line_total_strength": order_plan.get("h1_previous_peak_line_total_strength"),
+            "h1_previous_peak_line_count": order_plan.get("h1_previous_peak_line_count"),
+            "h1_previous_peak_line_core_total_strength": order_plan.get("h1_previous_peak_line_core_total_strength"),
+            "h1_previous_peak_line_is_flipped": order_plan.get("h1_previous_peak_line_is_flipped"),
+            "h1_previous_peak_line_contains_peak": order_plan.get("h1_previous_peak_line_contains_peak"),
+            "h1_previous_peak_line_is_near": order_plan.get("h1_previous_peak_line_is_near"),
+            "h1_previous_peak_line_is_near_strong": order_plan.get("h1_previous_peak_line_is_near_strong"),
             "line_side": order_plan.get("line_side"),
             "line_price": order_plan.get("line_price"),
             "line_total_strength": order_plan.get("line_total_strength"),
@@ -607,6 +766,24 @@ class Inspection:
             "core_count": order_plan.get("core_count"),
             "core_total_strength": order_plan.get("core_total_strength"),
             "line_strategy": order_plan.get("line_strategy"),
+            "line_break_threshold_pips": order_plan.get("line_break_threshold_pips"),
+            "line_origin_peak_dir": order_plan.get("line_origin_peak_dir"),
+            "line_origin_role": order_plan.get("line_origin_role"),
+            "line_current_role": order_plan.get("line_current_role"),
+            "line_history_is_flipped": order_plan.get("line_history_is_flipped"),
+            "line_flip_count": order_plan.get("line_flip_count"),
+            "line_latest_flip_time": order_plan.get("line_latest_flip_time"),
+            "line_latest_flip_elapsed_minutes": order_plan.get("line_latest_flip_elapsed_minutes"),
+            "line_latest_flip_bars": order_plan.get("line_latest_flip_bars"),
+            "line_latest_touch_peak_dir": order_plan.get("line_latest_touch_peak_dir"),
+            "line_latest_touch_time": order_plan.get("line_latest_touch_time"),
+            "line_latest_touch_elapsed_minutes": order_plan.get("line_latest_touch_elapsed_minutes"),
+            "line_latest_touch_bars": order_plan.get("line_latest_touch_bars"),
+            "line_touch_count": order_plan.get("line_touch_count"),
+            "line_single_role": order_plan.get("line_single_role"),
+            "line_single_role_last_touch_time": order_plan.get("line_single_role_last_touch_time"),
+            "line_single_role_last_touch_elapsed_minutes": order_plan.get("line_single_role_last_touch_elapsed_minutes"),
+            "line_single_role_last_touch_bars": order_plan.get("line_single_role_last_touch_bars"),
             "h1_upper_price": order_plan.get("h1_upper_price"),
             "h1_upper_distance_pips": order_plan.get("h1_upper_distance_pips"),
             "h1_upper_total_strength": order_plan.get("h1_upper_total_strength"),
@@ -633,6 +810,21 @@ class Inspection:
             "h1_ahead_count": order_plan.get("h1_ahead_count"),
             "h1_ahead_core_total_strength": order_plan.get("h1_ahead_core_total_strength"),
             "h1_ahead_is_flipped": order_plan.get("h1_ahead_is_flipped"),
+            "h1_path_ahead_1_side": order_plan.get("h1_path_ahead_1_side"),
+            "h1_path_ahead_1_price": order_plan.get("h1_path_ahead_1_price"),
+            "h1_path_ahead_1_distance_pips": order_plan.get("h1_path_ahead_1_distance_pips"),
+            "h1_path_ahead_1_total_strength": order_plan.get("h1_path_ahead_1_total_strength"),
+            "h1_path_ahead_1_count": order_plan.get("h1_path_ahead_1_count"),
+            "h1_path_ahead_1_core_total_strength": order_plan.get("h1_path_ahead_1_core_total_strength"),
+            "h1_path_ahead_1_is_flipped": order_plan.get("h1_path_ahead_1_is_flipped"),
+            "h1_path_ahead_2_side": order_plan.get("h1_path_ahead_2_side"),
+            "h1_path_ahead_2_price": order_plan.get("h1_path_ahead_2_price"),
+            "h1_path_ahead_2_distance_pips": order_plan.get("h1_path_ahead_2_distance_pips"),
+            "h1_path_ahead_2_total_strength": order_plan.get("h1_path_ahead_2_total_strength"),
+            "h1_path_ahead_2_count": order_plan.get("h1_path_ahead_2_count"),
+            "h1_path_ahead_2_core_total_strength": order_plan.get("h1_path_ahead_2_core_total_strength"),
+            "h1_path_ahead_2_is_flipped": order_plan.get("h1_path_ahead_2_is_flipped"),
+            "h1_path_ahead_1_to_2_distance_pips": order_plan.get("h1_path_ahead_1_to_2_distance_pips"),
             "h1_behind_side": order_plan.get("h1_behind_side"),
             "h1_behind_price": order_plan.get("h1_behind_price"),
             "h1_behind_distance_pips": order_plan.get("h1_behind_distance_pips"),
@@ -669,6 +861,13 @@ class Inspection:
             "h1_rsi_time_3": order_plan.get("h1_rsi_time_3"),
             "h1_rsi_is_high": order_plan.get("h1_rsi_is_high"),
             "h1_rsi_is_low": order_plan.get("h1_rsi_is_low"),
+            "path_tp_adjusted": order_plan.get("path_tp_adjusted"),
+            "path_tp_adjusted_label": order_plan.get("path_tp_adjusted_label"),
+            "path_tp_pips": order_plan.get("path_tp_pips"),
+            "path_lc_pips": order_plan.get("path_lc_pips"),
+            "path_tp_original_pips": order_plan.get("path_tp_original_pips"),
+            "path_lc_original_pips": order_plan.get("path_lc_original_pips"),
+            "path_tp_rr": order_plan.get("path_tp_rr"),
             "for_api_json": order_plan.get("for_api_json"),
             "memo": order_plan.get("memo"),
         }

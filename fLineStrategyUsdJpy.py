@@ -30,6 +30,18 @@ class LineStrategyProfileUsdJpy:
     m5_core_count_min = 1
     m5_core_total_strength_min = 5
     m5_breakout_entry_offset_pips = 1.5
+    top10_conditions = [
+        {"label": "USD Top1 lower 20-30p RSI40-50", "filters": {"distance_bin": "20-30p", "line_side": "lower", "m5_rsi_bin": "40-50"}},
+        {"label": "USD Top2 lower 20-30p lineStr0-5", "filters": {"distance_bin": "20-30p", "line_side": "lower", "line_strength_bin": "0-5"}},
+        {"label": "USD Top3 lower 20-30p coreStr0-5", "filters": {"distance_bin": "20-30p", "line_side": "lower", "core_strength_bin": "0-5"}},
+        {"label": "USD Top4 lower 20-30p", "filters": {"distance_bin": "20-30p", "line_side": "lower"}},
+        {"label": "USD Top5 buy 20-30p", "filters": {"distance_bin": "20-30p", "direction_label": "buy"}},
+        {"label": "USD Top6 lower 0-3p prevH1Str10-15", "filters": {"previous_h1_strength_bin": "10-15", "distance_bin": "0-3p", "line_side": "lower"}},
+        {"label": "USD Top7 lower 0-3p path1Str10-15", "filters": {"path1_strength_bin": "10-15", "distance_bin": "0-3p", "line_side": "lower"}},
+        {"label": "USD Top8 lower 8-10p session15-20", "filters": {"distance_bin": "8-10p", "line_side": "lower", "session_bucket": "15-20"}},
+        {"label": "USD Top9 lower 0-3p prevH1Str8-10", "filters": {"previous_h1_strength_bin": "8-10", "distance_bin": "0-3p", "line_side": "lower"}},
+        {"label": "USD Top10 lower 10-15p prevM5Str10-15", "filters": {"previous_m5_strength_bin": "10-15", "distance_bin": "10-15p", "line_side": "lower"}},
+    ]
     top7_conditions = [
         {
             "label": "Top1 upper reversal c2 str5-10 core2 H1same0-3 RSI30-40",
@@ -272,8 +284,10 @@ class LineStrategyProfileUsdJpy:
         if latest_peak_dir == -1 and line_side != "lower":
             return []
 
-        if candidate["timeframe"] == "h1":
-            return ["H1 peak direction all count"]
+        top10_reasons = self._configured_top10_reasons(candidate, rsi_info)
+        if top10_reasons:
+            return top10_reasons
+        return []
 
         line = candidate["line"]
         h1_context = candidate.get("h1_context", {})
@@ -299,6 +313,125 @@ class LineStrategyProfileUsdJpy:
             rsi_1,
             self.top7_conditions,
         )
+
+    def _configured_top10_reasons(self, candidate, rsi_info):
+        reasons = []
+        for condition in getattr(self, "top10_conditions", []):
+            if self._is_top10_condition(candidate, rsi_info, condition):
+                reasons.append(condition["label"])
+        return reasons
+
+    def _is_top10_condition(self, candidate, rsi_info, condition):
+        filters = condition.get("filters", {})
+        return all(
+            self._condition_value(candidate, rsi_info, field) == expected
+            for field, expected in filters.items()
+        )
+
+    def _condition_value(self, candidate, rsi_info, field):
+        line = candidate["line"]
+        h1_context = candidate.get("h1_context", {})
+        if field == "line_side":
+            return candidate.get("line_side")
+        if field == "direction_label":
+            return "buy" if int(candidate.get("direction") or 0) == 1 else "sell"
+        if field == "line_strategy":
+            return candidate.get("line_strategy")
+        if field == "session_bucket":
+            return self._session_bucket(candidate.get("session_hour"))
+        if field == "distance_bin":
+            return self._pips_bin(candidate.get("distance_pips"))
+        if field == "line_strength_bin":
+            return self._strength_bin(line.get("total_strength"))
+        if field == "core_strength_bin":
+            return self._strength_bin(line.get("core_total_strength"))
+        if field == "path1_strength_bin":
+            return self._strength_bin(h1_context.get("h1_path_ahead_1_total_strength"))
+        if field == "h1_nearest_strength_bin":
+            return self._strength_bin(h1_context.get("h1_nearest_total_strength"))
+        if field == "previous_m5_strength_bin":
+            return self._strength_bin(h1_context.get("m5_previous_peak_line_total_strength"))
+        if field == "previous_h1_strength_bin":
+            return self._strength_bin(h1_context.get("h1_previous_peak_line_total_strength"))
+        if field == "m5_rsi_bin":
+            return self._rsi_bin(None if rsi_info is None else rsi_info.get("rsi_1"))
+        if field == "h1_rsi_bin":
+            return self._rsi_bin(None if rsi_info is None else rsi_info.get("h1_rsi_1"))
+        if field == "role_change":
+            return bool(line.get("line_history_is_flipped"))
+        if field == "role_pair":
+            return str(line.get("line_origin_role")) + "->" + str(line.get("line_current_role"))
+        if field == "line_current_role":
+            return line.get("line_current_role")
+        return None
+
+    @staticmethod
+    def _bin_value(value, bins):
+        if value is None:
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        for low, high, label in bins:
+            if value > low and value <= high:
+                return label
+        return None
+
+    @classmethod
+    def _pips_bin(cls, value):
+        return cls._bin_value(value, [
+            (-0.1, 3, "0-3p"),
+            (3, 5, "3-5p"),
+            (5, 8, "5-8p"),
+            (8, 10, "8-10p"),
+            (10, 15, "10-15p"),
+            (15, 20, "15-20p"),
+            (20, 30, "20-30p"),
+            (30, 999999, "30p+"),
+        ])
+
+    @classmethod
+    def _strength_bin(cls, value):
+        return cls._bin_value(value, [
+            (-0.1, 5, "0-5"),
+            (5, 8, "5-8"),
+            (8, 10, "8-10"),
+            (10, 15, "10-15"),
+            (15, 20, "15-20"),
+            (20, 999999, "20+"),
+        ])
+
+    @classmethod
+    def _rsi_bin(cls, value):
+        return cls._bin_value(value, [
+            (-0.1, 30, "<=30"),
+            (30, 40, "30-40"),
+            (40, 50, "40-50"),
+            (50, 60, "50-60"),
+            (60, 67.5, "60-67.5"),
+            (67.5, 100, "67.5+"),
+        ])
+
+    @staticmethod
+    def _session_bucket(hour):
+        if hour is None:
+            return None
+        try:
+            hour = int(hour)
+        except (TypeError, ValueError):
+            return None
+        if 0 <= hour <= 5:
+            return "00-05"
+        if 6 <= hour <= 8:
+            return "06-08"
+        if 9 <= hour <= 14:
+            return "09-14"
+        if 15 <= hour <= 20:
+            return "15-20"
+        if 21 <= hour <= 23:
+            return "21-23"
+        return None
 
     def _configured_top7_reasons(
         self,
@@ -416,6 +549,7 @@ class LineStrategyProfileUsdJpy:
             decision_time,
             rsi_info,
             h1_line_class=line_class_h1_l,
+            m5_line_class=line_class_m5_l,
         )
 
 

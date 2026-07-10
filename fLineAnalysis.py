@@ -44,6 +44,15 @@ def line_strategy_profile(pair):
 
 class LineOrderCoordinator:
     duplicate_threshold_pips = 3
+    timeout_by_distance_pips = (
+        (3, 15),
+        (7, 30),
+        (12, 45),
+    )
+    timeout_cap_by_timeframe = {
+        "m5": 45,
+        "h1": 60,
+    }
 
     def __init__(self, analysis):
         self.analysis = analysis
@@ -56,6 +65,17 @@ class LineOrderCoordinator:
         )
         self.duplicate_threshold_pips = self.profile.duplicate_threshold_pips
 
+    @classmethod
+    def order_timeout_min_for_distance(cls, distance_pips, timeframe, default_timeout_min):
+        timeout_min = 60
+        for border_pips, candidate_timeout_min in cls.timeout_by_distance_pips:
+            if distance_pips <= border_pips:
+                timeout_min = candidate_timeout_min
+                break
+
+        cap = cls.timeout_cap_by_timeframe.get(str(timeframe).lower(), default_timeout_min)
+        return min(timeout_min, cap)
+
     def create_orders(
         self,
         strategy_lines,
@@ -63,6 +83,7 @@ class LineOrderCoordinator:
         decision_time,
         rsi_info=None,
         h1_line_class=None,
+        m5_line_class=None,
     ):
         candidates = []
         for strategy, line_class in strategy_lines:
@@ -70,6 +91,10 @@ class LineOrderCoordinator:
             candidates.extend(strategy.build_candidates(line_class, current_price))
         if h1_line_class is not None:
             self._add_h1_context(candidates, h1_line_class)
+        if m5_line_class is not None:
+            self._add_previous_peak_line_context(candidates, m5_line_class, "m5_previous_peak_line")
+        if h1_line_class is not None:
+            self._add_previous_peak_line_context(candidates, h1_line_class, "h1_previous_peak_line")
 
         candidates = self._filter_recommended_candidates(
             candidates,
@@ -108,6 +133,7 @@ class LineOrderCoordinator:
             order_class = self.adjust_order_by_session(order_class, decision_time)
             if order_class is None:
                 continue
+            self._apply_path_short_tp(order_class)
 
             orders.append(order_class)
 
@@ -148,6 +174,14 @@ class LineOrderCoordinator:
         candidate["latest_peak_count"] = latest_peak_info["count"]
         candidate["latest_peak_gap"] = latest_peak_info["gap"]
         candidate["latest_peak_time"] = latest_peak_info["time"]
+        candidate["latest_peak_strength"] = latest_peak_info["strength"]
+        candidate["latest_peak_price"] = latest_peak_info["price"]
+        candidate["previous_peak_dir"] = latest_peak_info["previous_direction"]
+        candidate["previous_peak_count"] = latest_peak_info["previous_count"]
+        candidate["previous_peak_gap"] = latest_peak_info["previous_gap"]
+        candidate["previous_peak_time"] = latest_peak_info["previous_time"]
+        candidate["previous_peak_strength"] = latest_peak_info["previous_strength"]
+        candidate["previous_peak_price"] = latest_peak_info["previous_price"]
         return self.profile.recommended_reasons(
             candidate,
             rsi_info,
@@ -161,11 +195,20 @@ class LineOrderCoordinator:
             else:
                 peaks = self.analysis.peaks_class.peaks_original
             latest_peak = peaks[0]
+            previous_peak = peaks[1] if len(peaks) > 1 else {}
             return {
                 "direction": int(float(latest_peak.get("direction"))),
                 "count": int(latest_peak.get("count") or 0),
                 "gap": latest_peak.get("gap"),
                 "time": latest_peak.get("latest_time_jp"),
+                "strength": latest_peak.get("peak_strength"),
+                "price": latest_peak.get("latest_body_peak_price"),
+                "previous_direction": previous_peak.get("direction"),
+                "previous_count": previous_peak.get("count"),
+                "previous_gap": previous_peak.get("gap"),
+                "previous_time": previous_peak.get("latest_time_jp"),
+                "previous_strength": previous_peak.get("peak_strength"),
+                "previous_price": previous_peak.get("latest_body_peak_price"),
             }
         except (AttributeError, IndexError, TypeError, ValueError):
             return {
@@ -173,6 +216,14 @@ class LineOrderCoordinator:
                 "count": 0,
                 "gap": None,
                 "time": None,
+                "strength": None,
+                "price": None,
+                "previous_direction": None,
+                "previous_count": None,
+                "previous_gap": None,
+                "previous_time": None,
+                "previous_strength": None,
+                "previous_price": None,
             }
 
     @staticmethod
@@ -211,17 +262,7 @@ class LineOrderCoordinator:
 
     def _add_h1_context(self, candidates, h1_line_class):
         p = self.p
-        h1_lines = []
-        for line_side, lines in (
-            ("upper", h1_line_class.upper_lines),
-            ("lower", h1_line_class.lower_lines),
-        ):
-            for line in lines:
-                h1_lines.append({
-                    "side": line_side,
-                    "price": p.round_price(line["median_price"]),
-                    "line": line,
-                })
+        h1_lines = self._line_items(h1_line_class)
 
         for candidate in candidates:
             base_price = float(candidate["line_price"])
@@ -244,6 +285,12 @@ class LineOrderCoordinator:
             nearest_any = self._nearest_h1_line(h1_lines, base_price)
             nearest_ahead = self._nearest_h1_line(ahead_lines, base_price)
             nearest_behind = self._nearest_h1_line(behind_lines, base_price)
+            path_base_price = float(candidate["target_price"])
+            path_ahead_lines = self._sorted_ahead_lines(
+                h1_lines,
+                path_base_price,
+                direction,
+            )
 
             context = {}
             context.update(self._h1_line_fields("h1_upper", nearest_upper, base_price))
@@ -251,6 +298,25 @@ class LineOrderCoordinator:
             context.update(self._h1_line_fields("h1_nearest", nearest_any, base_price))
             context.update(self._h1_line_fields("h1_ahead", nearest_ahead, base_price))
             context.update(self._h1_line_fields("h1_behind", nearest_behind, base_price))
+            context.update(self._h1_line_fields(
+                "h1_path_ahead_1",
+                path_ahead_lines[0] if len(path_ahead_lines) >= 1 else None,
+                path_base_price,
+            ))
+            context.update(self._h1_line_fields(
+                "h1_path_ahead_2",
+                path_ahead_lines[1] if len(path_ahead_lines) >= 2 else None,
+                path_base_price,
+            ))
+            if len(path_ahead_lines) >= 2:
+                context["h1_path_ahead_1_to_2_distance_pips"] = abs(
+                    p.price_to_pips(
+                        float(path_ahead_lines[1]["price"])
+                        - float(path_ahead_lines[0]["price"])
+                    )
+                )
+            else:
+                context["h1_path_ahead_1_to_2_distance_pips"] = None
             nearest_gap = context.get("h1_nearest_distance_pips")
             context["h1_near_same_line"] = (
                 nearest_gap is not None and nearest_gap <= self.duplicate_threshold_pips
@@ -261,11 +327,102 @@ class LineOrderCoordinator:
             )
             candidate["h1_context"] = context
 
+    def _add_previous_peak_line_context(self, candidates, line_class, prefix):
+        lines = self._line_items(line_class)
+        for candidate in candidates:
+            previous_peak_price = candidate.get("previous_peak_price")
+            context = candidate.setdefault("h1_context", {})
+            if previous_peak_price is None:
+                context.update(self._previous_peak_line_fields(prefix, None, None))
+                continue
+
+            nearest_line = self._nearest_h1_line(lines, float(previous_peak_price))
+            context.update(self._previous_peak_line_fields(
+                prefix,
+                nearest_line,
+                float(previous_peak_price),
+            ))
+
+    def _line_items(self, line_class):
+        p = self.p
+        line_items = []
+        for line_side, lines in (
+            ("upper", line_class.upper_lines),
+            ("lower", line_class.lower_lines),
+        ):
+            for line in lines:
+                line_items.append({
+                    "side": line_side,
+                    "price": p.round_price(line["median_price"]),
+                    "line": line,
+                })
+        return line_items
+
+    def _previous_peak_line_fields(self, prefix, item, previous_peak_price):
+        if item is None or previous_peak_price is None:
+            return {
+                prefix + "_side": None,
+                prefix + "_price": None,
+                prefix + "_distance_pips": None,
+                prefix + "_total_strength": None,
+                prefix + "_count": None,
+                prefix + "_core_total_strength": None,
+                prefix + "_is_flipped": None,
+                prefix + "_contains_peak": False,
+                prefix + "_is_near": False,
+                prefix + "_is_near_strong": False,
+            }
+
+        p = self.p
+        line = item["line"]
+        distance_pips = abs(
+            p.price_to_pips(float(item["price"]) - previous_peak_price)
+        )
+        total_strength = line.get("total_strength")
+        contains_peak = self._line_contains_peak(line, previous_peak_price)
+        return {
+            prefix + "_side": item["side"],
+            prefix + "_price": item["price"],
+            prefix + "_distance_pips": distance_pips,
+            prefix + "_total_strength": total_strength,
+            prefix + "_count": line.get("count"),
+            prefix + "_core_total_strength": line.get("core_total_strength"),
+            prefix + "_is_flipped": line.get("is_flipped_line"),
+            prefix + "_contains_peak": contains_peak,
+            prefix + "_is_near": distance_pips <= self.duplicate_threshold_pips,
+            prefix + "_is_near_strong": (
+                distance_pips <= self.duplicate_threshold_pips
+                and float(total_strength or 0) >= 10
+            ),
+        }
+
+    def _line_contains_peak(self, line, peak_price):
+        p = self.p
+        for peak in line.get("prices_info", []):
+            price = peak.get("latest_body_peak_price")
+            if price is None:
+                continue
+            if abs(p.price_to_pips(float(price) - peak_price)) <= 0.1:
+                return True
+        return False
+
     @staticmethod
     def _nearest_h1_line(lines, base_price):
         if not lines:
             return None
         return min(lines, key=lambda x: abs(float(x["price"]) - base_price))
+
+    @staticmethod
+    def _sorted_ahead_lines(lines, base_price, direction):
+        ahead_lines = [
+            x
+            for x in lines
+            if (float(x["price"]) - base_price) * direction > 0
+        ]
+        return sorted(
+            ahead_lines,
+            key=lambda x: abs(float(x["price"]) - base_price),
+        )
 
     def _h1_line_fields(self, prefix, item, base_price):
         if item is None:
@@ -425,6 +582,83 @@ class LineOrderCoordinator:
             if take_profit is not None:
                 take_profit["price"] = str(tp_price)
 
+    def _apply_tp_lc_pips(self, order_class, tp_pips, lc_pips, label):
+        p = self.p
+        order_plan = order_class.exe_order_plan
+        direction = int(order_plan.get("direction") or 1)
+        target_price = float(order_plan["target_price"])
+        old_tp_range = order_plan.get("tp_range")
+        old_lc_range = order_plan.get("lc_range")
+        tp_range = p.pips_to_price(tp_pips)
+        tp_price = p.round_price(target_price + (tp_range * direction))
+        lc_range = p.pips_to_price(lc_pips)
+        lc_price = p.round_price(target_price - (lc_range * direction))
+
+        order_class.tp_range = tp_range
+        order_class.tp_price = tp_price
+        order_class.lc_range = lc_range
+        order_class.lc_price = lc_price
+        if old_tp_range is not None:
+            order_plan["path_tp_original_pips"] = p.price_to_pips(float(old_tp_range))
+        if old_lc_range is not None:
+            order_plan["path_lc_original_pips"] = p.price_to_pips(float(old_lc_range))
+        order_plan["tp_range"] = tp_range
+        order_plan["tp_price"] = tp_price
+        order_plan["lc_range"] = lc_range
+        order_plan["lc_price"] = lc_price
+        order_plan["path_tp_adjusted"] = True
+        order_plan["path_tp_adjusted_label"] = label
+        order_plan["path_tp_pips"] = tp_pips
+        order_plan["path_lc_pips"] = lc_pips
+        order_plan["path_tp_rr"] = tp_pips / lc_pips if lc_pips else None
+
+        for_api_json = order_plan.get("for_api_json")
+        if for_api_json and "order" in for_api_json:
+            take_profit = for_api_json["order"].get("takeProfitOnFill")
+            if take_profit is not None:
+                take_profit["price"] = str(tp_price)
+            stop_loss = for_api_json["order"].get("stopLossOnFill")
+            if stop_loss is not None:
+                stop_loss["price"] = str(lc_price)
+
+    def _apply_path_short_tp(self, order_class):
+        order_plan = order_class.exe_order_plan
+        path_distance = order_plan.get("h1_path_ahead_1_distance_pips")
+        if path_distance is None:
+            return
+
+        try:
+            path_distance = float(path_distance)
+        except (TypeError, ValueError):
+            return
+
+        tp_pips = self._path_short_tp_pips(path_distance)
+        if tp_pips is None:
+            return
+
+        current_tp_range = order_plan.get("tp_range")
+        current_tp_pips = None
+        if current_tp_range is not None:
+            current_tp_pips = self.p.price_to_pips(float(current_tp_range))
+        if current_tp_pips is not None and current_tp_pips <= tp_pips:
+            return
+
+        self._apply_tp_lc_pips(
+            order_class,
+            tp_pips,
+            tp_pips,
+            self.pair + " path1 H1 line short TP",
+        )
+
+    def _path_short_tp_pips(self, path_distance):
+        if self.pair not in ("EUR_USD", "USD_JPY", "AUD_USD"):
+            return None
+        if 0 < path_distance <= 3:
+            return 3
+        if 3 < path_distance <= 6:
+            return 5
+        return None
+
     def _create_order(
         self,
         candidate,
@@ -436,10 +670,16 @@ class LineOrderCoordinator:
         p = self.p
         strategy = candidate["strategy"]
         line = candidate["line"]
+        order_timeout_min = self.order_timeout_min_for_distance(
+            candidate.get("distance_pips", 0),
+            strategy.timeframe,
+            strategy.order_timeout_min,
+        )
         lc_range = p.pips_to_price(strategy.lc_pips)
         tp_range = p.pips_to_price(strategy.get_tp_pips())
         units = int(
-            self.analysis.cal_units(
+            gene.calculate_units(
+                self.p,
                 lc_range,
                 tk.setting_json["l_units"],
                 "l",
@@ -468,10 +708,12 @@ class LineOrderCoordinator:
             "pair": self.pair,
             "candle_analysis_class": self.analysis.candle_analysis_all,
             "lc_change_candle_type": "M5",
-            "order_timeout_min": strategy.order_timeout_min,
+            "order_timeout_min": order_timeout_min,
             "memo": candidate.get("memo", ""),
         })
         order_plan = order_class.exe_order_plan
+        order_plan["decision_price"] = current_price
+        order_plan["target_distance_pips"] = candidate.get("distance_pips")
         order_plan["source"] = "line"
         order_plan["line_timeframe"] = strategy.timeframe
         order_plan["line_entry_type"] = strategy.entry_type
@@ -480,6 +722,14 @@ class LineOrderCoordinator:
         order_plan["latest_peak_count"] = candidate.get("latest_peak_count")
         order_plan["latest_peak_gap"] = candidate.get("latest_peak_gap")
         order_plan["latest_peak_time"] = candidate.get("latest_peak_time")
+        order_plan["latest_peak_strength"] = candidate.get("latest_peak_strength")
+        order_plan["latest_peak_price"] = candidate.get("latest_peak_price")
+        order_plan["previous_peak_dir"] = candidate.get("previous_peak_dir")
+        order_plan["previous_peak_count"] = candidate.get("previous_peak_count")
+        order_plan["previous_peak_gap"] = candidate.get("previous_peak_gap")
+        order_plan["previous_peak_time"] = candidate.get("previous_peak_time")
+        order_plan["previous_peak_strength"] = candidate.get("previous_peak_strength")
+        order_plan["previous_peak_price"] = candidate.get("previous_peak_price")
         order_plan["line_side"] = candidate["line_side"]
         order_plan["line_price"] = candidate["line_price"]
         order_plan["line_total_strength"] = line.get("total_strength")
@@ -491,6 +741,27 @@ class LineOrderCoordinator:
         order_plan["core_count"] = line.get("core_count")
         order_plan["core_total_strength"] = line.get("core_total_strength")
         order_plan["line_strategy"] = strategy.line_strategy
+        for key in (
+            "line_break_threshold_pips",
+            "line_origin_peak_dir",
+            "line_origin_role",
+            "line_current_role",
+            "line_history_is_flipped",
+            "line_flip_count",
+            "line_latest_flip_time",
+            "line_latest_flip_elapsed_minutes",
+            "line_latest_flip_bars",
+            "line_latest_touch_peak_dir",
+            "line_latest_touch_time",
+            "line_latest_touch_elapsed_minutes",
+            "line_latest_touch_bars",
+            "line_touch_count",
+            "line_single_role",
+            "line_single_role_last_touch_time",
+            "line_single_role_last_touch_elapsed_minutes",
+            "line_single_role_last_touch_bars",
+        ):
+            order_plan[key] = line.get(key)
         order_plan.update(candidate.get("h1_context", {}))
         if rsi_info is not None:
             order_plan.update(rsi_info)
@@ -685,7 +956,7 @@ class MainAnalysis:
         tp_pips = round(rr * (lc_pips + spread_pips) + spread_pips, 1)
         lc_range = p.pips_to_price(lc_pips)
         tp_range = p.pips_to_price(tp_pips)
-        units = int(self.cal_units(lc_range, tk.setting_json['l_units'], "l") * 0.5)
+        units = int(gene.calculate_units(self.p, lc_range, tk.setting_json['l_units'], "l") * 0.5)
 
         line_orders = []
         line_candidates = []
@@ -742,6 +1013,11 @@ class MainAnalysis:
             i = candidate["line_index"]
             line_price = candidate["line_price"]
             line_strategy = candidate["line_strategy"]
+            order_timeout_min = LineOrderCoordinator.order_timeout_min_for_distance(
+                candidate["distance_pips"],
+                "h1",
+                60,
+            )
 
             if self.has_similar_order(
                 direction,
@@ -769,7 +1045,7 @@ class MainAnalysis:
                 "pair": self.pair,
                 "candle_analysis_class": self.candle_analysis_all,
                 "lc_change_candle_type": "M5",
-                "order_timeout_min": 60,
+                "order_timeout_min": order_timeout_min,
                 "memo": "virtual H1 line limit order",
             })
             order_class.exe_order_plan["source"] = "line"
@@ -802,7 +1078,7 @@ class MainAnalysis:
         tp_pips = 13
         lc_range = p.pips_to_price(lc_pips)
         tp_range = p.pips_to_price(tp_pips)
-        units = int(self.cal_units(lc_range, tk.setting_json['l_units'], "l") * 0.25)
+        units = int(gene.calculate_units(self.p, lc_range, tk.setting_json['l_units'], "l") * 0.25)
 
         line_orders = []
         line_candidates = []
@@ -859,6 +1135,11 @@ class MainAnalysis:
             i = candidate["line_index"]
             line_price = candidate["line_price"]
             line_strategy = candidate["line_strategy"]
+            order_timeout_min = LineOrderCoordinator.order_timeout_min_for_distance(
+                candidate["distance_pips"],
+                "m5",
+                15,
+            )
 
             if self.has_similar_order(
                 direction,
@@ -886,7 +1167,7 @@ class MainAnalysis:
                 "pair": self.pair,
                 "candle_analysis_class": self.candle_analysis_all,
                 "lc_change_candle_type": "M5",
-                "order_timeout_min": 15,
+                "order_timeout_min": order_timeout_min,
                 "memo": "virtual M5 line limit order",
             })
             order_class.exe_order_plan["source"] = "line"
@@ -938,6 +1219,7 @@ class MainAnalysis:
         decision_time,
         rsi_info=None,
         h1_line_class=None,
+        m5_line_class=None,
     ):
         coordinator = LineOrderCoordinator(self)
         return coordinator.create_orders(
@@ -946,6 +1228,7 @@ class MainAnalysis:
             decision_time,
             rsi_info,
             h1_line_class=h1_line_class,
+            m5_line_class=m5_line_class,
         )
 
     def add_h1_line_limit_orders(self, line_class, current_price, decision_time, rsi_info=None):
@@ -1250,18 +1533,19 @@ class MainAnalysis:
 
         before_legacy_rsi_order_count = len(self.exe_order_classes)
         print("Legacy RSI line orders are disabled. Use top7 M5 line orders.")
-        self.notify_count2_line_no_order(
-            peaks[0],
-            line_class_m5_l,
-            line_class_m5_s,
-            line_class_h1_l,
-            rsi_info,
-            order_pattern,
-            before_legacy_rsi_order_count,
-            current_price,
-            df.iloc[0]['time_jp'],
-            m5_line_orders,
-        )
+        # No-order line notices are intentionally disabled for both USD_JPY and EUR_USD.
+        # self.notify_count2_line_no_order(
+        #     peaks[0],
+        #     line_class_m5_l,
+        #     line_class_m5_s,
+        #     line_class_h1_l,
+        #     rsi_info,
+        #     order_pattern,
+        #     before_legacy_rsi_order_count,
+        #     current_price,
+        #     df.iloc[0]['time_jp'],
+        #     m5_line_orders,
+        # )
         return 0
 
     def notify_count2_line_no_order(
@@ -1303,7 +1587,8 @@ class MainAnalysis:
             current_price,
             decision_time,
         )
-        notice.line_send(message)
+        # No-order line notices are intentionally disabled for both USD_JPY and EUR_USD.
+        # notice.line_send(message)
 
     def build_count2_line_no_order_message(
         self,
@@ -1398,48 +1683,6 @@ class MainAnalysis:
             + " core_strength=" + str(nearest["core_strength"])
         )
 
-    def cal_units(self, lc_range, risk_yen=500, tag="s", yen_per_pip_per_lot=1000, ):
-        """
-        risk_yenは最大の負け額
-        tagは注文がアプリからわかりやすいように、強引にUNITの一桁目を調整する。sの場合は1か６、lの場合は0か５になる
-        yen_per_pip_per_lot:
-            例）ドル円で1ロット=1000通貨なら約10円/pips
-                1万通貨なら約100円/pips
-        """
-        # 基本的なUNIT計算
-        doller_yen = 10000
-        lc_pips = max(self.p.price_to_pips(lc_range), 0.000000001)  # 下のdeveide0を防ぎたい
-        # print("　UNITSを計算する lc_range", lc_range, "pips", lc_pips, "許容損失", risk_yen)
-        lot = risk_yen / (lc_pips * yen_per_pip_per_lot)
-        units = int(lot * doller_yen)
-
-        # 調整
-        # 一桁目（10で割った余り）を取得
-        last_digit = units % 10
-        # 一桁目を除いた「十の位以上」のベース数値
-        base = (units // 10) * 10
-        if tag == "l":
-            # 0か5、近い方に合わせる
-            if last_digit <= 2 or last_digit >= 8:
-                # 0に近い場合（8, 9, 0, 1, 2）
-                # ※ 8, 9の場合は次の桁の0に近いので、四捨五入に近い処理
-                new_units = round(units / 5) * 5
-            else:
-                # 5に近い場合（3, 4, 5, 6, 7）
-                new_units = base + 5
-
-            # シンプルに書くなら： units = 5 * round(units / 5)
-            units = int(5 * round(units / 5))
-
-        elif tag == "s":
-            # 1か6、近い方に合わせる
-            # unitsから1を引くと「0か5に合わせる問題」に置き換えられる
-            adjusted = 5 * round((units - 1) / 5) + 1
-            units = int(adjusted)
-
-        return units
-    
-    
 class LineStrengthCal:
     def __init__(self, candle_analysis_class, foot, time_before_foot_count=30):
         print("  ")
@@ -1556,6 +1799,7 @@ class LineStrengthCal:
         all_lines = self.all_lines  # 置き換え
         # 結果用
         for i, item in enumerate(all_lines):
+            self.add_line_role_history(item)
             # print("    K", item['median_price'])
             is_flipped_line = False
             # 各ラインを単品で見ていく
@@ -1570,6 +1814,102 @@ class LineStrengthCal:
             # 結果付与する
             item['is_flipped_line'] = is_flipped_line
             item['is_flipped_line_st'] = 0
+
+    def add_line_role_history(self, line):
+        break_threshold_pips = 2
+        peaks = line.get("prices_info") or []
+        line_price = float(line.get("median_price") or 0)
+        line["line_break_threshold_pips"] = break_threshold_pips
+        line["line_origin_peak_dir"] = None
+        line["line_origin_role"] = None
+        line["line_current_role"] = None
+        line["line_history_is_flipped"] = False
+        line["line_flip_count"] = 0
+        line["line_latest_flip_time"] = None
+        line["line_latest_flip_elapsed_minutes"] = None
+        line["line_latest_flip_bars"] = None
+        line["line_latest_touch_peak_dir"] = None
+        line["line_latest_touch_time"] = None
+        line["line_latest_touch_elapsed_minutes"] = None
+        line["line_latest_touch_bars"] = None
+        line["line_touch_count"] = len(peaks)
+        line["line_single_role"] = None
+        line["line_single_role_last_touch_time"] = None
+        line["line_single_role_last_touch_elapsed_minutes"] = None
+        line["line_single_role_last_touch_bars"] = None
+        if not peaks or not line_price or self.df_r is None or self.df_r.empty:
+            return
+
+        time_format = "%Y/%m/%d %H:%M:%S"
+        current_time = datetime.strptime(self.current_time, time_format)
+        origin_peak = peaks[-1]
+        latest_peak = peaks[0]
+        origin_dir = int(origin_peak["direction"])
+        origin_time = datetime.strptime(origin_peak["latest_time_jp"], time_format)
+        latest_touch_time = datetime.strptime(latest_peak["latest_time_jp"], time_format)
+        origin_role = "resistance" if origin_dir == 1 else "support"
+
+        line["line_origin_peak_dir"] = origin_dir
+        line["line_origin_role"] = origin_role
+        line["line_latest_touch_peak_dir"] = int(latest_peak["direction"])
+        line["line_latest_touch_time"] = latest_touch_time.strftime(time_format)
+        line["line_latest_touch_elapsed_minutes"] = round(
+            max((current_time - latest_touch_time).total_seconds(), 0) / 60,
+            1,
+        )
+
+        candles = self.df_r.copy()
+        candle_times = pd.to_datetime(candles["time_jp"], format=time_format)
+        candles = candles.assign(line_event_time=candle_times)
+        candles = candles[
+            (candles["line_event_time"] > origin_time)
+            & (candles["line_event_time"] <= current_time)
+        ].sort_values("line_event_time")
+        line["line_latest_touch_bars"] = int(
+            (candles["line_event_time"] > latest_touch_time).sum()
+        )
+
+        threshold_price = self.p.pips_to_price(break_threshold_pips)
+        stable_side = -1 if origin_role == "resistance" else 1
+        flip_times = []
+        for candle in candles.itertuples(index=False):
+            close = float(candle.close)
+            if close > line_price + threshold_price:
+                close_side = 1
+            elif close < line_price - threshold_price:
+                close_side = -1
+            else:
+                continue
+            if close_side != stable_side:
+                flip_times.append(candle.line_event_time)
+                stable_side = close_side
+
+        flip_count = len(flip_times)
+        current_role = origin_role
+        if flip_count % 2 == 1:
+            current_role = "support" if origin_role == "resistance" else "resistance"
+        line["line_current_role"] = current_role
+        line["line_history_is_flipped"] = current_role != origin_role
+        line["line_flip_count"] = flip_count
+        if flip_count == 0:
+            line["line_single_role"] = origin_role
+            line["line_single_role_last_touch_time"] = line["line_latest_touch_time"]
+            line["line_single_role_last_touch_elapsed_minutes"] = line[
+                "line_latest_touch_elapsed_minutes"
+            ]
+            line["line_single_role_last_touch_bars"] = line[
+                "line_latest_touch_bars"
+            ]
+        if flip_times:
+            latest_flip_time = flip_times[-1]
+            line["line_latest_flip_time"] = latest_flip_time.strftime(time_format)
+            line["line_latest_flip_elapsed_minutes"] = round(
+                max((current_time - latest_flip_time).total_seconds(), 0) / 60,
+                1,
+            )
+            line["line_latest_flip_bars"] = int(
+                (candles["line_event_time"] > latest_flip_time).sum()
+            )
 
     def lines_df_analysis(self):
         """

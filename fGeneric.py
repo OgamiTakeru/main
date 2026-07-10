@@ -69,6 +69,27 @@ def currency_pair(pair_name: str) -> CurrencyPair:
     return CURRENCY_PAIRS[pair_name]
 
 
+def calculate_units(
+        pair_info: CurrencyPair,
+        lc_range: float,
+        risk_yen: float = 500,
+        rounding_tag: str = "s",
+        yen_per_pip_per_lot: float = 1000,
+) -> int:
+    """Calculate order units from the permitted loss and stop-loss distance."""
+    units_per_lot = 10000
+    lc_pips = max(pair_info.price_to_pips(lc_range), 0.000000001)
+    lot = risk_yen / (lc_pips * yen_per_pip_per_lot)
+    units = int(lot * units_per_lot)
+
+    if rounding_tag == "l":
+        units = int(5 * round(units / 5))
+    elif rounding_tag == "s":
+        units = int(5 * round((units - 1) / 5) + 1)
+
+    return units
+
+
 currentPair = USD_JPY
 
 

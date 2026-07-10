@@ -634,8 +634,9 @@ class position_control:
         res = self.oa2.OpenTrades_exe()
         if len(res['data']) == 0:
             return 0
-        trades = res['json']['trades']
-        print("trades", len(trades))
+        trades_all = res['json']['trades']
+        trades = [trade for trade in trades_all if trade.get("instrument") == self.pair]
+        print("trades", len(trades), "/", len(trades_all), self.pair)
         print(trades)
         if len(trades) == 0:
             print("現状のポジションなし")

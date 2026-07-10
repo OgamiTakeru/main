@@ -647,7 +647,8 @@ class Oanda:
             if temp['state'] == "OPEN":
                 res_json['trade']['PLu'] = pair.round_price(float(temp['unrealizedPL']) / abs(float(temp['initialUnits'])))
             elif temp['state'] == "CLOSED":
-                res_json['trade']['PLu'] = pair.round_price(float(temp['realizedPL']) / abs(float(temp['initialUnits'])))
+                direction = float(temp['initialUnits']) / abs(float(temp['initialUnits']))
+                res_json['trade']['PLu'] = pair.round_price((float(temp['averageClosePrice']) - float(temp['price'])) * direction)
             else:
                 print("    Tradeの状態を確認＠oandaClass TradeDetails_exe")
                 res_json['trade']['PLu'] == 0
