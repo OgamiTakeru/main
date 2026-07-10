@@ -90,6 +90,7 @@ class order_information:
         self.current_price = 0
         self.current_price_by_candle = 0
         self.current_candle_price_gap = 0  # 注文時点の、current_priceとcurrent_price_by_candleの差分
+        self.gap_target_price_pips = 0  # 注文時点の、現在価格からtarget_priceまでの距離(pips)
         self.lc_change_candle_num = 100
         self.order_class = None
         self.linkage_order_classes = []  # リンクオーダーのオーダー情報
@@ -225,6 +226,7 @@ class order_information:
         self.current_price = 0
         self.current_price_by_candle = 0
         self.current_candle_price_gap = 0
+        self.gap_target_price_pips = 0
         # self.is_live = True  # 本番環境か練習か（Boolean）　⇒する必要なし
         self.life = False
         self.waiting_order = False
@@ -574,6 +576,26 @@ class order_information:
         except (TypeError, ValueError):
             return str(price_diff)
 
+    def update_gap_target_price_pips(self, current_price=None):
+        try:
+            target_price = float(self.plan_json['target_price'])
+            base_price = float(self.current_price if current_price is None else current_price)
+            if not math.isfinite(target_price) or not math.isfinite(base_price) or base_price == 0:
+                return
+            self.gap_target_price_pips = self.p.price_to_pips(abs(target_price - base_price))
+        except (KeyError, TypeError, ValueError):
+            return
+
+    def gap_target_price_info(self):
+        try:
+            target_price = round(float(self.plan_json['target_price']), self.u)
+            gap_pips = float(self.gap_target_price_pips)
+            if not math.isfinite(gap_pips):
+                raise ValueError
+            return ", 狙い価格:" + str(target_price) + "(" + str(round(gap_pips, 2)) + "p)"
+        except (KeyError, TypeError, ValueError):
+            return ""
+
     def signed_pips_text(self, pips):
         try:
             value = float(pips)
@@ -631,8 +653,9 @@ class order_information:
         cu_by_ca = self.current_price_by_candle
         cu_gap = round(abs(cu - cu_by_ca), self.u)
         self.current_candle_price_gap = cu_gap
+        self.update_gap_target_price_pips(cu)
         current_price_gap_pips = self.pips_text(cu_gap)
-        target_current_gap_pips = self.pips_text(abs(float(self.plan_json['target_price']) - float(cu)))
+        target_current_gap_pips = str(round(self.gap_target_price_pips, 2)) + "p"
         current_price_info = ", 現在価格:" + str(cu) + "現在価格byピーク:" + str(cu_by_ca) + ", 現在価格-ピーク差:" + str(cu_gap) + " "
         # current_price_info = "現在価格byピーク:" + str(cu_by_ca) + ", 現在価格-ピーク差:" + str(cu_gap)
 
@@ -851,7 +874,7 @@ class order_information:
             # res1 = "【Unit】" + str(trade_latest['currentUnits'])
             res1 = "【Unit】" + str(units_for_view * direction)
             id_info = "【orderID】" + str(self.o_id) + "【tradeID】" + str(self.t_id)
-            res2 = "【決:" + str(trade_latest['averageClosePrice']) + ", " + "取:" + str(trade_latest['price']) + "】"
+            res2 = "【決:" + str(trade_latest['averageClosePrice']) + ", " + "取:" + str(trade_latest['price']) + self.gap_target_price_info() + "】"
             res3 = ("【ポジション期間の最大/小の振れ幅】 ＋域:" + self.pips_text(self.win_max_plu) + "@" + str(self.win_max_price)
                     + "/ー域:" + self.pips_text(self.lose_max_plu) + "@" + str(self.lose_max_price))
             res3 = res3 + "【ポジション期間の最大/小の振れ幅(円)】 ＋域:" + str(self.win_max_plu_yen) + "/ー域:" + str(self.lose_max_plu_yen)
@@ -900,6 +923,7 @@ class order_information:
                 "move_ave60": self.move_ave60,
                 "memo": order_info_for_com,
                 "current_price_gap": self.current_candle_price_gap,
+                "target_price_gap_pips": self.gap_target_price_pips,
                 "rr": round(self.plan_json.get('tp_range', 0) / self.plan_json.get('lc_range', 0), 1)
             }
             order_information.result_dic_arr.append(result_dic)
@@ -909,7 +933,7 @@ class order_information:
             # res1 = "強制Close【Unit】" + str(trade_latest['currentUnits'])
             res1 = "【Unit】" + str(trade_latest['currentUnits'])  # )str(units_for_view * direction)
             id_info = "【orderID】" + str(self.o_id) + "【tradeID】" + str(self.t_id)
-            res2 = "【決:" + str(self.current_price) + ", " + "取:" + str(trade_latest['price']) + "】"
+            res2 = "【決:" + str(self.current_price) + ", " + "取:" + str(trade_latest['price']) + self.gap_target_price_info() + "】"
             res3 = ("【ポジション期間の最大/小の振れ幅】 ＋域:" + self.pips_text(self.win_max_plu) + "@" + str(self.win_max_price)
                     + "/ー域:" + self.pips_text(self.lose_max_plu) + "@=" + str(self.lose_max_price))
             res3 = res3 + "【ポジション期間の最大/小の振れ幅(円)】 ＋域:" + str(self.win_max_plu_yen) + "/ー域:" + str(self.lose_max_plu_yen)
@@ -957,6 +981,7 @@ class order_information:
                 "move_ave60": self.move_ave60,
                 "memo": order_info_for_com,
                 "current_price_gap": self.current_candle_price_gap,
+                "target_price_gap_pips": self.gap_target_price_pips,
                 "rr": round(self.plan_json.get('tp_range', 0) / self.plan_json.get('lc_range', 0), 1)
             }
             order_information.result_dic_arr.append(result_dic)
@@ -1273,6 +1298,7 @@ class order_information:
                     "move_ave60": self.move_ave60,
                     "memo": "Order強制キャンセル",
                     "current_price_gap": self.current_candle_price_gap,
+                    "target_price_gap_pips": self.gap_target_price_pips,
                     "rr": round(self.plan_json.get('tp_range', 0) / self.plan_json.get('lc_range', 0), 1)
                 }
                 history_path = tk.history_folder_path + 'history.csv'
@@ -1727,7 +1753,8 @@ class order_information:
         line_send = "　"
         if "order_result" in order_res:
             o_trans = order_res['order_result']['json']['orderCreateTransaction']
-            target_current_gap_pips = self.pips_text(abs(float(self.plan_json['target_price']) - float(self.current_price)))
+            self.update_gap_target_price_pips(self.current_price)
+            target_current_gap_pips = str(round(self.gap_target_price_pips, 2)) + "p"
             line_send = line_send + "◆ Watchingオーダー発行【" + str(self.name) + "】,\n" + \
                         "指定価格:【" + str(self.plan_json['target_price']) + "】(" + target_current_gap_pips + ")" + \
                         ", 数量:" + str(o_trans['units']) + \
