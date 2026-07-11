@@ -602,6 +602,20 @@ class order_information:
         except (TypeError, ValueError):
             return 0
 
+    def write_history_result(self, result_dic):
+        history_path = tk.history_folder_path + 'history.csv'
+        try:
+            if not os.path.exists(history_path):
+                history_rows = order_information.result_dic_arr if order_information.result_dic_arr else [result_dic]
+                df = pd.DataFrame(history_rows)
+                df.to_csv(history_path, index=False)
+            else:
+                df = pd.DataFrame([result_dic])
+                df.to_csv(history_path, mode='a', header=False, index=False)
+        except (OSError, PermissionError, IOError) as e:
+            print(f"ファイルにアクセスできませんでした: {e}")
+        return history_path
+
     def update_gap_target_price_pips(self, current_price=None):
         try:
             target_price = float(self.plan_json['target_price'])
@@ -1029,20 +1043,7 @@ class order_information:
 
         # 共通処理
         # ①共通処理（ファイルへの書き込み）
-        history_path = tk.history_folder_path + 'history.csv'
-        try:
-            # ファイル書き込み
-            if not os.path.exists(history_path):
-                # ファイルが存在しない場合、新規作成
-                df = pd.DataFrame(order_information.result_dic_arr)
-                df.to_csv(history_path, index=False)
-            else:
-                # ファイルが存在する場合、追記処理
-                df = pd.DataFrame([result_dic])
-                df.to_csv(history_path, mode='a', header=False, index=False)
-
-        except (OSError, PermissionError, IOError) as e:
-            print(f"ファイルにアクセスできませんでした: {e}")
+        history_path = self.write_history_result(result_dic)
 
         # ②集計値の送信(一覧）
         temp = pd.read_csv(history_path)
@@ -1333,20 +1334,7 @@ class order_information:
                     "rr": self.safe_rr(),
                     "target_price_range": self.gap_target_price_pips
                 }
-                history_path = tk.history_folder_path + 'history.csv'
-                try:
-                    # ファイル書き込み
-                    if not os.path.exists(history_path):
-                        # ファイルが存在しない場合、新規作成
-                        df = pd.DataFrame(order_information.result_dic_arr)
-                        df.to_csv(history_path, index=False)
-                    else:
-                        # ファイルが存在する場合、追記処理
-                        df = pd.DataFrame([result_dic])
-                        df.to_csv(history_path, mode='a', header=False, index=False)
-
-                except (OSError, PermissionError, IOError) as e:
-                    print(f"ファイルにアクセスできませんでした: {e}")
+                self.write_history_result(result_dic)
         if order_latest['state'] == "CANCELLED":
             self.close_order()
 
