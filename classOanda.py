@@ -641,17 +641,18 @@ class Oanda:
             # いくつか項目を追加しておく
             # timepastを追加する
             res_json['trade']['time_past'] = cal_past_time_single(iso_to_jstdt_single(res_json['trade']['openTime']))
-            # PL / unit を追加する(Open時はunrealizedPL,Close時はrealizePLを利用する)
+            # 価格差を追加する(Open時はunrealizedPL由来、Close時は約定価格と決済価格から算出)
             temp = res_json['trade']
             pair = gene.currency_pair(temp.get("instrument", "USD_JPY"))
             if temp['state'] == "OPEN":
-                res_json['trade']['PLu'] = pair.round_price(float(temp['unrealizedPL']) / abs(float(temp['initialUnits'])))
+                res_json['trade']['price_diff'] = pair.round_price(float(temp['unrealizedPL']) / abs(float(temp['initialUnits'])))
             elif temp['state'] == "CLOSED":
                 direction = float(temp['initialUnits']) / abs(float(temp['initialUnits']))
-                res_json['trade']['PLu'] = pair.round_price((float(temp['averageClosePrice']) - float(temp['price'])) * direction)
+                res_json['trade']['price_diff'] = pair.round_price((float(temp['averageClosePrice']) - float(temp['price'])) * direction)
             else:
                 print("    Tradeの状態を確認＠oandaClass TradeDetails_exe")
-                res_json['trade']['PLu'] == 0
+                res_json['trade']['price_diff'] = 0
+            res_json['trade']['pl_pips'] = pair.price_to_pips(res_json['trade']['price_diff'])
             res_json['trade']['openTime'] = iso_to_jstdt_single(res_json['trade']['openTime'])  # OpenTimeを日本時刻に変換
             return {"data": res_json, "error": 0}  # 単品が対象なので、Jsonで返した方がよい（DataFrameで返すと、単品なのに行の指定が必要）
         except Exception as e:
