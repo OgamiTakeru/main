@@ -576,6 +576,24 @@ class order_information:
         except (TypeError, ValueError):
             return str(price_diff)
 
+    def price_diff_to_pips(self, price_diff):
+        try:
+            value = float(price_diff)
+            if not math.isfinite(value):
+                return 0
+            return self.p.price_to_pips(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def safe_rr(self):
+        try:
+            lc_range = float(self.plan_json.get('lc_range', 0))
+            if lc_range == 0:
+                return 0
+            return round(float(self.plan_json.get('tp_range', 0)) / lc_range, 1)
+        except (TypeError, ValueError):
+            return 0
+
     def update_gap_target_price_pips(self, current_price=None):
         try:
             target_price = float(self.plan_json['target_price'])
@@ -896,10 +914,10 @@ class order_information:
                 "name": self.name,
                 "pair": self.pair,
                 "res": str(trade_latest['realizedPL']),
-                "pl_per_units": str(trade_latest['PLu']),  # 以下追加
+                "pl_per_units": latest_pips,  # 以下追加
                 "units": str(units_for_view * direction),
-                "max_plus": str(self.win_max_plu),
-                "max_minus": str(self.lose_max_plu),
+                "max_plus": self.price_diff_to_pips(self.win_max_plu),
+                "max_minus": self.price_diff_to_pips(self.lose_max_plu),
                 "order_time": self.o_time,
                 "target_price": self.plan_json['target_price'],
                 "take_time": self.t_time,
@@ -908,9 +926,9 @@ class order_information:
                 "end_price": str(trade_latest['averageClosePrice']),
                 "lc_price": self.plan_json['lc_price'],
                 "lc_price_original_plan": self.plan_json['lc_price_original'],
-                "lc_range": self.plan_json.get('lc_range', 0),
+                "lc_range": self.price_diff_to_pips(self.plan_json.get('lc_range', 0)),
                 "tp_price": self.plan_json['tp_price'],
-                "tp_range": self.plan_json.get('tp_range', 0),
+                "tp_range": self.price_diff_to_pips(self.plan_json.get('tp_range', 0)),
                 "lc_change": self.lc_change_str,
                 "orderID": str(self.o_id),
                 "tradeID": str(self.t_id),
@@ -919,12 +937,12 @@ class order_information:
                 "position_keep_time": str(trade_latest['time_past']),
                 "name_ymdhms": self.name_ymdhms,
                 "tp_price_original_plan": self.plan_json['tp_price_original'],
-                "move_ave5": self.move_ave5,
-                "move_ave60": self.move_ave60,
+                "move_ave5": self.price_diff_to_pips(self.move_ave5),
+                "move_ave60": self.price_diff_to_pips(self.move_ave60),
                 "memo": order_info_for_com,
-                "current_price_gap": self.current_candle_price_gap,
-                "target_price_gap_pips": self.gap_target_price_pips,
-                "rr": round(self.plan_json.get('tp_range', 0) / self.plan_json.get('lc_range', 0), 1)
+                "current_price_gap": self.price_diff_to_pips(self.current_candle_price_gap),
+                "rr": self.safe_rr(),
+                "target_price_range": self.gap_target_price_pips
             }
             order_information.result_dic_arr.append(result_dic)
             # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
@@ -954,10 +972,10 @@ class order_information:
                 "name": self.name,
                 "pair": self.pair,
                 "res": str(trade_latest['unrealizedPL']),  # 上と違う部分
-                "pl_per_units": str(trade_latest['PLu']),  # 以下追加
+                "pl_per_units": latest_pips,  # 以下追加
                 "units": str(units_for_view * direction),
-                "max_plus": str(self.win_max_plu),
-                "max_minus": str(self.lose_max_plu),
+                "max_plus": self.price_diff_to_pips(self.win_max_plu),
+                "max_minus": self.price_diff_to_pips(self.lose_max_plu),
                 "order_time": self.o_time,
                 "target_price": self.plan_json['target_price'],
                 "take_time": self.t_time,
@@ -966,9 +984,9 @@ class order_information:
                 "end_price": str(self.current_price),  #str(trade_latest['averageClosePrice']),
                 "lc_price": self.plan_json['lc_price'],
                 "lc_price_original_plan": self.plan_json['lc_price_original'],
-                "lc_range": self.plan_json['lc_range'],
+                "lc_range": self.price_diff_to_pips(self.plan_json['lc_range']),
                 "tp_price": self.plan_json['tp_price'],
-                "tp_range": self.plan_json['tp_range'],
+                "tp_range": self.price_diff_to_pips(self.plan_json['tp_range']),
                 "lc_change": self.lc_change_str,
                 "orderID": str(self.o_id),
                 "tradeID": str(self.t_id),
@@ -977,12 +995,12 @@ class order_information:
                 "position_keep_time": str(trade_latest['time_past']),
                 "name_ymdhms": self.name_ymdhms,
                 "tp_price_original_plan": self.plan_json['tp_price_original'],
-                "move_ave5": self.move_ave5,
-                "move_ave60": self.move_ave60,
+                "move_ave5": self.price_diff_to_pips(self.move_ave5),
+                "move_ave60": self.price_diff_to_pips(self.move_ave60),
                 "memo": order_info_for_com,
-                "current_price_gap": self.current_candle_price_gap,
-                "target_price_gap_pips": self.gap_target_price_pips,
-                "rr": round(self.plan_json.get('tp_range', 0) / self.plan_json.get('lc_range', 0), 1)
+                "current_price_gap": self.price_diff_to_pips(self.current_candle_price_gap),
+                "rr": self.safe_rr(),
+                "target_price_range": self.gap_target_price_pips
             }
             order_information.result_dic_arr.append(result_dic)
             # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
@@ -1283,9 +1301,9 @@ class order_information:
                     "end_price": 0,  # str(trade_latest['averageClosePrice']),
                     "lc_price": self.plan_json['lc_price'],
                     "lc_price_original_plan": self.plan_json['lc_price_original'],
-                    "lc_range": self.plan_json['lc_range'],
+                    "lc_range": self.price_diff_to_pips(self.plan_json['lc_range']),
                     "tp_price": self.plan_json['tp_price'],
-                    "tp_range": self.plan_json['tp_range'],
+                    "tp_range": self.price_diff_to_pips(self.plan_json['tp_range']),
                     "lc_change": self.lc_change_str,
                     "orderID": str(self.o_id),
                     "tradeID": str(self.t_id),
@@ -1294,12 +1312,12 @@ class order_information:
                     "position_keep_time": 0,
                     "name_ymdhms": self.name_ymdhms,
                     "tp_price_original_plan": self.plan_json['tp_price_original'],
-                    "move_ave5": self.move_ave5,
-                    "move_ave60": self.move_ave60,
+                    "move_ave5": self.price_diff_to_pips(self.move_ave5),
+                    "move_ave60": self.price_diff_to_pips(self.move_ave60),
                     "memo": "Order強制キャンセル",
-                    "current_price_gap": self.current_candle_price_gap,
-                    "target_price_gap_pips": self.gap_target_price_pips,
-                    "rr": round(self.plan_json.get('tp_range', 0) / self.plan_json.get('lc_range', 0), 1)
+                    "current_price_gap": self.price_diff_to_pips(self.current_candle_price_gap),
+                    "rr": self.safe_rr(),
+                    "target_price_range": self.gap_target_price_pips
                 }
                 history_path = tk.history_folder_path + 'history.csv'
                 try:
