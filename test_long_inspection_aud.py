@@ -7,7 +7,7 @@ PAIR = "AUD_USD"
 # Previous inspection ranges kept for quick switching.
 # START_TIME = datetime.datetime(2025, 6, 15, 0, 0, 0)
 # END_TIME = datetime.datetime(2026, 6, 16, 10, 0, 0)
-START_TIME = datetime.datetime(2025, 6, 24, 0, 0, 0)
+START_TIME = datetime.datetime(2025, 12, 24, 0, 0, 0)
 # START_TIME = datetime.datetime(2026, 6, 22, 0, 0, 0)
 END_TIME = datetime.datetime(2026, 6, 24, 0, 0, 0)
 # START_TIME = datetime.datetime(2026, 6, 30, 0, 0, 0)

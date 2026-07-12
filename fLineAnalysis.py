@@ -633,6 +633,8 @@ class LineOrderCoordinator:
             return
 
         tp_pips = self._path_short_tp_pips(path_distance)
+        if self._should_expand_usd_jpy_path_short_tp(order_plan, path_distance):
+            tp_pips = 5
         if tp_pips is None:
             return
 
@@ -653,11 +655,26 @@ class LineOrderCoordinator:
     def _path_short_tp_pips(self, path_distance):
         if self.pair not in ("EUR_USD", "USD_JPY", "AUD_USD"):
             return None
+        if self.pair == "AUD_USD":
+            if 0 < path_distance <= 6:
+                return 5
+            return None
         if 0 < path_distance <= 3:
             return 3
         if 3 < path_distance <= 6:
             return 5
         return None
+
+    def _should_expand_usd_jpy_path_short_tp(self, order_plan, path_distance):
+        if self.pair != "USD_JPY":
+            return False
+        if not (0 < path_distance <= 3):
+            return False
+        try:
+            rsi_1 = float(order_plan.get("rsi_1"))
+        except (TypeError, ValueError):
+            return False
+        return 60 < rsi_1 <= 67.5
 
     def _create_order(
         self,

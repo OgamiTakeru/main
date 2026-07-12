@@ -45,6 +45,8 @@ class Inspection:
         self.anaN = anaN
         self.insN = insN
         self.target_interval_minutes = target_interval_minutes
+        self.spread_pips = 0.8
+        self.half_spread_pips = self.spread_pips / 2
 
         self.gl_h1_csv_path = h1_data_path
         self.gl_main_csv_path = m5_data_path
@@ -469,8 +471,17 @@ class Inspection:
             )
             fill_search_df = fill_search_df[fill_times <= fill_deadline]
 
-        fill_index = self.find_order_fill_index(fill_search_df, target_price, direction, order_type)
+        mid_fill_index = self.find_order_fill_index(fill_search_df, target_price, direction, order_type)
+        fill_index = self.find_order_fill_index_actual(fill_search_df, target_price, direction, order_type)
         if fill_index is None:
+            mid_context = self.inspect_mid_context(
+                order_plan,
+                inspection_s5_df,
+                mid_fill_index,
+                tp_price,
+                lc_price,
+                direction,
+            )
             return self.order_result_row(
                 target_time,
                 order_plan,
@@ -484,13 +495,36 @@ class Inspection:
                 0,
                 {},
                 {},
+                {
+                    **self.spread_context(order_plan, None, None),
+                    **mid_context,
+                    "spread_block_reason": (
+                        "mid_filled_actual_not_filled"
+                        if mid_fill_index is not None
+                        else "same_not_filled"
+                    ),
+                },
             )
 
         after_fill_df = inspection_s5_df.iloc[fill_index:].reset_index(drop=True)
         fill_time = after_fill_df.iloc[0]["time_jp"]
-        max_plus_pips, max_minus_pips = self.cal_order_max_plus_minus(after_fill_df, target_price, direction)
-        first_reach_results = self.cal_first_reach_results(after_fill_df, target_price, direction)
-        close_result, close_time, close_price, close_index = self.find_order_close(after_fill_df, tp_price, lc_price, direction)
+        entry_price_actual = self.actual_entry_price(order_type, target_price, direction)
+        max_plus_pips, max_minus_pips = self.cal_order_max_plus_minus_actual(
+            after_fill_df,
+            entry_price_actual,
+            direction,
+        )
+        first_reach_results = self.cal_first_reach_results_actual(
+            after_fill_df,
+            entry_price_actual,
+            direction,
+        )
+        close_result, close_time, close_price, close_index = self.find_order_close_actual(
+            after_fill_df,
+            tp_price,
+            lc_price,
+            direction,
+        )
         elapsed_s5 = self.cal_elapsed_s5_after_fill(after_fill_df, close_index)
         force_results = self.cal_force_close_results_multi(
             after_fill_df,
@@ -498,7 +532,18 @@ class Inspection:
             tp_price,
             lc_price,
             direction,
+            entry_price_actual=entry_price_actual,
+            actual=True,
         )
+        mid_context = self.inspect_mid_context(
+            order_plan,
+            inspection_s5_df,
+            mid_fill_index,
+            tp_price,
+            lc_price,
+            direction,
+        )
+        close_price_actual = self.actual_close_price(close_result, close_price, direction)
 
         return self.order_result_row(
             target_time,
@@ -513,7 +558,67 @@ class Inspection:
             max_minus_pips,
             first_reach_results,
             force_results,
+            {
+                **self.spread_context(order_plan, entry_price_actual, close_price_actual),
+                **mid_context,
+                "spread_block_reason": self.spread_block_reason(
+                    close_result,
+                    mid_context.get("mid_order_result"),
+                ),
+            },
         )
+
+    def spread_context(self, order_plan, entry_price_actual, close_price_actual):
+        direction = int(order_plan["direction"])
+        target_price = float(order_plan["target_price"])
+        tp_price = float(order_plan["tp_price"])
+        lc_price = float(order_plan["lc_price"])
+        return {
+            "spread_pips": self.spread_pips,
+            "half_spread_pips": self.half_spread_pips,
+            "entry_price_actual": entry_price_actual,
+            "tp_price_actual": self.actual_close_price("tp", tp_price, direction),
+            "lc_price_actual": self.actual_close_price("lc", lc_price, direction),
+            "close_price_actual": close_price_actual,
+            "target_price_mid": target_price,
+            "tp_price_mid": tp_price,
+            "lc_price_mid": lc_price,
+        }
+
+    def inspect_mid_context(self, order_plan, inspection_s5_df, mid_fill_index, tp_price, lc_price, direction):
+        if mid_fill_index is None:
+            return {
+                "mid_order_result": "not_filled",
+                "mid_res": None,
+                "mid_fill_time": None,
+                "mid_close_time": None,
+                "mid_close_price": None,
+            }
+
+        mid_after_fill_df = inspection_s5_df.iloc[mid_fill_index:].reset_index(drop=True)
+        mid_close_result, mid_close_time, mid_close_price, _ = self.find_order_close(
+            mid_after_fill_df,
+            tp_price,
+            lc_price,
+            direction,
+        )
+        return {
+            "mid_order_result": mid_close_result,
+            "mid_res": self.cal_order_result_pips(order_plan, mid_close_price),
+            "mid_fill_time": mid_after_fill_df.iloc[0]["time_jp"],
+            "mid_close_time": mid_close_time,
+            "mid_close_price": mid_close_price,
+        }
+
+    @staticmethod
+    def spread_block_reason(actual_result, mid_result):
+        if mid_result == "not_filled":
+            return "same_not_filled" if actual_result == "not_filled" else "actual_filled_mid_not_filled"
+        if actual_result == "not_filled":
+            return "mid_filled_actual_not_filled"
+        if actual_result == mid_result:
+            return "same"
+        return "mid_" + str(mid_result) + "_actual_" + str(actual_result)
 
     @staticmethod
     def find_order_fill_index(df, target_price, direction, order_type):
@@ -539,6 +644,31 @@ class Inspection:
         indexes = np.flatnonzero(hit)
         return int(indexes[0]) if indexes.size else None
 
+    def find_order_fill_index_actual(self, df, target_price, direction, order_type):
+        order_type = order_type.upper()
+        if df.empty:
+            return None
+        if order_type == "MARKET":
+            return 0
+
+        half = self.p.pips_to_price(self.half_spread_pips)
+        if order_type == "STOP":
+            hit = (
+                df["high"].to_numpy() >= target_price - half
+                if direction == 1
+                else df["low"].to_numpy() <= target_price + half
+            )
+        elif order_type == "LIMIT":
+            hit = (
+                df["low"].to_numpy() <= target_price - half
+                if direction == 1
+                else df["high"].to_numpy() >= target_price + half
+            )
+        else:
+            return None
+        indexes = np.flatnonzero(hit)
+        return int(indexes[0]) if indexes.size else None
+
     @staticmethod
     def find_order_close(df, tp_price, lc_price, direction):
         if df.empty:
@@ -551,6 +681,30 @@ class Inspection:
         else:
             tp_hit = low <= tp_price
             lc_hit = high >= lc_price
+
+        indexes = np.flatnonzero(tp_hit | lc_hit)
+        if indexes.size:
+            i = int(indexes[0])
+            close_time = df.iloc[i]["time_jp"]
+            if tp_hit[i] and lc_hit[i]:
+                return "both_tp_lc_same_candle", close_time, None, i
+            if tp_hit[i]:
+                return "tp", close_time, tp_price, i
+            return "lc", close_time, lc_price, i
+        return "not_closed", None, None, None
+
+    def find_order_close_actual(self, df, tp_price, lc_price, direction):
+        if df.empty:
+            return "not_closed", None, None, None
+        half = self.p.pips_to_price(self.half_spread_pips)
+        high = df["high"].to_numpy()
+        low = df["low"].to_numpy()
+        if direction == 1:
+            tp_hit = high >= tp_price + half
+            lc_hit = low <= lc_price + half
+        else:
+            tp_hit = low <= tp_price - half
+            lc_hit = high >= lc_price - half
 
         indexes = np.flatnonzero(tp_hit | lc_hit)
         if indexes.size:
@@ -583,7 +737,49 @@ class Inspection:
             max_minus = pair.price_to_pips(target_price - df["high"].max())
         return max_plus, max_minus
 
-    def cal_force_close_results_multi(self, after_fill_df, order_plan, tp_price, lc_price, direction):
+    def actual_entry_price(self, order_type, target_price, direction):
+        if str(order_type).upper() == "MARKET":
+            return target_price + self.p.pips_to_price(self.half_spread_pips * direction)
+        return target_price
+
+    def actual_close_price(self, close_result, close_price, direction):
+        if close_price is None:
+            return None
+        if close_result in ("tp", "lc"):
+            return close_price
+        return float(close_price) - self.p.pips_to_price(self.half_spread_pips * direction)
+
+    def cal_order_result_pips_actual(self, entry_price_actual, close_price_actual, direction):
+        if entry_price_actual is None or close_price_actual is None:
+            return None
+        return self.p.price_to_pips((float(close_price_actual) - float(entry_price_actual)) * direction)
+
+    def cal_order_max_plus_minus_actual(self, df, entry_price_actual, direction):
+        if df.empty or entry_price_actual is None:
+            return 0, 0
+        half = self.p.pips_to_price(self.half_spread_pips)
+        if direction == 1:
+            bid_high = df["high"].max() - half
+            bid_low = df["low"].min() - half
+            max_plus = self.p.price_to_pips(bid_high - entry_price_actual)
+            max_minus = self.p.price_to_pips(bid_low - entry_price_actual)
+        else:
+            ask_low = df["low"].min() + half
+            ask_high = df["high"].max() + half
+            max_plus = self.p.price_to_pips(entry_price_actual - ask_low)
+            max_minus = self.p.price_to_pips(entry_price_actual - ask_high)
+        return max_plus, max_minus
+
+    def cal_force_close_results_multi(
+        self,
+        after_fill_df,
+        order_plan,
+        tp_price,
+        lc_price,
+        direction,
+        entry_price_actual=None,
+        actual=False,
+    ):
         results = {}
         for minutes in (15, 30, 45, 60):
             results.update(self.cal_force_close_results(
@@ -594,27 +790,53 @@ class Inspection:
                 direction,
                 limit_seconds=minutes * 60,
                 prefix=f"force{minutes}",
+                entry_price_actual=entry_price_actual,
+                actual=actual,
             ))
         return results
 
-    def cal_force_close_results(self, after_fill_df, order_plan, tp_price, lc_price, direction, limit_seconds, prefix):
+    def cal_force_close_results(
+        self,
+        after_fill_df,
+        order_plan,
+        tp_price,
+        lc_price,
+        direction,
+        limit_seconds,
+        prefix,
+        entry_price_actual=None,
+        actual=False,
+    ):
         if after_fill_df.empty:
             return self.empty_force_close_results(prefix)
 
         limit_s5 = int(limit_seconds / 5)
         end_index = min(limit_s5, len(after_fill_df) - 1)
         limited_df = after_fill_df.iloc[:end_index + 1].reset_index(drop=True)
-        close_result, close_time, close_price, close_index = self.find_order_close(
-            limited_df,
-            tp_price,
-            lc_price,
-            direction,
-        )
-        max_plus_pips, max_minus_pips = self.cal_order_max_plus_minus(
-            limited_df,
-            float(order_plan["target_price"]),
-            direction,
-        )
+        if actual:
+            close_result, close_time, close_price, close_index = self.find_order_close_actual(
+                limited_df,
+                tp_price,
+                lc_price,
+                direction,
+            )
+            max_plus_pips, max_minus_pips = self.cal_order_max_plus_minus_actual(
+                limited_df,
+                entry_price_actual,
+                direction,
+            )
+        else:
+            close_result, close_time, close_price, close_index = self.find_order_close(
+                limited_df,
+                tp_price,
+                lc_price,
+                direction,
+            )
+            max_plus_pips, max_minus_pips = self.cal_order_max_plus_minus(
+                limited_df,
+                float(order_plan["target_price"]),
+                direction,
+            )
 
         if close_result in ("tp", "lc"):
             force_result = close_result
@@ -631,12 +853,23 @@ class Inspection:
             force_close_time = limited_df.iloc[end_index]["time_jp"]
             force_close_price = float(limited_df.iloc[end_index]["close"])
             force_elapsed_s5 = end_index
+        force_close_price_actual = (
+            self.actual_close_price(force_result, force_close_price, direction)
+            if actual
+            else force_close_price
+        )
+        force_res_pips = (
+            self.cal_order_result_pips_actual(entry_price_actual, force_close_price_actual, direction)
+            if actual
+            else self.cal_order_result_pips(order_plan, force_close_price)
+        )
 
         return {
             prefix + "_result": force_result,
             prefix + "_close_time": force_close_time,
             prefix + "_close_price": force_close_price,
-            prefix + "_res_pips": self.cal_order_result_pips(order_plan, force_close_price),
+            prefix + "_close_price_actual": force_close_price_actual,
+            prefix + "_res_pips": force_res_pips,
             prefix + "_elapsed_s5": force_elapsed_s5,
             prefix + "_elapsed_seconds": None if force_elapsed_s5 is None else force_elapsed_s5 * 5,
             prefix + "_max_plus_pips": max_plus_pips,
@@ -644,8 +877,8 @@ class Inspection:
             prefix + "_is_time_close": force_result == "time_close",
             prefix + "_is_plus": (
                 None
-                if force_close_price is None
-                else self.cal_order_result_pips(order_plan, force_close_price) > 0
+                if force_res_pips is None
+                else force_res_pips > 0
             ),
         }
 
@@ -655,6 +888,7 @@ class Inspection:
             prefix + "_result": None,
             prefix + "_close_time": None,
             prefix + "_close_price": None,
+            prefix + "_close_price_actual": None,
             prefix + "_res_pips": None,
             prefix + "_elapsed_s5": None,
             prefix + "_elapsed_seconds": None,
@@ -678,8 +912,18 @@ class Inspection:
         max_minus_pips,
         first_reach_results=None,
         force_results=None,
+        extra_results=None,
     ):
-        res = self.cal_order_result_pips(order_plan, close_price)
+        extra_results = extra_results or {}
+        entry_price_actual = extra_results.get("entry_price_actual")
+        close_price_actual = extra_results.get("close_price_actual")
+        res = self.cal_order_result_pips_actual(
+            entry_price_actual,
+            close_price_actual,
+            int(order_plan["direction"]),
+        )
+        if res is None:
+            res = self.cal_order_result_pips(order_plan, close_price)
         first_reach_results = first_reach_results or {}
         if force_results is None:
             force_results = {}
@@ -696,6 +940,7 @@ class Inspection:
             "name": order_plan.get("name"),
             "pair": order_plan.get("pair", self.pair),
             "res": res,
+            "actual_res": res,
             "order_type": order_plan.get("type"),
             "direction": order_plan.get("direction"),
             "target_price": order_plan.get("target_price"),
@@ -710,6 +955,7 @@ class Inspection:
             "units": order_plan.get("units"),
             "priority": order_plan.get("priority"),
             "order_result": result,
+            "actual_order_result": result,
             "fill_time": fill_time,
             "close_time": close_time,
             "close_price": close_price,
@@ -719,6 +965,7 @@ class Inspection:
             "max_minus_pips": max_minus_pips,
             **first_reach_results,
             **force_results,
+            **extra_results,
             "source": order_plan.get("source"),
             "line_timeframe": order_plan.get("line_timeframe"),
             "line_entry_type": order_plan.get("line_entry_type"),
@@ -1019,6 +1266,21 @@ class Inspection:
             results[f"first_{pips}pips_elapsed_s5"] = elapsed_s5
         return results
 
+    def cal_first_reach_results_actual(self, df, entry_price_actual, direction):
+        thresholds = (5, 10, 15, 20, 25, 30)
+        results = {}
+        for pips in thresholds:
+            side, reach_time, elapsed_s5 = self.find_first_reach_actual(
+                df,
+                entry_price_actual,
+                direction,
+                pips,
+            )
+            results[f"first_{pips}pips_side"] = side
+            results[f"first_{pips}pips_time"] = reach_time
+            results[f"first_{pips}pips_elapsed_s5"] = elapsed_s5
+        return results
+
     def find_first_reach(self, df, target_price, direction, threshold_pips):
         pair = self.p
         threshold_price = pair.pips_to_price(threshold_pips)
@@ -1032,6 +1294,36 @@ class Inspection:
         else:
             plus_hit = low <= target_price - threshold_price
             minus_hit = high >= target_price + threshold_price
+
+        indexes = np.flatnonzero(plus_hit | minus_hit)
+        if indexes.size:
+            i = int(indexes[0])
+            reach_time = df.iloc[i]["time_jp"]
+            if plus_hit[i] and minus_hit[i]:
+                return "both", reach_time, i
+            if plus_hit[i]:
+                return "plus", reach_time, i
+            return "minus", reach_time, i
+        return "none", None, None
+
+    def find_first_reach_actual(self, df, entry_price_actual, direction, threshold_pips):
+        pair = self.p
+        threshold_price = pair.pips_to_price(threshold_pips)
+        half = pair.pips_to_price(self.half_spread_pips)
+        if df.empty or entry_price_actual is None:
+            return "none", None, None
+        high = df["high"].to_numpy()
+        low = df["low"].to_numpy()
+        if direction == 1:
+            bid_high = high - half
+            bid_low = low - half
+            plus_hit = bid_high >= entry_price_actual + threshold_price
+            minus_hit = bid_low <= entry_price_actual - threshold_price
+        else:
+            ask_low = low + half
+            ask_high = high + half
+            plus_hit = ask_low <= entry_price_actual - threshold_price
+            minus_hit = ask_high >= entry_price_actual + threshold_price
 
         indexes = np.flatnonzero(plus_hit | minus_hit)
         if indexes.size:

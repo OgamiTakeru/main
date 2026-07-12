@@ -31,16 +31,52 @@ class LineStrategyProfileUsdJpy:
     m5_core_total_strength_min = 5
     m5_breakout_entry_offset_pips = 1.5
     top10_conditions = [
-        {"label": "USD Top1 lower 20-30p RSI40-50", "filters": {"distance_bin": "20-30p", "line_side": "lower", "m5_rsi_bin": "40-50"}},
-        {"label": "USD Top2 lower 20-30p lineStr0-5", "filters": {"distance_bin": "20-30p", "line_side": "lower", "line_strength_bin": "0-5"}},
-        {"label": "USD Top3 lower 20-30p coreStr0-5", "filters": {"distance_bin": "20-30p", "line_side": "lower", "core_strength_bin": "0-5"}},
-        {"label": "USD Top4 lower 20-30p", "filters": {"distance_bin": "20-30p", "line_side": "lower"}},
-        {"label": "USD Top5 buy 20-30p", "filters": {"distance_bin": "20-30p", "direction_label": "buy"}},
-        {"label": "USD Top6 lower 0-3p prevH1Str10-15", "filters": {"previous_h1_strength_bin": "10-15", "distance_bin": "0-3p", "line_side": "lower"}},
-        {"label": "USD Top7 lower 0-3p path1Str10-15", "filters": {"path1_strength_bin": "10-15", "distance_bin": "0-3p", "line_side": "lower"}},
-        {"label": "USD Top8 lower 8-10p session15-20", "filters": {"distance_bin": "8-10p", "line_side": "lower", "session_bucket": "15-20"}},
-        {"label": "USD Top9 lower 0-3p prevH1Str8-10", "filters": {"previous_h1_strength_bin": "8-10", "distance_bin": "0-3p", "line_side": "lower"}},
-        {"label": "USD Top10 lower 10-15p prevM5Str10-15", "filters": {"previous_m5_strength_bin": "10-15", "distance_bin": "10-15p", "line_side": "lower"}},
+        {
+            "label": "USD 1Y Top1 path0-3 buy M5RSI60-67.5",
+            "filters": {
+                "path1_distance_bin": "0-3p",
+                "direction_label": "buy",
+                "m5_rsi_bin": "60-67.5",
+            },
+        },
+        {
+            "label": "USD 1Y Top2 path3-6 reversal path1Str0-5",
+            "filters": {
+                "path1_distance_bin": "3-6p",
+                "line_entry_type": "reversal",
+                "path1_strength_bin": "0-5",
+            },
+        },
+        {
+            "label": "USD 1Y Top3 path50+ M5RSI60-67.5",
+            "filters": {
+                "path1_distance_bin": "50+p",
+                "m5_rsi_bin": "60-67.5",
+            },
+        },
+        {
+            "label": "USD 1Y Top4 path0-3 reversal path1Str5-10",
+            "filters": {
+                "path1_distance_bin": "0-3p",
+                "line_entry_type": "reversal",
+                "path1_strength_bin": "5-10",
+            },
+        },
+        {
+            "label": "USD 1Y Top5 path50+ breakout session00-05",
+            "filters": {
+                "path1_distance_bin": "50+p",
+                "line_entry_type": "breakout",
+                "session_bucket": "00-05",
+            },
+        },
+        {
+            "label": "USD 1Y Top6 session06-08 lineStr5-10",
+            "filters": {
+                "session_bucket": "06-08",
+                "line_strength_bin": "5-10",
+            },
+        },
     ]
     top7_conditions = [
         {
@@ -337,10 +373,15 @@ class LineStrategyProfileUsdJpy:
             return "buy" if int(candidate.get("direction") or 0) == 1 else "sell"
         if field == "line_strategy":
             return candidate.get("line_strategy")
+        if field == "line_entry_type":
+            strategy = candidate.get("strategy")
+            return getattr(strategy, "entry_type", None)
         if field == "session_bucket":
             return self._session_bucket(candidate.get("session_hour"))
         if field == "distance_bin":
             return self._pips_bin(candidate.get("distance_pips"))
+        if field == "path1_distance_bin":
+            return self._path_distance_bin(h1_context.get("h1_path_ahead_1_distance_pips"))
         if field == "line_strength_bin":
             return self._strength_bin(line.get("total_strength"))
         if field == "core_strength_bin":
@@ -389,6 +430,19 @@ class LineStrategyProfileUsdJpy:
             (15, 20, "15-20p"),
             (20, 30, "20-30p"),
             (30, 999999, "30p+"),
+        ])
+
+    @classmethod
+    def _path_distance_bin(cls, value):
+        return cls._bin_value(value, [
+            (-0.1, 3, "0-3p"),
+            (3, 6, "3-6p"),
+            (6, 10, "6-10p"),
+            (10, 15, "10-15p"),
+            (15, 20, "15-20p"),
+            (20, 30, "20-30p"),
+            (30, 50, "30-50p"),
+            (50, 999999, "50+p"),
         ])
 
     @classmethod
