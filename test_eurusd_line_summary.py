@@ -186,7 +186,37 @@ def summarize(group):
 
 
 def summarize_by(df, fields, min_orders=1):
-    rows = df.groupby(fields, dropna=False, observed=True).apply(summarize).reset_index()
+    if isinstance(fields, str):
+        fields = [fields]
+
+    work = df.copy()
+    work["_filled"] = work["order_result"].ne("not_filled")
+    work["_decided"] = work["order_result"].isin(["tp", "lc"])
+    work["_tp"] = work["order_result"].eq("tp")
+    work["_lc"] = work["order_result"].eq("lc")
+    work["_res_decided"] = work["res"].where(work["_decided"])
+    work["_elapsed_decided"] = work["elapsed_seconds"].where(work["_decided"])
+    work["_max_plus_filled"] = work["max_plus_pips"].where(work["_filled"])
+    work["_max_minus_filled"] = work["max_minus_pips"].where(work["_filled"])
+
+    rows = (
+        work.groupby(fields, dropna=False, observed=True)
+        .agg(
+            orders=("order_result", "size"),
+            filled=("_filled", "sum"),
+            decided=("_decided", "sum"),
+            tp=("_tp", "sum"),
+            lc=("_lc", "sum"),
+            avg_res_pips=("_res_decided", "mean"),
+            median_max_plus_pips=("_max_plus_filled", "median"),
+            median_max_minus_pips=("_max_minus_filled", "median"),
+            avg_elapsed_minutes=("_elapsed_decided", lambda x: x.mean() / 60),
+        )
+        .reset_index()
+    )
+    rows["fill_rate_pct"] = (rows["filled"] / rows["orders"] * 100).round(2)
+    rows["win_rate_pct"] = (rows["tp"] / rows["decided"] * 100).round(2)
+    rows.loc[rows["decided"].eq(0), "win_rate_pct"] = pd.NA
     rows = rows[rows["orders"] >= min_orders]
     return rows.sort_values(["win_rate_pct", "avg_res_pips", "decided"], ascending=[False, False, False])
 

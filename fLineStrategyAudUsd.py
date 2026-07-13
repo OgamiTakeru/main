@@ -23,11 +23,12 @@ class LineStrategyProfileAudUsd(LineStrategyProfileEurUsd):
             },
         },
         {
-            "label": "AUD 1Y Top3 reversal sell session06-08",
+            "label": "AUD 1Y Top3 reversal sell session06-08 peakRSI-high",
             "filters": {
                 "line_entry_type": "reversal",
                 "direction_label": "sell",
                 "session_bucket": "06-08",
+                "peak_rsi_direction_ok": True,
             },
         },
         {
@@ -35,16 +36,21 @@ class LineStrategyProfileAudUsd(LineStrategyProfileEurUsd):
             "filters": {"path1_distance_bin": "3-6p", "core_strength_bin": "10-15"},
         },
         {
-            "label": "AUD 1Y Top5 dist0-3 reversal session06-08",
+            "label": "AUD 1Y Top5 dist0-3 reversal session06-08 peakRSI-dir",
             "filters": {
                 "distance_bin": "0-3p",
                 "line_entry_type": "reversal",
                 "session_bucket": "06-08",
+                "peak_rsi_direction_ok": True,
             },
         },
         {
-            "label": "AUD 1Y Top6 sell session06-08",
-            "filters": {"direction_label": "sell", "session_bucket": "06-08"},
+            "label": "AUD 1Y Top6 sell session06-08 peakRSI-high",
+            "filters": {
+                "direction_label": "sell",
+                "session_bucket": "06-08",
+                "peak_rsi_direction_ok": True,
+            },
         },
         {
             "label": "AUD 1Y Top7 path50+ breakout session09-14",
@@ -63,11 +69,12 @@ class LineStrategyProfileAudUsd(LineStrategyProfileEurUsd):
             "filters": {"path1_distance_bin": "3-6p", "distance_bin": "15-20p"},
         },
         {
-            "label": "AUD 1Y Top10 path15-20 reversal path1Str10-15",
+            "label": "AUD 1Y Top10 path15-20 reversal path1Str10-15 peakRSI-dir",
             "filters": {
                 "path1_distance_bin": "15-20p",
                 "line_entry_type": "reversal",
                 "path1_strength_bin": "10-15",
+                "peak_rsi_direction_ok": True,
             },
         },
     ]

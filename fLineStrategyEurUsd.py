@@ -8,12 +8,12 @@ class LineStrategyProfileEurUsd(LineStrategyProfileUsdJpy):
 
     pair = "EUR_USD"
     top10_conditions = [
-        {"label": "EUR Top1 session06-08 RSI50-60", "filters": {"session_bucket": "06-08", "m5_rsi_bin": "50-60"}},
-        {"label": "EUR Top2 5-8p session21-23 RSI50-60", "filters": {"distance_bin": "5-8p", "session_bucket": "21-23", "m5_rsi_bin": "50-60"}},
+        {"label": "EUR Top1 session06-08 latestPeakRSI50-60", "filters": {"session_bucket": "06-08", "latest_peak_rsi_bin": "50-60"}},
+        {"label": "EUR Top2 5-8p session21-23 latestPeakRSI50-60", "filters": {"distance_bin": "5-8p", "session_bucket": "21-23", "latest_peak_rsi_bin": "50-60"}},
         {"label": "EUR Top3 0-3p session21-23", "filters": {"distance_bin": "0-3p", "session_bucket": "21-23"}},
         {"label": "EUR Top4 m5 reversal upper 0-3p", "filters": {"line_strategy": "m5_reversal_peakdir_allcount", "distance_bin": "0-3p", "line_side": "upper"}},
-        {"label": "EUR Top5 session21-23 RSI60-67.5", "filters": {"session_bucket": "21-23", "m5_rsi_bin": "60-67.5"}},
-        {"label": "EUR Top6 sell 0-3p RSI40-50", "filters": {"distance_bin": "0-3p", "direction_label": "sell", "m5_rsi_bin": "40-50"}},
+        {"label": "EUR Top5 session21-23 latestPeakRSI60-67.5", "filters": {"session_bucket": "21-23", "latest_peak_rsi_bin": "60-67.5"}},
+        {"label": "EUR Top6 sell 0-3p latestPeakRSI40-50", "filters": {"distance_bin": "0-3p", "direction_label": "sell", "latest_peak_rsi_bin": "40-50"}},
         {"label": "EUR Top7 lower 0-3p prevH1Str10-15", "filters": {"previous_h1_strength_bin": "10-15", "distance_bin": "0-3p", "line_side": "lower"}},
         {"label": "EUR Top8 lower 8-10p lineStr5-8", "filters": {"distance_bin": "8-10p", "line_side": "lower", "line_strength_bin": "5-8"}},
         {"label": "EUR Top9 upper 0-3p session00-05", "filters": {"distance_bin": "0-3p", "line_side": "upper", "session_bucket": "00-05"}},

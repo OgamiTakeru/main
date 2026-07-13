@@ -182,6 +182,9 @@ class PeaksClass:
             "latest_wick_peak_price": 0,
             "oldest_wick_peak_price": 0,
             "peak_strength": self.ps_default,  # この関数では付与されない（単品では判断できない）。make_peaks関数で前後のPeakを加味して付与される
+            "rsi": None,
+            "rsi": None,
+            "peak_rsi": None,
             "count": 0,  # 最新時刻からスタートして同じ方向が何回続いているか
             "data_size": len(data_df),  # (注)元のデータサイズ
             "latest_price": 0,
@@ -287,6 +290,11 @@ class PeaksClass:
         ans_dic["oldest_body_peak_price"] = oldest_body_price
         ans_dic["oldest_time_jp"] = ans_df.iloc[-1]["time_jp"]
         ans_dic["latest_time_jp"] = ans_df.iloc[0]["time_jp"]  # これがピークの時刻
+        if "RSI" in ans_df.columns:
+            rsi = ans_df.iloc[0]["RSI"]
+            if pd.notna(rsi):
+                ans_dic["rsi"] = float(rsi)
+                ans_dic["peak_rsi"] = float(rsi)
         ans_dic["latest_price"] = self.current_price
         ans_dic["oldest_price"] = ans_df.iloc[-1]["open"]
         ans_dic["latest_wick_peak_price"] = latest_wick_price

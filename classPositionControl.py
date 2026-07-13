@@ -400,7 +400,7 @@ class position_control:
         """
         #  ## 変化に伴う作業
         if changed:
-            avg = sum(obj.t_pl_u for obj in changed) / len(changed)
+            avg = sum(getattr(obj, "t_pl_pips", 0) for obj in changed) / len(changed)
         else:
             avg = 0  # もしくは None
         if avg < 0:
@@ -529,7 +529,7 @@ class position_control:
                         "priority": item.priority,
                         "o_state": item.o_state,
                         "t_state": item.t_state,
-                        "pl": item.t_pl_u,
+                        "pl": getattr(item, "t_pl_pips", 0),
                         "o_json": item.o_json,
                         "o_time": item.o_time,
                         "target_price": item.plan_json.get('target_price'),
@@ -559,7 +559,7 @@ class position_control:
                         "priority": item.priority,
                         "o_state": item.o_state,
                         "t_state": item.t_state,
-                        "pl": item.t_pl_u,
+                        "pl": getattr(item, "t_pl_pips", 0),
                         "o_json": item.o_json,
                         "o_time": item.o_time,
                         "realizedPL": 0,

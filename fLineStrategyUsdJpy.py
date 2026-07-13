@@ -30,13 +30,20 @@ class LineStrategyProfileUsdJpy:
     m5_core_count_min = 1
     m5_core_total_strength_min = 5
     m5_breakout_entry_offset_pips = 1.5
+    immediate_near_line_max_pips = 3
+    immediate_min_path_ahead_pips = 3
+    immediate_strong_path_block_strength = 10
+    immediate_previous_peak_strength_min = 5
+    immediate_line_count_min = 2
+    immediate_line_core_count_min = 2
+    immediate_line_strength_min = 10
     top10_conditions = [
         {
-            "label": "USD 1Y Top1 path0-3 buy M5RSI60-67.5",
+            "label": "USD 1Y Top1 path0-3 buy latestPeakRSI60-67.5",
             "filters": {
                 "path1_distance_bin": "0-3p",
                 "direction_label": "buy",
-                "m5_rsi_bin": "60-67.5",
+                "latest_peak_rsi_bin": "60-67.5",
             },
         },
         {
@@ -48,10 +55,10 @@ class LineStrategyProfileUsdJpy:
             },
         },
         {
-            "label": "USD 1Y Top3 path50+ M5RSI60-67.5",
+            "label": "USD 1Y Top3 path50+ latestPeakRSI60-67.5",
             "filters": {
                 "path1_distance_bin": "50+p",
-                "m5_rsi_bin": "60-67.5",
+                "latest_peak_rsi_bin": "60-67.5",
             },
         },
         {
@@ -311,6 +318,9 @@ class LineStrategyProfileUsdJpy:
             and core_total_strength >= self.m5_core_total_strength_min
         )
 
+    def limit_recommended_reasons(self, candidate, rsi_info, latest_peak_info):
+        return self.recommended_reasons(candidate, rsi_info, latest_peak_info)
+
     def recommended_reasons(self, candidate, rsi_info, latest_peak_info):
         """USD_JPY用のライン候補採用条件。現状はTOP7条件で選別する。"""
         line_side = candidate["line_side"]
@@ -318,6 +328,8 @@ class LineStrategyProfileUsdJpy:
         if latest_peak_dir == 1 and line_side != "upper":
             return []
         if latest_peak_dir == -1 and line_side != "lower":
+            return []
+        if not self._reversal_peak_rsi_matches_direction(candidate):
             return []
 
         top10_reasons = self._configured_top10_reasons(candidate, rsi_info)
@@ -351,11 +363,291 @@ class LineStrategyProfileUsdJpy:
         )
 
     def _configured_top10_reasons(self, candidate, rsi_info):
+        if not self._reversal_peak_rsi_matches_direction(candidate):
+            return []
         reasons = []
         for condition in getattr(self, "top10_conditions", []):
             if self._is_top10_condition(candidate, rsi_info, condition):
                 reasons.append(condition["label"])
         return reasons
+
+    def immediate_recommended_reasons(self, candidate, rsi_info, latest_peak_info):
+        """Select market entries only when a nearby line looks likely to break."""
+        distance_pips = candidate.get("line_distance_pips", candidate.get("distance_pips"))
+        try:
+            distance_pips = float(distance_pips)
+        except (TypeError, ValueError):
+            return []
+        if distance_pips > self.immediate_near_line_max_pips:
+            return []
+
+        breakout_reason = self._immediate_breakout_context(candidate, latest_peak_info)
+        if breakout_reason is None:
+            return []
+
+        if not self._current_rsi_matches_direction(candidate, rsi_info):
+            return []
+
+        previous_peak_reason = self._immediate_previous_peak_supports(candidate)
+        if previous_peak_reason is None:
+            return []
+
+        line_history_reason = self._immediate_line_history_supports(candidate)
+        if line_history_reason is None:
+            return []
+
+        peak_rsi_reason = self._immediate_peak_rsi_supports_direction(candidate)
+        if peak_rsi_reason is None:
+            return []
+
+        h1_context = candidate.get("h1_context", {})
+        path_distance = h1_context.get("h1_path_ahead_1_distance_pips")
+        path_strength = h1_context.get("h1_path_ahead_1_total_strength")
+        if self._immediate_path_is_blocked(path_distance, path_strength):
+            return []
+
+        reasons = [
+            "Immediate strict RSI direction",
+            breakout_reason,
+            previous_peak_reason,
+            line_history_reason,
+            peak_rsi_reason,
+        ]
+        if path_distance is not None:
+            reasons.append("H1 path ahead " + str(round(float(path_distance), 1)) + "p")
+        return reasons
+
+    def _immediate_breakout_context(self, candidate, latest_peak_info):
+        strategy = candidate.get("strategy")
+        if getattr(strategy, "entry_type", None) != "breakout":
+            return None
+
+        direction = int(candidate.get("direction") or 0)
+        line_side = candidate.get("line_side")
+        latest_peak_dir = latest_peak_info.get("direction")
+        if direction == 1 and line_side != "upper":
+            return None
+        if direction == -1 and line_side != "lower":
+            return None
+        if latest_peak_dir != direction:
+            return None
+
+        line = candidate.get("line", {})
+        if line.get("is_flipped_line") is True:
+            return None
+
+        latest_touch_dir = line.get("line_latest_touch_peak_dir")
+        if latest_touch_dir is not None:
+            try:
+                latest_touch_dir = int(float(latest_touch_dir))
+            except (TypeError, ValueError):
+                latest_touch_dir = None
+            if latest_touch_dir is not None and latest_touch_dir != direction:
+                return None
+
+        distance_pips = candidate.get("line_distance_pips", candidate.get("distance_pips"))
+        try:
+            distance_text = str(round(float(distance_pips), 1))
+        except (TypeError, ValueError):
+            distance_text = str(distance_pips)
+        return "Near breakout line " + distance_text + "p"
+
+    def _current_rsi_matches_direction(self, candidate, rsi_info):
+        if rsi_info is None:
+            return False
+        direction = int(candidate.get("direction") or 0)
+        entry_type = getattr(candidate.get("strategy"), "entry_type", None)
+        rsi_values = []
+        for key in ("rsi_1", "rsi_2", "rsi_3"):
+            value = rsi_info.get(key)
+            try:
+                rsi = float(value)
+            except (TypeError, ValueError):
+                continue
+            if rsi == rsi:
+                rsi_values.append(rsi)
+        if not rsi_values:
+            return False
+
+        rsi_1 = rsi_values[0]
+        rsi_2 = rsi_values[1] if len(rsi_values) > 1 else rsi_1
+        if entry_type == "breakout":
+            if direction == 1:
+                return 40 <= rsi_1 <= 67.5 and rsi_1 >= rsi_2
+            if direction == -1:
+                return 30 <= rsi_1 <= 60 and rsi_1 <= rsi_2
+            return False
+
+        if direction == 1:
+            return rsi_1 <= 40 or min(rsi_values) <= 30
+        if direction == -1:
+            return rsi_1 >= 60 or max(rsi_values) >= 67.5
+        return False
+
+    def _immediate_previous_peak_supports(self, candidate):
+        try:
+            strength = float(candidate.get("previous_peak_strength"))
+        except (TypeError, ValueError):
+            return None
+        if strength < self.immediate_previous_peak_strength_min:
+            return None
+        return "Previous peak strength " + str(round(strength, 1))
+
+    def _immediate_line_history_supports(self, candidate):
+        line = candidate.get("line", {})
+        try:
+            count = int(line.get("count") or 0)
+            core_count = int(line.get("core_count") or 0)
+            strength = float(line.get("total_strength") or 0)
+        except (TypeError, ValueError):
+            return None
+
+        has_repeated_touch = count >= self.immediate_line_count_min
+        has_core_history = core_count >= self.immediate_line_core_count_min
+        has_strong_line = strength >= self.immediate_line_strength_min
+        if not (has_repeated_touch or has_core_history or has_strong_line):
+            return None
+
+        return (
+            "Known line history count="
+            + str(count)
+            + " core="
+            + str(core_count)
+            + " strength="
+            + str(round(strength, 1))
+        )
+
+    def _immediate_peak_rsi_supports_direction(self, candidate):
+        if getattr(candidate.get("strategy"), "entry_type", None) == "breakout":
+            reason = self._breakout_peak_rsi_supports_direction(candidate)
+            if reason is not None:
+                return reason
+            return self._breakout_line_peak_rsi_supports_direction(candidate)
+
+        peak_reason = self._peak_rsi_supports_direction(candidate)
+        if peak_reason is not None:
+            return peak_reason
+
+        line_reason = self._line_peak_rsi_supports_direction(candidate)
+        if line_reason is not None:
+            return line_reason
+        return None
+
+    def _immediate_path_is_blocked(self, path_distance, path_strength):
+        if path_distance is None or path_strength is None:
+            return False
+        try:
+            path_distance = float(path_distance)
+            path_strength = float(path_strength)
+        except (TypeError, ValueError):
+            return False
+        return (
+            0 < path_distance < self.immediate_min_path_ahead_pips
+            and path_strength >= self.immediate_strong_path_block_strength
+        )
+
+    def _line_peak_rsi_supports_direction(self, candidate):
+        direction = int(candidate.get("direction") or 0)
+        line = candidate.get("line", {})
+        rsi_values = []
+        for key in ("line_peak_rsi_latest", "line_peak_rsi_avg"):
+            value = line.get(key)
+            try:
+                rsi = float(value)
+            except (TypeError, ValueError):
+                continue
+            if rsi == rsi:
+                rsi_values.append(rsi)
+        if not rsi_values:
+            return None
+        if direction == 1 and min(rsi_values) <= 40:
+            return "Line peak RSI supports buy"
+        if direction == -1 and max(rsi_values) >= 60:
+            return "Line peak RSI supports sell"
+        return None
+
+    def _peak_rsi_supports_direction(self, candidate):
+        direction = int(candidate.get("direction") or 0)
+        rsi_values = []
+        for key in ("latest_peak_rsi", "previous_peak_rsi"):
+            value = candidate.get(key)
+            try:
+                rsi = float(value)
+            except (TypeError, ValueError):
+                continue
+            if rsi == rsi:
+                rsi_values.append(rsi)
+        if not rsi_values:
+            return None
+        if direction == 1 and min(rsi_values) <= 40:
+            return "Recent peak RSI supports buy"
+        if direction == -1 and max(rsi_values) >= 60:
+            return "Recent peak RSI supports sell"
+        return None
+
+    def _breakout_peak_rsi_supports_direction(self, candidate):
+        direction = int(candidate.get("direction") or 0)
+        latest_rsi = self._float_or_none(candidate.get("latest_peak_rsi"))
+        previous_rsi = self._float_or_none(candidate.get("previous_peak_rsi"))
+        if latest_rsi is None:
+            return None
+        if direction == 1 and latest_rsi >= 50:
+            if previous_rsi is None or latest_rsi >= previous_rsi - 5:
+                return "Recent peak RSI supports buy breakout"
+        if direction == -1 and latest_rsi <= 50:
+            if previous_rsi is None or latest_rsi <= previous_rsi + 5:
+                return "Recent peak RSI supports sell breakout"
+        return None
+
+    def _breakout_line_peak_rsi_supports_direction(self, candidate):
+        direction = int(candidate.get("direction") or 0)
+        line = candidate.get("line", {})
+        latest_rsi = self._float_or_none(line.get("line_peak_rsi_latest"))
+        avg_rsi = self._float_or_none(line.get("line_peak_rsi_avg"))
+        if latest_rsi is None and avg_rsi is None:
+            return None
+        values = [value for value in (latest_rsi, avg_rsi) if value is not None]
+        if direction == 1 and max(values) >= 50:
+            return "Line peak RSI supports buy breakout"
+        if direction == -1 and min(values) <= 50:
+            return "Line peak RSI supports sell breakout"
+        return None
+
+    @staticmethod
+    def _float_or_none(value):
+        try:
+            result = float(value)
+        except (TypeError, ValueError):
+            return None
+        if result != result:
+            return None
+        return result
+
+    @staticmethod
+    def _reversal_peak_rsi_matches_direction(candidate):
+        strategy = candidate.get("strategy")
+        if getattr(strategy, "entry_type", None) != "reversal":
+            return True
+        return LineStrategyProfileUsdJpy._peak_rsi_matches_direction(candidate)
+
+    @staticmethod
+    def _peak_rsi_matches_direction(candidate):
+        direction = int(candidate.get("direction") or 0)
+        peak_rsi_values = []
+        for value in (candidate.get("latest_peak_rsi"), candidate.get("previous_peak_rsi")):
+            try:
+                rsi = float(value)
+            except (TypeError, ValueError):
+                continue
+            if rsi == rsi:
+                peak_rsi_values.append(rsi)
+        if not peak_rsi_values:
+            return False
+        if direction == 1:
+            return min(peak_rsi_values) <= 30
+        if direction == -1:
+            return max(peak_rsi_values) >= 67.5
+        return False
 
     def _is_top10_condition(self, candidate, rsi_info, condition):
         filters = condition.get("filters", {})
@@ -398,6 +690,16 @@ class LineStrategyProfileUsdJpy:
             return self._rsi_bin(None if rsi_info is None else rsi_info.get("rsi_1"))
         if field == "h1_rsi_bin":
             return self._rsi_bin(None if rsi_info is None else rsi_info.get("h1_rsi_1"))
+        if field == "latest_peak_rsi_bin":
+            return self._rsi_bin(candidate.get("latest_peak_rsi"))
+        if field == "previous_peak_rsi_bin":
+            return self._rsi_bin(candidate.get("previous_peak_rsi"))
+        if field == "line_peak_rsi_latest_bin":
+            return self._rsi_bin(line.get("line_peak_rsi_latest"))
+        if field == "line_peak_rsi_avg_bin":
+            return self._rsi_bin(line.get("line_peak_rsi_avg"))
+        if field == "peak_rsi_direction_ok":
+            return self._peak_rsi_matches_direction(candidate)
         if field == "role_change":
             return bool(line.get("line_history_is_flipped"))
         if field == "role_pair":
@@ -594,17 +896,27 @@ class LineStrategyProfileUsdJpy:
         decision_time,
         rsi_info,
     ):
-        return analysis.create_line_orders_from_strategy_lines(
-            [
-                (UsdJpyM5LineOrderStrategy(self), line_class_m5_l),
-                (UsdJpyM5BreakoutLineOrderStrategy(self), line_class_m5_l),
-            ],
+        m5_strategy_lines = [
+            (UsdJpyM5LineOrderStrategy(self), line_class_m5_l),
+            (UsdJpyM5BreakoutLineOrderStrategy(self), line_class_m5_l),
+        ]
+        immediate_orders = analysis.create_immediate_orders_from_near_lines(
+            m5_strategy_lines,
             current_price,
             decision_time,
             rsi_info,
             h1_line_class=line_class_h1_l,
             m5_line_class=line_class_m5_l,
         )
+        limit_orders = analysis.create_limit_orders_from_strategy_lines(
+            m5_strategy_lines,
+            current_price,
+            decision_time,
+            rsi_info,
+            h1_line_class=line_class_h1_l,
+            m5_line_class=line_class_m5_l,
+        )
+        return immediate_orders + limit_orders
 
 
 class UsdJpyLineOrderStrategy:
