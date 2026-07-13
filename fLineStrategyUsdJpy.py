@@ -896,27 +896,164 @@ class LineStrategyProfileUsdJpy:
         decision_time,
         rsi_info,
     ):
-        m5_strategy_lines = [
-            (UsdJpyM5LineOrderStrategy(self), line_class_m5_l),
-            (UsdJpyM5BreakoutLineOrderStrategy(self), line_class_m5_l),
+        line_context = self.calculate_line_strength(
+            analysis,
+            line_class_m5_l,
+            line_class_m5_s,
+            line_class_h1_l,
+            line_class_h1_s,
+            current_price,
+            decision_time,
+            rsi_info,
+        )
+        grouped_lines = self.group_lines(line_context)
+
+        immediate_orders = self.immediate_order(grouped_lines)
+        if immediate_orders:
+            return immediate_orders
+
+        future_orders = self.future_line_order(grouped_lines)
+        return future_orders
+
+    def calculate_line_strength(
+        self,
+        analysis,
+        line_class_m5_l,
+        line_class_m5_s,
+        line_class_h1_l,
+        line_class_h1_s,
+        current_price,
+        decision_time,
+        rsi_info,
+    ):
+        return {
+            "analysis": analysis,
+            "coordinator": analysis.line_order_coordinator(),
+            "line_class_m5_main": line_class_m5_l,
+            "line_class_m5_sub": line_class_m5_s,
+            "line_class_h1_main": line_class_h1_l,
+            "line_class_h1_sub": line_class_h1_s,
+            "current_price": current_price,
+            "decision_time": decision_time,
+            "rsi_info": rsi_info,
+        }
+
+    def group_lines(self, line_context):
+        coordinator = line_context["coordinator"]
+        current_price = line_context["current_price"]
+        m5_line_class = line_context["line_class_m5_main"]
+        h1_line_class = line_context["line_class_h1_main"]
+
+        resist_strategy_lines = [
+            (UsdJpyM5LineOrderStrategy(self), m5_line_class),
         ]
-        immediate_orders = analysis.create_immediate_orders_from_near_lines(
-            m5_strategy_lines,
+        break_strategy_lines = [
+            (UsdJpyM5BreakoutLineOrderStrategy(self), m5_line_class),
+        ]
+
+        line_context["immediate_candidates"] = coordinator.build_line_candidates(
+            break_strategy_lines,
             current_price,
-            decision_time,
-            rsi_info,
-            h1_line_class=line_class_h1_l,
-            m5_line_class=line_class_m5_l,
+            h1_line_class=h1_line_class,
+            m5_line_class=m5_line_class,
+            order_mode="immediate",
         )
-        limit_orders = analysis.create_limit_orders_from_strategy_lines(
-            m5_strategy_lines,
+        line_context["future_resist_candidates"] = coordinator.build_line_candidates(
+            resist_strategy_lines,
             current_price,
-            decision_time,
-            rsi_info,
-            h1_line_class=line_class_h1_l,
-            m5_line_class=line_class_m5_l,
+            h1_line_class=h1_line_class,
+            m5_line_class=m5_line_class,
+            order_mode="limit",
         )
-        return immediate_orders + limit_orders
+        line_context["future_break_candidates"] = coordinator.build_line_candidates(
+            break_strategy_lines,
+            current_price,
+            h1_line_class=h1_line_class,
+            m5_line_class=m5_line_class,
+            order_mode="limit",
+        )
+        return line_context
+
+    def immediate_order(self, grouped_lines):
+        coordinator = grouped_lines["coordinator"]
+        candidates = coordinator.select_line_candidates(
+            grouped_lines["immediate_candidates"],
+            grouped_lines["rsi_info"],
+            grouped_lines["decision_time"],
+            "immediate",
+            self.immediate_recommended_reasons,
+        )
+        return coordinator.create_orders_from_candidates(
+            candidates,
+            grouped_lines["current_price"],
+            grouped_lines["decision_time"],
+            grouped_lines["rsi_info"],
+            "immediate",
+        )
+
+    def future_line_order(self, grouped_lines):
+        resist_orders = self.future_resist_order(grouped_lines)
+        break_orders = self.future_break_order(grouped_lines)
+        return resist_orders + break_orders
+
+    def future_resist_order(self, grouped_lines):
+        coordinator = grouped_lines["coordinator"]
+        candidates = coordinator.select_line_candidates(
+            grouped_lines["future_resist_candidates"],
+            grouped_lines["rsi_info"],
+            grouped_lines["decision_time"],
+            "future_resist",
+            self.future_resist_recommended_reasons,
+        )
+        return coordinator.create_orders_from_candidates(
+            candidates,
+            grouped_lines["current_price"],
+            grouped_lines["decision_time"],
+            grouped_lines["rsi_info"],
+            "limit",
+        )
+
+    def future_break_order(self, grouped_lines):
+        coordinator = grouped_lines["coordinator"]
+        candidates = coordinator.select_line_candidates(
+            grouped_lines["future_break_candidates"],
+            grouped_lines["rsi_info"],
+            grouped_lines["decision_time"],
+            "future_break",
+            self.future_break_recommended_reasons,
+        )
+        return coordinator.create_orders_from_candidates(
+            candidates,
+            grouped_lines["current_price"],
+            grouped_lines["decision_time"],
+            grouped_lines["rsi_info"],
+            "limit",
+        )
+
+    def future_resist_recommended_reasons(self, candidate, rsi_info, latest_peak_info):
+        strategy = candidate.get("strategy")
+        if getattr(strategy, "entry_type", None) != "reversal":
+            return []
+        return self.limit_recommended_reasons(candidate, rsi_info, latest_peak_info)
+
+    def future_break_recommended_reasons(self, candidate, rsi_info, latest_peak_info):
+        strategy = candidate.get("strategy")
+        if getattr(strategy, "entry_type", None) != "breakout":
+            return []
+        if not self._future_break_direction_is_valid(candidate, latest_peak_info):
+            return []
+        return self._configured_top10_reasons(candidate, rsi_info)
+
+    @staticmethod
+    def _future_break_direction_is_valid(candidate, latest_peak_info):
+        direction = int(candidate.get("direction") or 0)
+        line_side = candidate.get("line_side")
+        latest_peak_dir = latest_peak_info.get("direction")
+        if direction == 1 and line_side != "upper":
+            return False
+        if direction == -1 and line_side != "lower":
+            return False
+        return latest_peak_dir == direction
 
 
 class UsdJpyLineOrderStrategy:

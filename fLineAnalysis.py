@@ -142,6 +142,35 @@ class LineOrderCoordinator:
         m5_line_class=None,
         order_mode="limit",
     ):
+        candidates = self.build_line_candidates(
+            strategy_lines,
+            current_price,
+            h1_line_class=h1_line_class,
+            m5_line_class=m5_line_class,
+            order_mode=order_mode,
+        )
+        candidates = self._filter_recommended_candidates(
+            candidates,
+            rsi_info,
+            decision_time,
+            order_mode,
+        )
+        return self.create_orders_from_candidates(
+            candidates,
+            current_price,
+            decision_time,
+            rsi_info,
+            order_mode,
+        )
+
+    def build_line_candidates(
+        self,
+        strategy_lines,
+        current_price,
+        h1_line_class=None,
+        m5_line_class=None,
+        order_mode="limit",
+    ):
         candidates = []
         for strategy, line_class in strategy_lines:
             strategy.pair = self.pair
@@ -154,13 +183,72 @@ class LineOrderCoordinator:
             self._add_previous_peak_line_context(candidates, m5_line_class, "m5_previous_peak_line")
         if h1_line_class is not None:
             self._add_previous_peak_line_context(candidates, h1_line_class, "h1_previous_peak_line")
+        return candidates
 
-        candidates = self._filter_recommended_candidates(
-            candidates,
-            rsi_info,
-            decision_time,
-            order_mode,
-        )
+    def select_line_candidates(
+        self,
+        candidates,
+        rsi_info,
+        decision_time,
+        order_mode,
+        reason_func,
+    ):
+        filtered = []
+        for candidate in candidates:
+            latest_peak_info = self.attach_candidate_decision_context(
+                candidate,
+                decision_time,
+                order_mode,
+            )
+            reasons = reason_func(candidate, rsi_info, latest_peak_info)
+            if not reasons:
+                print(
+                    "Skip line order by condition:",
+                    order_mode,
+                    candidate["timeframe"],
+                    candidate["line_strategy"],
+                    candidate["line_side"],
+                    candidate["line_price"],
+                )
+                continue
+
+            candidate["order_mode"] = order_mode
+            candidate["recommended_reasons"] = reasons
+            candidate["memo"] = self._build_condition_memo(candidate, rsi_info, reasons)
+            filtered.append(candidate)
+        return filtered
+
+    def attach_candidate_decision_context(self, candidate, decision_time, order_mode):
+        session_info = self.get_session_info(decision_time)
+        candidate["session_name"] = session_info["session_name"]
+        candidate["session_hour"] = session_info["session_hour"]
+        candidate["session_time"] = session_info["session_time"]
+        latest_peak_info = self._latest_peak_info(candidate["timeframe"])
+        candidate["latest_peak_dir"] = latest_peak_info["direction"]
+        candidate["latest_peak_count"] = latest_peak_info["count"]
+        candidate["latest_peak_gap"] = latest_peak_info["gap"]
+        candidate["latest_peak_time"] = latest_peak_info["time"]
+        candidate["latest_peak_strength"] = latest_peak_info["strength"]
+        candidate["latest_peak_price"] = latest_peak_info["price"]
+        candidate["latest_peak_rsi"] = latest_peak_info["rsi"]
+        candidate["previous_peak_dir"] = latest_peak_info["previous_direction"]
+        candidate["previous_peak_count"] = latest_peak_info["previous_count"]
+        candidate["previous_peak_gap"] = latest_peak_info["previous_gap"]
+        candidate["previous_peak_time"] = latest_peak_info["previous_time"]
+        candidate["previous_peak_strength"] = latest_peak_info["previous_strength"]
+        candidate["previous_peak_price"] = latest_peak_info["previous_price"]
+        candidate["previous_peak_rsi"] = latest_peak_info["previous_rsi"]
+        candidate["order_mode"] = order_mode
+        return latest_peak_info
+
+    def create_orders_from_candidates(
+        self,
+        candidates,
+        current_price,
+        decision_time,
+        rsi_info,
+        order_mode,
+    ):
         selected_candidates = self._remove_near_candidates(candidates)
         orders = []
         for candidate in selected_candidates:
@@ -235,25 +323,11 @@ class LineOrderCoordinator:
         return filtered
 
     def _recommended_reasons(self, candidate, rsi_info, decision_time, order_mode="limit"):
-        session_info = self.get_session_info(decision_time)
-        candidate["session_name"] = session_info["session_name"]
-        candidate["session_hour"] = session_info["session_hour"]
-        candidate["session_time"] = session_info["session_time"]
-        latest_peak_info = self._latest_peak_info(candidate["timeframe"])
-        candidate["latest_peak_dir"] = latest_peak_info["direction"]
-        candidate["latest_peak_count"] = latest_peak_info["count"]
-        candidate["latest_peak_gap"] = latest_peak_info["gap"]
-        candidate["latest_peak_time"] = latest_peak_info["time"]
-        candidate["latest_peak_strength"] = latest_peak_info["strength"]
-        candidate["latest_peak_price"] = latest_peak_info["price"]
-        candidate["latest_peak_rsi"] = latest_peak_info["rsi"]
-        candidate["previous_peak_dir"] = latest_peak_info["previous_direction"]
-        candidate["previous_peak_count"] = latest_peak_info["previous_count"]
-        candidate["previous_peak_gap"] = latest_peak_info["previous_gap"]
-        candidate["previous_peak_time"] = latest_peak_info["previous_time"]
-        candidate["previous_peak_strength"] = latest_peak_info["previous_strength"]
-        candidate["previous_peak_price"] = latest_peak_info["previous_price"]
-        candidate["previous_peak_rsi"] = latest_peak_info["previous_rsi"]
+        latest_peak_info = self.attach_candidate_decision_context(
+            candidate,
+            decision_time,
+            order_mode,
+        )
         if order_mode == "immediate":
             return self.profile.immediate_recommended_reasons(
                 candidate,
@@ -1387,6 +1461,9 @@ class MainAnalysis:
             h1_line_class=h1_line_class,
             m5_line_class=m5_line_class,
         )
+
+    def line_order_coordinator(self):
+        return LineOrderCoordinator(self)
 
     def add_h1_line_limit_orders(self, line_class, current_price, decision_time, rsi_info=None):
         coordinator = LineOrderCoordinator(self)
