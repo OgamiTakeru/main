@@ -948,6 +948,7 @@ class order_information:
                 "max_minus": self.lose_max_pips,
                 "order_time": self.o_time,
                 "target_price": self.plan_json['target_price'],
+                "target_price_range": self.gap_target_price_pips,
                 "take_time": self.t_time,
                 "take_price": str(trade_latest['price']),
                 "end_time": datetime.datetime.now(),
@@ -969,8 +970,7 @@ class order_information:
                 "move_ave60": self.price_diff_to_pips(self.move_ave60),
                 "memo": order_info_for_com,
                 "current_price_gap": self.price_diff_to_pips(self.current_candle_price_gap),
-                "rr": self.safe_rr(),
-                "target_price_range": self.gap_target_price_pips
+                "rr": self.safe_rr()
             }
             order_information.result_dic_arr.append(result_dic)
             # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
@@ -1006,6 +1006,7 @@ class order_information:
                 "max_minus": self.lose_max_pips,
                 "order_time": self.o_time,
                 "target_price": self.plan_json['target_price'],
+                "target_price_range": self.gap_target_price_pips,
                 "take_time": self.t_time,
                 "take_price": str(trade_latest['price']),
                 "end_time": datetime.datetime.now(),
@@ -1027,8 +1028,7 @@ class order_information:
                 "move_ave60": self.price_diff_to_pips(self.move_ave60),
                 "memo": order_info_for_com,
                 "current_price_gap": self.price_diff_to_pips(self.current_candle_price_gap),
-                "rr": self.safe_rr(),
-                "target_price_range": self.gap_target_price_pips
+                "rr": self.safe_rr()
             }
             order_information.result_dic_arr.append(result_dic)
             # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
@@ -1310,6 +1310,7 @@ class order_information:
                     "max_minus": 0,
                     "order_time": self.o_time,
                     "target_price": self.plan_json['target_price'],
+                    "target_price_range": self.gap_target_price_pips,
                     "take_time": self.t_time,
                     "take_price": 0,
                     "end_time": datetime.datetime.now(),
@@ -1331,8 +1332,7 @@ class order_information:
                     "move_ave60": self.price_diff_to_pips(self.move_ave60),
                     "memo": "Order強制キャンセル",
                     "current_price_gap": self.price_diff_to_pips(self.current_candle_price_gap),
-                    "rr": self.safe_rr(),
-                    "target_price_range": self.gap_target_price_pips
+                    "rr": self.safe_rr()
                 }
                 self.write_history_result(result_dic)
         if order_latest['state'] == "CANCELLED":

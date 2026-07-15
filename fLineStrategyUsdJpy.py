@@ -436,6 +436,10 @@ class LineStrategyProfileUsdJpy:
         if line.get("is_flipped_line") is True:
             return None
 
+        role_reason = self._immediate_line_role_supports_breakout(candidate)
+        if role_reason is None:
+            return None
+
         latest_touch_dir = line.get("line_latest_touch_peak_dir")
         if latest_touch_dir is not None:
             try:
@@ -450,7 +454,18 @@ class LineStrategyProfileUsdJpy:
             distance_text = str(round(float(distance_pips), 1))
         except (TypeError, ValueError):
             distance_text = str(distance_pips)
-        return "Near breakout line " + distance_text + "p"
+        return "Near breakout " + role_reason + " " + distance_text + "p"
+
+    @staticmethod
+    def _immediate_line_role_supports_breakout(candidate):
+        direction = int(candidate.get("direction") or 0)
+        line = candidate.get("line", {})
+        current_role = line.get("line_current_role")
+        if direction == 1 and current_role == "resistance":
+            return "resistance"
+        if direction == -1 and current_role == "support":
+            return "support"
+        return None
 
     def _current_rsi_matches_direction(self, candidate, rsi_info):
         if rsi_info is None:

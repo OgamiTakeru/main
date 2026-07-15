@@ -5,15 +5,13 @@ import classInspection as ci
 
 PAIR = "AUD_USD"
 # Previous inspection ranges kept for quick switching.
-# START_TIME = datetime.datetime(2025, 6, 15, 0, 0, 0)
-# END_TIME = datetime.datetime(2026, 6, 16, 10, 0, 0)
 START_TIME = datetime.datetime(2025, 12, 24, 0, 0, 0)
-# START_TIME = datetime.datetime(2026, 6, 22, 0, 0, 0)
+# START_TIME = datetime.datetime(2026, 6, 24, 0, 0, 0)
 END_TIME = datetime.datetime(2026, 6, 24, 0, 0, 0)
-# START_TIME = datetime.datetime(2026, 6, 30, 0, 0, 0)
-# END_TIME = datetime.datetime.now().replace(microsecond=0)
-# START_TIME = datetime.datetime(2024, 6, 15, 0, 0, 0)
-# END_TIME = datetime.datetime(2025, 6, 16, 10, 0, 0)
+
+START_TIME = datetime.datetime(2026, 7, 14, 0, 0, 0)
+END_TIME = datetime.datetime(2026, 7, 15, 15, 0, 0)
+
 
 memo = f"{PAIR} line inspection"
 cache_name = f"{PAIR}_{START_TIME:%Y%m%d%H%M%S}_{END_TIME:%Y%m%d%H%M%S}"
