@@ -39,11 +39,11 @@ class LineStrategyProfileUsdJpy:
     immediate_line_strength_min = 10
     top10_conditions = [
         {
-            "label": "USD 1Y Top1 path0-3 buy latestPeakRSI60-67.5",
+            "label": "USD 1Y Top1 path0-3 buy M5RSI60-67.5",
             "filters": {
                 "path1_distance_bin": "0-3p",
                 "direction_label": "buy",
-                "latest_peak_rsi_bin": "60-67.5",
+                "m5_rsi_bin": "60-67.5",
             },
         },
         {
@@ -55,10 +55,10 @@ class LineStrategyProfileUsdJpy:
             },
         },
         {
-            "label": "USD 1Y Top3 path50+ latestPeakRSI60-67.5",
+            "label": "USD 1Y Top3 path50+ M5RSI60-67.5",
             "filters": {
                 "path1_distance_bin": "50+p",
-                "latest_peak_rsi_bin": "60-67.5",
+                "m5_rsi_bin": "60-67.5",
             },
         },
         {
@@ -987,7 +987,160 @@ class LineStrategyProfileUsdJpy:
             m5_line_class=m5_line_class,
             order_mode="limit",
         )
+        self.evaluate_grouped_line_behavior(line_context)
         return line_context
+
+    def evaluate_grouped_line_behavior(self, line_context):
+        """Attach reusable break/resist evidence to each grouped M5 line."""
+        coordinator = line_context["coordinator"]
+        rsi_info = line_context.get("rsi_info") or {}
+        decision_time = line_context.get("decision_time")
+        evaluated = {}
+        evaluated_line_groups = []
+
+        for candidate_key in (
+            "immediate_candidates",
+            "future_resist_candidates",
+            "future_break_candidates",
+        ):
+            for candidate in line_context.get(candidate_key, []):
+                line = candidate.get("line", {})
+                line_key = (id(line), candidate.get("line_side"))
+                evaluation = evaluated.get(line_key)
+                if evaluation is None:
+                    latest_peak_info = coordinator.attach_candidate_decision_context(
+                        candidate,
+                        decision_time,
+                        "line_group",
+                    )
+                    evaluation = self.evaluate_line_behavior(
+                        candidate,
+                        rsi_info,
+                        latest_peak_info,
+                    )
+                    evaluated[line_key] = evaluation
+                    line.update(evaluation)
+                    evaluated_line_groups.append({
+                        "timeframe": candidate.get("timeframe"),
+                        "line_side": candidate.get("line_side"),
+                        "line_price": candidate.get("line_price"),
+                        "line": line,
+                        **evaluation,
+                    })
+                candidate.update({
+                    "line_behavior": evaluation["behavior"],
+                    "line_break_score": evaluation["break_score"],
+                    "line_resist_score": evaluation["resist_score"],
+                    "line_behavior_reasons": evaluation["behavior_reasons"],
+                    "line_break_reasons": evaluation["break_reasons"],
+                    "line_resist_reasons": evaluation["resist_reasons"],
+                })
+
+        line_context["evaluated_line_groups"] = evaluated_line_groups
+
+    def evaluate_line_behavior(self, candidate, rsi_info, latest_peak_info):
+        """Score whether the approaching price is more likely to break or resist."""
+        line = candidate.get("line", {})
+        line_side = candidate.get("line_side")
+        approach_direction = 1 if line_side == "upper" else -1
+        break_points = 1.0
+        resist_points = 1.0
+        break_reasons = []
+        resist_reasons = []
+
+        def add_break(points, reason):
+            nonlocal break_points
+            break_points += points
+            break_reasons.append(reason)
+
+        def add_resist(points, reason):
+            nonlocal resist_points
+            resist_points += points
+            resist_reasons.append(reason)
+
+        latest_peak_dir = self._int_or_none(latest_peak_info.get("direction"))
+        if latest_peak_dir == approach_direction:
+            add_break(2.0, "Latest peak direction approaches line")
+        elif latest_peak_dir in (-1, 1):
+            add_resist(2.0, "Latest peak direction moves away from line")
+
+        current_rsi = self._float_or_none(rsi_info.get("rsi_1"))
+        previous_rsi = self._float_or_none(latest_peak_info.get("previous_rsi"))
+        if current_rsi is not None:
+            if line_side == "upper":
+                if 50 <= current_rsi <= 67.5:
+                    add_break(1.0, "Current RSI supports upper approach")
+                else:
+                    add_resist(1.0, "Current RSI does not support upper approach")
+            elif line_side == "lower":
+                if 30 <= current_rsi <= 50:
+                    add_break(1.0, "Current RSI supports lower approach")
+                else:
+                    add_resist(1.0, "Current RSI does not support lower approach")
+
+        if current_rsi is not None and previous_rsi is not None:
+            rsi_change = current_rsi - previous_rsi
+            directional_change = rsi_change * approach_direction
+            if directional_change >= 3:
+                add_break(1.5, "RSI momentum strengthened toward line")
+            elif directional_change <= -3:
+                add_resist(1.5, "RSI momentum weakened before line")
+
+        if line.get("line_history_is_flipped") is True:
+            add_break(1.0, "Line role has flipped before")
+        elif line.get("line_current_role") in ("resistance", "support"):
+            add_resist(0.5, "Line keeps its original role")
+
+        line_count = self._int_or_none(line.get("count")) or 0
+        line_strength = self._float_or_none(line.get("total_strength")) or 0
+        if line_count >= 3:
+            add_break(0.5, "Repeated line tests may weaken line")
+        if line_strength >= 10:
+            add_resist(0.5, "Line has strong accumulated resistance")
+
+        line_rsi_values = [
+            self._float_or_none(line.get("line_peak_rsi_latest")),
+            self._float_or_none(line.get("line_peak_rsi_avg")),
+        ]
+        line_rsi_values = [value for value in line_rsi_values if value is not None]
+        if line_side == "upper" and any(value >= 67.5 for value in line_rsi_values):
+            add_resist(1.0, "Line was formed with high RSI")
+        if line_side == "lower" and any(value <= 30 for value in line_rsi_values):
+            add_resist(1.0, "Line was formed with low RSI")
+
+        total_points = break_points + resist_points
+        break_score = round(break_points / total_points, 3)
+        resist_score = round(resist_points / total_points, 3)
+        score_gap = break_score - resist_score
+        if score_gap >= 0.1:
+            behavior = "break"
+            behavior_reasons = list(break_reasons)
+        elif score_gap <= -0.1:
+            behavior = "resist"
+            behavior_reasons = list(resist_reasons)
+        else:
+            behavior = "neutral"
+            behavior_reasons = [
+                "Break: " + reason for reason in break_reasons
+            ] + [
+                "Resist: " + reason for reason in resist_reasons
+            ]
+
+        return {
+            "behavior": behavior,
+            "break_score": break_score,
+            "resist_score": resist_score,
+            "behavior_reasons": behavior_reasons,
+            "break_reasons": break_reasons,
+            "resist_reasons": resist_reasons,
+        }
+
+    @staticmethod
+    def _int_or_none(value):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
 
     def immediate_order(self, grouped_lines):
         coordinator = grouped_lines["coordinator"]

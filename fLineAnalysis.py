@@ -956,6 +956,18 @@ class LineOrderCoordinator:
             "line_peak_rsi_count",
         ):
             order_plan[key] = line.get(key)
+        order_plan["line_behavior"] = candidate.get("line_behavior", line.get("behavior"))
+        order_plan["line_break_score"] = candidate.get("line_break_score", line.get("break_score"))
+        order_plan["line_resist_score"] = candidate.get("line_resist_score", line.get("resist_score"))
+        order_plan["line_behavior_reasons"] = " / ".join(
+            candidate.get("line_behavior_reasons", line.get("behavior_reasons", []))
+        )
+        order_plan["line_break_reasons"] = " / ".join(
+            candidate.get("line_break_reasons", line.get("break_reasons", []))
+        )
+        order_plan["line_resist_reasons"] = " / ".join(
+            candidate.get("line_resist_reasons", line.get("resist_reasons", []))
+        )
         order_plan.update(candidate.get("h1_context", {}))
         if rsi_info is not None:
             order_plan.update(rsi_info)
