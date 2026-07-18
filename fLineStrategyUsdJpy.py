@@ -17,14 +17,14 @@ class LineStrategyProfileUsdJpy:
     h1_lc_pips = 15
     h1_spread_pips = 0.8
     h1_rr = 1.65
-    h1_units_multiplier = 0.5
+    h1_risk_multiplier = 2.0
     h1_order_timeout_min = 60
     h1_core_count_min = 1
     h1_core_total_strength_min = 5
 
     m5_lc_pips = 7.5
     m5_tp_pips = 14.1
-    m5_units_multiplier = 0.25
+    m5_risk_multiplier = 1.0
     m5_order_timeout_min = 15
     m5_count_min = 1
     m5_core_count_min = 1
@@ -273,21 +273,21 @@ class LineStrategyProfileUsdJpy:
     session_policies = {
         "morning": {
             "order_permission": True,
-            "units_multiplier": 1.0,
+            "risk_multiplier": 1.0,
             "rr": 1.3,
             "tp_multiplier": 1.0,
             "lc_multiplier": 1.0,
         },
         "day": {
             "order_permission": True,
-            "units_multiplier": 1.0,
+            "risk_multiplier": 1.0,
             "rr": None,
             "tp_multiplier": 1.0,
             "lc_multiplier": 1.0,
         },
         "night": {
             "order_permission": True,
-            "units_multiplier": 1.0,
+            "risk_multiplier": 1.0,
             "rr": None,
             "tp_multiplier": 1.0,
             "lc_multiplier": 1.0,
@@ -1233,7 +1233,7 @@ class UsdJpyLineOrderStrategy:
     entry_offset_pips = 0
     lc_pips = 0
     tp_pips = 0
-    units_multiplier = 1
+    timeframe_risk_multiplier = 1
     order_timeout_min = 0
 
     def __init__(self, profile=None):
@@ -1298,13 +1298,14 @@ class UsdJpyH1LineOrderStrategy(UsdJpyLineOrderStrategy):
     entry_type = "reversal"
     order_type = "LIMIT"
     lc_pips = 15
-    units_multiplier = 0.5
+    h1_risk_multiplier = 2.0
     order_timeout_min = 60
 
     def __init__(self, profile=None):
         super().__init__(profile)
         self.lc_pips = self.profile.h1_lc_pips
-        self.units_multiplier = self.profile.h1_units_multiplier
+        self.h1_risk_multiplier = self.profile.h1_risk_multiplier
+        self.timeframe_risk_multiplier = self.h1_risk_multiplier
         self.order_timeout_min = self.profile.h1_order_timeout_min
 
     def get_tp_pips(self):
@@ -1324,14 +1325,15 @@ class UsdJpyM5LineOrderStrategy(UsdJpyLineOrderStrategy):
     order_type = "LIMIT"
     lc_pips = 7.5
     tp_pips = 14.1
-    units_multiplier = 0.25
+    m5_risk_multiplier = 1.0
     order_timeout_min = 15
 
     def __init__(self, profile=None):
         super().__init__(profile)
         self.lc_pips = self.profile.m5_lc_pips
         self.tp_pips = self.profile.m5_tp_pips
-        self.units_multiplier = self.profile.m5_units_multiplier
+        self.m5_risk_multiplier = self.profile.m5_risk_multiplier
+        self.timeframe_risk_multiplier = self.m5_risk_multiplier
         self.order_timeout_min = self.profile.m5_order_timeout_min
 
     def is_target(self, line_side, line):

@@ -74,13 +74,20 @@ def calculate_units(
         lc_range: float,
         risk_yen: float = 500,
         rounding_tag: str = "s",
-        yen_per_pip_per_lot: float = 1000,
+        usd_jpy_rate: float | None = None,
 ) -> int:
     """Calculate order units from the permitted loss and stop-loss distance."""
-    units_per_lot = 10000
     lc_pips = max(pair_info.price_to_pips(lc_range), 0.000000001)
-    lot = risk_yen / (lc_pips * yen_per_pip_per_lot)
-    units = int(lot * units_per_lot)
+    if pair_info.name == "USD_JPY":
+        yen_per_pip_per_unit = pair_info.pip_value
+    elif pair_info.name in ("EUR_USD", "AUD_USD"):
+        if usd_jpy_rate is None or float(usd_jpy_rate) <= 0:
+            raise ValueError(pair_info.name + "のunits計算にはUSD_JPY価格が必要です")
+        yen_per_pip_per_unit = pair_info.pip_value * float(usd_jpy_rate)
+    else:
+        raise ValueError("Unsupported currency pair: " + pair_info.name)
+
+    units = int(risk_yen / (lc_pips * yen_per_pip_per_unit))
 
     if rounding_tag == "l":
         units = int(5 * round(units / 5))

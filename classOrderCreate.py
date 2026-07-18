@@ -310,20 +310,6 @@ class Order:
         self.priority = order_json['priority']
 
         # Unitsがない場合は初期値を入れる
-        if "units" in order_json:
-            if order_json['units'] < 100:
-                # 100以下の数字は倍率とみなす
-                # print("   UNITが倍数として処理されています", order_json['units'])
-                self.units = round(self.basic_unit * order_json['units'])
-                self.units_adj = order_json['units']
-            else:
-                # 直接の指定と判断
-                self.units = self.order_json["units"]
-                self.units_adj = 1
-        else:
-            # print("Unit指定がないため、Unitsを基本のものを入れておく")
-            self.units = self.basic_unit
-
         # 注文方式を指定する
         if "type" in order_json:
             self.ls_type = order_json['type']
@@ -396,6 +382,20 @@ class Order:
             if self.lc_range < self.dependence_tp_lc_margin:
                 print("  ★★LC価格とTarget価格が極端に近いため、注意", self.lc_range, self.lc_price, self.target_price)
 
+        if "risk_yen" in order_json:
+            self.risk_yen = float(order_json["risk_yen"])
+            self.usd_jpy_rate = order_json.get("usd_jpy_rate")
+            self.recalculate_units_from_risk()
+        elif "units" in order_json:
+            if order_json['units'] < 100:
+                self.units = round(self.basic_unit * order_json['units'])
+                self.units_adj = order_json['units']
+            else:
+                self.units = order_json["units"]
+                self.units_adj = 1
+        else:
+            self.units = self.basic_unit
+
         # 時間の設定
         # オーダータイムアウトは、入っていなければデフォルトを代入
         if 'order_timeout_min' in order_json:
@@ -444,6 +444,28 @@ class Order:
         else:
             pass
             # order_json['ref'] = {"move_ave": 0, "peak1_target_gap": 0}
+
+    def recalculate_units_from_risk(self):
+        """Calculate units from the finalized LC range and risk amount."""
+        if not getattr(self, "risk_yen", None):
+            return
+        if not self.lc_range:
+            raise ValueError("risk_yenでunitsを計算するにはlcが必要です")
+
+        self.units = gene.calculate_units(
+            self.pair_info,
+            self.lc_range,
+            self.risk_yen,
+            "l",
+            self.usd_jpy_rate,
+        )
+        self.units_adj = 1
+
+        if self.exe_order_plan:
+            self.exe_order_plan["units"] = self.units
+            self.exe_order_plan["risk_yen"] = self.risk_yen
+        if self.data.get("order"):
+            self.data["order"]["units"] = str(self.units * self.direction)
 
     def pips(self, pips, pair="dy"):
         """

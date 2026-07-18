@@ -13,6 +13,7 @@ import requests
 from statistics import median
 from collections import defaultdict
 import math
+from pathlib import Path
 from fLineStrategyAudUsd import LineStrategyProfileAudUsd
 from fLineStrategyEurUsd import LineStrategyProfileEurUsd
 from fLineStrategyUsdJpy import (
@@ -29,8 +30,7 @@ gl_previous_exe_df60_row = None
 gl_previous_exe_df60_order_time = None
 gl_previous_bb_h1_class = None
 gl_latest_trend_trigger_time = None
-
-gl_unis_std = 0.1  # OrderCreateのベーシックUnitは10000ドル。それにかける倍率
+gl_risk_yen = 50
 
 
 def line_strategy_profile(pair):
@@ -43,6 +43,9 @@ def line_strategy_profile(pair):
 
 
 class LineOrderCoordinator:
+    fallback_usd_jpy_rate = 160.0
+    inspection_usd_jpy_max_gap = pd.Timedelta(days=31)
+    _inspection_usd_jpy_close = None
     duplicate_threshold_pips = 3
     timeout_by_distance_pips = (
         (3, 15),
@@ -64,6 +67,7 @@ class LineOrderCoordinator:
             line_strategy_profile(self.pair),
         )
         self.duplicate_threshold_pips = self.profile.duplicate_threshold_pips
+        self._live_usd_jpy_rate = None
 
     @classmethod
     def order_timeout_min_for_distance(cls, distance_pips, timeframe, default_timeout_min):
@@ -646,9 +650,63 @@ class LineOrderCoordinator:
             )
         return selected
 
-    def _get_units_multiplier(self, candidate, selected_candidates):
-        # Timeframe agreement rules will be added here after M5 validation.
-        return candidate["strategy"].units_multiplier
+    def _get_risk_multiplier(self, candidate, decision_time):
+        session_name = self.get_session_info(decision_time)["session_name"]
+        session_policy = self.session_order_policy(session_name)
+        return (
+            candidate["strategy"].timeframe_risk_multiplier
+            * session_policy["risk_multiplier"]
+        )
+
+    def _get_usd_jpy_rate(self, decision_time):
+        if self.pair == "USD_JPY":
+            return None
+        if getattr(self.analysis, "mode", "inspection") == "live":
+            if self._live_usd_jpy_rate is not None:
+                return self._live_usd_jpy_rate
+            candle_analysis = getattr(self.analysis, "candle_analysis_all", None)
+            oa = getattr(candle_analysis, "base_oa", None)
+            if oa is not None:
+                response = oa.NowPrice_exe("USD_JPY")
+                if response.get("error") == 0:
+                    self._live_usd_jpy_rate = float(response["data"]["mid"])
+                    return self._live_usd_jpy_rate
+            self._live_usd_jpy_rate = self.fallback_usd_jpy_rate
+            return self._live_usd_jpy_rate
+
+        close_series = self._load_inspection_usd_jpy_close()
+        if close_series.empty:
+            return self.fallback_usd_jpy_rate
+
+        decision_time = pd.Timestamp(decision_time)
+        nearest_index = close_series.index.get_indexer([decision_time], method="nearest")[0]
+        if nearest_index < 0:
+            return self.fallback_usd_jpy_rate
+        rate_time = close_series.index[nearest_index]
+        if abs(rate_time - decision_time) > self.inspection_usd_jpy_max_gap:
+            return self.fallback_usd_jpy_rate
+        return float(close_series.iloc[nearest_index])
+
+    @classmethod
+    def _load_inspection_usd_jpy_close(cls):
+        if cls._inspection_usd_jpy_close is not None:
+            return cls._inspection_usd_jpy_close
+
+        frames = []
+        for path in Path(tk.folder_path).glob("m5_USD_JPY_*.csv"):
+            df = pd.read_csv(path, usecols=["time_jp", "close"])
+            frames.append(df)
+        if not frames:
+            cls._inspection_usd_jpy_close = pd.Series(dtype=float)
+            return cls._inspection_usd_jpy_close
+
+        rates = pd.concat(frames, ignore_index=True)
+        rates["time_jp"] = pd.to_datetime(rates["time_jp"])
+        rates.dropna(subset=["time_jp", "close"], inplace=True)
+        rates.drop_duplicates(subset=["time_jp"], keep="last", inplace=True)
+        rates.sort_values("time_jp", inplace=True)
+        cls._inspection_usd_jpy_close = rates.set_index("time_jp")["close"].astype(float)
+        return cls._inspection_usd_jpy_close
 
     @staticmethod
     def get_session_info(decision_time):
@@ -680,7 +738,9 @@ class LineOrderCoordinator:
         order_plan["session_name"] = session_info["session_name"]
         order_plan["session_hour"] = session_info["session_hour"]
         order_plan["session_time"] = session_info["session_time"]
-        order_plan["session_units_multiplier"] = policy["units_multiplier"]
+        # Keep this key for inspection CSV compatibility. The multiplier now
+        # changes risk_yen before units are calculated.
+        order_plan["session_units_multiplier"] = policy["risk_multiplier"]
         order_plan["session_rr"] = policy["rr"]
         order_plan["session_tp_multiplier"] = policy["tp_multiplier"]
         order_plan["session_lc_multiplier"] = policy["lc_multiplier"]
@@ -696,28 +756,10 @@ class LineOrderCoordinator:
             )
             return None
 
-        if policy["units_multiplier"] != 1.0:
-            self._apply_units_multiplier(order_class, policy["units_multiplier"])
-
         if policy["rr"] is not None:
             self._apply_rr_to_tp(order_class, policy["rr"])
 
         return order_class
-
-    @staticmethod
-    def _apply_units_multiplier(order_class, units_multiplier):
-        order_plan = order_class.exe_order_plan
-        old_units = int(order_plan.get("units") or 0)
-        new_units = int(old_units * units_multiplier)
-        if new_units == 0 and old_units != 0:
-            new_units = 1 if old_units > 0 else -1
-
-        order_class.units = abs(new_units)
-        order_plan["units"] = abs(new_units)
-        for_api_json = order_plan.get("for_api_json")
-        if for_api_json and "order" in for_api_json:
-            direction = int(order_plan.get("direction") or 1)
-            for_api_json["order"]["units"] = str(abs(new_units) * direction)
 
     def _apply_rr_to_tp(self, order_class, rr):
         p = self.p
@@ -780,6 +822,7 @@ class LineOrderCoordinator:
             stop_loss = for_api_json["order"].get("stopLossOnFill")
             if stop_loss is not None:
                 stop_loss["price"] = str(lc_price)
+        order_class.recalculate_units_from_risk()
 
     def _apply_path_short_tp(self, order_class):
         order_plan = order_class.exe_order_plan
@@ -862,15 +905,9 @@ class LineOrderCoordinator:
             target_price = candidate["target_price"]
         lc_range = p.pips_to_price(strategy.lc_pips)
         tp_range = p.pips_to_price(strategy.get_tp_pips())
-        units = int(
-            gene.calculate_units(
-                self.p,
-                lc_range,
-                tk.setting_json["l_units"],
-                "l",
-            )
-            * self._get_units_multiplier(candidate, selected_candidates)
-        )
+        risk_multiplier = self._get_risk_multiplier(candidate, decision_time)
+        risk_yen = gl_risk_yen * risk_multiplier
+        usd_jpy_rate = self._get_usd_jpy_rate(decision_time)
 
         order_class = OCreate.Order({
             "name": (
@@ -888,7 +925,8 @@ class LineOrderCoordinator:
             "tp": tp_range,
             "lc": lc_range,
             "lc_change": [],
-            "units": units,
+            "risk_yen": risk_yen,
+            "usd_jpy_rate": usd_jpy_rate,
             "priority": int(line.get("total_strength", 0)),
             "decision_time": decision_time,
             "pair": self.pair,
@@ -903,6 +941,12 @@ class LineOrderCoordinator:
         order_plan["line_distance_pips"] = candidate.get("line_distance_pips", candidate.get("distance_pips"))
         order_plan["line_target_price"] = candidate.get("line_target_price", candidate.get("target_price"))
         order_plan["source"] = "line"
+        order_plan["base_risk_yen"] = gl_risk_yen
+        order_plan["risk_timeframe"] = strategy.timeframe
+        order_plan["timeframe_risk_multiplier"] = strategy.timeframe_risk_multiplier
+        order_plan["risk_multiplier"] = risk_multiplier
+        order_plan["risk_yen"] = risk_yen
+        order_plan["usd_jpy_rate"] = usd_jpy_rate
         order_plan["line_order_mode"] = order_mode
         order_plan["line_timeframe"] = strategy.timeframe
         order_plan["line_entry_type"] = strategy.entry_type
@@ -1091,11 +1135,6 @@ class MainAnalysis:
         # 係数の調整用
         self.lc_adj = 0.7
         self.arrow_skip = 1
-        # Unit調整用
-        self.units_mini = 0.1
-        self.units_reg = 0.5
-        self.units_str = 1 * gl_unis_std  #0.1
-        self.units_hedge = self.units_str
         # 汎用性高め
         self.lc_change_test = [
             {"exe": True, "time_after": 0, "trigger": 0.01, "ensure": -1},  # ←とにかく、LCCandleを発動させたい場合
@@ -1162,7 +1201,8 @@ class MainAnalysis:
         tp_pips = round(rr * (lc_pips + spread_pips) + spread_pips, 1)
         lc_range = p.pips_to_price(lc_pips)
         tp_range = p.pips_to_price(tp_pips)
-        units = int(gene.calculate_units(self.p, lc_range, tk.setting_json['l_units'], "l") * 0.5)
+        risk_yen = gl_risk_yen * 2.0
+        usd_jpy_rate = LineOrderCoordinator(self)._get_usd_jpy_rate(decision_time)
 
         line_orders = []
         line_candidates = []
@@ -1245,7 +1285,8 @@ class MainAnalysis:
                 "tp": tp_range,
                 "lc": lc_range,
                 "lc_change": [],
-                "units": units,
+                "risk_yen": risk_yen,
+                "usd_jpy_rate": usd_jpy_rate,
                 "priority": int(line.get("total_strength", 0)),
                 "decision_time": decision_time,
                 "pair": self.pair,
@@ -1284,7 +1325,8 @@ class MainAnalysis:
         tp_pips = 13
         lc_range = p.pips_to_price(lc_pips)
         tp_range = p.pips_to_price(tp_pips)
-        units = int(gene.calculate_units(self.p, lc_range, tk.setting_json['l_units'], "l") * 0.25)
+        risk_yen = gl_risk_yen
+        usd_jpy_rate = LineOrderCoordinator(self)._get_usd_jpy_rate(decision_time)
 
         line_orders = []
         line_candidates = []
@@ -1367,7 +1409,8 @@ class MainAnalysis:
                 "tp": tp_range,
                 "lc": lc_range,
                 "lc_change": [],
-                "units": units,
+                "risk_yen": risk_yen,
+                "usd_jpy_rate": usd_jpy_rate,
                 "priority": int(line.get("total_strength", 0)),
                 "decision_time": decision_time,
                 "pair": self.pair,

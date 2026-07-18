@@ -84,7 +84,7 @@ gl_target_time = datetime.datetime(2026, 4, 18, 1, 0, 6)  # ←これみそだ�
 gl_target_time = datetime.datetime(2026, 4, 18, 1, 55, 6)
 gl_target_time = datetime.datetime(2026, 6, 15, 16, 0, 6)  # Codexに渡した時刻
 gl_target_time = datetime.datetime(2026, 6, 16, 16, 35, 6)  # レンジ始まりくらい。
-gl_target_time = datetime.datetime(2026, 7, 11, 0, 50, 6)
+gl_target_time = datetime.datetime(2026, 7, 14, 6, 40, 6)
 # gl_target_time = datetime.datetime(2025, 6, 17, 21, 30, 6)
 
 gl_pair = "USD_JPY"
