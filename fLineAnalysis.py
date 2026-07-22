@@ -287,6 +287,7 @@ class LineOrderCoordinator:
             if order_class is None:
                 continue
             self._apply_path_short_tp(order_class)
+            self._attach_tp_last_touch_context(order_class, decision_time)
 
             orders.append(order_class)
 
@@ -854,6 +855,89 @@ class LineOrderCoordinator:
             tp_pips,
             self.pair + " path1 H1 line short TP",
         )
+
+    def _attach_tp_last_touch_context(self, order_class, decision_time):
+        """Store the latest completed H1 candle that touched the finalized TP."""
+        order_plan = order_class.exe_order_plan
+        order_plan["tp_last_touch_time"] = None
+        order_plan["tp_last_touch_elapsed_minutes"] = None
+        order_plan["tp_last_touch_found"] = False
+        order_plan["tp_last_touch_elapsed_bin"] = "no_touch_in_history"
+        order_plan["tp_touch_history_oldest_time"] = None
+        order_plan["tp_touch_history_coverage_minutes"] = None
+
+        candle_analysis = getattr(self.analysis, "candle_analysis_all", None)
+        h1_df_r = getattr(candle_analysis, "h1_df_r", None)
+        if h1_df_r is None or h1_df_r.empty:
+            return
+
+        try:
+            decision_dt = pd.Timestamp(decision_time).to_pydatetime()
+            tp_price = float(order_plan["tp_price"])
+            direction = int(order_plan.get("direction") or 0)
+        except (KeyError, TypeError, ValueError):
+            return
+        if direction not in (-1, 1):
+            return
+
+        candles = h1_df_r.copy()
+        if "time_jp_dt" in candles.columns:
+            candle_times = pd.to_datetime(candles["time_jp_dt"], errors="coerce")
+        elif "time_jp" in candles.columns:
+            candle_times = pd.to_datetime(candles["time_jp"], errors="coerce")
+        else:
+            return
+        candles = candles.assign(tp_touch_candle_time=candle_times)
+
+        # Only completed candles are valid in inspection mode. The cached H1
+        # candle containing decision_time has future high/low values.
+        completed_before = decision_dt - pd.Timedelta(hours=1)
+        candles = candles[
+            candles["tp_touch_candle_time"] <= completed_before
+        ]
+        if candles.empty:
+            return
+
+        oldest_dt = candles["tp_touch_candle_time"].min().to_pydatetime()
+        order_plan["tp_touch_history_oldest_time"] = oldest_dt.strftime("%Y/%m/%d %H:%M:%S")
+        order_plan["tp_touch_history_coverage_minutes"] = max(
+            int((decision_dt - oldest_dt).total_seconds() // 60),
+            0,
+        )
+
+        price_column = "high" if direction == 1 else "low"
+        if price_column not in candles.columns:
+            return
+        prices = pd.to_numeric(candles[price_column], errors="coerce")
+        touched = candles[prices >= tp_price] if direction == 1 else candles[prices <= tp_price]
+        if touched.empty:
+            return
+
+        last_touch_dt = touched["tp_touch_candle_time"].max().to_pydatetime()
+        elapsed_minutes = max(int((decision_dt - last_touch_dt).total_seconds() // 60), 0)
+        order_plan["tp_last_touch_time"] = last_touch_dt.strftime("%Y/%m/%d %H:%M:%S")
+        order_plan["tp_last_touch_elapsed_minutes"] = elapsed_minutes
+        order_plan["tp_last_touch_found"] = True
+        order_plan["tp_last_touch_elapsed_bin"] = self._tp_last_touch_elapsed_bin(elapsed_minutes)
+
+    @staticmethod
+    def _tp_last_touch_elapsed_bin(elapsed_minutes):
+        for upper, label in (
+            (30, "0-30m"),
+            (60, "31-60m"),
+            (180, "61-180m"),
+            (360, "181-360m"),
+            (720, "361-720m"),
+            (1440, "721-1440m"),
+            (2880, "1441-2880m"),
+            (4320, "2881-4320m"),
+            (7200, "4321-7200m"),
+            (10080, "7201-10080m"),
+            (15000, "10081-15000m"),
+        ):
+            if elapsed_minutes <= upper:
+                return label
+        return "15001m+"
 
     def _path_short_tp_pips(self, path_distance):
         if self.pair not in ("EUR_USD", "USD_JPY", "AUD_USD"):

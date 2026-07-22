@@ -147,7 +147,9 @@ class Inspection:
         self.gl_d5_df_r = self.gl_d5_df.sort_index(ascending=False)
         notice.line_send("検証データ取得", self.pair, "M5", len(self.gl_d5_df), "rows")
 
-        h1_rows = math.ceil(total_seconds / (60 * 60)) + 5
+        h1_fetch_from = self.required_h1_data_from()
+        h1_total_seconds = max((fetch_to - h1_fetch_from).total_seconds(), 0)
+        h1_rows = math.ceil(h1_total_seconds / (60 * 60)) + 5
         h1_count, h1_loop = self.cal_oanda_count_and_loop(h1_rows)
         params = {"granularity": "H1", "count": h1_count, "to": end_time_iso}
         data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, h1_loop)
@@ -217,7 +219,7 @@ class Inspection:
         fetch_from, fetch_to = self.required_data_range()
         s5_cache_tolerance = datetime.timedelta(days=1)
         return (
-            self.df_covers_range(self.gl_h1_df, fetch_from, self.end_time)
+            self.df_covers_range(self.gl_h1_df, self.required_h1_data_from(), self.end_time)
             and self.df_covers_range(self.gl_d5_df, fetch_from, self.end_time)
             and self.df_covers_range(
                 self.gl_s5_df,
@@ -268,7 +270,76 @@ class Inspection:
         self.result_df = pd.DataFrame(self.results)
         print("Inspection result rows:", len(self.result_df))
         self.save_result_data()
+        self.print_tp_last_touch_winrate_summary()
         self.print_elapsed_time()
+
+    def print_tp_last_touch_winrate_summary(self):
+        required = {
+            "tp_last_touch_elapsed_bin",
+            "order_result",
+            "actual_res",
+        }
+        if self.result_df.empty or not required.issubset(self.result_df.columns):
+            return
+
+        rows = self.result_df.copy()
+        if "result_type" in rows.columns:
+            rows = rows[rows["result_type"] == "order"]
+        rows = rows[rows["order_result"] != "not_filled"]
+        if rows.empty:
+            return
+
+        bins = [
+            "0-30m",
+            "31-60m",
+            "61-180m",
+            "181-360m",
+            "361-720m",
+            "721-1440m",
+            "1441-2880m",
+            "2881-4320m",
+            "4321-7200m",
+            "7201-10080m",
+            "10081-15000m",
+            "15001m+",
+            "no_touch_in_history",
+        ]
+        rows["tp_last_touch_elapsed_bin"] = pd.Categorical(
+            rows["tp_last_touch_elapsed_bin"].fillna("no_touch_in_history"),
+            categories=bins,
+            ordered=True,
+        )
+        rows["actual_res"] = pd.to_numeric(rows["actual_res"], errors="coerce")
+        rows["tp_touch_win"] = rows["actual_res"] > 0
+        summary = rows.groupby(
+            "tp_last_touch_elapsed_bin",
+            observed=True,
+        ).agg(
+            trades=("tp_touch_win", "size"),
+            wins=("tp_touch_win", "sum"),
+            win_rate=("tp_touch_win", "mean"),
+            average_pips=("actual_res", "mean"),
+        )
+        summary["win_rate"] = (summary["win_rate"] * 100).round(1)
+        summary["average_pips"] = summary["average_pips"].round(2)
+        print("TP last-touch elapsed / win-rate summary")
+        print(summary.to_string())
+
+        parts = []
+        for elapsed_bin, row in summary.iterrows():
+            parts.append(
+                str(elapsed_bin)
+                + " n="
+                + str(int(row["trades"]))
+                + " win="
+                + str(row["win_rate"])
+                + "% avg="
+                + str(row["average_pips"])
+                + "p"
+            )
+        notice.line_send(
+            self.pair + " inspection TP last-touch win rate: " + " / ".join(parts)
+        )
 
     def print_elapsed_time(self):
         elapsed_seconds = (datetime.datetime.now() - self.process_start_time).total_seconds()
@@ -345,7 +416,7 @@ class Inspection:
         analysis_h1_df_r = self.slice_past_df_r(
             self.gl_h1_df,
             target_time,
-            self.anaN + 1,
+            250,
         )
         analysis_m30_df_r = self.slice_past_df_r(
             self.gl_m30_df if not self.gl_m30_df.empty else self.gl_h1_df,
@@ -1124,6 +1195,12 @@ class Inspection:
             "h1_rsi_is_low": order_plan.get("h1_rsi_is_low"),
             "path_tp_adjusted": order_plan.get("path_tp_adjusted"),
             "path_tp_adjusted_label": order_plan.get("path_tp_adjusted_label"),
+            "tp_last_touch_time": order_plan.get("tp_last_touch_time"),
+            "tp_last_touch_elapsed_minutes": order_plan.get("tp_last_touch_elapsed_minutes"),
+            "tp_last_touch_found": order_plan.get("tp_last_touch_found"),
+            "tp_last_touch_elapsed_bin": order_plan.get("tp_last_touch_elapsed_bin"),
+            "tp_touch_history_oldest_time": order_plan.get("tp_touch_history_oldest_time"),
+            "tp_touch_history_coverage_minutes": order_plan.get("tp_touch_history_coverage_minutes"),
             "path_tp_pips": order_plan.get("path_tp_pips"),
             "path_lc_pips": order_plan.get("path_lc_pips"),
             "path_tp_original_pips": order_plan.get("path_tp_original_pips"),
@@ -1360,6 +1437,9 @@ class Inspection:
         now = datetime.datetime.now().replace(microsecond=0)
         data_to = min(data_to_by_inspection, now)
         return data_from, data_to
+
+    def required_h1_data_from(self):
+        return self.start_time - datetime.timedelta(hours=max(self.anaN, 250))
 
     @staticmethod
     def slice_past_df_r(df, target_time, row_count=None):

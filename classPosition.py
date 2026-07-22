@@ -610,7 +610,16 @@ class order_information:
                 df = pd.DataFrame(history_rows)
                 df.to_csv(history_path, index=False)
             else:
-                df = pd.DataFrame([result_dic])
+                existing_columns = pd.read_csv(history_path, nrows=0).columns.tolist()
+                new_columns = [key for key in result_dic if key not in existing_columns]
+                history_columns = existing_columns + new_columns
+                if new_columns:
+                    # Extend old history files before appending wider rows. Existing
+                    # trades intentionally keep the newly introduced fields empty.
+                    history_df = pd.read_csv(history_path)
+                    history_df = history_df.reindex(columns=history_columns)
+                    history_df.to_csv(history_path, index=False)
+                df = pd.DataFrame([result_dic]).reindex(columns=history_columns)
                 df.to_csv(history_path, mode='a', header=False, index=False)
         except (OSError, PermissionError, IOError) as e:
             print(f"ファイルにアクセスできませんでした: {e}")
@@ -970,7 +979,13 @@ class order_information:
                 "move_ave60": self.price_diff_to_pips(self.move_ave60),
                 "memo": order_info_for_com,
                 "current_price_gap": self.price_diff_to_pips(self.current_candle_price_gap),
-                "rr": self.safe_rr()
+                "rr": self.safe_rr(),
+                "tp_last_touch_time": self.plan_json.get("tp_last_touch_time"),
+                "tp_last_touch_elapsed_minutes": self.plan_json.get("tp_last_touch_elapsed_minutes"),
+                "tp_last_touch_found": self.plan_json.get("tp_last_touch_found"),
+                "tp_last_touch_elapsed_bin": self.plan_json.get("tp_last_touch_elapsed_bin"),
+                "tp_touch_history_oldest_time": self.plan_json.get("tp_touch_history_oldest_time"),
+                "tp_touch_history_coverage_minutes": self.plan_json.get("tp_touch_history_coverage_minutes")
             }
             order_information.result_dic_arr.append(result_dic)
             # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
@@ -1028,7 +1043,13 @@ class order_information:
                 "move_ave60": self.price_diff_to_pips(self.move_ave60),
                 "memo": order_info_for_com,
                 "current_price_gap": self.price_diff_to_pips(self.current_candle_price_gap),
-                "rr": self.safe_rr()
+                "rr": self.safe_rr(),
+                "tp_last_touch_time": self.plan_json.get("tp_last_touch_time"),
+                "tp_last_touch_elapsed_minutes": self.plan_json.get("tp_last_touch_elapsed_minutes"),
+                "tp_last_touch_found": self.plan_json.get("tp_last_touch_found"),
+                "tp_last_touch_elapsed_bin": self.plan_json.get("tp_last_touch_elapsed_bin"),
+                "tp_touch_history_oldest_time": self.plan_json.get("tp_touch_history_oldest_time"),
+                "tp_touch_history_coverage_minutes": self.plan_json.get("tp_touch_history_coverage_minutes")
             }
             order_information.result_dic_arr.append(result_dic)
             # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
@@ -1332,7 +1353,13 @@ class order_information:
                     "move_ave60": self.price_diff_to_pips(self.move_ave60),
                     "memo": "Order強制キャンセル",
                     "current_price_gap": self.price_diff_to_pips(self.current_candle_price_gap),
-                    "rr": self.safe_rr()
+                    "rr": self.safe_rr(),
+                    "tp_last_touch_time": self.plan_json.get("tp_last_touch_time"),
+                    "tp_last_touch_elapsed_minutes": self.plan_json.get("tp_last_touch_elapsed_minutes"),
+                    "tp_last_touch_found": self.plan_json.get("tp_last_touch_found"),
+                    "tp_last_touch_elapsed_bin": self.plan_json.get("tp_last_touch_elapsed_bin"),
+                    "tp_touch_history_oldest_time": self.plan_json.get("tp_touch_history_oldest_time"),
+                    "tp_touch_history_coverage_minutes": self.plan_json.get("tp_touch_history_coverage_minutes")
                 }
                 self.write_history_result(result_dic)
         if order_latest['state'] == "CANCELLED":
