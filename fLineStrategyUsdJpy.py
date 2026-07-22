@@ -31,6 +31,8 @@ class LineStrategyProfileUsdJpy:
     m5_core_total_strength_min = 5
     m5_breakout_entry_offset_pips = 1.5
     immediate_near_line_max_pips = 3
+    immediate_break_score_min = 0.75
+    immediate_break_reason_count_min = 3
     immediate_min_path_ahead_pips = 3
     immediate_strong_path_block_strength = 10
     immediate_previous_peak_strength_min = 5
@@ -381,6 +383,10 @@ class LineStrategyProfileUsdJpy:
         if distance_pips > self.immediate_near_line_max_pips:
             return []
 
+        break_behavior_reason = self._immediate_group_break_supports(candidate)
+        if break_behavior_reason is None:
+            return []
+
         breakout_reason = self._immediate_breakout_context(candidate, latest_peak_info)
         if breakout_reason is None:
             return []
@@ -407,6 +413,7 @@ class LineStrategyProfileUsdJpy:
             return []
 
         reasons = [
+            break_behavior_reason,
             "Immediate strict RSI direction",
             breakout_reason,
             previous_peak_reason,
@@ -416,6 +423,20 @@ class LineStrategyProfileUsdJpy:
         if path_distance is not None:
             reasons.append("H1 path ahead " + str(round(float(path_distance), 1)) + "p")
         return reasons
+
+    def _immediate_group_break_supports(self, candidate):
+        if candidate.get("line_behavior") != "break":
+            return None
+        try:
+            break_score = float(candidate.get("line_break_score"))
+        except (TypeError, ValueError):
+            return None
+        break_reasons = candidate.get("line_break_reasons") or []
+        if break_score < self.immediate_break_score_min:
+            return None
+        if len(break_reasons) < self.immediate_break_reason_count_min:
+            return None
+        return "Grouped line break score " + str(round(break_score, 3))
 
     def _immediate_breakout_context(self, candidate, latest_peak_info):
         strategy = candidate.get("strategy")
