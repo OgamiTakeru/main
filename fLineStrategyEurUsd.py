@@ -7,17 +7,82 @@ class LineStrategyProfileEurUsd(LineStrategyProfileUsdJpy):
     """EUR_USD line strategy."""
 
     pair = "EUR_USD"
+    # Selected from the 2025/06/24-2026/06/24 walk-forward inspection.
+    # Each condition was profitable both before and after the 2026/03/24 split.
+    # The former EUR conditions are intentionally replaced rather than combined.
     top10_conditions = [
-        {"label": "EUR Top1 session06-08 M5RSI50-60", "filters": {"session_bucket": "06-08", "m5_rsi_bin": "50-60"}},
-        {"label": "EUR Top2 5-8p session21-23 M5RSI50-60", "filters": {"distance_bin": "5-8p", "session_bucket": "21-23", "m5_rsi_bin": "50-60"}},
-        {"label": "EUR Top3 0-3p session21-23", "filters": {"distance_bin": "0-3p", "session_bucket": "21-23"}},
-        {"label": "EUR Top4 m5 reversal upper 0-3p", "filters": {"line_strategy": "m5_reversal_peakdir_allcount", "distance_bin": "0-3p", "line_side": "upper"}},
-        {"label": "EUR Top5 session21-23 M5RSI60-67.5", "filters": {"session_bucket": "21-23", "m5_rsi_bin": "60-67.5"}},
-        {"label": "EUR Top6 sell 0-3p M5RSI40-50", "filters": {"distance_bin": "0-3p", "direction_label": "sell", "m5_rsi_bin": "40-50"}},
-        {"label": "EUR Top7 lower 0-3p prevH1Str10-15", "filters": {"previous_h1_strength_bin": "10-15", "distance_bin": "0-3p", "line_side": "lower"}},
-        {"label": "EUR Top8 lower 8-10p lineStr5-8", "filters": {"distance_bin": "8-10p", "line_side": "lower", "line_strength_bin": "5-8"}},
-        {"label": "EUR Top9 upper 0-3p session00-05", "filters": {"distance_bin": "0-3p", "line_side": "upper", "session_bucket": "00-05"}},
-        {"label": "EUR Top10 0-3p session06-08", "filters": {"distance_bin": "0-3p", "session_bucket": "06-08"}},
+        {
+            "label": "EUR WF1 sell prevPeakRSI50-60 lineStr15-20",
+            "filters": {
+                "direction_label": "sell",
+                "previous_peak_rsi_bin": "50-60",
+                "line_strength_bin": "15-20",
+            },
+        },
+        {
+            "label": "EUR WF2 session15-20 M5RSI40-50 prevPeakRSI50-60",
+            "filters": {
+                "session_bucket": "15-20",
+                "m5_rsi_bin": "40-50",
+                "previous_peak_rsi_bin": "50-60",
+            },
+        },
+        {
+            "label": "EUR WF3 peakRSI40-50 prevPeakRSI50-60 H1Str10-15",
+            "filters": {
+                "latest_peak_rsi_bin": "40-50",
+                "previous_peak_rsi_bin": "50-60",
+                "h1_nearest_strength_bin": "10-15",
+            },
+        },
+        {
+            "label": "EUR WF4 coreStr0-5 H1Str10-15 path6-10",
+            "filters": {
+                "core_strength_bin": "0-5",
+                "h1_nearest_strength_bin": "10-15",
+                "path1_distance_bin": "6-10p",
+            },
+        },
+        {
+            "label": "EUR WF5 sell lower coreStr10-15",
+            "filters": {
+                "direction_label": "sell",
+                "line_side": "lower",
+                "core_strength_bin": "10-15",
+            },
+        },
+        {
+            "label": "EUR WF6 lower session15-20 pathStr5-10",
+            "filters": {
+                "line_side": "lower",
+                "session_bucket": "15-20",
+                "path1_strength_bin": "5-10",
+            },
+        },
+        {
+            "label": "EUR WF7 session21-23 H1RSI40-50 prevPeakRSI60-67.5",
+            "filters": {
+                "session_bucket": "21-23",
+                "h1_rsi_bin": "40-50",
+                "previous_peak_rsi_bin": "60-67.5",
+            },
+        },
+        {
+            "label": "EUR WF8 buy H1RSI<=30 H1Str5-10",
+            "filters": {
+                "direction_label": "buy",
+                "h1_rsi_bin": "<=30",
+                "h1_nearest_strength_bin": "5-10",
+            },
+        },
+        {
+            "label": "EUR WF9 sell H1RSI40-50 path6-10",
+            "filters": {
+                "direction_label": "sell",
+                "h1_rsi_bin": "40-50",
+                "path1_distance_bin": "6-10p",
+            },
+        },
     ]
     breakout_hours_jst = set(range(15, 24)) | {0, 1}
     breakout_top_conditions = [
@@ -92,6 +157,10 @@ class LineStrategyProfileEurUsd(LineStrategyProfileUsdJpy):
             return self._eurusd_breakout_reasons(candidate, rsi_info)
 
         return super().recommended_reasons(candidate, rsi_info, latest_peak_info)
+
+    def immediate_recommended_reasons(self, candidate, rsi_info, latest_peak_info):
+        """Use the same walk-forward conditions for EUR/USD market entries."""
+        return self._configured_top10_reasons(candidate, rsi_info)
 
     def _eurusd_breakout_reasons(self, candidate, rsi_info):
         line = candidate["line"]
