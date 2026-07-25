@@ -56,7 +56,7 @@ class LineStrategyProfileEurUsd(LineStrategyProfileUsdJpy):
             "filters": {
                 "line_side": "lower",
                 "session_bucket": "15-20",
-                "path1_strength_bin": "5-10",
+                "path1_strength_bin": ("5-8", "8-10"),
             },
         },
         {
@@ -72,7 +72,7 @@ class LineStrategyProfileEurUsd(LineStrategyProfileUsdJpy):
             "filters": {
                 "direction_label": "buy",
                 "h1_rsi_bin": "<=30",
-                "h1_nearest_strength_bin": "5-10",
+                "h1_nearest_strength_bin": ("5-8", "8-10"),
             },
         },
         {

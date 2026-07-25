@@ -687,10 +687,14 @@ class LineStrategyProfileUsdJpy:
 
     def _is_top10_condition(self, candidate, rsi_info, condition):
         filters = condition.get("filters", {})
-        return all(
-            self._condition_value(candidate, rsi_info, field) == expected
-            for field, expected in filters.items()
-        )
+        for field, expected in filters.items():
+            actual = self._condition_value(candidate, rsi_info, field)
+            if isinstance(expected, (tuple, list, set, frozenset)):
+                if actual not in expected:
+                    return False
+            elif actual != expected:
+                return False
+        return True
 
     def _condition_value(self, candidate, rsi_info, field):
         line = candidate["line"]

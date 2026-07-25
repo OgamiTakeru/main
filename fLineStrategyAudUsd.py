@@ -11,70 +11,79 @@ class LineStrategyProfileAudUsd(LineStrategyProfileEurUsd):
     pair = "AUD_USD"
     top10_conditions = [
         {
-            "label": "AUD 1Y Top1 path20-30 session06-08",
-            "filters": {"path1_distance_bin": "20-30p", "session_bucket": "06-08"},
-        },
-        {
-            "label": "AUD 1Y Top2 path50+ breakout path1Str5-10",
-            "filters": {
-                "path1_distance_bin": "50+p",
-                "line_entry_type": "breakout",
-                "path1_strength_bin": "5-10",
-            },
-        },
-        {
-            "label": "AUD 1Y Top3 reversal sell session06-08 peakRSI-high",
-            "filters": {
-                "line_entry_type": "reversal",
-                "direction_label": "sell",
-                "session_bucket": "06-08",
-                "peak_rsi_direction_ok": True,
-            },
-        },
-        {
-            "label": "AUD 1Y Top4 path3-6 coreStr10-15",
-            "filters": {"path1_distance_bin": "3-6p", "core_strength_bin": "10-15"},
-        },
-        {
-            "label": "AUD 1Y Top5 dist0-3 reversal session06-08 peakRSI-dir",
-            "filters": {
-                "distance_bin": "0-3p",
-                "line_entry_type": "reversal",
-                "session_bucket": "06-08",
-                "peak_rsi_direction_ok": True,
-            },
-        },
-        {
-            "label": "AUD 1Y Top6 sell session06-08 peakRSI-high",
+            "label": "AUD WF1 sell H1RSI30-40",
             "filters": {
                 "direction_label": "sell",
-                "session_bucket": "06-08",
-                "peak_rsi_direction_ok": True,
+                "h1_rsi_bin": "30-40",
             },
         },
         {
-            "label": "AUD 1Y Top7 path50+ breakout session09-14",
+            "label": "AUD WF2 sell session00-05 M5RSI40-50",
             "filters": {
-                "path1_distance_bin": "50+p",
-                "line_entry_type": "breakout",
+                "direction_label": "sell",
+                "session_bucket": "00-05",
+                "m5_rsi_bin": "40-50",
+            },
+        },
+        {
+            "label": "AUD WF3 sell peakRSI40-50 lineStr5-8",
+            "filters": {
+                "direction_label": "sell",
+                "latest_peak_rsi_bin": "40-50",
+                "line_strength_bin": "5-8",
+            },
+        },
+        {
+            "label": "AUD WF4 sell coreStr0-5",
+            "filters": {
+                "direction_label": "sell",
+                "core_strength_bin": "0-5",
+            },
+        },
+        {
+            "label": "AUD WF5 H1RSI40-50 coreStr0-5 H1Str0-5",
+            "filters": {
+                "h1_rsi_bin": "40-50",
+                "core_strength_bin": "0-5",
+                "h1_nearest_strength_bin": "0-5",
+            },
+        },
+        {
+            "label": "AUD WF6 lower prevPeakRSI50-60 pathStr5-8",
+            "filters": {
+                "line_side": "lower",
+                "previous_peak_rsi_bin": "50-60",
+                "path1_strength_bin": "5-8",
+            },
+        },
+        {
+            "label": "AUD WF7 M5RSI40-50 lineStr5-8 coreStr0-5",
+            "filters": {
+                "m5_rsi_bin": "40-50",
+                "line_strength_bin": "5-8",
+                "core_strength_bin": "0-5",
+            },
+        },
+        {
+            "label": "AUD WF8 buy session09-14 H1Str5-8",
+            "filters": {
+                "direction_label": "buy",
                 "session_bucket": "09-14",
+                "h1_nearest_strength_bin": "5-8",
             },
         },
         {
-            "label": "AUD 1Y Top8 session06-08 path1Str10-15",
-            "filters": {"session_bucket": "06-08", "path1_strength_bin": "10-15"},
-        },
-        {
-            "label": "AUD 1Y Top9 path3-6 dist15-20",
-            "filters": {"path1_distance_bin": "3-6p", "distance_bin": "15-20p"},
-        },
-        {
-            "label": "AUD 1Y Top10 path15-20 reversal path1Str10-15 peakRSI-dir",
+            "label": "AUD WF9 session09-14 prevPeakRSI50-60",
             "filters": {
-                "path1_distance_bin": "15-20p",
-                "line_entry_type": "reversal",
-                "path1_strength_bin": "10-15",
-                "peak_rsi_direction_ok": True,
+                "session_bucket": "09-14",
+                "previous_peak_rsi_bin": "50-60",
+            },
+        },
+        {
+            "label": "AUD WF10 lower lineStr0-5",
+            "filters": {
+                "line_side": "lower",
+                "line_strength_bin": "0-5",
             },
         },
     ]
