@@ -217,14 +217,12 @@ class LineOrderCoordinator:
                 continue
 
             policy = self._regime_order_policy(candidate)
-            if not policy["permission"]:
+            if not policy["permission"] and self._regime_block_is_enforced():
                 self._print_regime_skip(candidate, order_mode, policy)
                 continue
 
             candidate["order_mode"] = order_mode
-            reasons = list(reasons) + [
-                "Regime " + str(policy["regime"]) + ": " + str(policy["reason"])
-            ]
+            reasons = list(reasons) + [self._regime_reason_text(policy)]
             candidate["recommended_reasons"] = reasons
             candidate["memo"] = self._build_condition_memo(candidate, rsi_info, reasons)
             filtered.append(candidate)
@@ -232,13 +230,32 @@ class LineOrderCoordinator:
 
     def _regime_order_policy(self, candidate):
         policy = self.profile.regime_order_policy(candidate)
-        candidate["regime_order_permission"] = bool(policy.get("permission", True))
+        permission = bool(policy.get("permission", True))
+        enforced = self._regime_block_is_enforced()
+        candidate["regime_order_permission"] = permission
         candidate["regime_order_reason"] = policy.get("reason")
         candidate["regime_at_order"] = policy.get("regime", "NEUTRAL")
         candidate["regime_trend_direction"] = int(
             policy.get("trend_direction") or 0
         )
+        candidate["regime_would_block"] = not permission
+        candidate["regime_order_enforced"] = enforced
         return policy
+
+    def _regime_block_is_enforced(self):
+        return getattr(self.analysis, "mode", "live") != "inspection"
+
+    def _regime_reason_text(self, policy):
+        prefix = "Regime"
+        if not policy["permission"] and not self._regime_block_is_enforced():
+            prefix = "Regime inspection would block"
+        return (
+            prefix
+            + " "
+            + str(policy["regime"])
+            + ": "
+            + str(policy["reason"])
+        )
 
     @staticmethod
     def _print_regime_skip(candidate, order_mode, policy):
@@ -353,14 +370,12 @@ class LineOrderCoordinator:
                 continue
 
             policy = self._regime_order_policy(candidate)
-            if not policy["permission"]:
+            if not policy["permission"] and self._regime_block_is_enforced():
                 self._print_regime_skip(candidate, order_mode, policy)
                 continue
 
             candidate["order_mode"] = order_mode
-            reasons = list(reasons) + [
-                "Regime " + str(policy["regime"]) + ": " + str(policy["reason"])
-            ]
+            reasons = list(reasons) + [self._regime_reason_text(policy)]
             candidate["recommended_reasons"] = reasons
             candidate["memo"] = self._build_condition_memo(candidate, rsi_info, reasons)
             filtered.append(candidate)
@@ -1144,6 +1159,8 @@ class LineOrderCoordinator:
             "regime_order_reason",
             "regime_at_order",
             "regime_trend_direction",
+            "regime_would_block",
+            "regime_order_enforced",
         ):
             order_plan[key] = candidate.get(key)
         return order_class

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from classStrategyRegime import StrategyRegime
+from fLineAnalysis import LineOrderCoordinator
 from fLineStrategyUsdJpy import LineStrategyProfileUsdJpy
 
 
@@ -185,6 +186,35 @@ class StrategyRegimeTest(unittest.TestCase):
         )
         self.assertTrue(aligned["permission"])
         self.assertFalse(opposite["permission"])
+
+    def test_regime_block_is_only_enforced_live(self):
+        coordinator = LineOrderCoordinator.__new__(LineOrderCoordinator)
+
+        coordinator.analysis = SimpleNamespace(mode="inspection")
+        self.assertFalse(coordinator._regime_block_is_enforced())
+
+        coordinator.analysis = SimpleNamespace(mode="live")
+        self.assertTrue(coordinator._regime_block_is_enforced())
+
+    def test_inspection_keeps_would_block_metadata(self):
+        coordinator = LineOrderCoordinator.__new__(LineOrderCoordinator)
+        coordinator.analysis = SimpleNamespace(mode="inspection")
+        profile = LineStrategyProfileUsdJpy()
+        profile.regime_snapshot = {
+            "market": {"regime": "RANGE", "trend_direction": 0}
+        }
+        coordinator.profile = profile
+        candidate = {
+            "strategy": SimpleNamespace(entry_type="breakout"),
+            "direction": 1,
+        }
+
+        policy = coordinator._regime_order_policy(candidate)
+
+        self.assertFalse(policy["permission"])
+        self.assertTrue(candidate["regime_would_block"])
+        self.assertFalse(candidate["regime_order_enforced"])
+        self.assertIn("inspection would block", coordinator._regime_reason_text(policy))
 
 
 if __name__ == "__main__":

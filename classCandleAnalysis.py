@@ -36,6 +36,8 @@ class candleAnalysis:
             m30_df_r=None,
             s5_df_r=None,
             current_price=None,
+            h1_analysis_cache=None,
+            m30_analysis_cache=None,
     ):
         """
         target_time_jpまでの時間を取得する
@@ -129,13 +131,43 @@ class candleAnalysis:
 
         # データを取得する（60分足）
         granularity = "H1"
-        self.peaks_class_hour = peaksClass.PeaksClass(self.h1_df_r, granularity, self.current_price, gene.currency_pair(self.pair))
-        self.candle_meta_class_hour = CandleMeta(self.peaks_class_hour, granularity)
+        if h1_analysis_cache is None:
+            self.peaks_class_hour = peaksClass.PeaksClass(
+                self.h1_df_r,
+                granularity,
+                self.current_price,
+                gene.currency_pair(self.pair),
+            )
+            self.candle_meta_class_hour = CandleMeta(
+                self.peaks_class_hour,
+                granularity,
+            )
+        else:
+            self.peaks_class_hour, self.candle_meta_class_hour = h1_analysis_cache
+            self.refresh_cached_peak_price(
+                self.peaks_class_hour,
+                self.current_price,
+            )
 
         # データを取得する（30分足）
         granularity = "M30"
-        self.peaks_class_m30 = peaksClass.PeaksClass(self.d30_df_r, granularity, self.current_price, gene.currency_pair(self.pair))
-        self.candle_meta_class_m30 = CandleMeta(self.peaks_class_m30, granularity)
+        if m30_analysis_cache is None:
+            self.peaks_class_m30 = peaksClass.PeaksClass(
+                self.d30_df_r,
+                granularity,
+                self.current_price,
+                gene.currency_pair(self.pair),
+            )
+            self.candle_meta_class_m30 = CandleMeta(
+                self.peaks_class_m30,
+                granularity,
+            )
+        else:
+            self.peaks_class_m30, self.candle_meta_class_m30 = m30_analysis_cache
+            self.refresh_cached_peak_price(
+                self.peaks_class_m30,
+                self.current_price,
+            )
 
         if m5_df_r is not None:
             return
@@ -157,6 +189,23 @@ class candleAnalysis:
             candleAnalysis.latest_df_d30_df_r = self.d30_df_r
             candleAnalysis.latest_peaks_class_m30 = self.peaks_class_m30  # 最新の物を持っておく（判定用に冗長に持っていて、そとからはインスタンス変数を参照がメイン。）
             candleAnalysis.latest_candle_meta_class_m30 = self.candle_meta_class_m30
+
+    @staticmethod
+    def refresh_cached_peak_price(peaks_class, current_price):
+        """Refresh the only peak fields that depend on the current M5 price."""
+        peaks_class.current_price = current_price
+        peaks_class.gap_price_and_latest_turn_peak_abs = abs(
+            peaks_class.latest_peak_price - current_price
+        )
+        for collection_name in (
+            "peaks_original",
+            "peaks_original_with_df",
+            "skipped_peaks",
+            "skipped_peaks_hard",
+        ):
+            for peak in getattr(peaks_class, collection_name, []):
+                if isinstance(peak, dict):
+                    peak["latest_price"] = current_price
 
     def update_s5_df(self, target_time_jp=0):
         # パラメータの準備

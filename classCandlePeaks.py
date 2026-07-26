@@ -2,6 +2,7 @@ import datetime
 from datetime import datetime
 from datetime import timedelta
 import pandas as pd
+import numpy as np
 from collections import defaultdict
 import tokens as tk
 import send_notice as notice
@@ -313,10 +314,11 @@ class PeaksClass:
         ans_dic["memo_time"] = f.str_to_time_hms(ans_df.iloc[-1]["time_jp"]) + "_" + f.str_to_time_hms(
             ans_df.iloc[0]["time_jp"])  # 表示に利用する時刻表示用
         # 追加項目
-        ans_dic['include_large'] = self.check_large_body_in_peak(ans_dic)['include_large']
-        ans_dic['include_very_large'] = self.check_large_body_in_peak(ans_dic)['include_very_large']
-        ans_dic['highest'] = self.check_large_body_in_peak(ans_dic)['highest']
-        ans_dic['lowest'] = self.check_large_body_in_peak(ans_dic)['lowest']
+        large_body_info = self.check_large_body_in_peak(ans_dic)
+        ans_dic['include_large'] = large_body_info['include_large']
+        ans_dic['include_very_large'] = large_body_info['include_very_large']
+        ans_dic['highest'] = large_body_info['highest']
+        ans_dic['lowest'] = large_body_info['lowest']
         # 互換性確保のため、データとしては重複するが、名前を変えて所持しているもの達（いつか消したいけど)
         ans_dic["time"] = ans_dic["latest_time_jp"]  # ピーク時刻（Latest）
         ans_dic["peak"] = ans_dic["latest_body_peak_price"]  # ピークのボディ価格（Latest。方向ごと）
@@ -775,48 +777,26 @@ class PeaksClass:
 
         # 足や通過に依存する数字
         # 情報を取得する
-        sorted_df_by_body_size = block_ans['data'].sort_values(by='body_abs', ascending=False)
-        max_body_in_block = sorted_df_by_body_size["body_abs"].max()
+        data = block_ans["data"]
+        body_abs = pd.to_numeric(data["body_abs"], errors="coerce").to_numpy()
+        body = pd.to_numeric(data["body"], errors="coerce").to_numpy()
+        high = pd.to_numeric(data["high"], errors="coerce").to_numpy()
+        low = pd.to_numeric(data["low"], errors="coerce").to_numpy()
+        max_body_in_block = np.nanmax(body_abs)
 
         # ■極大の変動を含むブロックかの確認
-        include_very_large = False
-        for index, row in sorted_df_by_body_size.iterrows():
-            if row['body'] >= self.dependence_very_large_body_criteria:
-                include_very_large = True
-                break
-            else:
-                include_very_large = False
-
-        # ■突発的な変動を含むか判断する（大き目サイズがたくさんあるのか、数個だけあるのか＝突発）
-        counter = 0
-        for index, row in sorted_df_by_body_size.iterrows():
-            # 自分自身が、絶対的に見て0.13以上と大きく、他の物より約2倍ある物を探す。（自分だけが大きければ、突然の伸び＝戻る可能性大）
-            # 自分自身を、未達カウントするため注意が必要
-            smaller_body = row['body_abs'] if row['body_abs'] != 0 else self.minimum
-            if max_body_in_block > self.dependence_large_body_criteria:
-                counter = counter + 1
-                # if max_body_in_block / smaller_body > 1.8:  # > 0.561:
-                #     # print(s6, "Baseが大きめといえる", smaller_body / max_body_in_block , "size", smaller_body, max_body_in_block, row['time_jp'])
-                #     counter = counter + 1
-                # else:
-                #     pass
-                # print(s6, "自身より大き目（比率）", smaller_body / max_body_in_block, row['time_jp'])
-            else:
-                pass
-                # print(s6, "baseBodyがそもそも小さい")
-        if counter / (len(sorted_df_by_body_size)) >= 0.65:
-            # 突発の伸びがあったと推定（急伸は戻る可能性大）　平均的に全部大きい場合は除く（大きくないものが75％以下の場合）
-            # print(s6, "急伸の足を含む", counter / (len(sorted_df_by_body_size)), block_ans['data'].iloc[0]['time_jp'])
-            include_large = True
-        else:
-            # print(s6, "急伸とみなさない")
-            include_large = False
-
+        include_very_large = bool(
+            np.any(body >= self.dependence_very_large_body_criteria)
+        )
+        # The previous loop incremented every row whenever the block maximum
+        # exceeded the threshold, so its final ratio was always either 1 or 0.
         return {
-            "include_large": include_large,
+            "include_large": bool(
+                max_body_in_block > self.dependence_large_body_criteria
+            ),
             "include_very_large": include_very_large,
-            "highest": sorted_df_by_body_size['high'].max(),
-            "lowest": sorted_df_by_body_size['low'].min()
+            "highest": np.nanmax(high),
+            "lowest": np.nanmin(low),
         }
 
 

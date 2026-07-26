@@ -61,6 +61,8 @@ class Inspection:
         self.gl_h1_df_r = pd.DataFrame()
         self.gl_m30_df = pd.DataFrame()
         self.gl_m30_df_r = pd.DataFrame()
+        self.h1_analysis_cache = None
+        self.m30_analysis_cache = None
         self.result_df = pd.DataFrame()
         self.results = []
         self.strategy_regime = classStrategyRegime.StrategyRegime(
@@ -493,6 +495,17 @@ class Inspection:
             print("Skip by shortage:", target_time, len(analysis_h1_df_r), len(inspection_s5_df))
             return
 
+        current_price = self.current_price_at(target_time, analysis_m5_df_r)
+        h1_cache_key = self.analysis_cache_key(analysis_h1_df_r)
+        m30_cache_key = self.analysis_cache_key(analysis_m30_df_r)
+        h1_cached_analysis = self.cached_analysis_value(
+            self.h1_analysis_cache,
+            h1_cache_key,
+        )
+        m30_cached_analysis = self.cached_analysis_value(
+            self.m30_analysis_cache,
+            m30_cache_key,
+        )
         candle_analysis_class = ca.candleAnalysis(
             self.oa,
             self.pair,
@@ -501,8 +514,26 @@ class Inspection:
             h1_df_r=analysis_h1_df_r,
             m30_df_r=analysis_m30_df_r,
             s5_df_r=None,
-            current_price=self.current_price_at(target_time, analysis_m5_df_r),
+            current_price=current_price,
+            h1_analysis_cache=h1_cached_analysis,
+            m30_analysis_cache=m30_cached_analysis,
         )
+        if h1_cached_analysis is None:
+            self.h1_analysis_cache = (
+                h1_cache_key,
+                (
+                    candle_analysis_class.peaks_class_hour,
+                    candle_analysis_class.candle_meta_class_hour,
+                ),
+            )
+        if m30_cached_analysis is None:
+            self.m30_analysis_cache = (
+                m30_cache_key,
+                (
+                    candle_analysis_class.peaks_class_m30,
+                    candle_analysis_class.candle_meta_class_m30,
+                ),
+            )
         analysis_result = am.wrap_all_analysis(
             candle_analysis_class,
             None,
@@ -527,6 +558,20 @@ class Inspection:
             self.append_inspection_result(
                 self.inspect_order_after(target_time, order_plan, inspection_s5_df)
             )
+
+    @staticmethod
+    def analysis_cache_key(df_r):
+        if df_r is None or df_r.empty:
+            return None
+        times = df_r["time_jp_dt"] if "time_jp_dt" in df_r.columns else df_r["time_jp"]
+        second_time = times.iloc[1] if len(times) > 1 else None
+        return times.iloc[0], second_time, len(df_r)
+
+    @staticmethod
+    def cached_analysis_value(cache, expected_key):
+        if cache is None or cache[0] != expected_key:
+            return None
+        return cache[1]
 
     def append_inspection_result(self, result_row):
         self.results.append(result_row)
@@ -1197,6 +1242,8 @@ class Inspection:
             "regime_trend_direction": order_plan.get("regime_trend_direction"),
             "regime_order_permission": order_plan.get("regime_order_permission"),
             "regime_order_reason": order_plan.get("regime_order_reason"),
+            "regime_would_block": order_plan.get("regime_would_block"),
+            "regime_order_enforced": order_plan.get("regime_order_enforced"),
             "regime_reason": order_plan.get("regime_regime_reason"),
             "regime_3h_direction_efficiency": order_plan.get(
                 "regime_3h_direction_efficiency"
