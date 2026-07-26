@@ -7,6 +7,7 @@ import pandas as pd
 
 import classCandleAnalysis as ca
 import classOanda
+import classStrategyRegime
 import fAnalysis_order_Main as am
 import fGeneric as gene
 import fLineAnalysis as ti
@@ -62,6 +63,10 @@ class Inspection:
         self.gl_m30_df_r = pd.DataFrame()
         self.result_df = pd.DataFrame()
         self.results = []
+        self.strategy_regime = classStrategyRegime.StrategyRegime(
+            self.pair,
+            mode="inspection",
+        )
         self.process_start_time = datetime.datetime.now()
         self.progress_notice_months = 2
         self.next_progress_notice_time = self.add_months(
@@ -498,10 +503,17 @@ class Inspection:
             s5_df_r=None,
             current_price=self.current_price_at(target_time, analysis_m5_df_r),
         )
-        analysis_result = am.wrap_all_analysis(candle_analysis_class, None, "inspection")
+        analysis_result = am.wrap_all_analysis(
+            candle_analysis_class,
+            None,
+            "inspection",
+            strategy_regime=self.strategy_regime,
+        )
         order_plans = self.extract_order_plans(analysis_result)
         for order_plan in order_plans:
-            self.results.append(self.inspect_order_after(target_time, order_plan, inspection_s5_df))
+            self.append_inspection_result(
+                self.inspect_order_after(target_time, order_plan, inspection_s5_df)
+            )
 
         if any(order_plan.get("source") == "line" for order_plan in order_plans):
             return
@@ -512,7 +524,13 @@ class Inspection:
             if not ti.MainAnalysis.is_h1_line_limit_order_target(line_side, line):
                 continue
             order_plan = self.line_to_order_plan(target_time, line_side, line, rsi_info)
-            self.results.append(self.inspect_order_after(target_time, order_plan, inspection_s5_df))
+            self.append_inspection_result(
+                self.inspect_order_after(target_time, order_plan, inspection_s5_df)
+            )
+
+    def append_inspection_result(self, result_row):
+        self.results.append(result_row)
+        self.strategy_regime.record_inspection_result(result_row)
 
     @staticmethod
     def extract_order_plans(analysis_result):
@@ -1175,6 +1193,26 @@ class Inspection:
             "session_tp_multiplier": order_plan.get("session_tp_multiplier"),
             "session_lc_multiplier": order_plan.get("session_lc_multiplier"),
             "session_skip_reason": order_plan.get("session_skip_reason"),
+            "regime_at_order": order_plan.get("regime_at_order"),
+            "regime_trend_direction": order_plan.get("regime_trend_direction"),
+            "regime_order_permission": order_plan.get("regime_order_permission"),
+            "regime_order_reason": order_plan.get("regime_order_reason"),
+            "regime_reason": order_plan.get("regime_regime_reason"),
+            "regime_3h_direction_efficiency": order_plan.get(
+                "regime_3h_direction_efficiency"
+            ),
+            "regime_6h_direction_efficiency": order_plan.get(
+                "regime_6h_direction_efficiency"
+            ),
+            "regime_12h_direction_efficiency": order_plan.get(
+                "regime_12h_direction_efficiency"
+            ),
+            "regime_range_expansion_3_vs_12": order_plan.get(
+                "regime_range_expansion_3_vs_12"
+            ),
+            "regime_range_expansion_6_vs_12": order_plan.get(
+                "regime_range_expansion_6_vs_12"
+            ),
             "rsi_1": order_plan.get("rsi_1"),
             "rsi_2": order_plan.get("rsi_2"),
             "rsi_3": order_plan.get("rsi_3"),

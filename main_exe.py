@@ -12,6 +12,7 @@ import fGeneric as f
 import fAnalysis_order_Main as am
 import classCandleAnalysis as ca
 import classPositionControl as classPositionControl
+import classStrategyRegime
 import copy
 
 class main():
@@ -55,6 +56,10 @@ class main():
         # ■■■処理の開始
         # ■ポジションクラスの生成
         self.positions_control_class = classPositionControl.position_control(True, self.pair)  # ポジションリストの用意
+        self.strategy_regime = classStrategyRegime.StrategyRegime(
+            self.pair,
+            mode="live",
+        )
         # self.positions_control_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
         self.positions_control_class.reset_all_position()
         self.positions_control_class.catch_up_position_and_del_order()
@@ -212,7 +217,12 @@ class main():
             # self.get_df_data()  # データの取得
 
         # ■調査実行
-        analysis_result_instance = am.wrap_all_analysis(self.candleAnalysisClass, self.positions_control_class, "live")
+        analysis_result_instance = am.wrap_all_analysis(
+            self.candleAnalysisClass,
+            self.positions_control_class,
+            "live",
+            strategy_regime=self.strategy_regime,
+        )
         # ■ オーダー発行
         if not analysis_result_instance.take_position_flag:
             # 発注がない場合は、終了 (ポケ除け的な部分）

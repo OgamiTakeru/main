@@ -87,6 +87,54 @@ class LineStrategyProfileUsdJpy:
             },
         },
     ]
+
+    def regime_order_policy(self, candidate=None):
+        """Allow only order types and directions compatible with the H1 regime."""
+        snapshot = getattr(self, "regime_snapshot", None) or {}
+        market = snapshot.get("market", {})
+        regime = market.get("regime", "NEUTRAL")
+        trend_direction = int(market.get("trend_direction") or 0)
+        if candidate is None:
+            return {
+                "permission": True,
+                "risk_multiplier": 1.0,
+                "snapshot": snapshot,
+                "regime": regime,
+                "trend_direction": trend_direction,
+                "reason": "no candidate; regime gate not applied",
+            }
+
+        strategy = candidate.get("strategy")
+        entry_type = getattr(strategy, "entry_type", None)
+        direction = int(candidate.get("direction") or 0)
+        permission = True
+        reason = "regime allows order"
+
+        if regime == "RANGE" and entry_type == "breakout":
+            permission = False
+            reason = "range blocks breakout"
+        elif regime in (
+            "UP_TREND",
+            "DOWN_TREND",
+            "UP_TREND_START",
+            "DOWN_TREND_START",
+        ):
+            if direction != trend_direction:
+                permission = False
+                reason = "trend blocks opposite-direction order"
+            else:
+                reason = "trend allows aligned order"
+
+        return {
+            "permission": permission,
+            "risk_multiplier": 1.0,
+            "snapshot": snapshot,
+            "regime": regime,
+            "trend_direction": trend_direction,
+            "entry_type": entry_type,
+            "order_direction": direction,
+            "reason": reason,
+        }
     top7_conditions = [
         {
             "label": "Top1 upper reversal c2 str5-10 core2 H1same0-3 RSI30-40",

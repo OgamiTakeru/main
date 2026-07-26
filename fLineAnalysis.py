@@ -216,11 +216,42 @@ class LineOrderCoordinator:
                 )
                 continue
 
+            policy = self._regime_order_policy(candidate)
+            if not policy["permission"]:
+                self._print_regime_skip(candidate, order_mode, policy)
+                continue
+
             candidate["order_mode"] = order_mode
+            reasons = list(reasons) + [
+                "Regime " + str(policy["regime"]) + ": " + str(policy["reason"])
+            ]
             candidate["recommended_reasons"] = reasons
             candidate["memo"] = self._build_condition_memo(candidate, rsi_info, reasons)
             filtered.append(candidate)
         return filtered
+
+    def _regime_order_policy(self, candidate):
+        policy = self.profile.regime_order_policy(candidate)
+        candidate["regime_order_permission"] = bool(policy.get("permission", True))
+        candidate["regime_order_reason"] = policy.get("reason")
+        candidate["regime_at_order"] = policy.get("regime", "NEUTRAL")
+        candidate["regime_trend_direction"] = int(
+            policy.get("trend_direction") or 0
+        )
+        return policy
+
+    @staticmethod
+    def _print_regime_skip(candidate, order_mode, policy):
+        print(
+            "Skip line order by regime:",
+            order_mode,
+            candidate.get("timeframe"),
+            candidate.get("line_strategy"),
+            candidate.get("line_side"),
+            candidate.get("direction"),
+            policy.get("regime"),
+            policy.get("reason"),
+        )
 
     def attach_candidate_decision_context(self, candidate, decision_time, order_mode):
         session_info = self.get_session_info(decision_time)
@@ -321,7 +352,15 @@ class LineOrderCoordinator:
                 )
                 continue
 
+            policy = self._regime_order_policy(candidate)
+            if not policy["permission"]:
+                self._print_regime_skip(candidate, order_mode, policy)
+                continue
+
             candidate["order_mode"] = order_mode
+            reasons = list(reasons) + [
+                "Regime " + str(policy["regime"]) + ": " + str(policy["reason"])
+            ]
             candidate["recommended_reasons"] = reasons
             candidate["memo"] = self._build_condition_memo(candidate, rsi_info, reasons)
             filtered.append(candidate)
@@ -1099,11 +1138,25 @@ class LineOrderCoordinator:
         order_plan.update(candidate.get("h1_context", {}))
         if rsi_info is not None:
             order_plan.update(rsi_info)
+        order_plan.update(getattr(self.analysis, "regime_order_context", {}))
+        for key in (
+            "regime_order_permission",
+            "regime_order_reason",
+            "regime_at_order",
+            "regime_trend_direction",
+        ):
+            order_plan[key] = candidate.get(key)
         return order_class
 
 
 class MainAnalysis:
-    def __init__(self, candle_analysis, position_control_class=None, mode="inspection"):
+    def __init__(
+        self,
+        candle_analysis,
+        position_control_class=None,
+        mode="inspection",
+        strategy_regime=None,
+    ):
         print(" ■メインアナリシス", mode)
 
         # ■■■基本情報の取得
@@ -1142,6 +1195,21 @@ class MainAnalysis:
         self.pair = getattr(candle_analysis, "pair", "USD_JPY")
         self.p = gene.currency_pair(self.pair)
         self.each_pair_line_strategy_profile = line_strategy_profile(self.pair)
+        self.strategy_regime = strategy_regime
+        self.regime_snapshot = (
+            strategy_regime.current_snapshot(
+                self.current_time,
+                candle_analysis=self.candle_analysis_all,
+            )
+            if strategy_regime is not None
+            else None
+        )
+        self.each_pair_line_strategy_profile.regime_snapshot = self.regime_snapshot
+        self.regime_order_context = (
+            strategy_regime.order_context(self.regime_snapshot)
+            if strategy_regime is not None
+            else {}
+        )
         print("current_priceの確認(main_analysis)", self.current_price, "移動平均", self.ca5.cal_move_ave(1))
         # 抵抗線関係
         self.exist_strong_line = False
