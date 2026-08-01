@@ -3,6 +3,7 @@
 import copy
 
 from fLineStrategyEurUsd import LineStrategyProfileEurUsd
+from fLineStrategyUsdJpy import LineStrategyProfileUsdJpy
 
 
 class LineStrategyProfileAudUsd(LineStrategyProfileEurUsd):
@@ -88,6 +89,21 @@ class LineStrategyProfileAudUsd(LineStrategyProfileEurUsd):
         },
     ]
     breakout_top_conditions = copy.deepcopy(LineStrategyProfileEurUsd.breakout_top_conditions)
+
+    def immediate_recommended_reasons(self, candidate, rsi_info, latest_peak_info):
+        """Apply the strict base breakout gate instead of EUR's Top10-only gate.
+
+        AUD/USD used to inherit LineStrategyProfileEurUsd's implementation,
+        which accepted immediate market entries on an AUD Top10 match alone.
+        That bypassed the break score, reason count, line history, peak, and
+        H1 path checks implemented by the base line strategy.
+        """
+        return LineStrategyProfileUsdJpy.immediate_recommended_reasons(
+            self,
+            candidate,
+            rsi_info,
+            latest_peak_info,
+        )
 
 
 for condition in LineStrategyProfileAudUsd.breakout_top_conditions:

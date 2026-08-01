@@ -6,6 +6,7 @@ import tokens as tk
 import send_notice as notice
 import fGeneric as gene
 import classPosition as classPosition  # とりあえずの関数集
+from classOpposingPositionPolicy import OpposingPositionPolicy
 import archive.classPositionForTest as testClassPosition
 
 from collections import deque  # 最大10個の情報を持つためのもの。
@@ -23,6 +24,7 @@ class position_control:
     # 履歴ファイル
     def __init__(self, is_live, pair="USD_JPY"):
         self.result_class_arr = deque(maxlen=10)
+        self.is_live = is_live
         self.pair = pair
         self.p = gene.currency_pair(self.pair)
 
@@ -167,6 +169,7 @@ class position_control:
         # max_dict = max(order_dic_list, key=lambda d: d.get("priority", float("-inf")))
         # order_max_priority = max_dict['priority']
         order_classes = self.filter_similar_order_classes(order_classes, threshold_pips=3)
+        order_classes = self.apply_opposing_position_policy(order_classes)
         if len(order_classes) == 0:
             print("No order classes after similar-order filter.")
             return 0
@@ -291,6 +294,135 @@ class position_control:
                         break
 
         return line_send
+
+    def apply_opposing_position_policy(self, order_classes):
+        """Close or block opposite live positions before placing new orders."""
+        if not self.is_live or not order_classes:
+            return order_classes
+
+        response = self.oa2.OpenTrades_exe()
+        if response.get("error") != 0:
+            for order_class in order_classes:
+                self.notify_blocked_order(
+                    order_class,
+                    self.policy_error_decision("open_trades_fetch_failed"),
+                )
+            return []
+
+        open_trades = response.get("json", {}).get("trades", [])
+        allowed = []
+        block_cycle_after_profit = False
+        for order_class in order_classes:
+            if block_cycle_after_profit:
+                self.notify_blocked_order(
+                    order_class,
+                    self.policy_error_decision(
+                        "profitable_opposite_closed_this_cycle"
+                    ),
+                )
+                continue
+
+            plan = getattr(order_class, "exe_order_plan", None) or {}
+            decision = OpposingPositionPolicy(self.pair).evaluate(
+                plan,
+                open_trades,
+            )
+            action = decision["action"]
+            plan["opposing_position_action"] = action
+            plan["opposing_position_reason"] = decision["reason"]
+            plan["opposing_position_total_pl"] = decision[
+                "total_unrealized_pl"
+            ]
+            plan["opposing_position_max_elapsed_minutes"] = decision[
+                "max_elapsed_minutes"
+            ]
+
+            if action == "allow":
+                allowed.append(order_class)
+                continue
+            if action == "block":
+                self.notify_blocked_order(order_class, decision)
+                continue
+
+            if not self.close_policy_trades(decision["close_trades"]):
+                decision["reason"] = "opposite_position_close_failed"
+                self.notify_blocked_order(order_class, decision)
+                continue
+
+            closed_ids = {
+                str(trade.get("id")) for trade in decision["close_trades"]
+            }
+            open_trades = [
+                trade for trade in open_trades
+                if str(trade.get("id")) not in closed_ids
+            ]
+            if action == "take_profit_and_block":
+                block_cycle_after_profit = True
+                self.notify_blocked_order(order_class, decision)
+                continue
+            if action == "stop_and_reverse":
+                allowed.append(order_class)
+
+        return allowed
+
+    @staticmethod
+    def policy_error_decision(reason):
+        return {
+            "action": "block",
+            "reason": reason,
+            "opposite_trades": [],
+            "total_unrealized_pl": 0,
+            "max_elapsed_minutes": 0,
+            "strength": {},
+        }
+
+    def close_policy_trades(self, trades):
+        all_succeeded = True
+        for trade in trades:
+            result = self.oa2.TradeClose_exe(trade.get("id"), None)
+            if result.get("error") != 0:
+                all_succeeded = False
+        return all_succeeded
+
+    def notify_blocked_order(self, order_class, decision):
+        plan = getattr(order_class, "exe_order_plan", None) or {}
+        direction = int(plan.get("direction") or 0)
+        direction_label = "BUY" if direction > 0 else "SELL"
+        strength = decision.get("strength") or {}
+        memo = str(plan.get("memo", ""))
+        if len(memo) > 700:
+            memo = memo[:700] + "..."
+        try:
+            rr = round(
+                float(plan.get("tp_range")) / float(plan.get("lc_range")),
+                2,
+            )
+        except (TypeError, ValueError, ZeroDivisionError):
+            rr = None
+        opposite = decision.get("opposite_trades") or []
+        existing = " / ".join(
+            (
+                f"id={trade.get('id')} units={trade.get('currentUnits')} "
+                f"PL={trade.get('unrealizedPL')}円"
+            )
+            for trade in opposite
+        ) or "none"
+        notice.line_send(
+            "[阻止された]\n"
+            f"{self.pair} {direction_label} {plan.get('name')}\n"
+            f"target={plan.get('target_price')} units={plan.get('units')} "
+            f"TP={plan.get('tp_price')} LC={plan.get('lc_price')}\n"
+            f"type={plan.get('type')} mode={plan.get('line_order_mode')} "
+            f"entry={plan.get('line_entry_type')} RR={rr}\n"
+            f"理由={decision.get('reason')} 判断={decision.get('action')}\n"
+            f"既存={existing}\n"
+            f"既存合計PL={decision.get('total_unrealized_pl')}円 "
+            f"最大経過={decision.get('max_elapsed_minutes', 0):.1f}分\n"
+            f"新規score={strength.get('score')} "
+            f"priority={strength.get('priority')} "
+            f"条件数={strength.get('condition_count')}\n"
+            f"memo={memo}"
+        )
 
     def all_update_information_at_out_time(self, candle_analysis_class=None):
         """

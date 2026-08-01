@@ -8,6 +8,7 @@ import pandas as pd
 
 from classStrategyRegime import StrategyRegime
 from fLineAnalysis import LineOrderCoordinator
+from fLineStrategyAudUsd import LineStrategyProfileAudUsd
 from fLineStrategyUsdJpy import LineStrategyProfileUsdJpy
 
 
@@ -54,6 +55,62 @@ class StrategyRegimeTest(unittest.TestCase):
         self.assertEqual(before["buy"]["last_15"]["decided"], 0)
         self.assertEqual(after["buy"]["last_15"]["decided"], 1)
         self.assertEqual(after["buy"]["last_15"]["win_rate"], 1)
+
+    def test_aud_immediate_top10_match_does_not_bypass_strict_break_score(self):
+        profile = LineStrategyProfileAudUsd()
+        candidate = {
+            "direction": -1,
+            "line_side": "lower",
+            "distance_pips": 1,
+            "line_behavior": "break",
+            "line_break_score": 0.60,
+            "line_break_reasons": ["one", "two", "three"],
+            "core_total_strength": 5,
+            "strategy": SimpleNamespace(entry_type="breakout"),
+            "line": {},
+        }
+
+        reasons = profile.immediate_recommended_reasons(
+            candidate,
+            {"rsi_1": 50, "rsi_2": 55},
+            {"direction": -1},
+        )
+
+        self.assertEqual(reasons, [])
+
+    def test_aud_immediate_accepts_candidate_that_passes_full_strict_gate(self):
+        profile = LineStrategyProfileAudUsd()
+        candidate = {
+            "direction": -1,
+            "line_side": "lower",
+            "distance_pips": 1,
+            "line_behavior": "break",
+            "line_break_score": 0.80,
+            "line_break_reasons": ["one", "two", "three"],
+            "previous_peak_strength": 5,
+            "strategy": SimpleNamespace(entry_type="breakout"),
+            "h1_context": {
+                "h1_path_ahead_1_distance_pips": 5,
+                "h1_path_ahead_1_total_strength": 5,
+            },
+            "line": {
+                "is_flipped_line": False,
+                "line_current_role": "support",
+                "line_latest_touch_peak_dir": -1,
+                "count": 2,
+                "core_count": 2,
+                "total_strength": 10,
+                "line_peak_rsi_latest": 45,
+            },
+        }
+
+        reasons = profile.immediate_recommended_reasons(
+            candidate,
+            {"rsi_1": 50, "rsi_2": 55},
+            {"direction": -1},
+        )
+
+        self.assertTrue(reasons)
 
     def test_market_snapshot_uses_only_completed_h1_candles(self):
         regime = StrategyRegime("EUR_USD", mode="inspection")
