@@ -20,6 +20,295 @@ import tokens as tk  # エラーをLINEするため。。
 import send_notice as notice
 
 
+S5_INTERVAL = pd.Timedelta(seconds=5)
+S5_NO_TICK_MAX_FILL_GAP = pd.Timedelta(minutes=15)
+S5_SYNTHETIC_COLUMN = "is_synthetic_s5"
+S5_ELAPSED_COLUMN = "synthetic_seconds_since_previous_actual"
+S5_COMPLETION_VERSION_COLUMN = "s5_completion_causal_v2"
+
+
+def _oanda_daily_break_mask(times):
+    """Return gaps that cross OANDA's 16:59-17:05 New York daily pause."""
+    if len(times) < 2:
+        return np.zeros(len(times), dtype=bool)
+    local = times.tz_convert("America/New_York")
+    previous = local[:-1]
+    following = local[1:]
+    previous_seconds = (
+        previous.hour * 3600
+        + previous.minute * 60
+        + previous.second
+    )
+    following_seconds = (
+        following.hour * 3600
+        + following.minute * 60
+        + following.second
+    )
+    same_date = previous.normalize() == following.normalize()
+    weekday_pause = previous.weekday < 4
+    crosses_pause = (
+        same_date
+        & weekday_pause
+        & (previous_seconds < 17 * 3600 + 5 * 60)
+        & (following_seconds >= 16 * 3600 + 59 * 60)
+    )
+    return np.r_[False, np.asarray(crosses_pause, dtype=bool)]
+
+
+def _oanda_market_open_mask(times):
+    """Return whether each S5 timestamp is inside regular OANDA FX hours."""
+    local = times.tz_convert("America/New_York")
+    weekday = local.weekday
+    seconds = local.hour * 3600 + local.minute * 60 + local.second
+    daily_pause_start = 16 * 3600 + 59 * 60
+    daily_pause_end = 17 * 3600 + 5 * 60
+    monday_to_thursday = weekday < 4
+    friday = weekday == 4
+    sunday = weekday == 6
+    return np.asarray(
+        (
+            monday_to_thursday
+            & ~(
+                (seconds >= daily_pause_start)
+                & (seconds < daily_pause_end)
+            )
+        )
+        | (friday & (seconds < daily_pause_start))
+        | (sunday & (seconds >= daily_pause_end)),
+        dtype=bool,
+    )
+
+
+def fill_s5_no_tick_candles(
+        candles,
+        max_fill_gap=S5_NO_TICK_MAX_FILL_GAP,
+        *,
+        copy_frame=True):
+    """
+    複数回取得した生のS5を結合した後、短いno-tick区間を5秒足で補完する。
+
+    補完値は直前に確定したcloseだけを使い、OHLCを同値、volumeを0とする。
+    次の実足から逆算しないため未来情報は混ざらない。週末・休場・取得欠損の
+    可能性がある長い空白は補完せず、後段で不完全データとして検出できるよう
+    残す。
+    """
+    if candles is None or candles.empty:
+        return candles
+    required_columns = {"time", "volume", "complete"}
+    missing_columns = sorted(required_columns - set(candles.columns))
+    if missing_columns:
+        raise ValueError(
+            "S5補完に必要な列がありません: "
+            + ", ".join(missing_columns)
+        )
+
+    work = candles.copy() if copy_frame else candles
+    work["_s5_time_utc"] = pd.to_datetime(
+        work["time"],
+        utc=True,
+        format="mixed",
+        errors="coerce",
+    )
+    if work["_s5_time_utc"].isna().any():
+        raise ValueError("S5補完中に解釈できないtimeが見つかりました")
+
+    work.sort_values("_s5_time_utc", kind="mergesort", inplace=True)
+    duplicate_rows = work[work["_s5_time_utc"].duplicated(keep=False)]
+    if not duplicate_rows.empty:
+        for timestamp, group in duplicate_rows.groupby("_s5_time_utc"):
+            completed_group = group[group["complete"].eq(True)]
+            comparison_group = (
+                completed_group
+                if len(completed_group)
+                else group
+            )
+            compare_columns = [
+                column
+                for column in ("mid", "bid", "ask", "volume")
+                if column in comparison_group.columns
+            ]
+            for column in compare_columns:
+                signatures = comparison_group[column].map(
+                    lambda value: json.dumps(
+                        value,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        default=str,
+                    )
+                )
+                if (
+                    len(comparison_group) > 1
+                    and signatures.nunique(dropna=False) > 1
+                ):
+                    raise ValueError(
+                        "S5の同一時刻に異なる取得値があります: "
+                        f"{timestamp} ({column})"
+                    )
+    if "complete" in work.columns:
+        work["_complete_sort"] = work["complete"].eq(True)
+        work.sort_values(
+            ["_s5_time_utc", "_complete_sort"],
+            kind="mergesort",
+            inplace=True,
+        )
+    work.drop_duplicates("_s5_time_utc", keep="last", inplace=True)
+    work.drop(columns="_complete_sort", errors="ignore", inplace=True)
+    work.reset_index(drop=True, inplace=True)
+
+    if S5_SYNTHETIC_COLUMN not in work.columns:
+        work[S5_SYNTHETIC_COLUMN] = False
+    else:
+        work[S5_SYNTHETIC_COLUMN] = work[S5_SYNTHETIC_COLUMN].eq(True)
+    if S5_ELAPSED_COLUMN not in work.columns:
+        work[S5_ELAPSED_COLUMN] = np.nan
+    work[S5_COMPLETION_VERSION_COLUMN] = True
+
+    times = pd.DatetimeIndex(work["_s5_time_utc"])
+    interval_ns = int(S5_INTERVAL.value)
+    if np.any(times.asi8 % interval_ns != 0):
+        invalid_time = times[np.flatnonzero(
+            times.asi8 % interval_ns != 0
+        )[0]]
+        raise ValueError(
+            f"S5時刻が5秒グリッド上にありません: {invalid_time}"
+        )
+    if len(work) < 2:
+        work.drop(columns="_s5_time_utc", inplace=True)
+        work.attrs["s5_fill_stats"] = {
+            "actual_rows": int((~work[S5_SYNTHETIC_COLUMN]).sum()),
+            "synthetic_rows": int(work[S5_SYNTHETIC_COLUMN].sum()),
+            "long_gaps_kept": 0,
+        }
+        return work
+
+    gaps = times.to_series(index=np.arange(len(times))).diff()
+    gap_ns = gaps.astype("timedelta64[ns]").astype("int64")
+    max_gap_ns = int(pd.Timedelta(max_fill_gap).value)
+    daily_break = _oanda_daily_break_mask(times)
+    hard_break = (
+        gaps.isna()
+        | (gap_ns <= 0)
+        | (gap_ns > max_gap_ns)
+        | (gap_ns % interval_ns != 0)
+    )
+    segment_starts = np.flatnonzero(hard_break.to_numpy())
+    segment_ends = np.r_[segment_starts[1:] - 1, len(times) - 1]
+    segment_ranges = [
+        pd.date_range(
+            start=times[int(start)],
+            end=times[int(end)],
+            freq=S5_INTERVAL,
+        )
+        for start, end in zip(segment_starts, segment_ends)
+    ]
+    full_index = segment_ranges[0].append(segment_ranges[1:])
+    causal_prefix_gap = (
+        (gap_ns > max_gap_ns)
+        & (gap_ns % interval_ns == 0)
+    )
+    prefix_ranges = []
+    for following_index in np.flatnonzero(causal_prefix_gap):
+        previous_time = times[int(following_index) - 1]
+        following_time = times[int(following_index)]
+        prefix_end = min(
+            following_time - S5_INTERVAL,
+            previous_time + pd.Timedelta(max_fill_gap),
+        )
+        if prefix_end >= previous_time + S5_INTERVAL:
+            prefix_ranges.append(
+                pd.date_range(
+                    start=previous_time + S5_INTERVAL,
+                    end=prefix_end,
+                    freq=S5_INTERVAL,
+                )
+            )
+    if prefix_ranges:
+        full_index = full_index.append(prefix_ranges).sort_values().unique()
+    actual_timestamp = full_index.isin(times)
+    market_open = _oanda_market_open_mask(full_index)
+    full_index = full_index[actual_timestamp | market_open]
+
+    work.set_index("_s5_time_utc", inplace=True)
+    filled = work.reindex(full_index)
+    synthetic = filled["time"].isna()
+
+    price_columns = [
+        column
+        for column in ("mid", "bid", "ask")
+        if column in filled.columns
+    ]
+    if not price_columns:
+        raise ValueError("S5補完対象にmid/bid/ask価格がありません")
+    for column in price_columns:
+        previous_close = filled[column].map(
+            lambda value: value.get("c")
+            if isinstance(value, dict)
+            else np.nan
+        ).ffill()
+        if previous_close.loc[synthetic].isna().any():
+            raise ValueError(
+                f"S5補完に使う直前closeが{column}列にありません"
+            )
+        values = filled[column].to_numpy(dtype=object, copy=True)
+        synthetic_positions = np.flatnonzero(synthetic.to_numpy())
+        closes = previous_close.to_numpy(dtype=object, copy=False)
+        values[synthetic_positions] = [
+            {"o": closes[index], "h": closes[index],
+             "l": closes[index], "c": closes[index]}
+            for index in synthetic_positions
+        ]
+        filled[column] = values
+
+    synthetic_index = filled.index[synthetic]
+    filled.loc[synthetic, "time"] = [
+        timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000000Z")
+        for timestamp in synthetic_index
+    ]
+    if "time_jp" in filled.columns:
+        jst_index = synthetic_index.tz_convert("Asia/Tokyo")
+        filled.loc[synthetic, "time_jp"] = [
+            timestamp.strftime("%Y/%m/%d %H:%M:%S")
+            for timestamp in jst_index
+        ]
+    if "volume" in filled.columns:
+        filled.loc[synthetic, "volume"] = 0
+        filled["volume"] = pd.to_numeric(
+            filled["volume"],
+            errors="raise",
+        ).astype("int64")
+    if "complete" in filled.columns:
+        filled.loc[synthetic, "complete"] = True
+        filled["complete"] = filled["complete"].eq(True)
+    filled.loc[synthetic, S5_SYNTHETIC_COLUMN] = True
+    filled[S5_SYNTHETIC_COLUMN] = filled[S5_SYNTHETIC_COLUMN].eq(True)
+    index_series = pd.Series(filled.index, index=filled.index)
+    actual = ~filled[S5_SYNTHETIC_COLUMN]
+    prior_actual = index_series.where(actual).ffill()
+    elapsed_since_previous_actual = (
+        index_series - prior_actual
+    ).dt.total_seconds()
+    filled.loc[synthetic, S5_ELAPSED_COLUMN] = (
+        elapsed_since_previous_actual.loc[synthetic].to_numpy()
+    )
+    filled[S5_COMPLETION_VERSION_COLUMN] = True
+
+    filled.reset_index(drop=True, inplace=True)
+    synthetic_count = int(filled[S5_SYNTHETIC_COLUMN].sum())
+    filled.attrs["s5_fill_stats"] = {
+        "actual_rows": int(
+            len(filled) - filled[S5_SYNTHETIC_COLUMN].sum()
+        ),
+        "synthetic_rows": synthetic_count,
+        "long_gaps_kept": int(
+            (
+                (gaps > pd.Timedelta(max_fill_gap))
+                | pd.Series(daily_break, index=gaps.index)
+            ).sum()
+        ),
+    }
+    return filled
+
+
 class Oanda:
     # ■クラス内の主な関数
     # (1)現在価格を取得する　NowPrice_exe
@@ -85,6 +374,24 @@ class Oanda:
         else:
             self.print_words = ""
 
+    @staticmethod
+    def _complete_s5_no_tick_rows(candles, params):
+        """Complete S5 no-tick rows inside Oanda before returning data."""
+        if params.get("granularity") != "S5":
+            return candles
+        completed = fill_s5_no_tick_candles(
+            candles,
+            copy_frame=False,
+        )
+        fill_stats = completed.attrs.get("s5_fill_stats", {})
+        print(
+            "[S5 no-tick fill]",
+            f"actual={fill_stats.get('actual_rows', len(completed))}",
+            f"synthetic={fill_stats.get('synthetic_rows', 0)}",
+            f"long_gaps_kept={fill_stats.get('long_gaps_kept', 0)}",
+        )
+        return completed
+
     ############################################################
     # # Oanda操作系API 以下本チャン
     ############################################################
@@ -145,6 +452,7 @@ class Oanda:
             res_json = self.api.request(ep)  # 結果をjsonで取得
             data_df = pd.DataFrame(res_json['candles'])  # Jsonの一部(candles)をDataframeに変換
             data_df['time_jp'] = data_df.apply(lambda x: iso_to_jstdt(x, 'time'), axis=1)  # 日本時刻の表示
+            data_df = self._complete_s5_no_tick_rows(data_df, params)
             data_df = add_basic_data(data_df, gene.currency_pair(instrument))  # 【関数/必須】基本項目を追加する
             data_df = add_rsi(data_df)
             data_df = add_bb_data(data_df, gene.currency_pair(instrument))
@@ -155,7 +463,13 @@ class Oanda:
             return e_info
 
     # (3)キャンドルデータを取得(5000行以上/現在から/指定簡単（現在USD固定）)
-    def InstrumentsCandles_multi_exe(self, pair, params, roop):
+    def InstrumentsCandles_multi_exe(
+            self,
+            pair,
+            params,
+            roop,
+            start_time=None,
+            end_time=None):
         """
         【注意】paramでFromを使うことはできない。toとcountの組み合わせのみMultiを有効に活用できる
         呼び出し方：oa.InstrumentsCandles_multi_exe("USD_JPY", {"granularity": "M5", "count": 30}, 1)
@@ -168,23 +482,61 @@ class Oanda:
         :param params:{"granularity": 'M5', "count": 5000}のように、足単位と何行取得するか(Max5000)。
                         デフォルトではmidlle価格（askとbidの中間）を取得。Ask/Bidを取得する場合、"price":"B"or"A"を追加。
         :param roop: 上記情報が何セット欲しいか(5000行以上欲しい場合に有効。5000以下は、この数は１の方が当然動きが早い）
+        :param start_time: 任意。必要期間のJST開始時刻。到達後は追加ページ取得を止める。
+        :param end_time: 任意。必要期間のJST終了時刻。返却前に範囲外を除く。
         :return:
         """
+        def as_jst_naive(value):
+            if value is None:
+                return None
+            timestamp = pd.Timestamp(value)
+            if timestamp.tzinfo is not None:
+                timestamp = timestamp.tz_convert("Asia/Tokyo").tz_localize(None)
+            return timestamp
+
+        requested_start = as_jst_naive(start_time)
+        requested_end = as_jst_naive(end_time)
         candles = None  # dataframeの準備
         for i in range(roop):
             df_dic = self.InstrumentsCandles_multi_support_exe(pair, params)  # 【関数】データ取得＋基本５項目のDFに変換（dataframeが返り値）
             if df_dic['error'] == 0:
                 df = df_dic['data']
+                if df.empty:
+                    return {
+                        "error": -1,
+                        "method": "InstrumentsCandles_multi_exe",
+                        "error_code": "empty_candle_page",
+                    }
                 params["to"] = df["time"].iloc[0]  # ループ用（次回情報取得の期限を決める）
                 candles = pd.concat([df, candles])  # 結果用DataFrameに蓄積（時間はテレコ状態）
+                if requested_start is not None:
+                    page_first = pd.to_datetime(
+                        df["time_jp"].iloc[0],
+                        format="%Y/%m/%d %H:%M:%S",
+                    )
+                    if page_first <= requested_start:
+                        break
             else:
                 return df_dic  # エラーの場合
         # 情報を成型する（取得した情報をtime_jpで並び替える等）
         candles.sort_values('time_jp', inplace=True)  # 時間順に並び替え
-        temp_df = candles.reset_index()  # インデックスをリセットし、ML用のデータフレームへ
-        temp_df.drop(['index'], axis=1, inplace=True)  # 不要項目の削除
+        candles.reset_index(drop=True, inplace=True)
+        candles = self._complete_s5_no_tick_rows(candles, params)
+        if requested_start is not None or requested_end is not None:
+            candle_times = pd.to_datetime(
+                candles["time_jp"],
+                format="%Y/%m/%d %H:%M:%S",
+            )
+            requested = pd.Series(True, index=candles.index)
+            if requested_start is not None:
+                requested &= candle_times >= requested_start
+            if requested_end is not None:
+                requested &= candle_times <= requested_end
+            candles = candles.loc[requested].reset_index(drop=True)
+        if candles.empty:
+            raise ValueError("指定期間内にローソクがありません")
         # 解析用の列を追加する（不要列の削除も含む）
-        data_df = add_basic_data(temp_df, gene.currency_pair(pair))  # 【関数/必須】基本項目を追加する
+        data_df = add_basic_data(candles, gene.currency_pair(pair))  # 【関数/必須】基本項目を追加する
         data_df = add_rsi(data_df)
         # data_df = add_ema_data(data_df)
         data_df = add_bb_data(data_df, gene.currency_pair(pair))

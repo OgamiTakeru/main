@@ -8,6 +8,11 @@ import fGeneric as gene
 line_send_last_message = ""
 line_send_last_message_count = 0
 LINE_SEND_DUPLICATE_LIMIT = 2
+INSPECTION_NOTICE_MARKS = {
+    "AUD_USD": "⭐︎",
+    "USD_JPY": "●",
+    "EUR_USD": "◽️",
+}
 
 
 def is_live_notice_message(message):
@@ -37,6 +42,13 @@ def notice_pair(message=""):
     if "USD_JPY" in message:
         return "USD_JPY"
     return getattr(gene.currentPair, "name", "USD_JPY")
+
+
+def inspection_notice_mark(message):
+    for pair, mark in INSPECTION_NOTICE_MARKS.items():
+        if pair in message:
+            return mark
+    return ""
 
 
 def webhook_url_for_pair(pair):
@@ -73,8 +85,14 @@ def line_send(*msg):
         print("@@文字オーバー")
         message = "Discord受信許容文字数オーバー" + str(len(message)) + "@" + message[:50]
 
-    if is_inspection_notice_message(raw_message) and not is_live_notice_message(raw_message):
+    is_inspection_notice = (
+        is_inspection_notice_message(raw_message)
+        and not is_live_notice_message(raw_message)
+    )
+    notice_mark = ""
+    if is_inspection_notice:
         webhook_url = tk.WEBHOOK_URL_inspection
+        notice_mark = inspection_notice_mark(raw_message)
     else:
         webhook_url = webhook_url_for_pair(notice_pair(raw_message))
 
@@ -82,8 +100,11 @@ def line_send(*msg):
         print("     [Disc skip no webhook]", message)
         return 0
 
+    content = "@everyone " + message
+    if notice_mark:
+        content = notice_mark + " " + content
     data = {
-        "content": "@everyone " + message,
+        "content": content,
         "allowed_mentions": {"parse": ["everyone"]},
     }
     requests.post(webhook_url, json=data)

@@ -149,7 +149,13 @@ class Inspection:
         m5_rows = math.ceil(total_seconds / (5 * 60)) + 5
         m5_count, m5_loop = self.cal_oanda_count_and_loop(m5_rows)
         params = {"granularity": "M5", "count": m5_count, "to": end_time_iso}
-        data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, m5_loop)
+        data_response = self.oa.InstrumentsCandles_multi_exe(
+            self.pair,
+            params,
+            m5_loop,
+            start_time=fetch_from,
+            end_time=fetch_to,
+        )
         self.gl_d5_df = data_response["data"]
         self.gl_d5_df_r = self.gl_d5_df.sort_index(ascending=False)
         notice.line_send("検証データ取得", self.pair, "M5", len(self.gl_d5_df), "rows")
@@ -159,7 +165,13 @@ class Inspection:
         h1_rows = math.ceil(h1_total_seconds / (60 * 60)) + 5
         h1_count, h1_loop = self.cal_oanda_count_and_loop(h1_rows)
         params = {"granularity": "H1", "count": h1_count, "to": end_time_iso}
-        data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, h1_loop)
+        data_response = self.oa.InstrumentsCandles_multi_exe(
+            self.pair,
+            params,
+            h1_loop,
+            start_time=h1_fetch_from,
+            end_time=fetch_to,
+        )
         self.gl_h1_df = data_response["data"]
         self.gl_h1_df_r = self.gl_h1_df.sort_index(ascending=False)
         notice.line_send("検証データ取得", self.pair, "H1", len(self.gl_h1_df), "rows")
@@ -167,7 +179,13 @@ class Inspection:
         m30_rows = math.ceil(total_seconds / (30 * 60)) + 5
         m30_count, m30_loop = self.cal_oanda_count_and_loop(m30_rows)
         params = {"granularity": "M30", "count": m30_count, "to": end_time_iso}
-        data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, m30_loop)
+        data_response = self.oa.InstrumentsCandles_multi_exe(
+            self.pair,
+            params,
+            m30_loop,
+            start_time=fetch_from,
+            end_time=fetch_to,
+        )
         self.gl_m30_df = data_response["data"]
         self.gl_m30_df_r = self.gl_m30_df.sort_index(ascending=False)
         notice.line_send("検証データ取得", self.pair, "M30", len(self.gl_m30_df), "rows")
@@ -175,7 +193,13 @@ class Inspection:
         s5_rows = math.ceil(total_seconds / 5) + 5
         s5_count, s5_loop = self.cal_oanda_count_and_loop(s5_rows)
         params = {"granularity": "S5", "count": s5_count, "to": end_time_iso}
-        data_response = self.oa.InstrumentsCandles_multi_exe(self.pair, params, s5_loop)
+        data_response = self.oa.InstrumentsCandles_multi_exe(
+            self.pair,
+            params,
+            s5_loop,
+            start_time=fetch_from,
+            end_time=fetch_to,
+        )
         self.gl_s5_df = data_response["data"]
         notice.line_send("検証データ取得", self.pair, "S5", len(self.gl_s5_df), "rows")
         notice.line_send("検証データOANDA取得完了", self.pair)

@@ -15,8 +15,8 @@ PAIR = "EUR_USD"
 # START_TIME = datetime.datetime(2026, 7, 14, 0, 0, 0)
 # END_TIME = datetime.datetime(2026, 7, 18, 6, 0, 0)
 
-START_TIME = datetime.datetime(2025, 6, 24, 0, 0, 0)
-END_TIME = datetime.datetime(2026, 6, 24, 0, 0, 0)
+START_TIME = datetime.datetime(2024, 6, 24, 0, 0, 0)
+END_TIME = datetime.datetime(2025, 6, 24, 0, 0, 0)
 
 memo = f"{PAIR} line inspection"
 cache_name = f"{PAIR}_{START_TIME:%Y%m%d%H%M%S}_{END_TIME:%Y%m%d%H%M%S}"
