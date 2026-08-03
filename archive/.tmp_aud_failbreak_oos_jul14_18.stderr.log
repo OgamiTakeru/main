@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "C:\Users\taker\OneDrive\Desktop\OandaPrograms\main\test_win_point_break_usd_aud.py", line 8, in <module>
+    win_point.run(
+  File "C:\Users\taker\OneDrive\Desktop\OandaPrograms\main\test_win_point_usd_aud.py", line 1098, in run
+    ranking = make_ranking(result, args.min_group_size)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\taker\OneDrive\Desktop\OandaPrograms\main\test_win_point_usd_aud.py", line 893, in make_ranking
+    grouped["group"] = grouped[columns].astype(str).agg(" / ".join, axis=1)
+    ~~~~~~~^^^^^^^^^
+  File "C:\Users\taker\OneDrive\Desktop\OandaPrograms\main\venv\Lib\site-packages\pandas\core\frame.py", line 4301, in __setitem__
+    self._set_item_frame_value(key, value)
+  File "C:\Users\taker\OneDrive\Desktop\OandaPrograms\main\venv\Lib\site-packages\pandas\core\frame.py", line 4459, in _set_item_frame_value
+    raise ValueError(
+ValueError: Cannot set a DataFrame with multiple columns to the single column group

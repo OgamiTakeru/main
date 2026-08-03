@@ -1,5 +1,8 @@
 """Line strategy classes for USD_JPY."""
 
+import math
+from types import SimpleNamespace
+
 import fGeneric as gene
 
 
@@ -30,6 +33,16 @@ class LineStrategyProfileUsdJpy:
     m5_core_count_min = 1
     m5_core_total_strength_min = 5
     m5_breakout_entry_offset_pips = 1.5
+    # count2予測反転注文は、検証と同じく直前の完成M5 6本から
+    # TP/LCを決める。実際の「次のcount2」の時刻や価格は使わない。
+    predict_reversal_tp_lookback = 6
+    predict_reversal_tp_multiplier = 3.0
+    predict_reversal_rr = 1.2
+    # Pair-specific count2 candidate ranking.  Every input is fixed at the
+    # decision time; this is a ranking policy, not a profitable-trade gate.
+    predict_reversal_ranking_version = "pair_v2_usd_rsi_strength_reach"
+    predict_reversal_distance_ratio_cap = 0.5
+    predict_reversal_distance_cap_fallback = "nearest"
     immediate_near_line_max_pips = 3
     immediate_break_score_min = 0.75
     immediate_break_reason_count_min = 3
@@ -996,6 +1009,16 @@ class LineStrategyProfileUsdJpy:
         )
         grouped_lines = self.group_lines(line_context)
 
+        # count2発生時は、進行方向の先にある一本のラインを
+        # 「次のcount2で折り返す候補」として先に扱う。
+        # 上向きcount2 -> 上側ラインでSELL、下向きcount2 -> 下側ラインでBUY。
+        # 距離の下限は設けず、ほぼ現在値にあるLIMIT候補も残す。
+        latest_peak_info = grouped_lines["coordinator"]._latest_peak_info("m5")
+        if self._int_or_none(latest_peak_info.get("count")) == 2:
+            # count2では予測反転か見送りのどちらか。予測候補が作れない時に
+            # 旧immediate breakoutへ自動的に切り替えない。
+            return self.predict_reversal_order(grouped_lines)
+
         immediate_orders = self.immediate_order(grouped_lines)
         if immediate_orders:
             return immediate_orders
@@ -1232,12 +1255,580 @@ class LineStrategyProfileUsdJpy:
             "immediate",
         )
 
+    def predict_reversal_order(self, grouped_lines):
+        """Create one causal LIMIT toward the predicted second count2.
+
+        Eligible lines are ranked by pair-specific decision-time evidence and
+        only rank 1 becomes executable.  Distance/TP ratio, completed-M5 RSI,
+        estimated line strength and causal reach history all contribute to
+        the score.  Other lines remain counterfactual analysis candidates and
+        must not become simultaneous production orders.
+        """
+        coordinator = grouped_lines["coordinator"]
+        latest_peak_info = coordinator._latest_peak_info("m5")
+        if self._int_or_none(latest_peak_info.get("count")) != 2:
+            return []
+        signal_direction = self._int_or_none(
+            latest_peak_info.get("direction")
+        )
+        if signal_direction not in (-1, 1):
+            fallback_time = (
+                latest_peak_info.get("time")
+                or grouped_lines["decision_time"]
+            )
+            return self.predict_reversal_count2_control(
+                coordinator,
+                "invalid:" + str(fallback_time),
+                latest_peak_info,
+                "invalid_count2_direction",
+            )
+        signal_time = latest_peak_info.get("time")
+        if signal_time in (None, ""):
+            # The decision candle time is causal and stable within one M5
+            # cycle, so it is a safe fallback identity for malformed peaks.
+            signal_time = grouped_lines["decision_time"]
+        predict_signal_id = (
+            str(signal_direction) + ":" + str(signal_time)
+        )
+
+        candidates = coordinator.select_line_candidates(
+            grouped_lines["future_resist_candidates"],
+            grouped_lines["rsi_info"],
+            grouped_lines["decision_time"],
+            "predict_reversal",
+            self.predict_reversal_recommended_reasons,
+        )
+        if not candidates:
+            return self.predict_reversal_count2_control(
+                coordinator,
+                predict_signal_id,
+                latest_peak_info,
+                "no_eligible_resistance_candidate",
+            )
+
+        target = coordinator.predict_reversal_target_parameters(
+            grouped_lines["decision_time"],
+            lookback=self.predict_reversal_tp_lookback,
+            multiplier=self.predict_reversal_tp_multiplier,
+            rr=self.predict_reversal_rr,
+        )
+        if target is None:
+            return self.predict_reversal_count2_control(
+                coordinator,
+                predict_signal_id,
+                latest_peak_info,
+                "target_parameters_unavailable",
+            )
+
+        attach_last_reach = getattr(
+            coordinator,
+            "attach_predict_reversal_last_reach_context",
+            None,
+        )
+        if callable(attach_last_reach):
+            attach_last_reach(
+                candidates,
+                grouped_lines["decision_time"],
+            )
+        for candidate in candidates:
+            candidate["predict_distance_to_tp_ratio"] = (
+                float(candidate["distance_pips"]) / float(target["tp_pips"])
+            )
+
+        candidates = self.rank_predict_reversal_candidates(
+            candidates,
+            rsi_info=grouped_lines["rsi_info"],
+            latest_peak_info=latest_peak_info,
+        )
+        if not candidates:
+            return self.predict_reversal_count2_control(
+                coordinator,
+                predict_signal_id,
+                latest_peak_info,
+                "no_rankable_resistance_candidate",
+            )
+        selected = candidates[0]
+
+        analysis_mode = getattr(
+            getattr(coordinator, "analysis", None),
+            "mode",
+            "live",
+        )
+        selected.update(target)
+        selected.update({
+            "predict_signal_id": predict_signal_id,
+            "predict_candidate_count": len(candidates),
+            "predict_candidate_scope": "m5_reversal_target_after_regime",
+            "predict_pending_policy": (
+                "next_count2_or_distance_ttl_15_30_45m"
+            ),
+            "prediction_target": "next_count2_reversal",
+            "preserve_strategy_tp_lc": True,
+            "predict_pending_conflict_control_applied": (
+                analysis_mode != "inspection"
+            ),
+            "predict_inspection_lifecycle_note": (
+                "pending_conflict_control_not_simulated"
+                if analysis_mode == "inspection"
+                else None
+            ),
+        })
+        orders = coordinator.create_orders_from_candidates(
+            [selected],
+            grouped_lines["current_price"],
+            grouped_lines["decision_time"],
+            grouped_lines["rsi_info"],
+            "predict_reversal",
+        )
+        if orders:
+            return orders
+        return self.predict_reversal_count2_control(
+            coordinator,
+            predict_signal_id,
+            latest_peak_info,
+            "predict_order_creation_filtered",
+        )
+
+    def rank_predict_reversal_candidates(
+        self,
+        candidates,
+        rsi_info=None,
+        latest_peak_info=None,
+    ):
+        """Return a deterministic pair-specific, future-safe ranking.
+
+        Distance, completed-M5 RSI, estimated line strength and elapsed time
+        since the effective last reach are explicit inputs.  RSI is combined
+        with candidate-specific distance/strength because RSI alone is common
+        to every candidate in one count2 event and cannot change their order.
+        Outcome/path keys are never read here.
+        """
+        rankable = []
+        for candidate in candidates:
+            features = self._predict_reversal_rank_features(
+                candidate,
+                rsi_info,
+                latest_peak_info,
+            )
+            if features is None:
+                continue
+            components = self._predict_reversal_pair_score_components(
+                features
+            )
+            score = float(sum(components.values()))
+            if not math.isfinite(score):
+                continue
+            candidate.update({
+                "predict_ranking_version": (
+                    self.predict_reversal_ranking_version
+                ),
+                "predict_rank_input_scope": (
+                    "decision_time_pair_distance_completed_m5_rsi_"
+                    "line_strength_last_reach"
+                ),
+                "predict_rank_score": round(score, 6),
+                "predict_rank_pair": self.pair,
+                "predict_rank_distance_to_tp_ratio": features[
+                    "distance_ratio"
+                ],
+                "predict_rank_average_strength": features[
+                    "average_strength"
+                ],
+                "predict_rank_line_count": features["line_count"],
+                "predict_rank_core_average_strength": features[
+                    "core_average_strength"
+                ],
+                "predict_rank_estimated_strength": features[
+                    "estimated_strength"
+                ],
+                "predict_rank_rsi_1": features["rsi_1"],
+                "predict_rank_rsi_2": features["rsi_2"],
+                "predict_rank_directional_rsi": features[
+                    "directional_rsi"
+                ],
+                "predict_rank_source_rsi": features["source_rsi"],
+                "predict_rank_source_elapsed_minutes": features[
+                    "source_elapsed_minutes"
+                ],
+                "predict_rank_last_reach_elapsed_minutes": features[
+                    "last_reach_elapsed_minutes"
+                ],
+                "predict_rank_last_reach_source": candidate.get(
+                    "predict_last_reach_source"
+                ),
+                "predict_rank_prior_retouch_count": features[
+                    "prior_retouch_count"
+                ],
+                "predict_rank_components": " | ".join(
+                    key + "=" + str(round(value, 6))
+                    for key, value in sorted(components.items())
+                ),
+            })
+            candidate["_predict_rank_features"] = features
+            rankable.append(candidate)
+
+        distance_order = sorted(
+            rankable,
+            key=self._predict_distance_sort_key,
+        )
+        for distance_rank, candidate in enumerate(distance_order, start=1):
+            candidate["predict_distance_rank"] = distance_rank
+
+        cap = float(self.predict_reversal_distance_ratio_cap)
+        within_cap = [
+            candidate
+            for candidate in rankable
+            if candidate["_predict_rank_features"]["distance_ratio"] <= cap
+        ]
+        fallback_used = not within_cap and bool(rankable)
+        if within_cap:
+            primary = sorted(
+                within_cap,
+                key=self._predict_quality_sort_key,
+            )
+        elif fallback_used:
+            primary = [distance_order[0]]
+        else:
+            primary = []
+        primary_ids = {id(candidate) for candidate in primary}
+        remaining = sorted(
+            [
+                candidate
+                for candidate in rankable
+                if id(candidate) not in primary_ids
+            ],
+            key=self._predict_quality_sort_key,
+        )
+        ranked = primary + remaining
+        for rank, candidate in enumerate(ranked, start=1):
+            candidate["predict_candidate_rank"] = rank
+            candidate["predict_candidate_count"] = len(ranked)
+            candidate["predict_rank_in_distance_cap"] = (
+                candidate["_predict_rank_features"]["distance_ratio"] <= cap
+            )
+            candidate["predict_rank_distance_ratio_cap"] = cap
+            candidate["predict_rank_fallback"] = (
+                "nearest_outside_ratio_cap"
+                if fallback_used and rank == 1
+                else None
+            )
+            candidate.pop("_predict_rank_features", None)
+
+        if ranked:
+            runner_up_score = (
+                ranked[1]["predict_rank_score"]
+                if len(ranked) > 1
+                else None
+            )
+            ranked[0]["predict_runner_up_score"] = runner_up_score
+            ranked[0]["predict_score_gap"] = (
+                round(
+                    ranked[0]["predict_rank_score"] - runner_up_score,
+                    6,
+                )
+                if runner_up_score is not None
+                else None
+            )
+        return ranked
+
+    def _predict_reversal_rank_features(
+        self,
+        candidate,
+        rsi_info,
+        latest_peak_info,
+    ):
+        distance = self._finite_float_or_none(candidate.get("distance_pips"))
+        distance_ratio = self._finite_float_or_none(
+            candidate.get("predict_distance_to_tp_ratio")
+        )
+        if distance is None or distance <= 0:
+            return None
+        if distance_ratio is None or distance_ratio <= 0:
+            return None
+
+        line = candidate.get("line") or {}
+        line_count = self._nonnegative_finite(line.get("count"), 0.0)
+        average_strength = self._finite_float_or_none(
+            line.get("ave_strength")
+        )
+        if average_strength is None:
+            total_strength = self._finite_float_or_none(
+                line.get("total_strength")
+            )
+            average_strength = (
+                total_strength / line_count
+                if total_strength is not None and line_count > 0
+                else 0.0
+            )
+        core_count = self._nonnegative_finite(
+            line.get("core_count"),
+            0.0,
+        )
+        core_total_strength = self._nonnegative_finite(
+            line.get("core_total_strength"),
+            0.0,
+        )
+        core_average_strength = (
+            core_total_strength / core_count
+            if core_count > 0
+            else 0.0
+        )
+
+        source_elapsed = self._finite_float_or_none(
+            candidate.get("predict_source_reach_elapsed_minutes")
+        )
+        if source_elapsed is None:
+            source_elapsed = self._finite_float_or_none(
+                line.get("line_latest_touch_elapsed_minutes")
+            )
+        last_elapsed = self._finite_float_or_none(
+            candidate.get("predict_last_reach_elapsed_minutes")
+        )
+        if last_elapsed is None:
+            last_elapsed = source_elapsed
+        prior_retouch_count = self._nonnegative_finite(
+            candidate.get("predict_prior_retouch_count"),
+            0.0,
+        )
+
+        rsi_info = rsi_info or {}
+        rsi_1 = self._finite_float_or_none(rsi_info.get("rsi_1"))
+        rsi_2 = self._finite_float_or_none(rsi_info.get("rsi_2"))
+        rsi_1 = 50.0 if rsi_1 is None else rsi_1
+        rsi_2 = rsi_1 if rsi_2 is None else rsi_2
+        peak_direction = self._int_or_none(
+            (latest_peak_info or {}).get("direction")
+        )
+        if peak_direction not in (-1, 1):
+            candidate_direction = self._int_or_none(
+                candidate.get("direction")
+            )
+            peak_direction = (
+                -candidate_direction
+                if candidate_direction in (-1, 1)
+                else None
+            )
+        if peak_direction not in (-1, 1):
+            return None
+        source_rsi = self._finite_float_or_none(
+            line.get("line_peak_rsi_latest")
+        )
+        source_rsi = 50.0 if source_rsi is None else source_rsi
+
+        return {
+            "distance_pips": distance,
+            "distance_ratio": max(distance_ratio, 0.0),
+            "average_strength": max(average_strength, 0.0),
+            "line_count": line_count,
+            "core_count": core_count,
+            "core_total_strength": core_total_strength,
+            "core_average_strength": core_average_strength,
+            "estimated_strength": (
+                average_strength
+                - 0.5 * math.log1p(line_count)
+                + 0.1 * core_average_strength
+            ),
+            "source_elapsed_minutes": source_elapsed,
+            "last_reach_elapsed_minutes": last_elapsed,
+            "prior_retouch_count": prior_retouch_count,
+            "rsi_1": rsi_1,
+            "rsi_2": rsi_2,
+            "directional_rsi": peak_direction * (rsi_1 - 50.0),
+            "directional_rsi_delta": peak_direction * (rsi_1 - rsi_2),
+            "source_rsi": source_rsi,
+            "directional_source_rsi": peak_direction * (source_rsi - 50.0),
+            "peak_direction": peak_direction,
+        }
+
+    def _predict_reversal_pair_score_components(self, features):
+        """USD/JPY score selected on train/validation before OOS review."""
+        ratio = features["distance_ratio"]
+        directional_rsi = features["directional_rsi"]
+        if directional_rsi < 0:
+            rsi_distance = 1.0 if ratio < 0.15 else 2.0
+        elif ratio < 0.15:
+            rsi_distance = 2.0
+        elif ratio < 0.30:
+            rsi_distance = 1.0
+        else:
+            rsi_distance = 0.0
+
+        average_strength = features["average_strength"]
+        if average_strength < 3:
+            average_points = -1.0
+        elif average_strength < 5:
+            average_points = 0.0
+        elif average_strength < 7.5:
+            average_points = 1.0
+        else:
+            average_points = 0.5
+
+        line_count = features["line_count"]
+        if line_count <= 1:
+            count_points = 0.5
+        elif line_count <= 3:
+            count_points = 0.0
+        elif line_count <= 4:
+            count_points = -0.5
+        else:
+            count_points = -1.0
+
+        core_strength = features["core_total_strength"]
+        if core_strength < 7.5:
+            core_points = 0.5
+        elif core_strength < 15:
+            core_points = 0.0
+        elif core_strength < 20:
+            core_points = -0.5
+        else:
+            core_points = -1.0
+
+        source_points = self._usd_elapsed_points(
+            features["source_elapsed_minutes"],
+            ((30, -1.0), (120, 0.0), (480, 1.0)),
+        )
+        last_points = self._usd_elapsed_points(
+            features["last_reach_elapsed_minutes"],
+            ((30, -1.0), (60, 0.0), (240, 1.0)),
+        )
+        retouch_count = features["prior_retouch_count"]
+        if retouch_count <= 1:
+            retouch_points = 0.0
+        elif retouch_count <= 4:
+            retouch_points = 0.5
+        else:
+            retouch_points = -0.5
+        return {
+            "rsi_distance": rsi_distance,
+            "line_average_strength": average_points,
+            "line_count": count_points,
+            "line_core_strength": core_points,
+            "reach_source_x2": 2.0 * source_points,
+            "reach_effective_last_x2": 2.0 * last_points,
+            "reach_retouch_count_x2": 2.0 * retouch_points,
+        }
+
+    @staticmethod
+    def _usd_elapsed_points(value, bins):
+        if value is None:
+            return 0.0
+        for upper, points in bins:
+            if value < upper:
+                return points
+        return 0.0
+
+    @staticmethod
+    def _finite_float_or_none(value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
+    @classmethod
+    def _nonnegative_finite(cls, value, default):
+        value = cls._finite_float_or_none(value)
+        return max(value, 0.0) if value is not None else default
+
+    @classmethod
+    def _predict_distance_sort_key(cls, candidate):
+        distance = cls._finite_float_or_none(candidate.get("distance_pips"))
+        line_price = cls._finite_float_or_none(candidate.get("line_price"))
+        line_index = candidate.get("line_index")
+        try:
+            line_index = int(line_index)
+        except (TypeError, ValueError):
+            line_index = 0
+        return (
+            distance if distance is not None else math.inf,
+            line_price if line_price is not None else math.inf,
+            line_index,
+        )
+
+    @classmethod
+    def _predict_quality_sort_key(cls, candidate):
+        score = cls._finite_float_or_none(candidate.get("predict_rank_score"))
+        return (
+            -(score if score is not None else -math.inf),
+            *cls._predict_distance_sort_key(candidate),
+        )
+
+    @staticmethod
+    def predict_reversal_count2_control(
+        coordinator,
+        predict_signal_id,
+        latest_peak_info,
+        reason,
+    ):
+        """Emit a live-only control event even when count2 yields no order.
+
+        A new count2 must expire an older pending prediction independently of
+        whether the new count2 has an executable resistance candidate.
+        """
+        analysis = getattr(coordinator, "analysis", None)
+        if getattr(analysis, "mode", "inspection") == "inspection":
+            return []
+        if analysis is None or not hasattr(
+            analysis,
+            "add_order_to_this_class",
+        ):
+            return []
+
+        control = SimpleNamespace(
+            exe_order_plan={
+                "name": "PredictReversalCount2Control",
+                "source": "line_control",
+                "line_order_mode": "predict_reversal_count2_control",
+                "predict_signal_id": predict_signal_id,
+                "latest_peak_dir": latest_peak_info.get("direction"),
+                "latest_peak_time": latest_peak_info.get("time"),
+                "predict_control_reason": reason,
+                "priority": 0,
+            }
+        )
+        analysis.add_order_to_this_class([control])
+        return [control]
+
+    def predict_reversal_recommended_reasons(
+        self,
+        candidate,
+        rsi_info,
+        latest_peak_info,
+    ):
+        """Apply only information known when the first count2 is confirmed."""
+        strategy = candidate.get("strategy")
+        if getattr(strategy, "entry_type", None) != "reversal":
+            return []
+        if candidate.get("timeframe") != "m5":
+            return []
+
+        peak_count = self._int_or_none(latest_peak_info.get("count"))
+        peak_direction = self._int_or_none(latest_peak_info.get("direction"))
+        if peak_count != 2 or peak_direction not in (-1, 1):
+            return []
+
+        expected_side = "upper" if peak_direction == 1 else "lower"
+        if candidate.get("line_side") != expected_side:
+            return []
+        if self._int_or_none(candidate.get("direction")) != -peak_direction:
+            return []
+
+        return [
+            "Predict next count2 reversal: "
+            + ("upper SELL" if peak_direction == 1 else "lower BUY")
+        ]
+
     def future_line_order(self, grouped_lines):
         resist_orders = self.future_resist_order(grouped_lines)
         break_orders = self.future_break_order(grouped_lines)
         return resist_orders + break_orders
 
     def future_resist_order(self, grouped_lines):
+        # count2はpredict_reversal_orderで一本だけ処理する。ここで旧条件の
+        # future_resistを重ねると、同じ折り返しに複数注文が発生する。
+        latest_peak_info = grouped_lines["coordinator"]._latest_peak_info("m5")
+        if self._int_or_none(latest_peak_info.get("count")) == 2:
+            return []
         coordinator = grouped_lines["coordinator"]
         candidates = coordinator.select_line_candidates(
             grouped_lines["future_resist_candidates"],

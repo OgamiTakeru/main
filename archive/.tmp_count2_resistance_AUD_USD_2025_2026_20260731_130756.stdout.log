@@ -1,0 +1,5 @@
+[CACHE] AUD_USD: M5/S5の既存キャッシュを使用
+     [Disc]  AUD_USD count2 resistance inspection 開始
+- 期間: 2025-06-24 00:00 ～ 2026-06-24 00:00
+- 条件: 直近6本平均×3, RR=1.2, spread=0.8pips
+- 評価: 全候補を独立した反実仮想LIMITとして検証 (07/31_13:08:55)

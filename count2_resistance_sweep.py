@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+import functools
 import io
 import math
 import time
@@ -27,7 +28,11 @@ import pandas as pd
 import classOanda
 from classCandlePeaks import PeaksClass
 import fGeneric as gene
-from fLineAnalysis import LineStrengthCal, line_strategy_profile
+from fLineAnalysis import (
+    LineStrengthCal,
+    line_strategy_profile,
+    predict_reversal_last_reach_context,
+)
 import test_win_point_usd_aud as win_point
 import tokens as tk
 
@@ -207,26 +212,44 @@ def s5_cache_has_no_tick_completion(path: Path) -> bool:
     return required.issubset(columns)
 
 
-def _likely_weekend_closed(timestamp: pd.Timestamp) -> bool:
-    """Conservative JST weekend window used only for cache edge checks."""
-    timestamp = pd.Timestamp(timestamp)
-    return (
-        timestamp.weekday() in (5, 6)
-        or (timestamp.weekday() == 0 and timestamp.hour < 6)
-    )
-
-
-def _nearest_likely_open_time(
+def _nearest_oanda_open_time(
     timestamp: pd.Timestamp,
     step: pd.Timedelta,
     direction: int,
+    *,
+    open_offset: int = 0,
 ) -> pd.Timestamp:
+    """Find an OANDA FX timestamp, optionally offset by open-market bars."""
     timestamp = pd.Timestamp(timestamp)
-    for _ in range(int(pd.Timedelta(days=4) / step) + 1):
-        if not _likely_weekend_closed(timestamp):
-            return timestamp
-        timestamp = timestamp + direction * step
-    return timestamp
+    step = pd.Timedelta(step)
+    if step <= pd.Timedelta(0):
+        raise ValueError("step must be positive")
+    if direction not in (-1, 1):
+        raise ValueError("direction must be -1 or 1")
+    if not isinstance(open_offset, int) or open_offset < 0:
+        raise ValueError("open_offset must be a non-negative integer")
+    timestamp = (
+        timestamp.ceil(step)
+        if direction == 1
+        else timestamp.floor(step)
+    )
+
+    count = int(pd.Timedelta(days=4) / step) + open_offset + 1
+    offsets = pd.timedelta_range(
+        start=pd.Timedelta(0),
+        periods=count,
+        freq=step,
+    )
+    candidates = pd.DatetimeIndex(timestamp + direction * offsets)
+    if candidates.tz is None:
+        market_times = candidates.tz_localize("Asia/Tokyo")
+    else:
+        market_times = candidates.tz_convert("Asia/Tokyo")
+    market_open = classOanda._oanda_market_open_mask(market_times)
+    open_positions = np.flatnonzero(market_open)
+    if open_positions.size <= open_offset:
+        raise RuntimeError("OANDA market-open timestamp not found within 4 days")
+    return pd.Timestamp(candidates[int(open_positions[open_offset])])
 
 
 def data_coverage_errors(
@@ -236,62 +259,102 @@ def data_coverage_errors(
     end: dt.datetime,
     horizon_minutes: int,
 ) -> dict[str, list[str]]:
-    """Detect truncated cache edges before event extraction begins."""
+    """Detect truncated cache edges before event extraction begins.
+
+    OANDA omits S5 rows when no price update occurred.  A short missing edge is
+    therefore accepted up to the same causal limit used by the OANDA S5
+    completion step.  No leading/trailing price is synthesized here; each
+    candidate path is still required to be contiguous by LimitPathInspector.
+    """
     errors: dict[str, list[str]] = {"M5": [], "S5": []}
     start_time = pd.Timestamp(start)
     end_time = pd.Timestamp(end)
     if m5.empty:
         errors["M5"].append("empty")
     else:
-        history_rows = int((m5["time_jp_dt"] < start_time).sum())
+        m5_times = m5["time_jp_dt"]
+        history_rows = int((m5_times < start_time).sum())
         if history_rows < PEAK_HISTORY_BARS:
             errors["M5"].append(
                 f"prehistory_rows={history_rows}<{PEAK_HISTORY_BARS}"
             )
-        if not m5["time_jp_dt"].between(
+        m5_in_period = m5_times.between(
             start_time,
             end_time,
             inclusive="left",
-        ).any():
-            errors["M5"].append("no_rows_in_requested_period")
-        expected_m5_last = _nearest_likely_open_time(
-            end_time - pd.Timedelta(minutes=5),
-            pd.Timedelta(minutes=5),
-            -1,
         )
-        actual_m5_last = pd.Timestamp(m5["time_jp_dt"].max())
-        if actual_m5_last < expected_m5_last:
-            errors["M5"].append(
-                "truncated_end:"
-                f"{actual_m5_last}<{expected_m5_last}"
+        if not m5_in_period.any():
+            errors["M5"].append("no_rows_in_requested_period")
+        else:
+            expected_m5_last = _nearest_oanda_open_time(
+                end_time - pd.Timedelta(nanoseconds=1),
+                pd.Timedelta(minutes=5),
+                -1,
             )
+            actual_m5_last = pd.Timestamp(m5_times.loc[m5_in_period].max())
+            if actual_m5_last < expected_m5_last:
+                errors["M5"].append(
+                    "truncated_end:"
+                    f"{actual_m5_last}<{expected_m5_last}"
+                )
 
     if s5.empty:
         errors["S5"].append("empty")
     else:
-        expected_s5_first = _nearest_likely_open_time(
-            start_time,
-            pd.Timedelta(seconds=S5_SECONDS),
-            1,
-        )
-        actual_s5_first = pd.Timestamp(s5["time_jp_dt"].min())
-        if actual_s5_first > expected_s5_first:
-            errors["S5"].append(
-                "truncated_start:"
-                f"{actual_s5_first}>{expected_s5_first}"
-            )
         required_end = end_time + pd.Timedelta(minutes=horizon_minutes)
-        expected_s5_last = _nearest_likely_open_time(
-            required_end - pd.Timedelta(seconds=S5_SECONDS),
-            pd.Timedelta(seconds=S5_SECONDS),
-            -1,
+        s5_times = s5["time_jp_dt"]
+        s5_in_required_period = s5_times.between(
+            start_time,
+            required_end,
+            inclusive="left",
         )
-        actual_s5_last = pd.Timestamp(s5["time_jp_dt"].max())
-        if actual_s5_last < expected_s5_last:
-            errors["S5"].append(
-                "truncated_end:"
-                f"{actual_s5_last}<{expected_s5_last}"
+        if not s5_in_required_period.any():
+            errors["S5"].append("no_rows_in_required_period")
+        else:
+            expected_s5_first = _nearest_oanda_open_time(
+                start_time,
+                pd.Timedelta(seconds=S5_SECONDS),
+                1,
             )
+            expected_s5_last = _nearest_oanda_open_time(
+                required_end - pd.Timedelta(nanoseconds=1),
+                pd.Timedelta(seconds=S5_SECONDS),
+                -1,
+            )
+            relevant_s5_times = s5_times.loc[s5_in_required_period]
+            actual_s5_first = pd.Timestamp(relevant_s5_times.min())
+            actual_s5_last = pd.Timestamp(relevant_s5_times.max())
+            s5_edge_tolerance = pd.Timedelta(
+                classOanda.S5_NO_TICK_MAX_FILL_GAP
+            )
+            s5_step = pd.Timedelta(seconds=S5_SECONDS)
+            tolerance_open_bars = int(s5_edge_tolerance / s5_step)
+            latest_accepted_first = _nearest_oanda_open_time(
+                expected_s5_first,
+                s5_step,
+                1,
+                open_offset=tolerance_open_bars,
+            )
+            if actual_s5_first > latest_accepted_first:
+                errors["S5"].append(
+                    "truncated_start:"
+                    f"{actual_s5_first}>{latest_accepted_first}"
+                    f" (market_edge={expected_s5_first}, "
+                    f"no_tick_tolerance={s5_edge_tolerance})"
+                )
+            earliest_accepted_last = _nearest_oanda_open_time(
+                expected_s5_last,
+                s5_step,
+                -1,
+                open_offset=tolerance_open_bars,
+            )
+            if actual_s5_last < earliest_accepted_last:
+                errors["S5"].append(
+                    "truncated_end:"
+                    f"{actual_s5_last}<{earliest_accepted_last}"
+                    f" (market_edge={expected_s5_last}, "
+                    f"no_tick_tolerance={s5_edge_tolerance})"
+                )
     return {frame: values for frame, values in errors.items() if values}
 
 
@@ -490,6 +553,15 @@ def select_ahead_lines(
     """Keep every raw line strictly ahead in the newest peak direction."""
     if int(peak_direction) not in (-1, 1):
         raise ValueError("peak_direction must be -1 or 1")
+
+    # この検証での count2 は、次の抵抗ポイントを探すための起点。
+    # 上向き count2:
+    #   下落 -> 安値から少し上昇 -> 上側の抵抗線候補へさらに上昇
+    #   -> その抵抗線で SELL -> 下へ折り返して SELL の TP
+    # 下向き count2 はこの逆で、下側の抵抗線候補に BUY を置く。
+    # つまり注文方向は count2 の進行方向と逆になる。
+    # ここでいう「次の count2」は予測したい次の折り返し地点の意味であり、
+    # 候補ライン上で実際に二つ目の count2 が成立することは約定条件ではない。
     side = "upper" if peak_direction == 1 else "lower"
     trade_direction = -int(peak_direction)
     source = upper_lines if side == "upper" else lower_lines
@@ -530,6 +602,7 @@ def select_ahead_lines(
     selected.sort(key=lambda item: (item["distance_pips"], item["line_price"]))
     for rank, item in enumerate(selected, start=1):
         item["candidate_rank"] = rank
+        item["distance_rank"] = rank
     return selected
 
 
@@ -629,6 +702,27 @@ def rebuild_candidates_at(
         pair,
         profile,
     )
+    completed_desc = completed.sort_values(
+        "time_jp_dt",
+        ascending=False,
+    ).reset_index(drop=True)
+    rsi_info = {
+        "rsi_1": (
+            completed_desc.iloc[0].get("RSI")
+            if len(completed_desc) >= 1
+            else None
+        ),
+        "rsi_2": (
+            completed_desc.iloc[1].get("RSI")
+            if len(completed_desc) >= 2
+            else None
+        ),
+        "rsi_3": (
+            completed_desc.iloc[2].get("RSI")
+            if len(completed_desc) >= 3
+            else None
+        ),
+    }
     return {
         "decision_time": decision_time,
         "current_price": current_price,
@@ -636,6 +730,8 @@ def rebuild_candidates_at(
         "peak_direction": peak_direction,
         "completed_history": completed,
         "candidates": candidates,
+        "profile": profile,
+        "rsi_info": rsi_info,
     }
 
 
@@ -710,6 +806,15 @@ def line_touch_features(
         "prior_body_retouch_last_time": pd.NaT,
         "minutes_since_prior_body_retouch": np.nan,
     }
+    result.update(
+        predict_reversal_last_reach_context(
+            completed_history,
+            line,
+            decision_time,
+            pair,
+            tolerance_pips,
+        )
+    )
     if pd.isna(source_last):
         return result
 
@@ -817,27 +922,12 @@ class LimitPathInspector:
         }
 
     @staticmethod
-    def _is_expected_weekend_gap(
+    @functools.lru_cache(maxsize=4096)
+    def _is_expected_market_closed_gap(
         previous_time: pd.Timestamp,
         next_time: pd.Timestamp,
     ) -> bool:
-        previous_time = pd.Timestamp(previous_time)
-        next_time = pd.Timestamp(next_time)
-        gap = next_time - previous_time
-        return (
-            previous_time.weekday() == 5
-            and next_time.weekday() == 0
-            and previous_time.hour in (5, 6, 7)
-            and next_time.hour in (5, 6, 7, 8)
-            and pd.Timedelta(hours=46) <= gap <= pd.Timedelta(hours=50)
-        )
-
-    @staticmethod
-    def _is_expected_daily_break_gap(
-        previous_time: pd.Timestamp,
-        next_time: pd.Timestamp,
-    ) -> bool:
-        """Accept OANDA's known 16:59-17:05 New York daily pause."""
+        """Accept a gap only when every missing S5 is a known market closure."""
         previous_jst = pd.Timestamp(previous_time)
         next_jst = pd.Timestamp(next_time)
         if previous_jst.tzinfo is None:
@@ -848,25 +938,19 @@ class LimitPathInspector:
             next_jst = next_jst.tz_localize("Asia/Tokyo")
         else:
             next_jst = next_jst.tz_convert("Asia/Tokyo")
-        previous_ny = previous_jst.tz_convert("America/New_York")
-        next_ny = next_jst.tz_convert("America/New_York")
-        if (
-            previous_ny.normalize() != next_ny.normalize()
-            or previous_ny.weekday() >= 4
-        ):
+        gap = next_jst - previous_jst
+        step = pd.Timedelta(seconds=S5_SECONDS)
+        if gap <= step or gap > pd.Timedelta(days=4):
             return False
-        break_start = previous_ny.normalize() + pd.Timedelta(
-            hours=16,
-            minutes=59,
+        missing_times = pd.date_range(
+            start=previous_jst + step,
+            end=next_jst - step,
+            freq=step,
         )
-        break_end = previous_ny.normalize() + pd.Timedelta(
-            hours=17,
-            minutes=5,
-        )
-        return (
-            previous_ny <= break_start
-            and next_ny >= break_end
-            and next_ny - previous_ny <= pd.Timedelta(minutes=15)
+        if not len(missing_times):
+            return False
+        return not bool(
+            classOanda._oanda_market_open_mask(missing_times).any()
         )
 
     @staticmethod
@@ -889,12 +973,7 @@ class LimitPathInspector:
             for index in unexpected:
                 previous = times[int(index)]
                 following = times[int(index) + 1]
-                if LimitPathInspector._is_expected_weekend_gap(
-                    pd.Timestamp(previous),
-                    pd.Timestamp(following),
-                ):
-                    continue
-                if LimitPathInspector._is_expected_daily_break_gap(
+                if LimitPathInspector._is_expected_market_closed_gap(
                     pd.Timestamp(previous),
                     pd.Timestamp(following),
                 ):
@@ -1259,6 +1338,7 @@ def make_ranking(
     dimensions = [
         ("all", []),
         ("candidate_rank", ["candidate_rank"]),
+        ("predict_candidate_rank", ["predict_candidate_rank"]),
         ("trade_side", ["trade_side"]),
         ("distance", ["distance_bin"]),
         ("current_policy_target", ["current_policy_reversal_target"]),
@@ -1484,18 +1564,44 @@ def run_sweep(
                 **target,
                 **_peak_columns(peak, pair),
                 "decision_price": rebuilt["current_price"],
+                "rsi_1": rebuilt["rsi_info"].get("rsi_1"),
+                "rsi_2": rebuilt["rsi_info"].get("rsi_2"),
+                "rsi_3": rebuilt["rsi_info"].get("rsi_3"),
             }
         )
-        rows_for_event: list[dict[str, Any]] = []
+        touches_by_candidate: dict[int, dict[str, Any]] = {}
         for candidate in rebuilt["candidates"]:
-            line = candidate["line"]
             touches = line_touch_features(
                 rebuilt["completed_history"],
-                line,
+                candidate["line"],
                 decision_time,
                 pair,
                 args.retouch_tolerance_pips,
             )
+            candidate.update(touches)
+            candidate["predict_distance_to_tp_ratio"] = (
+                candidate["distance_pips"] / target["tp_pips"]
+            )
+            touches_by_candidate[id(candidate)] = touches
+
+        eligible_candidates = [
+            candidate
+            for candidate in rebuilt["candidates"]
+            if candidate.get("current_policy_reversal_target") is True
+        ]
+        rebuilt["profile"].rank_predict_reversal_candidates(
+            eligible_candidates,
+            rsi_info=rebuilt["rsi_info"],
+            latest_peak_info={
+                "direction": peak.get("direction"),
+                "count": peak.get("count"),
+            },
+        )
+
+        rows_for_event: list[dict[str, Any]] = []
+        for candidate in rebuilt["candidates"]:
+            line = candidate["line"]
+            touches = touches_by_candidate[id(candidate)]
             path = inspector.inspect(
                 decision_time=decision_time,
                 expiry_time=next_count2_time,
@@ -1509,6 +1615,86 @@ def run_sweep(
             row = {
                 **event_base,
                 "candidate_rank": candidate["candidate_rank"],
+                "distance_rank": candidate["distance_rank"],
+                "predict_candidate_rank": candidate.get(
+                    "predict_candidate_rank"
+                ),
+                "predict_candidate_count": candidate.get(
+                    "predict_candidate_count"
+                ),
+                "predict_ranking_version": candidate.get(
+                    "predict_ranking_version"
+                ),
+                "predict_rank_input_scope": candidate.get(
+                    "predict_rank_input_scope"
+                ),
+                "predict_rank_score": candidate.get("predict_rank_score"),
+                "predict_rank_pair": candidate.get("predict_rank_pair"),
+                "predict_distance_to_tp_ratio": candidate.get(
+                    "predict_distance_to_tp_ratio"
+                ),
+                "predict_rank_distance_to_tp_ratio": candidate.get(
+                    "predict_rank_distance_to_tp_ratio"
+                ),
+                "predict_rank_average_strength": candidate.get(
+                    "predict_rank_average_strength"
+                ),
+                "predict_rank_line_count": candidate.get(
+                    "predict_rank_line_count"
+                ),
+                "predict_rank_core_average_strength": candidate.get(
+                    "predict_rank_core_average_strength"
+                ),
+                "predict_rank_estimated_strength": candidate.get(
+                    "predict_rank_estimated_strength"
+                ),
+                "predict_rank_rsi_1": candidate.get("predict_rank_rsi_1"),
+                "predict_rank_rsi_2": candidate.get("predict_rank_rsi_2"),
+                "predict_rank_directional_rsi": candidate.get(
+                    "predict_rank_directional_rsi"
+                ),
+                "predict_rank_source_rsi": candidate.get(
+                    "predict_rank_source_rsi"
+                ),
+                "predict_rank_source_elapsed_minutes": candidate.get(
+                    "predict_rank_source_elapsed_minutes"
+                ),
+                "predict_rank_last_reach_elapsed_minutes": candidate.get(
+                    "predict_rank_last_reach_elapsed_minutes"
+                ),
+                "predict_rank_last_reach_source": candidate.get(
+                    "predict_rank_last_reach_source"
+                ),
+                "predict_rank_prior_retouch_count": candidate.get(
+                    "predict_rank_prior_retouch_count"
+                ),
+                "predict_rank_components": candidate.get(
+                    "predict_rank_components"
+                ),
+                "predict_rank_in_distance_cap": candidate.get(
+                    "predict_rank_in_distance_cap"
+                ),
+                "predict_rank_distance_ratio_cap": candidate.get(
+                    "predict_rank_distance_ratio_cap"
+                ),
+                "predict_rank_fallback": candidate.get(
+                    "predict_rank_fallback"
+                ),
+                "predict_rank_flip_count": candidate.get(
+                    "predict_rank_flip_count"
+                ),
+                "predict_rank_count_penalty": candidate.get(
+                    "predict_rank_count_penalty"
+                ),
+                "predict_rank_flip_bonus": candidate.get(
+                    "predict_rank_flip_bonus"
+                ),
+                "predict_distance_rank": candidate.get(
+                    "predict_distance_rank"
+                ),
+                "current_policy_predict_selected": (
+                    candidate.get("predict_candidate_rank") == 1
+                ),
                 "line_side": candidate["line_side"],
                 "trade_direction": candidate["trade_direction"],
                 "trade_side": candidate["trade_side"],

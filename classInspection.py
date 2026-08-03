@@ -1129,6 +1129,146 @@ class Inspection:
             "line_timeframe": order_plan.get("line_timeframe"),
             "line_entry_type": order_plan.get("line_entry_type"),
             "line_entry_offset_pips": order_plan.get("line_entry_offset_pips"),
+            "predict_signal_id": order_plan.get("predict_signal_id"),
+            "prediction_target": order_plan.get("prediction_target"),
+            "predict_candidate_count": order_plan.get("predict_candidate_count"),
+            "predict_candidate_rank": order_plan.get("predict_candidate_rank"),
+            "predict_distance_rank": order_plan.get("predict_distance_rank"),
+            "predict_candidate_scope": order_plan.get("predict_candidate_scope"),
+            "predict_ranking_version": order_plan.get(
+                "predict_ranking_version"
+            ),
+            "predict_rank_input_scope": order_plan.get(
+                "predict_rank_input_scope"
+            ),
+            "predict_rank_score": order_plan.get("predict_rank_score"),
+            "predict_rank_pair": order_plan.get("predict_rank_pair"),
+            "predict_distance_to_tp_ratio": order_plan.get(
+                "predict_distance_to_tp_ratio"
+            ),
+            "predict_rank_distance_to_tp_ratio": order_plan.get(
+                "predict_rank_distance_to_tp_ratio"
+            ),
+            "predict_rank_average_strength": order_plan.get(
+                "predict_rank_average_strength"
+            ),
+            "predict_rank_line_count": order_plan.get(
+                "predict_rank_line_count"
+            ),
+            "predict_rank_core_average_strength": order_plan.get(
+                "predict_rank_core_average_strength"
+            ),
+            "predict_rank_estimated_strength": order_plan.get(
+                "predict_rank_estimated_strength"
+            ),
+            "predict_rank_rsi_1": order_plan.get("predict_rank_rsi_1"),
+            "predict_rank_rsi_2": order_plan.get("predict_rank_rsi_2"),
+            "predict_rank_directional_rsi": order_plan.get(
+                "predict_rank_directional_rsi"
+            ),
+            "predict_rank_source_rsi": order_plan.get(
+                "predict_rank_source_rsi"
+            ),
+            "predict_rank_source_elapsed_minutes": order_plan.get(
+                "predict_rank_source_elapsed_minutes"
+            ),
+            "predict_rank_last_reach_elapsed_minutes": order_plan.get(
+                "predict_rank_last_reach_elapsed_minutes"
+            ),
+            "predict_rank_last_reach_source": order_plan.get(
+                "predict_rank_last_reach_source"
+            ),
+            "predict_rank_prior_retouch_count": order_plan.get(
+                "predict_rank_prior_retouch_count"
+            ),
+            "predict_rank_components": order_plan.get(
+                "predict_rank_components"
+            ),
+            "predict_rank_in_distance_cap": order_plan.get(
+                "predict_rank_in_distance_cap"
+            ),
+            "predict_rank_distance_ratio_cap": order_plan.get(
+                "predict_rank_distance_ratio_cap"
+            ),
+            "predict_rank_fallback": order_plan.get(
+                "predict_rank_fallback"
+            ),
+            "predict_last_reach_found": order_plan.get(
+                "predict_last_reach_found"
+            ),
+            "predict_last_reach_time": order_plan.get(
+                "predict_last_reach_time"
+            ),
+            "predict_last_reach_elapsed_minutes": order_plan.get(
+                "predict_last_reach_elapsed_minutes"
+            ),
+            "predict_last_reach_source": order_plan.get(
+                "predict_last_reach_source"
+            ),
+            "predict_prior_retouch_count": order_plan.get(
+                "predict_prior_retouch_count"
+            ),
+            "predict_source_reach_time": order_plan.get(
+                "predict_source_reach_time"
+            ),
+            "predict_source_reach_elapsed_minutes": order_plan.get(
+                "predict_source_reach_elapsed_minutes"
+            ),
+            "predict_last_reach_tolerance_pips": order_plan.get(
+                "predict_last_reach_tolerance_pips"
+            ),
+            "predict_rank_flip_count": order_plan.get(
+                "predict_rank_flip_count"
+            ),
+            "predict_rank_count_penalty": order_plan.get(
+                "predict_rank_count_penalty"
+            ),
+            "predict_rank_flip_bonus": order_plan.get(
+                "predict_rank_flip_bonus"
+            ),
+            "predict_runner_up_score": order_plan.get(
+                "predict_runner_up_score"
+            ),
+            "predict_score_gap": order_plan.get("predict_score_gap"),
+            "predict_pending_policy": order_plan.get("predict_pending_policy"),
+            "predict_tp_lookback": order_plan.get("predict_tp_lookback"),
+            "predict_tp_multiplier": order_plan.get("predict_tp_multiplier"),
+            "predict_rr": order_plan.get("predict_rr"),
+            "predict_target_source_first_time": order_plan.get(
+                "predict_target_source_first_time"
+            ),
+            "predict_target_source_last_time": order_plan.get(
+                "predict_target_source_last_time"
+            ),
+            "predict_recent_m5_avg_range_pips": order_plan.get(
+                "predict_recent_m5_avg_range_pips"
+            ),
+            "predict_recent_m5_median_range_pips": order_plan.get(
+                "predict_recent_m5_median_range_pips"
+            ),
+            "predict_recent_m5_min_range_pips": order_plan.get(
+                "predict_recent_m5_min_range_pips"
+            ),
+            "predict_recent_m5_max_range_pips": order_plan.get(
+                "predict_recent_m5_max_range_pips"
+            ),
+            "preserve_strategy_tp_lc": order_plan.get(
+                "preserve_strategy_tp_lc"
+            ),
+            "configured_tp_pips": order_plan.get("configured_tp_pips"),
+            "configured_lc_pips": order_plan.get("configured_lc_pips"),
+            "session_tp_adjustment_skipped": order_plan.get(
+                "session_tp_adjustment_skipped"
+            ),
+            "path_tp_adjustment_skipped": order_plan.get(
+                "path_tp_adjustment_skipped"
+            ),
+            "predict_pending_conflict_control_applied": order_plan.get(
+                "predict_pending_conflict_control_applied"
+            ),
+            "predict_inspection_lifecycle_note": order_plan.get(
+                "predict_inspection_lifecycle_note"
+            ),
             "line_target_price": order_plan.get("line_target_price"),
             "line_distance_pips": order_plan.get("line_distance_pips"),
             "latest_peak_dir": order_plan.get("latest_peak_dir"),

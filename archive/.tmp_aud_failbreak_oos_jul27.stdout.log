@@ -1,0 +1,4 @@
+[CACHE] AUD_USD: M5/H1/S5の既存キャッシュを使用します。OANDA APIは使用しません。
+peaks[0].count==2 candidates: 80 (entry_mode=peak0-failure-break)
+Failure-break triggered=9/80 (11.25%)
+Failure-break skips: {'not_broken_within_wait': 70, 'already_broken_at_decision': 1}

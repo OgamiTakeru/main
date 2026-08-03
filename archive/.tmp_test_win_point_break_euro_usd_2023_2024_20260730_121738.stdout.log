@@ -1,0 +1,47 @@
+[CACHE] EUR_USD: M5/H1/S5の既存キャッシュを使用します。OANDA APIは使用しません。
+peaks[0].count==2 candidates: 25696 (entry_mode=peak0-failure-break)
+Processed 2500/25696 candidates
+EUR_USD win-point inspection 2か月分進捗 到達=2023-08-24 00:00:00 候補=4219/25696 経過=3.16分
+     [Disc]  EUR_USD win-point inspection 2か月分進捗 到達=2023-08-24 00:00:00 候補=4219/25696 経過=3.16分 (07/30_12:20:59)
+Processed 7500/25696 candidates
+EUR_USD win-point inspection 2か月分進捗 到達=2023-10-24 00:00:00 候補=8490/25696 経過=4.12分
+     [Disc]  EUR_USD win-point inspection 2か月分進捗 到達=2023-10-24 00:00:00 候補=8490/25696 経過=4.12分 (07/30_12:21:57)
+Processed 9500/25696 candidates
+EUR_USD win-point inspection 2か月分進捗 到達=2023-12-24 00:00:00 候補=12929/25696 経過=5.10分
+     [Disc]  EUR_USD win-point inspection 2か月分進捗 到達=2023-12-24 00:00:00 候補=12929/25696 経過=5.10分 (07/30_12:22:55)
+EUR_USD win-point inspection 2か月分進捗 到達=2024-02-24 00:00:00 候補=17131/25696 経過=6.00分
+     [Disc]  EUR_USD win-point inspection 2か月分進捗 到達=2024-02-24 00:00:00 候補=17131/25696 経過=6.00分 (07/30_12:23:50)
+Processed 19500/25696 candidates
+EUR_USD win-point inspection 2か月分進捗 到達=2024-04-24 00:00:00 候補=21362/25696 経過=6.93分
+     [Disc]  EUR_USD win-point inspection 2か月分進捗 到達=2024-04-24 00:00:00 候補=21362/25696 経過=6.93分 (07/30_12:24:45)
+Processed 22000/25696 candidates
+Processed 24000/25696 candidates
+Failure-break triggered=2771/25696 (10.78%)
+Failure-break skips: {'not_broken_within_wait': 22422, 'no_s5_during_wait': 246, 'already_broken_at_decision': 257}
+Verified=2761, wins=472, losses=1208, timeouts=1081, win_rate=17.10%, expectancy=-0.175R
+ rank                                                            group_type                               group  samples  wins  losses  timeouts  win_rate  resolved_win_rate  expectancy_r  ranking_score  avg_result_pips  avg_mfe_pips  avg_mae_pips  median_tp_seconds  median_first_reach_seconds
+    1      direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin      SELL / <3 / very_strong / 8-10       50    19      16        15  0.380000           0.542857      0.199101      -0.049976         1.505615     10.058000     -6.814000             1535.0                      1655.0
+    2      direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin           BUY / <3 / strong / 11-14       53    15      13        25  0.283019           0.535714      0.183015      -0.050665         1.855806      9.101887     -8.684906             1775.0                      1735.0
+    3 direction_name + m5_rsi_bin + ahead_strength_bin + breakout_delay_bin SELL / 40-49 / very_strong / 35-60s       43    15      13        15  0.348837           0.535714      0.216109      -0.057054         2.182200      6.397674     -4.825581             1965.0                      1922.5
+    4                                                 tp_mode + tp_pips_bin             recent-m5-range / 11-14      408    74     139       195  0.181373           0.347418     -0.029947      -0.058406        -0.251263      8.172304     -9.734559             1765.0                      1570.0
+    5                                   direction_name + ahead_distance_bin                      SELL / no_line       49    12      16        21  0.244898           0.428571      0.110933      -0.080643         1.306201      7.971429     -7.238776             1460.0                      1460.0
+    6      direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin            SELL / <3 / weak / 11-14       37     8       9        20  0.216216           0.470588      0.133348      -0.091369         1.501455     10.489189     -8.229730             1140.0                      1990.0
+    7      direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin            BUY / <3 / medium / 8-10       94    19      29        46  0.202128           0.395833     -0.003349      -0.091579         0.093167      5.920213     -7.986170             1655.0                      1542.5
+    8                                   direction_name + ahead_strength_bin                  SELL / very_strong      238    59     103        76  0.247899           0.364198     -0.065974      -0.098087         0.185973      6.282353     -7.100840             1730.0                      1525.0
+    9             direction_name + peak_ratio_bin + previous_peak_count_bin                    SELL / <0.25 / 2       64    13      23        28  0.203125           0.361111      0.004720      -0.104569         0.219351      3.996875     -5.165625             2100.0                      1240.0
+   10      direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin     SELL / <3 / very_strong / 11-14       37     8      12        17  0.216216           0.400000      0.081362      -0.105410         0.833784      7.675676    -11.159459             1550.0                      1457.5
+   11                      direction_name + m5_rsi_bin + ahead_distance_bin                    SELL / <30 / 0-7       45     7      13        25  0.155556           0.350000      0.045026      -0.106382         1.516068      9.031111     -8.513333             2085.0                      1352.5
+   12             direction_name + peak_ratio_bin + previous_peak_count_bin                   BUY / <0.25 / 5-7      185    31      66        88  0.167568           0.319588     -0.072270      -0.108145        -0.032869      5.186486     -6.435676             1395.0                      1145.0
+   13                                                 tp_mode + tp_pips_bin              recent-m5-range / 8-10      594   107     231       256  0.180135           0.316568     -0.100922      -0.111526        -0.708528      6.386195     -7.604714             1580.0                      1530.0
+   14      direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin          SELL / <3 / strong / 11-14       59    12      19        28  0.203390           0.387097     -0.016476      -0.115871        -0.134746      7.708475     -8.025424             2305.0                      1605.0
+   15 direction_name + m5_rsi_bin + ahead_strength_bin + breakout_delay_bin       BUY / 50-59 / medium / 35-60s       63    14      24        25  0.222222           0.368421     -0.024942      -0.116704         0.024603      5.061905     -6.358730             2080.0                      1397.5
+   16             direction_name + peak_ratio_bin + previous_peak_count_bin                 BUY / 0.50-0.99 / 2       91    19      35        37  0.208791           0.351852     -0.056520      -0.118297         0.078783      6.251648     -7.232967             2070.0                      1182.5
+   17                                   direction_name + ahead_distance_bin                          BUY / 8-14       62    14      23        25  0.225806           0.378378     -0.028951      -0.118805         0.971526      4.961290     -5.219355             2117.5                      1720.0
+   18                              direction_name + previous_peak_count_bin                           SELL / 8+       74    15      23        36  0.202703           0.394737     -0.047332      -0.120426         0.536486      7.463514     -6.470270             1285.0                      1432.5
+   19             direction_name + peak_ratio_bin + previous_peak_count_bin                   SELL / <0.25 / 8+       68    13      20        35  0.191176           0.393939     -0.042440      -0.121056         0.521493      7.535294     -6.164706             1285.0                      1450.0
+   20 direction_name + m5_rsi_bin + ahead_strength_bin + breakout_delay_bin       BUY / 40-49 / medium / 20-30s       32     7      12        13  0.218750           0.368421      0.020777      -0.127171         0.206611      4.743750     -5.493750             2455.0                      1820.0
+Saved: C:\Users\taker\OneDrive\Desktop\oanda_logs\win_points_EUR_USD_20230624000000_20240624000000_failbreak60s_body_s5close_range6x3_0.1-999_rr1.3_sp0.8_60m.csv
+Saved: C:\Users\taker\OneDrive\Desktop\oanda_logs\win_only_EUR_USD_20230624000000_20240624000000_failbreak60s_body_s5close_range6x3_0.1-999_rr1.3_sp0.8_60m.csv
+Saved: C:\Users\taker\OneDrive\Desktop\oanda_logs\group_ranking_EUR_USD_20230624000000_20240624000000_failbreak60s_body_s5close_range6x3_0.1-999_rr1.3_sp0.8_60m.csv
+EUR_USD win-point inspection 終了 mode=peak0-failure-break 2023-06-24 00:00:00->2024-06-24 00:00:00 検証=2761件 勝ち=472件 LC=1208件 勝率=17.10% 期待値=-0.175R 経過=7.97分
+     [Disc]  EUR_USD win-point inspection 終了 mode=peak0-failure-break 2023-06-24 00:00:00->2024-06-24 00:00:00 検証=2761件 勝ち=472件 LC=1208件 勝率=17.10% 期待値=-0.175R 経過=7.97分 (07/30_12:25:48)

@@ -32,6 +32,8 @@ gl_previous_bb_h1_class = None
 gl_latest_trend_trigger_time = None
 gl_risk_yen = 50
 
+PREDICT_REVERSAL_RETOUCH_TOLERANCE_PIPS = 1.0
+
 
 def line_strategy_profile(pair):
     """Return the line strategy profile for each currency pair."""
@@ -40,6 +42,159 @@ def line_strategy_profile(pair):
     if pair == "EUR_USD":
         return LineStrategyProfileEurUsd()
     return LineStrategyProfileUsdJpy()
+
+
+def predict_reversal_last_reach_context(
+    frame,
+    line,
+    decision_time,
+    pair,
+    tolerance_pips=PREDICT_REVERSAL_RETOUCH_TOLERANCE_PIPS,
+):
+    """Find the latest causal M5 touch of a candidate line.
+
+    The line source peak is the fallback.  If a later completed M5 candle
+    revisited the same price zone, that later retouch becomes the effective
+    last reach.  Candles still forming at ``decision_time`` are excluded.
+    """
+    result = {
+        "predict_last_reach_found": False,
+        "predict_last_reach_time": None,
+        "predict_last_reach_elapsed_minutes": None,
+        "predict_last_reach_source": "unknown",
+        "predict_prior_retouch_count": 0,
+        "predict_source_reach_time": None,
+        "predict_source_reach_elapsed_minutes": None,
+        "predict_last_reach_tolerance_pips": float(tolerance_pips),
+    }
+    if frame is None or getattr(frame, "empty", True):
+        return result
+    if not isinstance(line, dict):
+        return result
+
+    time_column = (
+        "time_jp_dt"
+        if "time_jp_dt" in frame.columns
+        else "time_jp"
+        if "time_jp" in frame.columns
+        else None
+    )
+    if time_column is None or "high" not in frame or "low" not in frame:
+        return result
+
+    try:
+        decision_timestamp = pd.Timestamp(decision_time)
+        line_price = float(line["median_price"])
+        tolerance_pips = float(tolerance_pips)
+    except (KeyError, TypeError, ValueError):
+        return result
+    if not math.isfinite(line_price) or not math.isfinite(tolerance_pips):
+        return result
+    if tolerance_pips < 0:
+        return result
+
+    candle_times = pd.to_datetime(frame[time_column], errors="coerce")
+    if decision_timestamp.tzinfo is not None:
+        decision_timestamp = decision_timestamp.tz_convert(
+            "Asia/Tokyo"
+        ).tz_localize(None)
+    series_timezone = getattr(candle_times.dt, "tz", None)
+    if series_timezone is not None:
+        candle_times = candle_times.dt.tz_convert(
+            "Asia/Tokyo"
+        ).dt.tz_localize(None)
+
+    source_value = line.get("newest_time") or line.get(
+        "line_latest_touch_time"
+    )
+    source_time = pd.to_datetime(source_value, errors="coerce")
+    if not pd.isna(source_time) and getattr(source_time, "tzinfo", None):
+        source_time = source_time.tz_convert("Asia/Tokyo").tz_localize(None)
+    if pd.isna(source_time) or source_time >= decision_timestamp:
+        source_time = pd.NaT
+
+    completed = frame.assign(_predict_reach_candle_time=candle_times)
+    completed = completed[
+        completed["_predict_reach_candle_time"] + pd.Timedelta(minutes=5)
+        <= decision_timestamp
+    ].copy()
+
+    prior_touch_time = pd.NaT
+    prior_touch_count = 0
+    if not completed.empty and not pd.isna(source_time):
+        history = completed[
+            completed["_predict_reach_candle_time"] > source_time
+        ]
+        if not history.empty:
+            pair_info = (
+                gene.currency_pair(pair)
+                if isinstance(pair, str)
+                else pair
+            )
+            tolerance = pair_info.pips_to_price(tolerance_pips)
+            high = pd.to_numeric(history["high"], errors="coerce")
+            low = pd.to_numeric(history["low"], errors="coerce")
+            touched = high.ge(line_price - tolerance) & low.le(
+                line_price + tolerance
+            )
+            touched_times = history.loc[
+                touched,
+                "_predict_reach_candle_time",
+            ].sort_values()
+            if len(touched_times):
+                # Consecutive M5 candles inside the zone are one retouch
+                # episode, matching the exhaustive sweep definition.
+                gaps = touched_times.diff()
+                prior_touch_count = int(
+                    1 + gaps.iloc[1:].gt(pd.Timedelta(minutes=5)).sum()
+                )
+                prior_touch_time = touched_times.max()
+
+    last_reach_time = (
+        prior_touch_time
+        if not pd.isna(prior_touch_time)
+        else source_time
+    )
+    if pd.isna(last_reach_time):
+        return result
+    elapsed_minutes = max(
+        float(
+            (decision_timestamp - last_reach_time).total_seconds()
+            / 60
+        ),
+        0.0,
+    )
+    source_elapsed_minutes = (
+        max(
+            float(
+                (decision_timestamp - source_time).total_seconds()
+                / 60
+            ),
+            0.0,
+        )
+        if not pd.isna(source_time)
+        else None
+    )
+    result.update({
+        "predict_last_reach_found": True,
+        "predict_last_reach_time": last_reach_time.strftime(
+            "%Y/%m/%d %H:%M:%S"
+        ),
+        "predict_last_reach_elapsed_minutes": elapsed_minutes,
+        "predict_last_reach_source": (
+            "prior_retouch"
+            if not pd.isna(prior_touch_time)
+            else "line_source"
+        ),
+        "predict_prior_retouch_count": prior_touch_count,
+        "predict_source_reach_time": (
+            source_time.strftime("%Y/%m/%d %H:%M:%S")
+            if not pd.isna(source_time)
+            else None
+        ),
+        "predict_source_reach_elapsed_minutes": source_elapsed_minutes,
+    })
+    return result
 
 
 class LineOrderCoordinator:
@@ -79,6 +234,120 @@ class LineOrderCoordinator:
 
         cap = cls.timeout_cap_by_timeframe.get(str(timeframe).lower(), default_timeout_min)
         return min(timeout_min, cap)
+
+    def predict_reversal_target_parameters(
+        self,
+        decision_time,
+        *,
+        lookback=6,
+        multiplier=3.0,
+        rr=1.2,
+    ):
+        """Build causal TP/LC from completed M5 candles only."""
+        try:
+            lookback = int(lookback)
+            multiplier = float(multiplier)
+            rr = float(rr)
+        except (TypeError, ValueError):
+            return None
+        if lookback <= 0 or multiplier <= 0 or rr <= 0:
+            return None
+
+        candle_analysis = getattr(self.analysis, "candle_analysis_all", None)
+        frame = getattr(candle_analysis, "d5_df_r", None)
+        if frame is None or frame.empty:
+            return None
+        time_column = (
+            "time_jp_dt"
+            if "time_jp_dt" in frame.columns
+            else "time_jp"
+            if "time_jp" in frame.columns
+            else None
+        )
+        if time_column is None or "high" not in frame or "low" not in frame:
+            return None
+
+        candle_times = pd.to_datetime(frame[time_column], errors="coerce")
+        decision_timestamp = pd.Timestamp(decision_time)
+        if decision_timestamp.tzinfo is not None:
+            decision_timestamp = decision_timestamp.tz_convert(
+                "Asia/Tokyo"
+            ).tz_localize(None)
+        series_timezone = getattr(candle_times.dt, "tz", None)
+        if series_timezone is not None:
+            candle_times = candle_times.dt.tz_convert(
+                "Asia/Tokyo"
+            ).dt.tz_localize(None)
+
+        completed = frame.assign(_predict_candle_time=candle_times)
+        # M5のopen時刻に5分を足した時点で完成。形成中足と未来足は除外する。
+        completed = completed[
+            completed["_predict_candle_time"] + pd.Timedelta(minutes=5)
+            <= decision_timestamp
+        ]
+        completed = completed.sort_values(
+            "_predict_candle_time",
+            ascending=False,
+        ).head(lookback)
+        if len(completed) != lookback:
+            return None
+
+        highs = pd.to_numeric(completed["high"], errors="coerce")
+        lows = pd.to_numeric(completed["low"], errors="coerce")
+        ranges_pips = (highs - lows) / self.p.pip_value
+        if (
+            ranges_pips.isna().any()
+            or not ranges_pips.map(math.isfinite).all()
+            or (ranges_pips < 0).any()
+        ):
+            return None
+
+        average_range = float(ranges_pips.mean())
+        tp_pips = average_range * multiplier
+        lc_pips = tp_pips / rr
+        if (
+            not math.isfinite(tp_pips)
+            or not math.isfinite(lc_pips)
+            or tp_pips <= 0
+            or lc_pips <= 0
+        ):
+            return None
+
+        source_times = completed["_predict_candle_time"]
+        return {
+            "predict_tp_lookback": lookback,
+            "predict_tp_multiplier": multiplier,
+            "predict_rr": rr,
+            "predict_target_source_first_time": source_times.min(),
+            "predict_target_source_last_time": source_times.max(),
+            "predict_recent_m5_avg_range_pips": average_range,
+            "predict_recent_m5_median_range_pips": float(ranges_pips.median()),
+            "predict_recent_m5_min_range_pips": float(ranges_pips.min()),
+            "predict_recent_m5_max_range_pips": float(ranges_pips.max()),
+            "tp_pips": tp_pips,
+            "lc_pips": lc_pips,
+        }
+
+    def attach_predict_reversal_last_reach_context(
+        self,
+        candidates,
+        decision_time,
+        tolerance_pips=PREDICT_REVERSAL_RETOUCH_TOLERANCE_PIPS,
+    ):
+        """Attach the effective last line reach using completed M5 only."""
+        candle_analysis = getattr(self.analysis, "candle_analysis_all", None)
+        frame = getattr(candle_analysis, "d5_df_r", None)
+        for candidate in candidates:
+            candidate.update(
+                predict_reversal_last_reach_context(
+                    frame,
+                    candidate.get("line"),
+                    decision_time,
+                    self.p,
+                    tolerance_pips,
+                )
+            )
+        return candidates
 
     def create_orders(
         self,
@@ -304,6 +573,10 @@ class LineOrderCoordinator:
         selected_candidates = self._remove_near_candidates(candidates)
         orders = []
         for candidate in selected_candidates:
+            include_position_control = not (
+                order_mode == "predict_reversal"
+                and getattr(self.analysis, "mode", "live") != "inspection"
+            )
             if self.analysis.has_similar_order(
                 candidate["direction"],
                 candidate["target_price"],
@@ -311,6 +584,7 @@ class LineOrderCoordinator:
                 self.duplicate_threshold_pips,
                 source="line",
                 line_strategy=candidate["line_strategy"],
+                include_position_control=include_position_control,
             ):
                 print(
                     "Skip similar line order:",
@@ -734,13 +1008,23 @@ class LineOrderCoordinator:
             return self.fallback_usd_jpy_rate
 
         decision_time = pd.Timestamp(decision_time)
-        nearest_index = close_series.index.get_indexer([decision_time], method="nearest")[0]
-        if nearest_index < 0:
+        # M5 index is the candle open time.  Its close becomes available five
+        # minutes later, so an equal-time row is still future information.
+        completed_open_cutoff = decision_time - pd.Timedelta(minutes=5)
+        past_index = close_series.index.get_indexer(
+            [completed_open_cutoff],
+            method="pad",
+        )[0]
+        if past_index < 0:
             return self.fallback_usd_jpy_rate
-        rate_time = close_series.index[nearest_index]
-        if abs(rate_time - decision_time) > self.inspection_usd_jpy_max_gap:
+        rate_time = close_series.index[past_index]
+        rate_available_time = rate_time + pd.Timedelta(minutes=5)
+        if (
+            abs(rate_available_time - decision_time)
+            > self.inspection_usd_jpy_max_gap
+        ):
             return self.fallback_usd_jpy_rate
-        return float(close_series.iloc[nearest_index])
+        return float(close_series.iloc[past_index])
 
     @classmethod
     def _load_inspection_usd_jpy_close(cls):
@@ -811,8 +1095,14 @@ class LineOrderCoordinator:
             )
             return None
 
-        if policy["rr"] is not None:
+        if policy["rr"] is not None and not order_plan.get(
+            "preserve_strategy_tp_lc"
+        ):
             self._apply_rr_to_tp(order_class, policy["rr"])
+        elif policy["rr"] is not None:
+            order_plan["session_tp_adjustment_skipped"] = (
+                "predict_reversal_preserves_6bar_target"
+            )
 
         return order_class
 
@@ -881,6 +1171,11 @@ class LineOrderCoordinator:
 
     def _apply_path_short_tp(self, order_class):
         order_plan = order_class.exe_order_plan
+        if order_plan.get("preserve_strategy_tp_lc"):
+            order_plan["path_tp_adjustment_skipped"] = (
+                "predict_reversal_preserves_6bar_target"
+            )
+            return
         path_distance = order_plan.get("h1_path_ahead_1_distance_pips")
         if path_distance is None:
             return
@@ -1041,16 +1336,32 @@ class LineOrderCoordinator:
             )
             order_type = strategy.order_type
             target_price = candidate["target_price"]
-        lc_range = p.pips_to_price(strategy.lc_pips)
-        tp_range = p.pips_to_price(strategy.get_tp_pips())
+        try:
+            lc_pips = float(candidate.get("lc_pips", strategy.lc_pips))
+            tp_pips = float(candidate.get("tp_pips", strategy.get_tp_pips()))
+        except (TypeError, ValueError):
+            raise ValueError("line order TP/LC pips must be numeric")
+        if (
+            not math.isfinite(lc_pips)
+            or not math.isfinite(tp_pips)
+            or lc_pips <= 0
+            or tp_pips <= 0
+        ):
+            raise ValueError("line order TP/LC pips must be positive")
+        lc_range = p.pips_to_price(lc_pips)
+        tp_range = p.pips_to_price(tp_pips)
         risk_multiplier = self._get_risk_multiplier(candidate, decision_time)
         risk_yen = gl_risk_yen * risk_multiplier
         usd_jpy_rate = self._get_usd_jpy_rate(decision_time)
 
+        order_mode_suffix = {
+            "immediate": "Immediate",
+            "predict_reversal": "PredictReversal",
+        }.get(order_mode, "")
         order_class = OCreate.Order({
             "name": (
                 strategy.name_prefix
-                + ("Immediate" if order_mode == "immediate" else "")
+                + order_mode_suffix
                 + "_"
                 + candidate["line_side"]
                 + "_"
@@ -1089,6 +1400,65 @@ class LineOrderCoordinator:
         order_plan["line_timeframe"] = strategy.timeframe
         order_plan["line_entry_type"] = strategy.entry_type
         order_plan["line_entry_offset_pips"] = strategy.entry_offset_pips
+        order_plan["configured_tp_pips"] = tp_pips
+        order_plan["configured_lc_pips"] = lc_pips
+        for key in (
+            "predict_signal_id",
+            "prediction_target",
+            "predict_candidate_count",
+            "predict_candidate_rank",
+            "predict_distance_rank",
+            "predict_candidate_scope",
+            "predict_ranking_version",
+            "predict_rank_input_scope",
+            "predict_rank_score",
+            "predict_rank_pair",
+            "predict_distance_to_tp_ratio",
+            "predict_rank_distance_to_tp_ratio",
+            "predict_rank_average_strength",
+            "predict_rank_line_count",
+            "predict_rank_core_average_strength",
+            "predict_rank_estimated_strength",
+            "predict_rank_rsi_1",
+            "predict_rank_rsi_2",
+            "predict_rank_directional_rsi",
+            "predict_rank_source_rsi",
+            "predict_rank_source_elapsed_minutes",
+            "predict_rank_last_reach_elapsed_minutes",
+            "predict_rank_last_reach_source",
+            "predict_rank_prior_retouch_count",
+            "predict_rank_components",
+            "predict_rank_in_distance_cap",
+            "predict_rank_distance_ratio_cap",
+            "predict_rank_fallback",
+            "predict_last_reach_found",
+            "predict_last_reach_time",
+            "predict_last_reach_elapsed_minutes",
+            "predict_last_reach_source",
+            "predict_prior_retouch_count",
+            "predict_source_reach_time",
+            "predict_source_reach_elapsed_minutes",
+            "predict_last_reach_tolerance_pips",
+            "predict_rank_flip_count",
+            "predict_rank_count_penalty",
+            "predict_rank_flip_bonus",
+            "predict_runner_up_score",
+            "predict_score_gap",
+            "predict_pending_policy",
+            "predict_tp_lookback",
+            "predict_tp_multiplier",
+            "predict_rr",
+            "predict_target_source_first_time",
+            "predict_target_source_last_time",
+            "predict_recent_m5_avg_range_pips",
+            "predict_recent_m5_median_range_pips",
+            "predict_recent_m5_min_range_pips",
+            "predict_recent_m5_max_range_pips",
+            "preserve_strategy_tp_lc",
+            "predict_pending_conflict_control_applied",
+            "predict_inspection_lifecycle_note",
+        ):
+            order_plan[key] = candidate.get(key)
         order_plan["latest_peak_dir"] = candidate.get("latest_peak_dir")
         order_plan["latest_peak_count"] = candidate.get("latest_peak_count")
         order_plan["latest_peak_gap"] = candidate.get("latest_peak_gap")
@@ -1727,7 +2097,16 @@ class MainAnalysis:
             h1_line_class=h1_line_class,
         )
 
-    def has_similar_order(self, direction, target_price, new_orders, threshold_pips=3, source=None, line_strategy=None):
+    def has_similar_order(
+        self,
+        direction,
+        target_price,
+        new_orders,
+        threshold_pips=3,
+        source=None,
+        line_strategy=None,
+        include_position_control=True,
+    ):
         p = self.p
         for order_class in list(self.exe_order_classes) + list(new_orders):
             order_plan = getattr(order_class, "exe_order_plan", None)
@@ -1745,7 +2124,14 @@ class MainAnalysis:
             if abs(p.price_to_pips(float(target_price) - float(other_price))) <= threshold_pips:
                 return True
 
-        if self.position_control_class is not None and hasattr(self.position_control_class, "find_similar_active_order"):
+        if (
+            include_position_control
+            and self.position_control_class is not None
+            and hasattr(
+                self.position_control_class,
+                "find_similar_active_order",
+            )
+        ):
             result = self.position_control_class.find_similar_active_order(
                 direction,
                 target_price,

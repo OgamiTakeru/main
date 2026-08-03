@@ -168,10 +168,37 @@ class position_control:
         # max_dict = max(order_dic_list, key=lambda d: d["priority"], default=None)
         # max_dict = max(order_dic_list, key=lambda d: d.get("priority", float("-inf")))
         # order_max_priority = max_dict['priority']
+        order_classes = self.process_predict_reversal_count2_controls(
+            order_classes
+        )
+        if len(order_classes) == 0:
+            print("No executable order classes after count2 control.")
+            return 0
+        order_classes = self.filter_breakouts_near_pending_predict_reversals(
+            order_classes,
+            threshold_pips=3,
+        )
+        if len(order_classes) == 0:
+            print("No order classes after predict-reversal priority filter.")
+            return 0
+
+        # Run this before same-direction duplicate removal.  A refreshed
+        # predict signal may itself be a duplicate, but it must still remove a
+        # stale opposite breakout near that resistance line.
+        order_classes = self.resolve_predict_reversal_pending_conflicts(
+            order_classes,
+            threshold_pips=3,
+        )
+        if len(order_classes) == 0:
+            print("No order classes after pending-order conflict filter.")
+            return 0
         order_classes = self.filter_similar_order_classes(order_classes, threshold_pips=3)
-        order_classes = self.apply_opposing_position_policy(order_classes)
         if len(order_classes) == 0:
             print("No order classes after similar-order filter.")
+            return 0
+        order_classes = self.apply_opposing_position_policy(order_classes)
+        if len(order_classes) == 0:
+            print("No order classes after opposing-position policy.")
             return 0
 
         max_instance = max(order_classes, key=lambda x: x.exe_order_plan["priority"])
@@ -294,6 +321,512 @@ class position_control:
                         break
 
         return line_send
+
+    def process_predict_reversal_count2_controls(self, order_classes):
+        """Expire older pending predicts even when a new count2 has no order."""
+        executable = []
+        for order_class in order_classes:
+            plan = getattr(order_class, "exe_order_plan", None) or {}
+            if (
+                plan.get("line_order_mode")
+                != "predict_reversal_count2_control"
+            ):
+                executable.append(order_class)
+                continue
+            if not self.is_live:
+                continue
+
+            if not self._resolve_pending_orders_for_predict(
+                plan,
+                threshold_pips=3,
+                resolve_breakouts=False,
+            ):
+                plan["pending_conflict_action"] = (
+                    "count2_expiry_failed_closed"
+                )
+                print(
+                    "Count2 control could not expire previous predict:",
+                    plan.get("predict_signal_id"),
+                    plan.get("pending_conflict_reason"),
+                )
+                continue
+            plan["pending_conflict_action"] = (
+                "count2_expiry_processed"
+            )
+        return executable
+
+    def filter_breakouts_near_pending_predict_reversals(
+        self,
+        order_classes,
+        threshold_pips=3,
+    ):
+        """Give a pending predict reversal priority over an opposite breakout."""
+        if not self.is_live:
+            return order_classes
+
+        new_predict_plans = []
+        for order_class in order_classes:
+            plan = getattr(order_class, "exe_order_plan", None) or {}
+            if plan.get("line_order_mode") == "predict_reversal":
+                new_predict_plans.append(plan)
+
+        allowed = []
+        for order_class in order_classes:
+            plan = getattr(order_class, "exe_order_plan", None) or {}
+            if not (
+                plan.get("source") == "line"
+                and plan.get("line_entry_type") == "breakout"
+            ):
+                allowed.append(order_class)
+                continue
+
+            try:
+                breakout_direction = int(plan["direction"])
+                breakout_target = float(plan["target_price"])
+            except (KeyError, TypeError, ValueError):
+                allowed.append(order_class)
+                continue
+
+            blocked = False
+            for predict_plan in new_predict_plans:
+                try:
+                    predict_direction = int(predict_plan["direction"])
+                    predict_target = float(predict_plan["target_price"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                gap_pips = abs(
+                    self.p.price_to_pips(breakout_target - predict_target)
+                )
+                if (
+                    breakout_direction == -predict_direction
+                    and gap_pips <= threshold_pips
+                ):
+                    plan["predict_pending_guard_action"] = "block_breakout"
+                    plan["predict_pending_guard_reason"] = (
+                        "new_predict_reversal_same_cycle"
+                    )
+                    blocked = True
+                    break
+            if blocked:
+                continue
+
+            for item in self.position_classes:
+                if not getattr(item, "life", False):
+                    continue
+                if getattr(item, "o_state", None) != "PENDING":
+                    continue
+                existing_plan = getattr(item, "plan_json", None) or {}
+                if existing_plan.get("line_order_mode") != "predict_reversal":
+                    continue
+                try:
+                    predict_direction = int(existing_plan["direction"])
+                    predict_target = float(existing_plan["target_price"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if breakout_direction != -predict_direction:
+                    continue
+                gap_pips = abs(
+                    self.p.price_to_pips(breakout_target - predict_target)
+                )
+                if gap_pips > threshold_pips:
+                    continue
+
+                order_api = getattr(item, "oa", None)
+                order_id = getattr(item, "o_id", None)
+                if order_api is None or order_id in (None, 0, ""):
+                    plan["predict_pending_guard_action"] = "block_breakout"
+                    plan["predict_pending_guard_reason"] = (
+                        "pending_predict_missing_order_reference"
+                    )
+                    blocked = True
+                    break
+
+                details = order_api.OrderDetails_exe(order_id)
+                if details.get("error") != 0:
+                    plan["predict_pending_guard_action"] = "block_breakout"
+                    plan["predict_pending_guard_reason"] = (
+                        "pending_predict_status_fetch_failed"
+                    )
+                    plan["predict_pending_guard_order_id"] = order_id
+                    blocked = True
+                    break
+                state = (
+                    details.get("data", {})
+                    .get("order", {})
+                    .get("state")
+                )
+                if state == "PENDING":
+                    plan["predict_pending_guard_action"] = "block_breakout"
+                    plan["predict_pending_guard_reason"] = (
+                        "pending_predict_reversal_has_priority"
+                    )
+                    plan["predict_pending_guard_order_id"] = order_id
+                    blocked = True
+                    break
+                if state == "CANCELLED":
+                    item.o_state = state
+                    item.life_set(False)
+                    continue
+                if state == "FILLED":
+                    # It is no longer a pending-order conflict.  The existing
+                    # open-trade policy decides whether the breakout may reverse it.
+                    # Keep the local state PENDING here: classPosition's next
+                    # regular update must observe PENDING -> FILLED itself so
+                    # fill notifications and linked-order cancellation still run.
+                    continue
+
+                plan["predict_pending_guard_action"] = "block_breakout"
+                plan["predict_pending_guard_reason"] = (
+                    "pending_predict_unknown_state:" + str(state)
+                )
+                plan["predict_pending_guard_order_id"] = order_id
+                blocked = True
+                break
+
+            if blocked:
+                print(
+                    "Block breakout by pending predict reversal:",
+                    plan.get("name"),
+                    plan.get("target_price"),
+                    plan.get("predict_pending_guard_reason"),
+                )
+                continue
+            allowed.append(order_class)
+
+        return allowed
+
+    def resolve_predict_reversal_pending_conflicts(
+        self,
+        order_classes,
+        threshold_pips=3,
+    ):
+        """Resolve stale pending orders before a predict reversal.
+
+        A new count2 expires every still-pending predict order from an older
+        count2.  It also cancels an opposite breakout near the new resistance
+        target.  If server state cannot be confirmed or cancellation fails,
+        the new reversal is blocked instead of allowing conflicting orders.
+        """
+        if not self.is_live:
+            return order_classes
+
+        allowed = []
+        for order_class in order_classes:
+            plan = getattr(order_class, "exe_order_plan", None) or {}
+            if plan.get("line_order_mode") != "predict_reversal":
+                allowed.append(order_class)
+                continue
+
+            if self._resolve_pending_orders_for_predict(
+                plan,
+                threshold_pips,
+            ):
+                if plan.get("pending_same_signal_order_exists"):
+                    plan["pending_conflict_action"] = (
+                        "keep_existing_same_count2_predict"
+                    )
+                    continue
+                allowed.append(order_class)
+                continue
+
+            plan["pending_conflict_action"] = "block_predict_reversal"
+            print(
+                "Block predict reversal by pending-order conflict:",
+                plan.get("name"),
+                plan.get("target_price"),
+            )
+        return allowed
+
+    @staticmethod
+    def _predict_signal_identity(plan):
+        signal_id = plan.get("predict_signal_id")
+        if signal_id not in (None, ""):
+            return str(signal_id)
+        try:
+            direction = int(plan["latest_peak_dir"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        signal_time = plan.get("latest_peak_time")
+        if signal_time in (None, ""):
+            return None
+        return str(direction) + ":" + str(signal_time)
+
+    def _resolve_pending_orders_for_predict(
+        self,
+        predict_plan,
+        threshold_pips,
+        resolve_breakouts=True,
+    ):
+        predict_signal_id = self._predict_signal_identity(predict_plan)
+        if predict_signal_id is None:
+            predict_plan["pending_conflict_reason"] = (
+                "predict_signal_identity_missing"
+            )
+            return False
+        predict_direction = None
+        predict_target = None
+        if resolve_breakouts:
+            try:
+                predict_direction = int(predict_plan["direction"])
+                predict_target = float(predict_plan["target_price"])
+            except (KeyError, TypeError, ValueError):
+                return False
+
+        conflicts = []
+        same_signal_pending_refs = []
+        same_signal_order_exists = False
+        same_signal_filled_exists = False
+        for item in self.position_classes:
+            if not getattr(item, "life", False):
+                continue
+
+            existing_plan = getattr(item, "plan_json", None) or {}
+            if existing_plan.get("line_order_mode") == "predict_reversal":
+                existing_signal_id = self._predict_signal_identity(
+                    existing_plan
+                )
+                if existing_signal_id == predict_signal_id:
+                    local_state = getattr(item, "o_state", None)
+                    if local_state == "CANCELLED":
+                        item.life_set(False)
+                        continue
+                    if (
+                        local_state == "FILLED"
+                        or getattr(item, "t_state", None) == "OPEN"
+                    ):
+                        same_signal_filled_exists = True
+                        continue
+                    if local_state not in (None, "", "PENDING"):
+                        predict_plan["pending_conflict_reason"] = (
+                            "same_signal_predict_unknown_local_state:"
+                            + str(local_state)
+                        )
+                        return False
+                    order_api = getattr(item, "oa", None)
+                    order_id = getattr(item, "o_id", None)
+                    if order_api is None or order_id in (None, 0, ""):
+                        predict_plan["pending_conflict_reason"] = (
+                            "same_signal_predict_missing_order_reference"
+                        )
+                        return False
+                    same_signal_pending_refs.append(
+                        (item, order_api, order_id)
+                    )
+                    continue
+
+                local_state = getattr(item, "o_state", None)
+                order_id = getattr(item, "o_id", None)
+                if local_state == "CANCELLED":
+                    item.life_set(False)
+                    continue
+                if local_state not in (None, "", "PENDING"):
+                    predict_plan["pending_conflict_reason"] = (
+                        "previous_predict_no_longer_cancellable:"
+                        + str(local_state)
+                    )
+                    predict_plan["pending_conflict_failed_order_id"] = (
+                        order_id
+                    )
+                    return False
+
+                order_api = getattr(item, "oa", None)
+                if order_api is None or order_id in (None, 0, ""):
+                    predict_plan["pending_conflict_reason"] = (
+                        "previous_predict_missing_order_reference"
+                    )
+                    return False
+                conflicts.append(
+                    (item, order_api, order_id, "previous_predict")
+                )
+                continue
+
+            if not resolve_breakouts:
+                continue
+            if getattr(item, "o_state", None) != "PENDING":
+                continue
+            if existing_plan.get("source") != "line":
+                continue
+            if existing_plan.get("line_entry_type") != "breakout":
+                continue
+            try:
+                existing_direction = int(existing_plan["direction"])
+                existing_target = float(existing_plan["target_price"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if existing_direction != -predict_direction:
+                continue
+
+            gap_pips = abs(
+                self.p.price_to_pips(predict_target - existing_target)
+            )
+            if gap_pips > threshold_pips:
+                continue
+
+            order_api = getattr(item, "oa", None)
+            order_id = getattr(item, "o_id", None)
+            if order_api is None or order_id in (None, 0, ""):
+                predict_plan["pending_conflict_reason"] = (
+                    "pending_breakout_missing_order_reference"
+                )
+                return False
+
+            conflicts.append((item, order_api, order_id, "pending_breakout"))
+
+        # Resolve same-count2 duplicates first, but do not cancel yet.  One
+        # still-PENDING order is canonical; extras are cancelled.  If one has
+        # filled, every remaining PENDING duplicate is cancelled and the new
+        # order is suppressed.
+        same_signal_pending = []
+        for item, order_api, order_id in same_signal_pending_refs:
+            details = order_api.OrderDetails_exe(order_id)
+            if details.get("error") != 0:
+                predict_plan["pending_conflict_reason"] = (
+                    "same_signal_predict_status_fetch_failed"
+                )
+                predict_plan["pending_conflict_failed_order_id"] = order_id
+                return False
+            state = (
+                details.get("data", {})
+                .get("order", {})
+                .get("state")
+            )
+            if state == "PENDING":
+                same_signal_pending.append((item, order_api, order_id))
+                continue
+            if state == "CANCELLED":
+                item.o_state = state
+                item.life_set(False)
+                continue
+            if state == "FILLED":
+                # Preserve local PENDING so the regular update owns the
+                # PENDING -> FILLED transition and linkage cancellation.
+                same_signal_filled_exists = True
+                continue
+            predict_plan["pending_conflict_reason"] = (
+                "same_signal_predict_unknown_server_state:" + str(state)
+            )
+            predict_plan["pending_conflict_failed_order_id"] = order_id
+            return False
+
+        cancellable = []
+        if same_signal_filled_exists:
+            same_signal_order_exists = True
+            duplicate_same_signal = same_signal_pending
+        elif same_signal_pending:
+            same_signal_order_exists = True
+            duplicate_same_signal = same_signal_pending[1:]
+        else:
+            duplicate_same_signal = []
+        cancellable.extend(
+            (
+                item,
+                order_api,
+                order_id,
+                "duplicate_same_signal_predict",
+            )
+            for item, order_api, order_id in duplicate_same_signal
+        )
+
+        # Confirm every other server state before cancelling anything.  This avoids
+        # cancelling the first order and only then discovering that a second
+        # conflict is already filled or cannot be inspected.
+        for item, order_api, order_id, conflict_kind in conflicts:
+            details = order_api.OrderDetails_exe(order_id)
+            if details.get("error") != 0:
+                predict_plan["pending_conflict_reason"] = (
+                    conflict_kind + "_status_fetch_failed"
+                )
+                predict_plan["pending_conflict_failed_order_id"] = order_id
+                return False
+            state = (
+                details.get("data", {})
+                .get("order", {})
+                .get("state")
+            )
+            if state == "PENDING":
+                cancellable.append(
+                    (item, order_api, order_id, conflict_kind)
+                )
+                continue
+
+            if state == "CANCELLED":
+                item.o_state = state
+                item.life_set(False)
+                continue
+
+            # FILLED or an unknown server state: do not place an opposite order.
+            predict_plan["pending_conflict_reason"] = (
+                conflict_kind + "_no_longer_cancellable:" + str(state)
+            )
+            predict_plan["pending_conflict_failed_order_id"] = order_id
+            return False
+
+        cancelled_ids = []
+        cancelled_predict_ids = []
+        cancelled_breakout_ids = []
+        cancelled_same_signal_ids = []
+        for item, order_api, order_id, conflict_kind in cancellable:
+            cancel_result = order_api.OrderCancel_exe(order_id)
+            if cancel_result.get("error") != 0:
+                predict_plan["pending_conflict_reason"] = (
+                    conflict_kind + "_cancel_failed"
+                )
+                predict_plan["pending_conflict_failed_order_id"] = order_id
+                predict_plan["pending_conflict_cancelled_order_ids"] = list(
+                    cancelled_ids
+                )
+                return False
+            item.o_state = "CANCELLED"
+            item.life_set(False)
+            cancelled_ids.append(order_id)
+            if conflict_kind == "previous_predict":
+                cancelled_predict_ids.append(order_id)
+            elif conflict_kind == "pending_breakout":
+                cancelled_breakout_ids.append(order_id)
+            else:
+                cancelled_same_signal_ids.append(order_id)
+
+        if cancelled_ids:
+            cancelled_groups = sum(
+                bool(group)
+                for group in (
+                    cancelled_predict_ids,
+                    cancelled_breakout_ids,
+                    cancelled_same_signal_ids,
+                )
+            )
+            if cancelled_groups > 1:
+                action = "cancel_multiple_predict_pending_conflicts"
+            elif cancelled_predict_ids:
+                action = "replace_previous_count2_predict"
+            elif cancelled_same_signal_ids:
+                action = "dedupe_same_count2_predict"
+            else:
+                action = "cancel_opposite_pending_breakout"
+            predict_plan["pending_conflict_action"] = action
+            predict_plan["pending_conflict_cleanup_action"] = action
+            predict_plan["pending_conflict_cancelled_order_ids"] = list(
+                cancelled_ids
+            )
+            predict_plan["pending_conflict_replaced_predict_order_ids"] = (
+                list(cancelled_predict_ids)
+            )
+            predict_plan["pending_conflict_cancelled_breakout_order_ids"] = (
+                list(cancelled_breakout_ids)
+            )
+            predict_plan[
+                "pending_conflict_cancelled_same_signal_order_ids"
+            ] = list(cancelled_same_signal_ids)
+            # Keep the original scalar field for existing logs/consumers.
+            predict_plan["pending_conflict_cancelled_order_id"] = (
+                cancelled_ids[0]
+            )
+
+        predict_plan["pending_same_signal_order_exists"] = (
+            same_signal_order_exists
+        )
+
+        return True
 
     def apply_opposing_position_policy(self, order_classes):
         """Close or block opposite live positions before placing new orders."""

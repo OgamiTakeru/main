@@ -1,0 +1,90 @@
+[CACHE] USD_JPY: M5/H1/S5の既存キャッシュを使用します。OANDA APIは使用しません。
+peaks[0].count==2 candidates: 25536
+Processed 500/25536 candidates
+Processed 1000/25536 candidates
+Processed 1500/25536 candidates
+Processed 2000/25536 candidates
+Processed 2500/25536 candidates
+Processed 3000/25536 candidates
+Processed 3500/25536 candidates
+Processed 4000/25536 candidates
+USD_JPY win-point inspection 2か月分進捗 到達=2025-08-24 00:00:00 候補=4299/25536 経過=2.12分
+     [Disc]  USD_JPY win-point inspection 2か月分進捗 到達=2025-08-24 00:00:00 候補=4299/25536 経過=2.12分 (07/29_10:43:42)
+Processed 4500/25536 candidates
+Processed 5000/25536 candidates
+Processed 5500/25536 candidates
+Processed 6000/25536 candidates
+Processed 6500/25536 candidates
+Processed 7000/25536 candidates
+Processed 7500/25536 candidates
+Processed 8000/25536 candidates
+Processed 8500/25536 candidates
+USD_JPY win-point inspection 2か月分進捗 到達=2025-10-24 00:00:00 候補=8578/25536 経過=3.59分
+     [Disc]  USD_JPY win-point inspection 2か月分進捗 到達=2025-10-24 00:00:00 候補=8578/25536 経過=3.59分 (07/29_10:45:09)
+Processed 9000/25536 candidates
+Processed 9500/25536 candidates
+Processed 10000/25536 candidates
+Processed 10500/25536 candidates
+Processed 11000/25536 candidates
+Processed 11500/25536 candidates
+Processed 12000/25536 candidates
+Processed 12500/25536 candidates
+USD_JPY win-point inspection 2か月分進捗 到達=2025-12-24 00:00:00 候補=12821/25536 経過=5.07分
+     [Disc]  USD_JPY win-point inspection 2か月分進捗 到達=2025-12-24 00:00:00 候補=12821/25536 経過=5.07分 (07/29_10:46:38)
+Processed 13000/25536 candidates
+Processed 13500/25536 candidates
+Processed 14000/25536 candidates
+Processed 14500/25536 candidates
+Processed 15000/25536 candidates
+Processed 15500/25536 candidates
+Processed 16000/25536 candidates
+Processed 16500/25536 candidates
+USD_JPY win-point inspection 2か月分進捗 到達=2026-02-24 00:00:00 候補=16925/25536 経過=6.48分
+     [Disc]  USD_JPY win-point inspection 2か月分進捗 到達=2026-02-24 00:00:00 候補=16925/25536 経過=6.48分 (07/29_10:48:03)
+Processed 17000/25536 candidates
+Processed 17500/25536 candidates
+Processed 18000/25536 candidates
+Processed 18500/25536 candidates
+Processed 19000/25536 candidates
+Processed 19500/25536 candidates
+Processed 20000/25536 candidates
+Processed 20500/25536 candidates
+Processed 21000/25536 candidates
+USD_JPY win-point inspection 2か月分進捗 到達=2026-04-24 00:00:00 候補=21161/25536 経過=7.96分
+     [Disc]  USD_JPY win-point inspection 2か月分進捗 到達=2026-04-24 00:00:00 候補=21161/25536 経過=7.96分 (07/29_10:49:32)
+Processed 21500/25536 candidates
+Processed 22000/25536 candidates
+Processed 22500/25536 candidates
+Processed 23000/25536 candidates
+Processed 23500/25536 candidates
+Processed 24000/25536 candidates
+Processed 24500/25536 candidates
+Processed 25000/25536 candidates
+Processed 25500/25536 candidates
+Verified=25381, wins=4373, losses=8844, timeouts=12164, win_rate=17.23%, expectancy=-0.085R
+ rank                                                       group_type                          group  samples  wins  losses  timeouts  win_rate  resolved_win_rate  expectancy_r  ranking_score  avg_result_pips  avg_mfe_pips  avg_mae_pips  median_tp_seconds  median_first_reach_seconds
+    1                 direction_name + m5_rsi_bin + ahead_distance_bin             BUY / 30-39 / 8-14      117    20      32        65  0.170940           0.384615      0.108377       0.019055         1.880112     12.164957    -12.411966             2537.5                      1640.0
+    2                 direction_name + m5_rsi_bin + ahead_distance_bin               SELL / 70+ / 0-7      228    42      62       124  0.184211           0.403846      0.039587       0.001465         0.730989     10.741667    -10.258772             2387.5                      2050.0
+    3                 direction_name + m5_rsi_bin + ahead_distance_bin         SELL / 40-49 / no_line       40    13      10        17  0.325000           0.565217      0.213560      -0.000020         6.446538     20.550000    -15.307500             1790.0                      1635.0
+    4 direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin       BUY / 3-5 / strong / 15+      604    91     160       353  0.150662           0.362550      0.009296      -0.004163         0.117562     11.228311    -13.135596             2245.0                      1990.0
+    5 direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin    SELL / 6-9 / strong / 11-14       66    16      15        35  0.242424           0.516129      0.116153      -0.005296         1.179079      8.545455     -8.628788             1770.0                      1675.0
+    6 direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin         BUY / 6-9 / weak / 15+      163    24      41        98  0.147239           0.369231      0.040469      -0.007410         1.145706     12.613497    -13.799387             2145.0                      1835.0
+    7 direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin SELL / 10+ / very_strong / 15+      224    34      44       146  0.151786           0.435897      0.026079      -0.008344         0.422218     16.182589    -15.493304             1875.0                      1730.0
+    8                 direction_name + m5_rsi_bin + ahead_distance_bin            BUY / 60-69 / 15-29       77    21      24        32  0.272727           0.466667      0.080961      -0.013058         1.371329     10.257143     -9.655844             1680.0                      1630.0
+    9 direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin       BUY / 6-9 / strong / 15+      444    60     109       275  0.135135           0.355030     -0.000529      -0.016140        -0.052244     12.098649    -13.513063             2405.0                      2235.0
+   10                                      direction_name + m5_rsi_bin                     SELL / 70+      324    61      97       166  0.188272           0.386076      0.004426      -0.016772        -0.032894     11.721605    -11.051852             2180.0                      1942.5
+   11                                      direction_name + m5_rsi_bin                      BUY / <30      247    34      68       145  0.137652           0.333333      0.005566      -0.020664        -0.279633     14.198785    -16.955466             2105.0                      1660.0
+   12                 direction_name + m5_rsi_bin + ahead_distance_bin              BUY / 40-49 / 0-7     3469   614    1118      1737  0.176996           0.354503     -0.020215      -0.022043        -0.091057      8.645373     -9.679447             2142.5                      1685.0
+   13 direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin  BUY / 6-9 / very_strong / 15+      496    45     120       331  0.090726           0.272727     -0.013458      -0.025538        -0.074046     12.103024    -13.095766             2150.0                      1755.0
+   14                              direction_name + ahead_distance_bin                      BUY / 30+      200    26      58       116  0.130000           0.309524      0.003230      -0.026331         0.286731     13.029500    -17.147500             1885.0                      1857.5
+   15 direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin       BUY / 10+ / strong / 15+      211    21      49       141  0.099526           0.300000      0.000920      -0.026852         0.230824     14.986256    -17.033175             2365.0                      2022.5
+   16 direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin     SELL / <3 / strong / 11-14      410    84     133       193  0.204878           0.387097     -0.013730      -0.027793        -0.105685      9.122683     -9.012927             1927.5                      1670.0
+   17 direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin  BUY / 3-5 / very_strong / 15+      768   119     227       422  0.154948           0.343931     -0.022628      -0.029866        -0.473417     11.508333    -13.552474             1940.0                      1835.0
+   18 direction_name + peak_gap_bin + ahead_strength_bin + tp_pips_bin        SELL / 6-9 / weak / 15+      109    20      27        62  0.183486           0.425532      0.019182      -0.030882         0.350423     14.095413    -14.476147             1692.5                      1940.0
+   19                                      direction_name + h1_rsi_bin                      BUY / <35     1182   194     383       605  0.164129           0.336222     -0.026780      -0.031357        -0.839041     12.279526    -14.487225             2107.5                      1675.0
+   20                 direction_name + m5_rsi_bin + ahead_distance_bin              BUY / 30-39 / 30+       36     3       4        29  0.083333           0.428571      0.112176      -0.033139         4.851709     18.497222    -15.100000             2010.0                      2250.0
+Saved: C:\Users\taker\OneDrive\Desktop\oanda_logs\win_points_USD_JPY_20250624000000_20260624000000_range6x3_0.1-999_rr1.3_sp0.8_60m.csv
+Saved: C:\Users\taker\OneDrive\Desktop\oanda_logs\win_only_USD_JPY_20250624000000_20260624000000_range6x3_0.1-999_rr1.3_sp0.8_60m.csv
+Saved: C:\Users\taker\OneDrive\Desktop\oanda_logs\group_ranking_USD_JPY_20250624000000_20260624000000_range6x3_0.1-999_rr1.3_sp0.8_60m.csv
+USD_JPY win-point inspection 終了 2025-06-24 00:00:00->2026-06-24 00:00:00 検証=25381件 勝ち=4373件 LC=8844件 勝率=17.23% 期待値=-0.085R 経過=9.54分
+     [Disc]  USD_JPY win-point inspection 終了 2025-06-24 00:00:00->2026-06-24 00:00:00 検証=25381件 勝ち=4373件 LC=8844件 勝率=17.23% 期待値=-0.085R 経過=9.54分 (07/29_10:51:07)

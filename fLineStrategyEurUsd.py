@@ -1,5 +1,7 @@
 """Line strategy classes for EUR_USD."""
 
+import math
+
 from fLineStrategyUsdJpy import LineStrategyProfileUsdJpy
 
 
@@ -7,6 +9,37 @@ class LineStrategyProfileEurUsd(LineStrategyProfileUsdJpy):
     """EUR_USD line strategy."""
 
     pair = "EUR_USD"
+    predict_reversal_ranking_version = "pair_v2_eur_rsi_strength_reach"
+    predict_reversal_distance_ratio_cap = 0.5
+    predict_reversal_distance_cap_fallback = "nearest"
+
+    def _predict_reversal_pair_score_components(self, features):
+        """EUR/USD score selected on train/validation before OOS review."""
+        distance_log = math.log1p(features["distance_ratio"])
+        count_log = math.log1p(features["line_count"])
+        last_elapsed = features["last_reach_elapsed_minutes"]
+        elapsed_log = (
+            math.log1p(max(last_elapsed, 0.0) / 5.0)
+            if last_elapsed is not None
+            else 0.0
+        )
+        retouch_log = math.log1p(features["prior_retouch_count"])
+        source_directional_rsi = features["directional_source_rsi"] / 10.0
+        decision_directional_rsi = features["directional_rsi"] / 10.0
+        return {
+            "line_average_strength": features["average_strength"],
+            "line_count": -0.50 * count_log,
+            "line_core_average_strength": (
+                0.10 * features["core_average_strength"]
+            ),
+            "distance": -0.25 * distance_log,
+            "effective_last_reach": -0.05 * elapsed_log,
+            "source_rsi": -0.05 * source_directional_rsi,
+            "decision_rsi_x_distance": (
+                0.05 * decision_directional_rsi * distance_log
+            ),
+            "prior_retouch_count": -0.05 * retouch_log,
+        }
     # Selected from the 2025/06/24-2026/06/24 walk-forward inspection.
     # Each condition was profitable both before and after the 2026/03/24 split.
     # The former EUR conditions are intentionally replaced rather than combined.

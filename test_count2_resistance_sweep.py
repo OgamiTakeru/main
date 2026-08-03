@@ -10,11 +10,13 @@ import pandas as pd
 
 import classOanda
 import fGeneric as gene
-import test_win_point_resistance_euro_usd as eur_entry
-import test_win_point_resistance_usd_aud as aud_entry
-import test_win_point_resistance_usd_jpy as jpy_entry
+from fLineAnalysis import line_strategy_profile
+import test_win_point_predict_resistance_euro_usd as eur_entry
+import test_win_point_predict_resistance_usd_aud as aud_entry
+import test_win_point_predict_resistance_usd_jpy as jpy_entry
 from count2_resistance_sweep import (
     LimitPathInspector,
+    _nearest_oanda_open_time,
     data_coverage_errors,
     line_touch_features,
     prepare_m5,
@@ -27,7 +29,7 @@ from count2_resistance_sweep import (
 )
 
 
-class ResistanceEntryPointPeriodTest(unittest.TestCase):
+class PredictResistanceEntryPointPeriodTest(unittest.TestCase):
     def test_all_pair_entry_points_show_the_same_requested_period(self):
         expected = {
             "AUD_USD": aud_entry,
@@ -39,11 +41,11 @@ class ResistanceEntryPointPeriodTest(unittest.TestCase):
                 self.assertEqual(entry.PAIR, pair_name)
                 self.assertEqual(
                     entry.START_TIME,
-                    dt.datetime(2025, 7, 30),
+                    dt.datetime(2023, 7, 30),
                 )
                 self.assertEqual(
                     entry.END_TIME,
-                    dt.datetime(2026, 7, 30),
+                    dt.datetime(2025, 7, 30),
                 )
 
 
@@ -233,6 +235,56 @@ class CandidateDirectionTest(unittest.TestCase):
         self.assertTrue(all(row["trade_side"] == "BUY" for row in selected))
         self.assertTrue(all(row["line_side"] == "lower" for row in selected))
 
+    def test_policy_candidates_also_receive_future_safe_quality_ranks(self):
+        pair = gene.currency_pair("USD_JPY")
+        profile = line_strategy_profile("USD_JPY")
+
+        def line(price, average_strength, count):
+            return {
+                "median_price": price,
+                "is_flipped_line": False,
+                "count": count,
+                "total_strength": average_strength * count,
+                "ave_strength": average_strength,
+                "core_count": 1,
+                "core_total_strength": 5,
+                "line_flip_count": 0,
+            }
+
+        selected = select_ahead_lines(
+            1,
+            150.0,
+            [
+                line(150.01, average_strength=5, count=2),
+                line(150.04, average_strength=8, count=1),
+            ],
+            [],
+            pair,
+            profile,
+        )
+        for row, elapsed in zip(selected, (30, 120)):
+            row["predict_distance_to_tp_ratio"] = row["distance_pips"] / 10
+            row["predict_last_reach_elapsed_minutes"] = elapsed
+            row["predict_last_reach_source"] = "line_source"
+        profile.rank_predict_reversal_candidates(
+            selected,
+            rsi_info={"rsi_1": 40, "rsi_2": 45, "rsi_3": 50},
+            latest_peak_info={"direction": 1, "count": 2},
+        )
+
+        self.assertEqual([row["distance_rank"] for row in selected], [1, 2])
+        self.assertEqual(
+            [row["predict_candidate_rank"] for row in selected],
+            [2, 1],
+        )
+        self.assertTrue(
+            all(
+                row["predict_ranking_version"]
+                == "pair_v2_usd_rsi_strength_reach"
+                for row in selected
+            )
+        )
+
 
 class TouchFeatureTest(unittest.TestCase):
     def test_future_touch_is_not_counted_as_prior_retouch(self):
@@ -368,6 +420,206 @@ class FutureLeakGuardTest(unittest.TestCase):
 
 
 class DataCoverageTest(unittest.TestCase):
+    @staticmethod
+    def _m5_with_full_history(start, end):
+        return pd.DataFrame(
+            {
+                "time_jp_dt": pd.date_range(
+                    start - pd.Timedelta(minutes=180 * 5),
+                    end - pd.Timedelta(minutes=5),
+                    freq="5min",
+                )
+            }
+        )
+
+    def test_market_edges_use_oanda_new_york_schedule_with_dst(self):
+        forward_cases = (
+            (
+                "2023-07-30 00:00:00",
+                "2023-07-31 06:05:00",
+            ),
+            (
+                "2024-01-07 00:00:00",
+                "2024-01-08 07:05:00",
+            ),
+            (
+                "2026-07-02 06:00:00",
+                "2026-07-02 06:05:00",
+            ),
+            (
+                "2026-01-08 07:00:00",
+                "2026-01-08 07:05:00",
+            ),
+        )
+        for timestamp, expected in forward_cases:
+            with self.subTest(timestamp=timestamp):
+                self.assertEqual(
+                    _nearest_oanda_open_time(
+                        pd.Timestamp(timestamp),
+                        pd.Timedelta(seconds=5),
+                        1,
+                    ),
+                    pd.Timestamp(expected),
+                )
+
+        backward_cases = (
+            (
+                "2023-07-30 00:00:00",
+                "2023-07-29 05:58:55",
+            ),
+            (
+                "2024-01-07 00:00:00",
+                "2024-01-06 06:58:55",
+            ),
+            (
+                "2026-07-02 06:04:55",
+                "2026-07-02 05:58:55",
+            ),
+            (
+                "2026-01-08 07:04:55",
+                "2026-01-08 06:58:55",
+            ),
+        )
+        for timestamp, expected in backward_cases:
+            with self.subTest(timestamp=timestamp):
+                self.assertEqual(
+                    _nearest_oanda_open_time(
+                        pd.Timestamp(timestamp),
+                        pd.Timedelta(seconds=5),
+                        -1,
+                    ),
+                    pd.Timestamp(expected),
+                )
+
+    def test_market_edge_search_aligns_non_candle_cli_times(self):
+        timestamp = pd.Timestamp("2025-01-06 09:00:02")
+        step = pd.Timedelta(seconds=5)
+
+        self.assertEqual(
+            _nearest_oanda_open_time(timestamp, step, 1),
+            pd.Timestamp("2025-01-06 09:00:05"),
+        )
+        self.assertEqual(
+            _nearest_oanda_open_time(timestamp, step, -1),
+            pd.Timestamp("2025-01-06 09:00:00"),
+        )
+
+    def test_no_tick_tolerance_counts_only_open_market_s5_bars(self):
+        step = pd.Timedelta(seconds=5)
+        open_bars = int(
+            pd.Timedelta(classOanda.S5_NO_TICK_MAX_FILL_GAP) / step
+        )
+
+        self.assertEqual(
+            _nearest_oanda_open_time(
+                pd.Timestamp("2026-07-04 05:58:55"),
+                step,
+                1,
+                open_offset=open_bars,
+            ),
+            pd.Timestamp("2026-07-06 06:19:55"),
+        )
+        self.assertEqual(
+            _nearest_oanda_open_time(
+                pd.Timestamp("2026-07-06 06:05:00"),
+                step,
+                -1,
+                open_offset=open_bars,
+            ),
+            pd.Timestamp("2026-07-04 05:44:00"),
+        )
+
+    def test_non_aligned_end_requires_the_last_in_range_candle(self):
+        start = pd.Timestamp("2025-01-06 09:00:02")
+        end = pd.Timestamp("2025-01-06 10:00:02")
+        prehistory = pd.date_range(
+            end=pd.Timestamp("2025-01-06 09:00:00"),
+            periods=180,
+            freq="5min",
+        )
+        m5 = pd.DataFrame(
+            {
+                "time_jp_dt": prehistory.append(
+                    pd.DatetimeIndex(
+                        [
+                            pd.Timestamp("2025-01-06 09:55:00"),
+                            pd.Timestamp("2025-01-06 10:05:00"),
+                        ]
+                    )
+                )
+            }
+        )
+        s5 = pd.DataFrame(
+            {
+                "time_jp_dt": [
+                    pd.Timestamp("2025-01-06 09:00:05"),
+                    pd.Timestamp("2025-01-06 10:44:55"),
+                    pd.Timestamp("2025-01-06 11:00:05"),
+                ]
+            }
+        )
+
+        errors = data_coverage_errors(m5, s5, start, end, 60)
+
+        self.assertTrue(
+            any("truncated_end" in item for item in errors["M5"])
+        )
+        self.assertTrue(
+            any("truncated_end" in item for item in errors["S5"])
+        )
+
+    def test_weekend_start_accepts_actual_s5_before_regular_reopen(self):
+        start = pd.Timestamp("2023-07-30 00:00:00")
+        end = pd.Timestamp("2023-07-31 07:00:00")
+        m5 = self._m5_with_full_history(start, end)
+        s5 = pd.DataFrame(
+            {
+                "time_jp_dt": [
+                    pd.Timestamp("2023-07-31 06:03:00"),
+                    end + pd.Timedelta(minutes=60) - pd.Timedelta(seconds=5),
+                ]
+            }
+        )
+
+        self.assertEqual(data_coverage_errors(m5, s5, start, end, 60), {})
+
+    def test_short_s5_no_tick_edges_are_accepted_but_long_edges_are_not(self):
+        start = pd.Timestamp("2025-01-06 09:00:00")
+        end = pd.Timestamp("2025-01-06 10:00:00")
+        expected_last = (
+            end + pd.Timedelta(minutes=60) - pd.Timedelta(seconds=5)
+        )
+        m5 = self._m5_with_full_history(start, end)
+        tolerance = pd.Timedelta(classOanda.S5_NO_TICK_MAX_FILL_GAP)
+        accepted = pd.DataFrame(
+            {
+                "time_jp_dt": [
+                    start + tolerance,
+                    expected_last - tolerance,
+                ]
+            }
+        )
+        rejected = pd.DataFrame(
+            {
+                "time_jp_dt": [
+                    start + tolerance + pd.Timedelta(seconds=5),
+                    expected_last - tolerance - pd.Timedelta(seconds=5),
+                ]
+            }
+        )
+
+        self.assertEqual(
+            data_coverage_errors(m5, accepted, start, end, 60),
+            {},
+        )
+        errors = data_coverage_errors(m5, rejected, start, end, 60)
+        self.assertTrue(
+            any("truncated_start" in item for item in errors["S5"])
+        )
+        self.assertTrue(
+            any("truncated_end" in item for item in errors["S5"])
+        )
+
     def test_truncated_cache_edges_are_rejected(self):
         start = pd.Timestamp("2025-01-06 09:00:00")
         end = pd.Timestamp("2025-01-06 10:00:00")
@@ -390,7 +642,7 @@ class DataCoverageTest(unittest.TestCase):
 
         errors = data_coverage_errors(
             m5.iloc[:-1],
-            s5.iloc[:-1],
+            s5.iloc[:-181],
             start,
             end,
             60,
@@ -448,6 +700,14 @@ class LimitPathInspectorTest(unittest.TestCase):
             ),
             np.array(
                 ["2026-01-08T06:58:55", "2026-01-08T07:05:00"],
+                dtype="datetime64[ns]",
+            ),
+            np.array(
+                ["2026-07-02T05:59:00", "2026-07-02T06:04:55"],
+                dtype="datetime64[ns]",
+            ),
+            np.array(
+                ["2026-01-08T06:59:05", "2026-01-08T07:04:55"],
                 dtype="datetime64[ns]",
             ),
         ):
