@@ -1201,7 +1201,17 @@ class order_information:
                 # 取得予定価格と、実際の取得価格のずれを算出
                 plan_price = float(self.plan_json['target_price'])
                 take_price = float(trade_latest['price'])
-                gap_plan_pips = self.p.price_to_pips(abs(plan_price - take_price))
+                direction = int(self.plan_json['direction'])
+                # Positive means a better fill: lower for BUY, higher for SELL.
+                gap_plan_pips = self.p.price_to_pips(
+                    (plan_price - take_price) * direction
+                )
+                gap_plan_pips = 0.0 if gap_plan_pips == 0 else gap_plan_pips
+                gap_plan_text = (
+                    ("+" if gap_plan_pips > 0 else "")
+                    + str(gap_plan_pips)
+                    + "p"
+                )
                 if self.plan_json['direction'] == 1:
                     # 買いの場合(実際はちょっと高めに買わされている）
                     current_price = self.current_price_all['data']['ask']
@@ -1212,7 +1222,7 @@ class order_information:
                     gap = abs(current_price - take_price)
                 self.send_line("    (取得)", self.name, "ID", trade_latest['id'], "方向", self.plan_json['direction'],
                                "取得時価格", trade_latest['price'], "取得希望価格", plan_price,
-                               "GAP", self.signed_pips_text(gap_plan_pips),
+                               "GAP", gap_plan_text,
                                "現在価格", current_price, "  [参考] 買", self.current_price_all['data']['ask'],
                                "-売", self.current_price_all['data']['bid']
                                )
