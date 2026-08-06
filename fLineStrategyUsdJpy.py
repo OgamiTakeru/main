@@ -14,6 +14,8 @@ class LineStrategyProfileUsdJpy:
     """
 
     pair = "USD_JPY"
+    # Temporary switch: False restores Immediate, Breakout and normal Reversal.
+    predict_reversal_only = True
     duplicate_threshold_pips = 3
     h1_strong_threshold = 10
 
@@ -1018,6 +1020,9 @@ class LineStrategyProfileUsdJpy:
             # count2では予測反転か見送りのどちらか。予測候補が作れない時に
             # 旧immediate breakoutへ自動的に切り替えない。
             return self.predict_reversal_order(grouped_lines)
+
+        if self.predict_reversal_only:
+            return []
 
         immediate_orders = self.immediate_order(grouped_lines)
         if immediate_orders:

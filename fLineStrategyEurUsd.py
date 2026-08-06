@@ -9,6 +9,8 @@ class LineStrategyProfileEurUsd(LineStrategyProfileUsdJpy):
     """EUR_USD line strategy."""
 
     pair = "EUR_USD"
+    # Flip to False to restore this pair's non-PredictReversal line orders.
+    predict_reversal_only = True
     predict_reversal_ranking_version = "pair_v2_eur_rsi_strength_reach"
     predict_reversal_distance_ratio_cap = 0.5
     predict_reversal_distance_cap_fallback = "nearest"
