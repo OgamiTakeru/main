@@ -33,6 +33,7 @@ from fLineAnalysis import (
     line_strategy_profile,
     predict_reversal_last_reach_context,
 )
+from fStairTrend import detect_m5_stair_trend
 import test_win_point_usd_aud as win_point
 import tokens as tk
 
@@ -693,6 +694,59 @@ def rebuild_candidates_at(
             LINE_HISTORY_BARS,
         )
     profile = line_strategy_profile(pair_name)
+    stair_context = detect_m5_stair_trend(
+        peaks.peaks_original,
+        pair,
+        snapshot.iloc[1:],
+        min_impulse_foot_count=getattr(
+            profile,
+            "predict_reversal_m5_stair_min_impulse_foot_count",
+            3,
+        ),
+        min_latest_impulse_foot_count=getattr(
+            profile,
+            "predict_reversal_m5_stair_min_latest_impulse_foot_count",
+            2,
+        ),
+        max_pullback_foot_count=getattr(
+            profile,
+            "predict_reversal_m5_stair_max_pullback_foot_count",
+            3,
+        ),
+        min_impulse_pips=getattr(
+            profile,
+            "predict_reversal_m5_stair_min_impulse_pips",
+            3.0,
+        ),
+        volatility_lookback=getattr(
+            profile,
+            "predict_reversal_m5_stair_volatility_lookback",
+            12,
+        ),
+        volatility_multiplier=getattr(
+            profile,
+            "predict_reversal_m5_stair_volatility_multiplier",
+            1.2,
+        ),
+        max_pullback_ratio=getattr(
+            profile,
+            "predict_reversal_m5_stair_max_pullback_ratio",
+            0.65,
+        ),
+        min_break_pips=getattr(
+            profile,
+            "predict_reversal_m5_stair_min_break_pips",
+            0.5,
+        ),
+        min_dominance_ratio=getattr(
+            profile,
+            "predict_reversal_m5_stair_min_dominance_ratio",
+            1.5,
+        ),
+    )
+    stair_context["profile_enabled"] = bool(
+        getattr(profile, "predict_reversal_m5_stair_enabled", False)
+    )
     peak_direction = int(newest_peak["direction"])
     candidates = select_ahead_lines(
         peak_direction,
@@ -732,6 +786,7 @@ def rebuild_candidates_at(
         "candidates": candidates,
         "profile": profile,
         "rsi_info": rsi_info,
+        "stair_context": stair_context,
     }
 
 
@@ -1306,6 +1361,106 @@ def _peak_columns(peak: dict[str, Any], pair: gene.CurrencyPair) -> dict[str, An
     }
 
 
+STAIR_SEQUENCE_FIELDS = (
+    "direction_sequence",
+    "foot_count_sequence",
+    "distance_pips_sequence",
+    "impulse_foot_count_sequence",
+    "pullback_foot_count_sequence",
+    "impulse_distance_pips_sequence",
+    "pullback_distance_pips_sequence",
+    "pullback_ratio_sequence",
+    "impulse_break_pips_sequence",
+    "structure_progress_pips_sequence",
+    "candidate_failed_conditions",
+    "confirmed_failed_conditions",
+)
+
+STAIR_SCALAR_FIELDS = (
+    "profile_enabled",
+    "state",
+    "direction",
+    "observed_direction",
+    "confirmed",
+    "candidate_passed",
+    "confirmed_passed",
+    "analysis_leg_count",
+    "detected_leg_count",
+    "reason",
+    "impulse_distance_pips",
+    "pullback_distance_pips",
+    "dominance_ratio",
+    "required_impulse_pips",
+    "median_m5_range_pips",
+    "first_impulse_foot_count",
+    "first_impulse_pips",
+    "first_pullback_foot_count",
+    "first_pullback_pips",
+    "first_pullback_ratio",
+    "first_pullback_foot_ratio",
+    "first_impulse_pips_per_foot",
+    "first_pullback_pips_per_foot",
+    "first_impulse_required_ratio",
+    "second_impulse_foot_count",
+    "second_impulse_pips",
+    "second_pullback_foot_count",
+    "second_pullback_pips",
+    "second_pullback_ratio",
+    "second_pullback_foot_ratio",
+    "second_impulse_pips_per_foot",
+    "second_pullback_pips_per_foot",
+    "second_impulse_required_ratio",
+    "third_impulse_foot_count",
+    "third_impulse_pips",
+    "third_impulse_pips_per_foot",
+    "third_impulse_required_ratio",
+    "net_progress_pips",
+    "second_impulse_break_pips",
+    "third_impulse_break_pips",
+    "first_structure_progress_pips",
+    "second_structure_progress_pips",
+    "threshold_min_impulse_foot_count",
+    "threshold_min_latest_impulse_foot_count",
+    "threshold_max_pullback_foot_count",
+    "threshold_min_impulse_pips",
+    "threshold_volatility_lookback",
+    "threshold_volatility_multiplier",
+    "threshold_max_pullback_ratio",
+    "threshold_min_break_pips",
+    "threshold_min_dominance_ratio",
+)
+
+
+def stair_analysis_columns(
+    context: dict[str, Any],
+    peak_direction: int,
+) -> dict[str, Any]:
+    """Flatten decision-time stair evidence for validation CSVs."""
+    row = {
+        "m5_stair_" + field: context.get(field)
+        for field in STAIR_SCALAR_FIELDS
+    }
+    for field in STAIR_SEQUENCE_FIELDS:
+        values = context.get(field) or []
+        row["m5_stair_" + field] = "|".join(
+            str(value) for value in values
+        )
+    detected = context.get("state") in (
+        "UP_CANDIDATE",
+        "UP_CONFIRMED",
+        "DOWN_CANDIDATE",
+        "DOWN_CONFIRMED",
+    )
+    row["m5_stair_detected"] = detected
+    row["m5_stair_would_block_predict_reversal"] = bool(
+        detected
+        and int(context.get("direction") or 0) == int(peak_direction)
+    )
+    for name, passed in (context.get("criteria") or {}).items():
+        row["m5_stair_criterion_" + name] = passed
+    return row
+
+
 def _event_id(pair_name: str, decision_time: pd.Timestamp) -> str:
     return f"{pair_name}_{decision_time:%Y%m%d%H%M%S}"
 
@@ -1401,6 +1556,191 @@ def make_ranking(
     return pd.DataFrame(summaries)
 
 
+def make_stair_analysis(
+    candidates: pd.DataFrame,
+    min_group_size: int,
+) -> pd.DataFrame:
+    """Summarize one selected PredictReversal candidate per count2 event."""
+    if candidates.empty or "current_policy_predict_selected" not in candidates:
+        return pd.DataFrame()
+    work = candidates[
+        candidates["current_policy_predict_selected"].fillna(False)
+    ].copy()
+    if work.empty:
+        return pd.DataFrame()
+
+    ratio_edges = [-np.inf, 0.25, 0.40, 0.55, 0.65, 0.80, 1.0, np.inf]
+    ratio_labels = ["<0.25", "0.25-0.39", "0.40-0.54", "0.55-0.64", "0.65-0.79", "0.80-0.99", "1.00+"]
+    dominance_edges = [-np.inf, 1.0, 1.25, 1.5, 2.0, 3.0, np.inf]
+    dominance_labels = ["<1.00", "1.00-1.24", "1.25-1.49", "1.50-1.99", "2.00-2.99", "3.00+"]
+    progress_edges = [-np.inf, 0.0, 0.5, 1.0, 2.0, 3.0, 5.0, np.inf]
+    progress_labels = ["<0", "0-0.49", "0.50-0.99", "1.00-1.99", "2.00-2.99", "3.00-4.99", "5.00+"]
+    pace_edges = [-np.inf, 1.0, 2.0, 3.0, 4.0, 5.0, 8.0, np.inf]
+    pace_labels = ["<1", "1-1.99", "2-2.99", "3-3.99", "4-4.99", "5-7.99", "8+"]
+
+    for ordinal in ("first", "second"):
+        column = f"m5_stair_{ordinal}_pullback_ratio"
+        work[column + "_bin"] = pd.cut(
+            pd.to_numeric(work.get(column), errors="coerce"),
+            ratio_edges,
+            labels=ratio_labels,
+            right=False,
+        )
+        foot_ratio_column = f"m5_stair_{ordinal}_pullback_foot_ratio"
+        work[foot_ratio_column + "_bin"] = pd.cut(
+            pd.to_numeric(work.get(foot_ratio_column), errors="coerce"),
+            ratio_edges,
+            labels=ratio_labels,
+            right=False,
+        )
+    work["m5_stair_dominance_ratio_bin"] = pd.cut(
+        pd.to_numeric(work.get("m5_stair_dominance_ratio"), errors="coerce"),
+        dominance_edges,
+        labels=dominance_labels,
+        right=False,
+    )
+    for column in (
+        "m5_stair_second_impulse_break_pips",
+        "m5_stair_third_impulse_break_pips",
+        "m5_stair_first_structure_progress_pips",
+        "m5_stair_second_structure_progress_pips",
+    ):
+        work[column + "_bin"] = pd.cut(
+            pd.to_numeric(work.get(column), errors="coerce"),
+            progress_edges,
+            labels=progress_labels,
+            right=False,
+        )
+    for column in (
+        "m5_stair_first_impulse_pips_per_foot",
+        "m5_stair_first_pullback_pips_per_foot",
+        "m5_stair_second_impulse_pips_per_foot",
+        "m5_stair_second_pullback_pips_per_foot",
+        "m5_stair_third_impulse_pips_per_foot",
+        "m5_stair_net_progress_pips",
+    ):
+        work[column + "_bin"] = pd.cut(
+            pd.to_numeric(work.get(column), errors="coerce"),
+            pace_edges,
+            labels=pace_labels,
+            right=False,
+        )
+    for column in (
+        "m5_stair_first_impulse_required_ratio",
+        "m5_stair_second_impulse_required_ratio",
+        "m5_stair_third_impulse_required_ratio",
+    ):
+        work[column + "_bin"] = pd.cut(
+            pd.to_numeric(work.get(column), errors="coerce"),
+            dominance_edges,
+            labels=dominance_labels,
+            right=False,
+        )
+
+    work["completed_trade"] = work["candidate_result"].isin(
+        ["tp", "lc", "both_same_s5_lc_assumed", "timeout"]
+    )
+    work["is_win"] = work["candidate_result"].eq("tp")
+    work["is_loss"] = work["candidate_result"].isin(
+        ["lc", "both_same_s5_lc_assumed"]
+    )
+    dimensions = [
+        ("all_selected", []),
+        ("detected", ["m5_stair_detected"]),
+        ("would_block", ["m5_stair_would_block_predict_reversal"]),
+        ("state", ["m5_stair_state"]),
+        ("candidate_passed", ["m5_stair_candidate_passed"]),
+        ("confirmed_passed", ["m5_stair_confirmed_passed"]),
+        ("first_pullback_ratio", ["m5_stair_first_pullback_ratio_bin"]),
+        ("second_pullback_ratio", ["m5_stair_second_pullback_ratio_bin"]),
+        ("first_pullback_foot_ratio", ["m5_stair_first_pullback_foot_ratio_bin"]),
+        ("second_pullback_foot_ratio", ["m5_stair_second_pullback_foot_ratio_bin"]),
+        ("first_pullback_foot_count", ["m5_stair_first_pullback_foot_count"]),
+        ("second_pullback_foot_count", ["m5_stair_second_pullback_foot_count"]),
+        ("first_impulse_foot_count", ["m5_stair_first_impulse_foot_count"]),
+        ("second_impulse_foot_count", ["m5_stair_second_impulse_foot_count"]),
+        ("third_impulse_foot_count", ["m5_stair_third_impulse_foot_count"]),
+        ("dominance", ["m5_stair_dominance_ratio_bin"]),
+        ("first_impulse_pace", ["m5_stair_first_impulse_pips_per_foot_bin"]),
+        ("first_pullback_pace", ["m5_stair_first_pullback_pips_per_foot_bin"]),
+        ("second_impulse_pace", ["m5_stair_second_impulse_pips_per_foot_bin"]),
+        ("second_pullback_pace", ["m5_stair_second_pullback_pips_per_foot_bin"]),
+        ("third_impulse_pace", ["m5_stair_third_impulse_pips_per_foot_bin"]),
+        ("first_impulse_required_ratio", ["m5_stair_first_impulse_required_ratio_bin"]),
+        ("second_impulse_required_ratio", ["m5_stair_second_impulse_required_ratio_bin"]),
+        ("third_impulse_required_ratio", ["m5_stair_third_impulse_required_ratio_bin"]),
+        ("net_progress", ["m5_stair_net_progress_pips_bin"]),
+        ("second_impulse_break", ["m5_stair_second_impulse_break_pips_bin"]),
+        ("third_impulse_break", ["m5_stair_third_impulse_break_pips_bin"]),
+        ("first_structure_progress", ["m5_stair_first_structure_progress_pips_bin"]),
+        ("second_structure_progress", ["m5_stair_second_structure_progress_pips_bin"]),
+        ("candidate_failures", ["m5_stair_candidate_failed_conditions"]),
+        ("confirmed_failures", ["m5_stair_confirmed_failed_conditions"]),
+    ]
+    criterion_columns = sorted(
+        column
+        for column in work.columns
+        if column.startswith("m5_stair_criterion_")
+    )
+    dimensions.extend(
+        (column.removeprefix("m5_stair_"), [column])
+        for column in criterion_columns
+    )
+
+    summaries: list[dict[str, Any]] = []
+    for group_name, columns in dimensions:
+        grouped = [((), work)] if not columns else work.groupby(
+            columns,
+            dropna=False,
+            observed=True,
+        )
+        for keys, group in grouped:
+            if len(group) < min_group_size and group_name != "all_selected":
+                continue
+            if not isinstance(keys, tuple):
+                keys = (keys,)
+            completed = group[group["completed_trade"]]
+            result_pips = pd.to_numeric(
+                completed.get("trade_result_pips"),
+                errors="coerce",
+            )
+            result_r = pd.to_numeric(
+                completed.get("result_r"),
+                errors="coerce",
+            )
+            favorable = pd.to_numeric(
+                completed.get("max_favorable_pips_before_exit"),
+                errors="coerce",
+            )
+            adverse = pd.to_numeric(
+                completed.get("max_adverse_pips_before_exit"),
+                errors="coerce",
+            )
+            row: dict[str, Any] = {
+                "group_type": group_name,
+                "selected_event_count": group["event_id"].nunique(),
+                "filled_count": int(group["filled"].fillna(False).sum()),
+                "completed_trade_count": len(completed),
+                "tp_count": int(group["is_win"].sum()),
+                "loss_count": int(group["is_loss"].sum()),
+                "fill_rate": float(group["filled"].fillna(False).mean()),
+                "win_rate_completed": (
+                    float(completed["is_win"].mean())
+                    if len(completed)
+                    else np.nan
+                ),
+                "mean_result_pips": float(result_pips.mean()),
+                "median_result_pips": float(result_pips.median()),
+                "mean_result_r": float(result_r.mean()),
+                "mean_max_favorable_pips": float(favorable.mean()),
+                "mean_max_adverse_pips": float(adverse.mean()),
+            }
+            for column, key in zip(columns, keys):
+                row[column] = key
+            summaries.append(row)
+    return pd.DataFrame(summaries)
+
+
 def output_paths(
     pair_name: str,
     args: argparse.Namespace,
@@ -1420,6 +1760,7 @@ def output_paths(
         "wins": folder / f"resistance_sweep_wins_{stem}.csv",
         "events": folder / f"resistance_sweep_events_{stem}.csv",
         "ranking": folder / f"resistance_sweep_ranking_{stem}.csv",
+        "stair_analysis": folder / f"resistance_sweep_stair_analysis_{stem}.csv",
     }
 
 
@@ -1567,6 +1908,10 @@ def run_sweep(
                 "rsi_1": rebuilt["rsi_info"].get("rsi_1"),
                 "rsi_2": rebuilt["rsi_info"].get("rsi_2"),
                 "rsi_3": rebuilt["rsi_info"].get("rsi_3"),
+                **stair_analysis_columns(
+                    rebuilt["stair_context"],
+                    int(peak.get("direction") or 0),
+                ),
             }
         )
         touches_by_candidate: dict[int, dict[str, Any]] = {}
@@ -1763,12 +2108,18 @@ def run_sweep(
         else pd.DataFrame()
     )
     ranking = make_ranking(candidates, args.min_group_size)
+    stair_analysis = make_stair_analysis(candidates, args.min_group_size)
     paths = output_paths(pair_name, args)
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     candidates.to_csv(paths["candidates"], index=False, encoding="utf-8-sig")
     wins.to_csv(paths["wins"], index=False, encoding="utf-8-sig")
     events.to_csv(paths["events"], index=False, encoding="utf-8-sig")
     ranking.to_csv(paths["ranking"], index=False, encoding="utf-8-sig")
+    stair_analysis.to_csv(
+        paths["stair_analysis"],
+        index=False,
+        encoding="utf-8-sig",
+    )
 
     completed_mask = (
         candidates["candidate_result"].isin(

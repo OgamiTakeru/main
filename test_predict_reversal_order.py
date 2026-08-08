@@ -72,9 +72,16 @@ class PredictReversalDirectionTest(unittest.TestCase):
                         "timeframe": "m5",
                         "line_side": "upper",
                         "direction": -1,
+                        "line": {"count": 2},
+                        "m5_stair_context": {"state": "NONE"},
                     },
                     {},
-                    {"count": 2, "direction": 1},
+                    {
+                        "count": 2,
+                        "direction": 1,
+                        "rsi": 60,
+                        "previous_rsi": 55,
+                    },
                 )
                 self.assertTrue(reasons)
             with self.subTest(pair=profile.pair, side="lower"):
@@ -84,9 +91,16 @@ class PredictReversalDirectionTest(unittest.TestCase):
                         "timeframe": "m5",
                         "line_side": "lower",
                         "direction": 1,
+                        "line": {"count": 2},
+                        "m5_stair_context": {"state": "NONE"},
                     },
                     {},
-                    {"count": 2, "direction": -1},
+                    {
+                        "count": 2,
+                        "direction": -1,
+                        "rsi": 40,
+                        "previous_rsi": 45,
+                    },
                 )
                 self.assertTrue(reasons)
             with self.subTest(pair=profile.pair, count="not_count2"):
@@ -96,9 +110,16 @@ class PredictReversalDirectionTest(unittest.TestCase):
                         "timeframe": "m5",
                         "line_side": "upper",
                         "direction": -1,
+                        "line": {"count": 2},
+                        "m5_stair_context": {"state": "NONE"},
                     },
                     {},
-                    {"count": 1, "direction": 1},
+                    {
+                        "count": 1,
+                        "direction": 1,
+                        "rsi": 60,
+                        "previous_rsi": 55,
+                    },
                 )
                 self.assertEqual(reasons, [])
 

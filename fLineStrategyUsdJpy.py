@@ -4,6 +4,7 @@ import math
 from types import SimpleNamespace
 
 import fGeneric as gene
+from fStairTrend import detect_m5_stair_trend
 
 
 class LineStrategyProfileUsdJpy:
@@ -45,6 +46,21 @@ class LineStrategyProfileUsdJpy:
     predict_reversal_ranking_version = "pair_v2_usd_rsi_strength_reach"
     predict_reversal_distance_ratio_cap = 0.5
     predict_reversal_distance_cap_fallback = "nearest"
+    # PredictReversal-only hard filters.  Apply these before ranking so a
+    # filtered top candidate can be replaced by the next eligible line.
+    predict_reversal_min_peaks_count = 2
+    predict_reversal_peak_rsi_midpoint = 50.0
+    predict_reversal_block_trend_regimes = True
+    predict_reversal_m5_stair_enabled = True
+    predict_reversal_m5_stair_min_impulse_foot_count = 3
+    predict_reversal_m5_stair_min_latest_impulse_foot_count = 2
+    predict_reversal_m5_stair_max_pullback_foot_count = 3
+    predict_reversal_m5_stair_min_impulse_pips = 3.0
+    predict_reversal_m5_stair_volatility_lookback = 12
+    predict_reversal_m5_stair_volatility_multiplier = 1.2
+    predict_reversal_m5_stair_max_pullback_ratio = 0.65
+    predict_reversal_m5_stair_min_break_pips = 0.5
+    predict_reversal_m5_stair_min_dominance_ratio = 1.5
     immediate_near_line_max_pips = 3
     immediate_break_score_min = 0.75
     immediate_break_reason_count_min = 3
@@ -1296,6 +1312,10 @@ class LineStrategyProfileUsdJpy:
             str(signal_direction) + ":" + str(signal_time)
         )
 
+        stair_context = self._detect_predict_reversal_m5_stair(coordinator)
+        for candidate in grouped_lines["future_resist_candidates"]:
+            candidate["m5_stair_context"] = stair_context
+
         candidates = coordinator.select_line_candidates(
             grouped_lines["future_resist_candidates"],
             grouped_lines["rsi_info"],
@@ -1817,11 +1837,133 @@ class LineStrategyProfileUsdJpy:
             return []
         if self._int_or_none(candidate.get("direction")) != -peak_direction:
             return []
+        if not self._predict_reversal_candidate_passes_filters(
+            candidate,
+            latest_peak_info,
+        ):
+            return []
 
         return [
             "Predict next count2 reversal: "
             + ("upper SELL" if peak_direction == 1 else "lower BUY")
         ]
+
+    def _predict_reversal_candidate_passes_filters(
+        self,
+        candidate,
+        latest_peak_info,
+    ):
+        """Apply live-observation filters before PredictReversal ranking."""
+        line = candidate.get("line") or {}
+        peaks_count = self._int_or_none(line.get("count"))
+        if (
+            peaks_count is None
+            or peaks_count < self.predict_reversal_min_peaks_count
+        ):
+            return False
+
+        peak_rsi = self._float_or_none(latest_peak_info.get("rsi"))
+        previous_peak_rsi = self._float_or_none(
+            latest_peak_info.get("previous_rsi")
+        )
+        if peak_rsi is None or previous_peak_rsi is None:
+            return False
+
+        line_side = candidate.get("line_side")
+        midpoint = float(self.predict_reversal_peak_rsi_midpoint)
+        if line_side == "upper":
+            if peak_rsi < midpoint or peak_rsi < previous_peak_rsi:
+                return False
+        elif line_side == "lower":
+            if peak_rsi > midpoint or peak_rsi > previous_peak_rsi:
+                return False
+        else:
+            return False
+
+        if self.predict_reversal_block_trend_regimes:
+            snapshot = getattr(self, "regime_snapshot", None) or {}
+            regime = (snapshot.get("market") or {}).get(
+                "regime",
+                "NEUTRAL",
+            )
+            if regime in (
+                "UP_TREND",
+                "DOWN_TREND",
+                "UP_TREND_START",
+                "DOWN_TREND_START",
+            ):
+                return False
+
+        if self.predict_reversal_m5_stair_enabled:
+            stair = candidate.get("m5_stair_context") or {}
+            stair_direction = self._int_or_none(stair.get("direction"))
+            peak_direction = self._int_or_none(
+                latest_peak_info.get("direction")
+            )
+            if (
+                stair.get("state") in (
+                    "UP_CANDIDATE",
+                    "UP_CONFIRMED",
+                    "DOWN_CANDIDATE",
+                    "DOWN_CONFIRMED",
+                )
+                and stair_direction == peak_direction
+            ):
+                return False
+
+        return True
+
+    def _detect_predict_reversal_m5_stair(self, coordinator):
+        if not self.predict_reversal_m5_stair_enabled:
+            return {
+                "state": "DISABLED",
+                "direction": 0,
+                "confirmed": False,
+                "reason": "pair_profile_disabled",
+            }
+
+        analysis = getattr(coordinator, "analysis", None)
+        peaks_class = getattr(analysis, "peaks_class", None)
+        peaks = getattr(peaks_class, "peaks_original", None)
+        candle_analysis = getattr(analysis, "candle_analysis_all", None)
+        m5_frame = getattr(candle_analysis, "d5_df_r", None)
+        completed_m5 = (
+            m5_frame.iloc[1:]
+            if m5_frame is not None and not m5_frame.empty
+            else None
+        )
+        return detect_m5_stair_trend(
+            peaks,
+            self.pair,
+            completed_m5,
+            min_impulse_foot_count=(
+                self.predict_reversal_m5_stair_min_impulse_foot_count
+            ),
+            min_latest_impulse_foot_count=(
+                self.predict_reversal_m5_stair_min_latest_impulse_foot_count
+            ),
+            max_pullback_foot_count=(
+                self.predict_reversal_m5_stair_max_pullback_foot_count
+            ),
+            min_impulse_pips=(
+                self.predict_reversal_m5_stair_min_impulse_pips
+            ),
+            volatility_lookback=(
+                self.predict_reversal_m5_stair_volatility_lookback
+            ),
+            volatility_multiplier=(
+                self.predict_reversal_m5_stair_volatility_multiplier
+            ),
+            max_pullback_ratio=(
+                self.predict_reversal_m5_stair_max_pullback_ratio
+            ),
+            min_break_pips=(
+                self.predict_reversal_m5_stair_min_break_pips
+            ),
+            min_dominance_ratio=(
+                self.predict_reversal_m5_stair_min_dominance_ratio
+            ),
+        )
 
     def future_line_order(self, grouped_lines):
         resist_orders = self.future_resist_order(grouped_lines)

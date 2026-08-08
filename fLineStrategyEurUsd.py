@@ -14,6 +14,10 @@ class LineStrategyProfileEurUsd(LineStrategyProfileUsdJpy):
     predict_reversal_ranking_version = "pair_v2_eur_rsi_strength_reach"
     predict_reversal_distance_ratio_cap = 0.5
     predict_reversal_distance_cap_fallback = "nearest"
+    # The trend-regime block is USD/JPY-specific.  Common peaks-count and RSI
+    # filters remain inherited for EUR/USD and AUD/USD.
+    predict_reversal_block_trend_regimes = False
+    predict_reversal_m5_stair_enabled = False
 
     def _predict_reversal_pair_score_components(self, features):
         """EUR/USD score selected on train/validation before OOS review."""
