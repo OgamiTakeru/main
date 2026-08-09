@@ -4,7 +4,7 @@ import math
 from types import SimpleNamespace
 
 import fGeneric as gene
-from fStairTrend import detect_m5_stair_trend
+from fStairTrend import detect_h1_stair_trend, detect_m5_stair_trend
 
 
 class LineStrategyProfileUsdJpy:
@@ -46,11 +46,140 @@ class LineStrategyProfileUsdJpy:
     predict_reversal_ranking_version = "pair_v2_usd_rsi_strength_reach"
     predict_reversal_distance_ratio_cap = 0.5
     predict_reversal_distance_cap_fallback = "nearest"
-    # PredictReversal-only hard filters.  Apply these before ranking so a
-    # filtered top candidate can be replaced by the next eligible line.
-    predict_reversal_min_peaks_count = 2
-    predict_reversal_peak_rsi_midpoint = 50.0
-    predict_reversal_block_trend_regimes = True
+    # PredictReversal entry eligibility is the OR of the 2026 YTD condition
+    # top 15.  These replace the former line-count, peak-RSI, regime and
+    # same-direction stair blockers; structural count2/side checks and the
+    # candidate ranking remain separate.
+    predict_reversal_filter_policy_version = "count2_top15_2026_ytd_net_or"
+    predict_reversal_top15_conditions = (
+        {
+            "label": "H1 second impulse required ratio 2.00-2.99",
+            "timeframe": "h1",
+            "field": "second_impulse_required_ratio",
+            "operator": "range",
+            "minimum": 2.0,
+            "maximum": 3.0,
+        },
+        {
+            "label": "H1 pullback ratio criterion passed",
+            "timeframe": "h1",
+            "field": "criteria.pullback_ratio",
+            "operator": "equals",
+            "value": True,
+        },
+        {
+            "label": "M5 third impulse break 3.00-4.99 pips",
+            "timeframe": "m5",
+            "field": "third_impulse_break_pips",
+            "operator": "range",
+            "minimum": 3.0,
+            "maximum": 5.0,
+        },
+        {
+            "label": "H1 first pullback ratio 0.65-0.79",
+            "timeframe": "h1",
+            "field": "first_pullback_ratio",
+            "operator": "range",
+            "minimum": 0.65,
+            "maximum": 0.80,
+        },
+        {
+            "label": "M5 confirmed failures distance pullback progression",
+            "timeframe": "m5",
+            "field": "confirmed_failed_conditions",
+            "operator": "sequence_equals",
+            "value": (
+                "impulse_distance",
+                "pullback_ratio",
+                "impulse_progression",
+            ),
+        },
+        {
+            "label": "M5 third impulse pace 3.00-3.99 pips per foot",
+            "timeframe": "m5",
+            "field": "third_impulse_pips_per_foot",
+            "operator": "range",
+            "minimum": 3.0,
+            "maximum": 4.0,
+        },
+        {
+            "label": "H1 confirmed failures distance progression",
+            "timeframe": "h1",
+            "field": "confirmed_failed_conditions",
+            "operator": "sequence_equals",
+            "value": (
+                "impulse_distance",
+                "impulse_progression",
+            ),
+        },
+        {
+            "label": "H1 second structure progress 1.00-1.99 pips",
+            "timeframe": "h1",
+            "field": "second_structure_progress_pips",
+            "operator": "range",
+            "minimum": 1.0,
+            "maximum": 2.0,
+        },
+        {
+            "label": "H1 first structure progress 1.00-1.99 pips",
+            "timeframe": "h1",
+            "field": "first_structure_progress_pips",
+            "operator": "range",
+            "minimum": 1.0,
+            "maximum": 2.0,
+        },
+        {
+            "label": "M5 third impulse required ratio 1.25-1.49",
+            "timeframe": "m5",
+            "field": "third_impulse_required_ratio",
+            "operator": "range",
+            "minimum": 1.25,
+            "maximum": 1.50,
+        },
+        {
+            "label": "M5 first pullback ratio 0.55-0.64",
+            "timeframe": "m5",
+            "field": "first_pullback_ratio",
+            "operator": "range",
+            "minimum": 0.55,
+            "maximum": 0.65,
+        },
+        {
+            "label": "M5 first impulse foot count 5",
+            "timeframe": "m5",
+            "field": "first_impulse_foot_count",
+            "operator": "equals_number",
+            "value": 5,
+        },
+        {
+            "label": "H1 first pullback foot ratio 0.55-0.64",
+            "timeframe": "h1",
+            "field": "first_pullback_foot_ratio",
+            "operator": "range",
+            "minimum": 0.55,
+            "maximum": 0.65,
+        },
+        {
+            "label": "M5 candidate failures count distance pullback structure",
+            "timeframe": "m5",
+            "field": "candidate_failed_conditions",
+            "operator": "sequence_equals",
+            "value": (
+                "completed_impulse_foot_count",
+                "impulse_distance",
+                "pullback_ratio",
+                "structure_progression",
+            ),
+        },
+        {
+            "label": "M5 first pullback foot ratio 0.80-0.99",
+            "timeframe": "m5",
+            "field": "first_pullback_foot_ratio",
+            "operator": "range",
+            "minimum": 0.80,
+            "maximum": 1.00,
+        },
+    )
     predict_reversal_m5_stair_enabled = True
     predict_reversal_m5_stair_min_impulse_foot_count = 3
     predict_reversal_m5_stair_min_latest_impulse_foot_count = 2
@@ -61,6 +190,19 @@ class LineStrategyProfileUsdJpy:
     predict_reversal_m5_stair_max_pullback_ratio = 0.65
     predict_reversal_m5_stair_min_break_pips = 0.5
     predict_reversal_m5_stair_min_dominance_ratio = 1.5
+    # H1 uses the same structure as a slower, macro-direction filter.  Its
+    # absolute thresholds are wider; volatility scaling still adapts them to
+    # the completed H1 candles available at the decision time.
+    predict_reversal_h1_stair_enabled = True
+    predict_reversal_h1_stair_min_impulse_foot_count = 3
+    predict_reversal_h1_stair_min_latest_impulse_foot_count = 2
+    predict_reversal_h1_stair_max_pullback_foot_count = 3
+    predict_reversal_h1_stair_min_impulse_pips = 10.0
+    predict_reversal_h1_stair_volatility_lookback = 12
+    predict_reversal_h1_stair_volatility_multiplier = 1.2
+    predict_reversal_h1_stair_max_pullback_ratio = 0.65
+    predict_reversal_h1_stair_min_break_pips = 3.0
+    predict_reversal_h1_stair_min_dominance_ratio = 1.5
     immediate_near_line_max_pips = 3
     immediate_break_score_min = 0.75
     immediate_break_reason_count_min = 3
@@ -138,6 +280,23 @@ class LineStrategyProfileUsdJpy:
         strategy = candidate.get("strategy")
         entry_type = getattr(strategy, "entry_type", None)
         direction = int(candidate.get("direction") or 0)
+        if (
+            candidate.get("predict_reversal_filter_policy_version")
+            == self.predict_reversal_filter_policy_version
+            and int(
+                candidate.get("predict_reversal_top15_match_count") or 0
+            ) > 0
+        ):
+            return {
+                "permission": True,
+                "risk_multiplier": 1.0,
+                "snapshot": snapshot,
+                "regime": regime,
+                "trend_direction": trend_direction,
+                "entry_type": entry_type,
+                "order_direction": direction,
+                "reason": "top15 OR eligibility replaces regime gate",
+            }
         permission = True
         reason = "regime allows order"
 
@@ -1312,9 +1471,15 @@ class LineStrategyProfileUsdJpy:
             str(signal_direction) + ":" + str(signal_time)
         )
 
-        stair_context = self._detect_predict_reversal_m5_stair(coordinator)
+        m5_stair_context = self._detect_predict_reversal_m5_stair(
+            coordinator
+        )
+        h1_stair_context = self._detect_predict_reversal_h1_stair(
+            coordinator
+        )
         for candidate in grouped_lines["future_resist_candidates"]:
-            candidate["m5_stair_context"] = stair_context
+            candidate["m5_stair_context"] = m5_stair_context
+            candidate["h1_stair_context"] = h1_stair_context
 
         candidates = coordinator.select_line_candidates(
             grouped_lines["future_resist_candidates"],
@@ -1851,67 +2016,64 @@ class LineStrategyProfileUsdJpy:
     def _predict_reversal_candidate_passes_filters(
         self,
         candidate,
-        latest_peak_info,
+        _latest_peak_info,
     ):
-        """Apply live-observation filters before PredictReversal ranking."""
-        line = candidate.get("line") or {}
-        peaks_count = self._int_or_none(line.get("count"))
-        if (
-            peaks_count is None
-            or peaks_count < self.predict_reversal_min_peaks_count
-        ):
-            return False
-
-        peak_rsi = self._float_or_none(latest_peak_info.get("rsi"))
-        previous_peak_rsi = self._float_or_none(
-            latest_peak_info.get("previous_rsi")
+        """Allow a candidate when any configured 2026 YTD top condition matches."""
+        matches = self._predict_reversal_top15_matches(candidate)
+        candidate["predict_reversal_filter_policy_version"] = (
+            self.predict_reversal_filter_policy_version
         )
-        if peak_rsi is None or previous_peak_rsi is None:
-            return False
+        candidate["predict_reversal_top15_matches"] = matches
+        candidate["predict_reversal_top15_match_count"] = len(matches)
+        return bool(matches)
 
-        line_side = candidate.get("line_side")
-        midpoint = float(self.predict_reversal_peak_rsi_midpoint)
-        if line_side == "upper":
-            if peak_rsi < midpoint or peak_rsi < previous_peak_rsi:
-                return False
-        elif line_side == "lower":
-            if peak_rsi > midpoint or peak_rsi > previous_peak_rsi:
-                return False
-        else:
-            return False
+    def _predict_reversal_top15_matches(self, candidate):
+        contexts = {
+            "m5": candidate.get("m5_stair_context") or {},
+            "h1": candidate.get("h1_stair_context") or {},
+        }
+        matches = []
+        for condition in self.predict_reversal_top15_conditions:
+            context = contexts.get(condition["timeframe"], {})
+            value = self._nested_value(context, condition["field"])
+            if self._top15_condition_matches(value, condition):
+                matches.append(condition["label"])
+        return matches
 
-        if self.predict_reversal_block_trend_regimes:
-            snapshot = getattr(self, "regime_snapshot", None) or {}
-            regime = (snapshot.get("market") or {}).get(
-                "regime",
-                "NEUTRAL",
+    @staticmethod
+    def _nested_value(mapping, dotted_field):
+        value = mapping
+        for field in dotted_field.split("."):
+            if not isinstance(value, dict):
+                return None
+            value = value.get(field)
+        return value
+
+    @classmethod
+    def _top15_condition_matches(cls, value, condition):
+        operator = condition["operator"]
+        if operator == "range":
+            number = cls._finite_float_or_none(value)
+            return bool(
+                number is not None
+                and number >= float(condition["minimum"])
+                and number < float(condition["maximum"])
             )
-            if regime in (
-                "UP_TREND",
-                "DOWN_TREND",
-                "UP_TREND_START",
-                "DOWN_TREND_START",
-            ):
-                return False
-
-        if self.predict_reversal_m5_stair_enabled:
-            stair = candidate.get("m5_stair_context") or {}
-            stair_direction = self._int_or_none(stair.get("direction"))
-            peak_direction = self._int_or_none(
-                latest_peak_info.get("direction")
+        if operator == "equals_number":
+            number = cls._finite_float_or_none(value)
+            return bool(
+                number is not None
+                and number == float(condition["value"])
             )
-            if (
-                stair.get("state") in (
-                    "UP_CANDIDATE",
-                    "UP_CONFIRMED",
-                    "DOWN_CANDIDATE",
-                    "DOWN_CONFIRMED",
-                )
-                and stair_direction == peak_direction
-            ):
+        if operator == "sequence_equals":
+            if isinstance(value, str):
+                value = tuple(item for item in value.split("|") if item)
+            elif isinstance(value, (list, tuple)):
+                value = tuple(value)
+            else:
                 return False
-
-        return True
+            return value == tuple(condition["value"])
+        return value == condition.get("value")
 
     def _detect_predict_reversal_m5_stair(self, coordinator):
         if not self.predict_reversal_m5_stair_enabled:
@@ -1962,6 +2124,59 @@ class LineStrategyProfileUsdJpy:
             ),
             min_dominance_ratio=(
                 self.predict_reversal_m5_stair_min_dominance_ratio
+            ),
+        )
+
+    def _detect_predict_reversal_h1_stair(self, coordinator):
+        if not self.predict_reversal_h1_stair_enabled:
+            return {
+                "timeframe": "H1",
+                "state": "DISABLED",
+                "direction": 0,
+                "confirmed": False,
+                "reason": "pair_profile_disabled",
+            }
+
+        analysis = getattr(coordinator, "analysis", None)
+        candle_analysis = getattr(analysis, "candle_analysis_all", None)
+        peaks_class = getattr(candle_analysis, "peaks_class_hour", None)
+        peaks = getattr(peaks_class, "peaks_original", None)
+        h1_frame = getattr(candle_analysis, "h1_df_r", None)
+        completed_h1 = (
+            h1_frame.iloc[1:]
+            if h1_frame is not None and not h1_frame.empty
+            else None
+        )
+        return detect_h1_stair_trend(
+            peaks,
+            self.pair,
+            completed_h1,
+            min_impulse_foot_count=(
+                self.predict_reversal_h1_stair_min_impulse_foot_count
+            ),
+            min_latest_impulse_foot_count=(
+                self.predict_reversal_h1_stair_min_latest_impulse_foot_count
+            ),
+            max_pullback_foot_count=(
+                self.predict_reversal_h1_stair_max_pullback_foot_count
+            ),
+            min_impulse_pips=(
+                self.predict_reversal_h1_stair_min_impulse_pips
+            ),
+            volatility_lookback=(
+                self.predict_reversal_h1_stair_volatility_lookback
+            ),
+            volatility_multiplier=(
+                self.predict_reversal_h1_stair_volatility_multiplier
+            ),
+            max_pullback_ratio=(
+                self.predict_reversal_h1_stair_max_pullback_ratio
+            ),
+            min_break_pips=(
+                self.predict_reversal_h1_stair_min_break_pips
+            ),
+            min_dominance_ratio=(
+                self.predict_reversal_h1_stair_min_dominance_ratio
             ),
         )
 

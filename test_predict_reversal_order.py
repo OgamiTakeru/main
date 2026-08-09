@@ -74,6 +74,9 @@ class PredictReversalDirectionTest(unittest.TestCase):
                         "direction": -1,
                         "line": {"count": 2},
                         "m5_stair_context": {"state": "NONE"},
+                        "h1_stair_context": {
+                            "criteria": {"pullback_ratio": True}
+                        },
                     },
                     {},
                     {
@@ -93,6 +96,9 @@ class PredictReversalDirectionTest(unittest.TestCase):
                         "direction": 1,
                         "line": {"count": 2},
                         "m5_stair_context": {"state": "NONE"},
+                        "h1_stair_context": {
+                            "criteria": {"pullback_ratio": True}
+                        },
                     },
                     {},
                     {
@@ -112,6 +118,9 @@ class PredictReversalDirectionTest(unittest.TestCase):
                         "direction": -1,
                         "line": {"count": 2},
                         "m5_stair_context": {"state": "NONE"},
+                        "h1_stair_context": {
+                            "criteria": {"pullback_ratio": True}
+                        },
                     },
                     {},
                     {
@@ -122,6 +131,91 @@ class PredictReversalDirectionTest(unittest.TestCase):
                     },
                 )
                 self.assertEqual(reasons, [])
+
+
+class PredictReversalTop15FilterTest(unittest.TestCase):
+    def test_any_top15_condition_allows_candidate(self):
+        profile = LineStrategyProfileUsdJpy()
+        candidate = {
+            "m5_stair_context": {},
+            "h1_stair_context": {
+                "criteria": {"pullback_ratio": True},
+            },
+        }
+
+        self.assertTrue(
+            profile._predict_reversal_candidate_passes_filters(
+                candidate,
+                {},
+            )
+        )
+        self.assertEqual(
+            candidate["predict_reversal_top15_matches"],
+            ["H1 pullback ratio criterion passed"],
+        )
+
+    def test_candidate_without_top15_match_is_rejected(self):
+        profile = LineStrategyProfileUsdJpy()
+        candidate = {
+            "m5_stair_context": {},
+            "h1_stair_context": {
+                "criteria": {"pullback_ratio": False},
+            },
+        }
+
+        self.assertFalse(
+            profile._predict_reversal_candidate_passes_filters(
+                candidate,
+                {},
+            )
+        )
+
+    def test_top15_ranges_use_inclusive_lower_exclusive_upper(self):
+        profile = LineStrategyProfileUsdJpy()
+        candidate = {
+            "m5_stair_context": {},
+            "h1_stair_context": {
+                "second_impulse_required_ratio": 2.0,
+            },
+        }
+
+        self.assertTrue(
+            profile._predict_reversal_candidate_passes_filters(
+                candidate,
+                {},
+            )
+        )
+        candidate["h1_stair_context"][
+            "second_impulse_required_ratio"
+        ] = 3.0
+        self.assertFalse(
+            profile._predict_reversal_candidate_passes_filters(
+                candidate,
+                {},
+            )
+        )
+
+    def test_top15_match_replaces_separate_live_regime_gate(self):
+        profile = LineStrategyProfileUsdJpy()
+        profile.regime_snapshot = {
+            "market": {"regime": "UP_TREND", "trend_direction": 1}
+        }
+        candidate = {
+            "strategy": SimpleNamespace(entry_type="reversal"),
+            "direction": -1,
+            "predict_reversal_filter_policy_version": (
+                profile.predict_reversal_filter_policy_version
+            ),
+            "predict_reversal_top15_match_count": 1,
+        }
+
+        policy = profile.regime_order_policy(candidate)
+
+        self.assertTrue(policy["permission"])
+        self.assertEqual(
+            policy["reason"],
+            "top15 OR eligibility replaces regime gate",
+        )
 
 
 class PredictReversalTargetTest(unittest.TestCase):

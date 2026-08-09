@@ -22,6 +22,7 @@ from fLineStrategyUsdJpy import (
     UsdJpyM5BreakoutLineOrderStrategy,
     UsdJpyM5LineOrderStrategy,
 )
+from fStairTrend import STAIR_CONTEXT_FIELDS
 import statistics
 from collections import Counter
 
@@ -1410,6 +1411,9 @@ class LineOrderCoordinator:
             "predict_distance_rank",
             "predict_candidate_scope",
             "predict_ranking_version",
+            "predict_reversal_filter_policy_version",
+            "predict_reversal_top15_matches",
+            "predict_reversal_top15_match_count",
             "predict_rank_input_scope",
             "predict_rank_score",
             "predict_rank_pair",
@@ -1473,72 +1477,12 @@ class LineOrderCoordinator:
         order_plan["previous_peak_strength"] = candidate.get("previous_peak_strength")
         order_plan["previous_peak_price"] = candidate.get("previous_peak_price")
         order_plan["previous_peak_rsi"] = candidate.get("previous_peak_rsi")
-        stair_context = candidate.get("m5_stair_context") or {}
-        for field in (
-            "state",
-            "direction",
-            "observed_direction",
-            "confirmed",
-            "candidate_passed",
-            "confirmed_passed",
-            "analysis_leg_count",
-            "detected_leg_count",
-            "reason",
-            "foot_count_sequence",
-            "direction_sequence",
-            "distance_pips_sequence",
-            "impulse_foot_count_sequence",
-            "pullback_foot_count_sequence",
-            "impulse_distance_pips_sequence",
-            "pullback_distance_pips_sequence",
-            "pullback_ratio_sequence",
-            "impulse_break_pips_sequence",
-            "structure_progress_pips_sequence",
-            "impulse_distance_pips",
-            "pullback_distance_pips",
-            "dominance_ratio",
-            "first_impulse_foot_count",
-            "first_impulse_pips",
-            "first_pullback_foot_count",
-            "first_pullback_pips",
-            "first_pullback_ratio",
-            "first_pullback_foot_ratio",
-            "first_impulse_pips_per_foot",
-            "first_pullback_pips_per_foot",
-            "first_impulse_required_ratio",
-            "second_impulse_foot_count",
-            "second_impulse_pips",
-            "second_pullback_foot_count",
-            "second_pullback_pips",
-            "second_pullback_ratio",
-            "second_pullback_foot_ratio",
-            "second_impulse_pips_per_foot",
-            "second_pullback_pips_per_foot",
-            "second_impulse_required_ratio",
-            "third_impulse_foot_count",
-            "third_impulse_pips",
-            "third_impulse_pips_per_foot",
-            "third_impulse_required_ratio",
-            "net_progress_pips",
-            "second_impulse_break_pips",
-            "third_impulse_break_pips",
-            "first_structure_progress_pips",
-            "second_structure_progress_pips",
-            "candidate_failed_conditions",
-            "confirmed_failed_conditions",
-            "required_impulse_pips",
-            "median_m5_range_pips",
-            "threshold_min_impulse_foot_count",
-            "threshold_min_latest_impulse_foot_count",
-            "threshold_max_pullback_foot_count",
-            "threshold_min_impulse_pips",
-            "threshold_volatility_lookback",
-            "threshold_volatility_multiplier",
-            "threshold_max_pullback_ratio",
-            "threshold_min_break_pips",
-            "threshold_min_dominance_ratio",
-        ):
-            order_plan["m5_stair_" + field] = stair_context.get(field)
+        for timeframe in ("m5", "h1"):
+            stair_context = candidate.get(timeframe + "_stair_context") or {}
+            for field in STAIR_CONTEXT_FIELDS:
+                order_plan[
+                    timeframe + "_stair_" + field
+                ] = stair_context.get(field)
         order_plan["line_side"] = candidate["line_side"]
         order_plan["line_price"] = candidate["line_price"]
         order_plan["line_total_strength"] = line.get("total_strength")

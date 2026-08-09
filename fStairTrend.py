@@ -1,8 +1,80 @@
-"""Past-only M5 stair-trend detection shared by pair profiles."""
+"""Past-only stair-trend detection shared by pair profiles."""
 
 import math
 
 import fGeneric as gene
+
+
+STAIR_CONTEXT_FIELDS = (
+    "timeframe",
+    "state",
+    "direction",
+    "direction_label",
+    "observed_direction",
+    "confirmed",
+    "candidate_passed",
+    "confirmed_passed",
+    "analysis_leg_count",
+    "detected_leg_count",
+    "reason",
+    "foot_count_sequence",
+    "direction_sequence",
+    "distance_pips_sequence",
+    "impulse_foot_count_sequence",
+    "pullback_foot_count_sequence",
+    "impulse_distance_pips_sequence",
+    "pullback_distance_pips_sequence",
+    "pullback_ratio_sequence",
+    "impulse_break_pips_sequence",
+    "structure_progress_pips_sequence",
+    "impulse_distance_pips",
+    "pullback_distance_pips",
+    "dominance_ratio",
+    "first_impulse_foot_count",
+    "first_impulse_pips",
+    "first_pullback_foot_count",
+    "first_pullback_pips",
+    "first_pullback_ratio",
+    "first_pullback_foot_ratio",
+    "first_impulse_pips_per_foot",
+    "first_pullback_pips_per_foot",
+    "first_impulse_required_ratio",
+    "second_impulse_foot_count",
+    "second_impulse_pips",
+    "second_pullback_foot_count",
+    "second_pullback_pips",
+    "second_pullback_ratio",
+    "second_pullback_foot_ratio",
+    "second_impulse_pips_per_foot",
+    "second_pullback_pips_per_foot",
+    "second_impulse_required_ratio",
+    "third_impulse_foot_count",
+    "third_impulse_pips",
+    "third_impulse_pips_per_foot",
+    "third_impulse_required_ratio",
+    "net_progress_pips",
+    "second_impulse_break_pips",
+    "third_impulse_break_pips",
+    "first_structure_progress_pips",
+    "second_structure_progress_pips",
+    "candidate_failed_conditions",
+    "confirmed_failed_conditions",
+    "required_impulse_pips",
+    "median_range_pips",
+    "median_m5_range_pips",
+    "median_h1_range_pips",
+    "threshold_min_impulse_foot_count",
+    "threshold_min_latest_impulse_foot_count",
+    "threshold_max_pullback_foot_count",
+    "threshold_min_impulse_pips",
+    "threshold_volatility_lookback",
+    "threshold_volatility_multiplier",
+    "threshold_max_pullback_ratio",
+    "threshold_min_break_pips",
+    "threshold_min_dominance_ratio",
+    "oldest_time",
+    "latest_time",
+)
 
 
 def detect_m5_stair_trend(
@@ -20,7 +92,73 @@ def detect_m5_stair_trend(
     min_break_pips=0.5,
     min_dominance_ratio=1.5,
 ):
-    """Detect U-D-U / D-U-D stairs from completed-M5 foot peaks.
+    return detect_stair_trend(
+        peaks,
+        pair,
+        completed_m5,
+        timeframe="M5",
+        min_impulse_foot_count=min_impulse_foot_count,
+        min_latest_impulse_foot_count=min_latest_impulse_foot_count,
+        max_pullback_foot_count=max_pullback_foot_count,
+        min_impulse_pips=min_impulse_pips,
+        volatility_lookback=volatility_lookback,
+        volatility_multiplier=volatility_multiplier,
+        max_pullback_ratio=max_pullback_ratio,
+        min_break_pips=min_break_pips,
+        min_dominance_ratio=min_dominance_ratio,
+    )
+
+
+def detect_h1_stair_trend(
+    peaks,
+    pair,
+    completed_h1=None,
+    *,
+    min_impulse_foot_count=3,
+    min_latest_impulse_foot_count=2,
+    max_pullback_foot_count=3,
+    min_impulse_pips=10.0,
+    volatility_lookback=12,
+    volatility_multiplier=1.2,
+    max_pullback_ratio=0.65,
+    min_break_pips=3.0,
+    min_dominance_ratio=1.5,
+):
+    """Detect the same stair structure on completed H1 candles."""
+    return detect_stair_trend(
+        peaks,
+        pair,
+        completed_h1,
+        timeframe="H1",
+        min_impulse_foot_count=min_impulse_foot_count,
+        min_latest_impulse_foot_count=min_latest_impulse_foot_count,
+        max_pullback_foot_count=max_pullback_foot_count,
+        min_impulse_pips=min_impulse_pips,
+        volatility_lookback=volatility_lookback,
+        volatility_multiplier=volatility_multiplier,
+        max_pullback_ratio=max_pullback_ratio,
+        min_break_pips=min_break_pips,
+        min_dominance_ratio=min_dominance_ratio,
+    )
+
+
+def detect_stair_trend(
+    peaks,
+    pair,
+    completed_candles=None,
+    *,
+    timeframe,
+    min_impulse_foot_count,
+    min_latest_impulse_foot_count,
+    max_pullback_foot_count,
+    min_impulse_pips,
+    volatility_lookback,
+    volatility_multiplier,
+    max_pullback_ratio,
+    min_break_pips,
+    min_dominance_ratio,
+):
+    """Detect U-D-U / D-U-D stairs from completed-candle foot peaks.
 
     ``peaks`` must be newest first, matching ``PeaksClass.peaks_original``.
     The newest foot may still be extending, but every candle used to build it
@@ -28,6 +166,7 @@ def detect_m5_stair_trend(
     five feet produce a confirmed stair.
     """
     result = {
+        "timeframe": str(timeframe).upper(),
         "state": "NONE",
         "direction": 0,
         "direction_label": None,
@@ -80,7 +219,9 @@ def detect_m5_stair_trend(
         "candidate_failed_conditions": [],
         "confirmed_failed_conditions": [],
         "required_impulse_pips": float(min_impulse_pips),
+        "median_range_pips": None,
         "median_m5_range_pips": None,
+        "median_h1_range_pips": None,
         "threshold_min_impulse_foot_count": int(min_impulse_foot_count),
         "threshold_min_latest_impulse_foot_count": int(
             min_latest_impulse_foot_count
@@ -103,8 +244,8 @@ def detect_m5_stair_trend(
         if isinstance(foot, dict) and _direction(foot) in (-1, 1)
     ]
 
-    median_range = _median_completed_m5_range_pips(
-        completed_m5,
+    median_range = _median_completed_range_pips(
+        completed_candles,
         pair_info,
         volatility_lookback,
     )
@@ -116,6 +257,16 @@ def detect_m5_stair_trend(
         )
     result["required_impulse_pips"] = round(required_impulse, 3)
     result["median_m5_range_pips"] = (
+        round(median_range, 3)
+        if median_range is not None and str(timeframe).upper() == "M5"
+        else None
+    )
+    result["median_h1_range_pips"] = (
+        round(median_range, 3)
+        if median_range is not None and str(timeframe).upper() == "H1"
+        else None
+    )
+    result["median_range_pips"] = (
         round(median_range, 3) if median_range is not None else None
     )
 
@@ -453,7 +604,7 @@ def _net_progress_pips(chronological, direction, pair_info):
     return round(pair_info.price_to_pips((end - start) * direction), 3)
 
 
-def _median_completed_m5_range_pips(frame, pair_info, lookback):
+def _median_completed_range_pips(frame, pair_info, lookback):
     if frame is None or getattr(frame, "empty", True):
         return None
     if "high" not in frame or "low" not in frame:

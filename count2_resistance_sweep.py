@@ -16,7 +16,9 @@ import contextlib
 import datetime as dt
 import functools
 import io
+import json
 import math
+import os
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -33,7 +35,7 @@ from fLineAnalysis import (
     line_strategy_profile,
     predict_reversal_last_reach_context,
 )
-from fStairTrend import detect_m5_stair_trend
+from fStairTrend import detect_h1_stair_trend, detect_m5_stair_trend
 import test_win_point_usd_aud as win_point
 import tokens as tk
 
@@ -42,6 +44,8 @@ DEFAULT_START = dt.datetime(2025, 7, 30)
 DEFAULT_END = dt.datetime(2026, 7, 30)
 LINE_HISTORY_BARS = 60
 PEAK_HISTORY_BARS = 180
+H1_HISTORY_BARS = 240
+H1_PREHISTORY_CALENDAR_HOURS = 24 * 21
 TP_LOOKBACK = 6
 TP_MULTIPLIER = 3.0
 RR = 1.2
@@ -259,6 +263,7 @@ def data_coverage_errors(
     start: dt.datetime,
     end: dt.datetime,
     horizon_minutes: int,
+    h1: pd.DataFrame | None = None,
 ) -> dict[str, list[str]]:
     """Detect truncated cache edges before event extraction begins.
 
@@ -268,6 +273,8 @@ def data_coverage_errors(
     candidate path is still required to be contiguous by LimitPathInspector.
     """
     errors: dict[str, list[str]] = {"M5": [], "S5": []}
+    if h1 is not None:
+        errors["H1"] = []
     start_time = pd.Timestamp(start)
     end_time = pd.Timestamp(end)
     if m5.empty:
@@ -297,6 +304,37 @@ def data_coverage_errors(
                 errors["M5"].append(
                     "truncated_end:"
                     f"{actual_m5_last}<{expected_m5_last}"
+                )
+
+    if h1 is None:
+        pass
+    elif h1.empty:
+        errors["H1"].append("empty")
+    else:
+        h1_times = h1["time_jp_dt"]
+        history_rows = int((h1_times < start_time).sum())
+        if history_rows < H1_HISTORY_BARS:
+            errors["H1"].append(
+                f"prehistory_rows={history_rows}<{H1_HISTORY_BARS}"
+            )
+        h1_in_period = h1_times.between(
+            start_time,
+            end_time,
+            inclusive="left",
+        )
+        if not h1_in_period.any():
+            errors["H1"].append("no_rows_in_requested_period")
+        else:
+            expected_h1_last = _nearest_oanda_open_time(
+                end_time - pd.Timedelta(nanoseconds=1),
+                pd.Timedelta(hours=1),
+                -1,
+            )
+            actual_h1_last = pd.Timestamp(h1_times.loc[h1_in_period].max())
+            if actual_h1_last < expected_h1_last:
+                errors["H1"].append(
+                    "truncated_end:"
+                    f"{actual_h1_last}<{expected_h1_last}"
                 )
 
     if s5.empty:
@@ -365,8 +403,8 @@ def load_pair_data(
     end: dt.datetime,
     existing_only: bool,
     horizon_minutes: int,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load only M5 and S5; H1 is not involved in this validation."""
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load M5/H1 decision context and the S5 execution path."""
     win_point.PAIR = pair_name
     paths = win_point.cache_paths(start, end)
     requirements = {
@@ -374,12 +412,16 @@ def load_pair_data(
             start - dt.timedelta(hours=max(win_point.H1_HISTORY, 16)),
             end,
         ),
+        "H1": (
+            start - dt.timedelta(hours=H1_PREHISTORY_CALENDAR_HOURS),
+            end,
+        ),
         "S5": (start, end + dt.timedelta(minutes=horizon_minutes)),
     }
     data: dict[str, pd.DataFrame] = {}
     missing: list[str] = []
     incompatible: list[str] = []
-    for frame in ("M5", "S5"):
+    for frame in ("M5", "H1", "S5"):
         path = paths[frame]
         if not path.exists():
             missing.append(frame)
@@ -438,6 +480,7 @@ def load_pair_data(
         print(f"[CACHE] {pair_name}: M5/S5の既存キャッシュを使用")
 
     m5 = prepare_m5(data.pop("M5"))
+    h1 = prepare_m5(data.pop("H1"))
     s5 = prepare_s5(data.pop("S5"))
     coverage_errors = data_coverage_errors(
         m5,
@@ -445,6 +488,7 @@ def load_pair_data(
         start,
         end,
         horizon_minutes,
+        h1=h1,
     )
     if coverage_errors and existing_only:
         details = "; ".join(
@@ -458,6 +502,8 @@ def load_pair_data(
             refreshed = fetch_frame(frame)
             if frame == "M5":
                 m5 = prepare_m5(refreshed)
+            elif frame == "H1":
+                h1 = prepare_m5(refreshed)
             else:
                 s5 = prepare_s5(refreshed)
         remaining_errors = data_coverage_errors(
@@ -466,6 +512,7 @@ def load_pair_data(
             start,
             end,
             horizon_minutes,
+            h1=h1,
         )
         if remaining_errors:
             raise ValueError(
@@ -475,7 +522,7 @@ def load_pair_data(
                     for frame, values in remaining_errors.items()
                 )
             )
-    return m5, s5
+    return m5, h1, s5
 
 
 def target_parameters(
@@ -651,6 +698,8 @@ def rebuild_candidates_at(
     m5: pd.DataFrame,
     index: int,
     pair_name: str,
+    h1: pd.DataFrame | None = None,
+    h1_stair_cache: dict[pd.Timestamp, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Recreate peak and line state from rows strictly before ``index``."""
     pair = gene.currency_pair(pair_name)
@@ -674,14 +723,64 @@ def rebuild_candidates_at(
             + str(newest_peak.get("count"))
         )
 
+    if h1 is None:
+        h1_snapshot = snapshot
+        h1_peaks = peaks
+        h1_cache_key = None
+        h1_stair_context = None
+    else:
+        completed_h1_end = int(
+            h1["time_jp_dt"].searchsorted(
+                decision_time - pd.Timedelta(hours=1),
+                side="right",
+            )
+        )
+        completed_h1 = h1.iloc[
+            max(0, completed_h1_end - H1_HISTORY_BARS) : completed_h1_end
+        ].copy()
+        if len(completed_h1) < 60:
+            raise ValueError("insufficient_h1_for_stair_rebuild")
+        if (
+            completed_h1["time_jp_dt"] + pd.Timedelta(hours=1)
+            > decision_time
+        ).any():
+            raise ValueError("future_h1_in_stair_snapshot")
+        h1_cache_key = pd.Timestamp(
+            completed_h1.iloc[-1]["time_jp_dt"]
+        )
+        h1_stair_context = (
+            h1_stair_cache.get(h1_cache_key)
+            if h1_stair_cache is not None
+            else None
+        )
+        if h1_stair_context is None:
+            h1_snapshot = _decision_snapshot(
+                completed_h1,
+                decision_time,
+                current_price,
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                h1_peaks = PeaksClass(
+                    h1_snapshot,
+                    "H1",
+                    current_price,
+                    pair=pair,
+                )
+        else:
+            # M5 line rebuilding does not read H1 state.  These placeholders
+            # keep the analysis namespace compatible while the causal H1
+            # stair result is reused for the same latest completed H1 candle.
+            h1_snapshot = snapshot
+            h1_peaks = peaks
+
     analysis = SimpleNamespace(
         pair=pair_name,
         current_price=current_price,
         d5_df_r=snapshot,
         peaks_class=peaks,
         candle_meta_class=None,
-        h1_df_r=snapshot,
-        peaks_class_hour=peaks,
+        h1_df_r=h1_snapshot,
+        peaks_class_hour=h1_peaks,
         candle_meta_class_hour=None,
         d30_df_r=snapshot,
         peaks_class_m30=peaks,
@@ -747,6 +846,62 @@ def rebuild_candidates_at(
     stair_context["profile_enabled"] = bool(
         getattr(profile, "predict_reversal_m5_stair_enabled", False)
     )
+    if h1_stair_context is None:
+        h1_stair_context = detect_h1_stair_trend(
+            h1_peaks.peaks_original,
+            pair,
+            h1_snapshot.iloc[1:],
+            min_impulse_foot_count=getattr(
+                profile,
+                "predict_reversal_h1_stair_min_impulse_foot_count",
+                3,
+            ),
+            min_latest_impulse_foot_count=getattr(
+                profile,
+                "predict_reversal_h1_stair_min_latest_impulse_foot_count",
+                2,
+            ),
+            max_pullback_foot_count=getattr(
+                profile,
+                "predict_reversal_h1_stair_max_pullback_foot_count",
+                3,
+            ),
+            min_impulse_pips=getattr(
+                profile,
+                "predict_reversal_h1_stair_min_impulse_pips",
+                10.0,
+            ),
+            volatility_lookback=getattr(
+                profile,
+                "predict_reversal_h1_stair_volatility_lookback",
+                12,
+            ),
+            volatility_multiplier=getattr(
+                profile,
+                "predict_reversal_h1_stair_volatility_multiplier",
+                1.2,
+            ),
+            max_pullback_ratio=getattr(
+                profile,
+                "predict_reversal_h1_stair_max_pullback_ratio",
+                0.65,
+            ),
+            min_break_pips=getattr(
+                profile,
+                "predict_reversal_h1_stair_min_break_pips",
+                3.0,
+            ),
+            min_dominance_ratio=getattr(
+                profile,
+                "predict_reversal_h1_stair_min_dominance_ratio",
+                1.5,
+            ),
+        )
+        h1_stair_context["profile_enabled"] = bool(
+            getattr(profile, "predict_reversal_h1_stair_enabled", False)
+        )
+        if h1_stair_cache is not None and h1_cache_key is not None:
+            h1_stair_cache[h1_cache_key] = h1_stair_context
     peak_direction = int(newest_peak["direction"])
     candidates = select_ahead_lines(
         peak_direction,
@@ -756,6 +911,9 @@ def rebuild_candidates_at(
         pair,
         profile,
     )
+    for candidate in candidates:
+        candidate["m5_stair_context"] = stair_context
+        candidate["h1_stair_context"] = h1_stair_context
     completed_desc = completed.sort_values(
         "time_jp_dt",
         ascending=False,
@@ -781,12 +939,14 @@ def rebuild_candidates_at(
         "decision_time": decision_time,
         "current_price": current_price,
         "newest_peak": newest_peak,
+        "m5_peaks": peaks.peaks_original,
         "peak_direction": peak_direction,
         "completed_history": completed,
         "candidates": candidates,
         "profile": profile,
         "rsi_info": rsi_info,
         "stair_context": stair_context,
+        "h1_stair_context": h1_stair_context,
     }
 
 
@@ -1391,7 +1551,9 @@ STAIR_SCALAR_FIELDS = (
     "pullback_distance_pips",
     "dominance_ratio",
     "required_impulse_pips",
+    "median_range_pips",
     "median_m5_range_pips",
+    "median_h1_range_pips",
     "first_impulse_foot_count",
     "first_impulse_pips",
     "first_pullback_foot_count",
@@ -1434,15 +1596,16 @@ STAIR_SCALAR_FIELDS = (
 def stair_analysis_columns(
     context: dict[str, Any],
     peak_direction: int,
+    prefix: str = "m5_stair",
 ) -> dict[str, Any]:
     """Flatten decision-time stair evidence for validation CSVs."""
     row = {
-        "m5_stair_" + field: context.get(field)
+        prefix + "_" + field: context.get(field)
         for field in STAIR_SCALAR_FIELDS
     }
     for field in STAIR_SEQUENCE_FIELDS:
         values = context.get(field) or []
-        row["m5_stair_" + field] = "|".join(
+        row[prefix + "_" + field] = "|".join(
             str(value) for value in values
         )
     detected = context.get("state") in (
@@ -1451,13 +1614,13 @@ def stair_analysis_columns(
         "DOWN_CANDIDATE",
         "DOWN_CONFIRMED",
     )
-    row["m5_stair_detected"] = detected
-    row["m5_stair_would_block_predict_reversal"] = bool(
+    row[prefix + "_detected"] = detected
+    row[prefix + "_would_block_predict_reversal"] = bool(
         detected
         and int(context.get("direction") or 0) == int(peak_direction)
     )
     for name, passed in (context.get("criteria") or {}).items():
-        row["m5_stair_criterion_" + name] = passed
+        row[prefix + "_criterion_" + name] = passed
     return row
 
 
@@ -1741,6 +1904,103 @@ def make_stair_analysis(
     return pd.DataFrame(summaries)
 
 
+def make_h1_stair_analysis(
+    candidates: pd.DataFrame,
+    min_group_size: int,
+) -> pd.DataFrame:
+    """Reuse the detailed stair summary for the H1 macro context."""
+    if candidates.empty:
+        return pd.DataFrame()
+    work = candidates.copy()
+    m5_columns = [
+        column for column in work.columns if column.startswith("m5_stair_")
+    ]
+    work.drop(columns=m5_columns, inplace=True)
+    work.rename(
+        columns={
+            column: "m5_stair_" + column.removeprefix("h1_stair_")
+            for column in work.columns
+            if column.startswith("h1_stair_")
+        },
+        inplace=True,
+    )
+    summary = make_stair_analysis(work, min_group_size)
+    summary.rename(
+        columns={
+            column: "h1_stair_" + column.removeprefix("m5_stair_")
+            for column in summary.columns
+            if column.startswith("m5_stair_")
+        },
+        inplace=True,
+    )
+    return summary
+
+
+def make_stair_policy_analysis(candidates: pd.DataFrame) -> pd.DataFrame:
+    """Compare short-term, macro and combined stair blocking outcomes."""
+    if candidates.empty:
+        return pd.DataFrame()
+    work = candidates.copy()
+    work["completed_trade"] = work["candidate_result"].isin(
+        ["tp", "lc", "both_same_s5_lc_assumed", "timeout"]
+    )
+    work["is_win"] = work["candidate_result"].eq("tp")
+    selected = work[
+        work["current_policy_predict_selected"].fillna(False)
+    ].copy()
+    if selected.empty:
+        return pd.DataFrame()
+    selected["m5_block"] = selected[
+        "m5_stair_would_block_predict_reversal"
+    ].fillna(False)
+    selected["h1_block"] = selected[
+        "h1_stair_would_block_predict_reversal"
+    ].fillna(False)
+    selected["combined_block"] = selected["m5_block"] | selected["h1_block"]
+    selected["allowed_by_both"] = ~selected["combined_block"]
+    groups = [
+        ("all_counterfactual_selected", selected),
+        ("m5_would_block", selected[selected["m5_block"]]),
+        ("h1_would_block", selected[selected["h1_block"]]),
+        ("either_would_block", selected[selected["combined_block"]]),
+        ("allowed_by_both_stairs", selected[selected["allowed_by_both"]]),
+        (
+            "current_policy_live_selected",
+            work[work["current_policy_live_selected"].fillna(False)],
+        ),
+    ]
+    rows = []
+    for label, group in groups:
+        completed = group[group["completed_trade"]]
+        result_pips = pd.to_numeric(
+            completed.get("trade_result_pips"),
+            errors="coerce",
+        )
+        rows.append(
+            {
+                "policy_group": label,
+                "event_count": group["event_id"].nunique(),
+                "filled_count": int(group["filled"].fillna(False).sum()),
+                "completed_trade_count": len(completed),
+                "tp_count": int(group["is_win"].sum()),
+                "fill_rate": (
+                    float(group["filled"].fillna(False).mean())
+                    if len(group)
+                    else np.nan
+                ),
+                "win_rate_completed": (
+                    float(completed["is_win"].mean())
+                    if len(completed)
+                    else np.nan
+                ),
+                "mean_result_pips": (
+                    float(result_pips.mean()) if len(completed) else np.nan
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def output_paths(
     pair_name: str,
     args: argparse.Namespace,
@@ -1761,11 +2021,128 @@ def output_paths(
         "events": folder / f"resistance_sweep_events_{stem}.csv",
         "ranking": folder / f"resistance_sweep_ranking_{stem}.csv",
         "stair_analysis": folder / f"resistance_sweep_stair_analysis_{stem}.csv",
+        "h1_stair_analysis": folder / f"resistance_sweep_h1_stair_analysis_{stem}.csv",
+        "stair_policy_analysis": folder / f"resistance_sweep_stair_policy_{stem}.csv",
+        "progress": folder / f"resistance_sweep_progress_{stem}.json",
     }
 
 
 def _notify(message: str) -> None:
     win_point.send_inspection_notice(message)
+
+
+def _write_progress(
+    path: Path,
+    *,
+    pair_name: str,
+    args: argparse.Namespace,
+    status: str,
+    phase: str,
+    wall_started: dt.datetime,
+    process_started: float,
+    total_positions: int | None = None,
+    current_position: int = 0,
+    evaluated_events: int = 0,
+    candidate_rows: int = 0,
+    decision_time: pd.Timestamp | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    elapsed_seconds = max(time.monotonic() - process_started, 0.0)
+    progress_percent = (
+        100.0 * current_position / total_positions
+        if total_positions
+        else None
+    )
+    remaining_seconds = (
+        elapsed_seconds * (total_positions - current_position) / current_position
+        if total_positions and current_position > 0
+        else None
+    )
+    payload = {
+        "pair": pair_name,
+        "pid": os.getpid(),
+        "status": status,
+        "phase": phase,
+        "started_at": wall_started.astimezone().isoformat(timespec="seconds"),
+        "updated_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "requested_start": args.start.isoformat(" "),
+        "requested_end": args.end.isoformat(" "),
+        "current_position": int(current_position),
+        "total_positions": (
+            int(total_positions) if total_positions is not None else None
+        ),
+        "progress_percent": (
+            round(progress_percent, 3)
+            if progress_percent is not None
+            else None
+        ),
+        "evaluated_events": int(evaluated_events),
+        "candidate_rows": int(candidate_rows),
+        "current_decision_time": (
+            pd.Timestamp(decision_time).isoformat(" ")
+            if decision_time is not None
+            else None
+        ),
+        "elapsed_minutes": round(elapsed_seconds / 60.0, 2),
+        "estimated_remaining_minutes": (
+            round(remaining_seconds / 60.0, 2)
+            if remaining_seconds is not None
+            else None
+        ),
+        "error": error,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
+    return payload
+
+
+def _archive_progress(path: Path) -> Path:
+    if not path.exists():
+        return path
+    archive = path.parent / "archive"
+    archive.mkdir(parents=True, exist_ok=True)
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    destination = archive / f"{path.stem}_{timestamp}{path.suffix}"
+    sequence = 1
+    while destination.exists():
+        destination = archive / (
+            f"{path.stem}_{timestamp}_{sequence}{path.suffix}"
+        )
+        sequence += 1
+    path.replace(destination)
+    path.with_suffix(path.suffix + ".tmp").unlink(missing_ok=True)
+    return destination
+
+
+def _mark_progress_failed(path: Path, error: Exception) -> Path:
+    if not path.exists():
+        return path
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    payload.update(
+        {
+            "status": "failed",
+            "phase": "failed",
+            "updated_at": dt.datetime.now().astimezone().isoformat(
+                timespec="seconds"
+            ),
+            "error": f"{type(error).__name__}: {error}",
+        }
+    )
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
+    return _archive_progress(path)
 
 
 def _event_summary(
@@ -1814,7 +2191,19 @@ def run_sweep(
 ) -> dict[str, Path]:
     pair = gene.currency_pair(pair_name)
     process_started = time.monotonic()
-    m5, s5 = load_pair_data(
+    wall_started = dt.datetime.now().astimezone()
+    paths = output_paths(pair_name, args)
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    _write_progress(
+        paths["progress"],
+        pair_name=pair_name,
+        args=args,
+        status="running",
+        phase="loading_data",
+        wall_started=wall_started,
+        process_started=process_started,
+    )
+    m5, h1, s5 = load_pair_data(
         pair_name,
         args.start,
         args.end,
@@ -1822,10 +2211,23 @@ def run_sweep(
         args.horizon_minutes,
     )
     indices = win_point.candidate_indices(m5, args.start, args.end).tolist()
+    total_positions = len(indices)
+    _write_progress(
+        paths["progress"],
+        pair_name=pair_name,
+        args=args,
+        status="running",
+        phase="processing",
+        wall_started=wall_started,
+        process_started=process_started,
+        total_positions=total_positions,
+    )
     inspector = LimitPathInspector(s5, pair)
     candidate_rows: list[dict[str, Any]] = []
     event_rows: list[dict[str, Any]] = []
+    h1_stair_cache: dict[pd.Timestamp, dict[str, Any]] = {}
     evaluated_events = 0
+    last_decision_time: pd.Timestamp | None = None
     next_notice = pd.Timestamp(args.start) + pd.DateOffset(months=2)
 
     _notify(
@@ -1840,6 +2242,23 @@ def run_sweep(
 
     for position, index in enumerate(indices):
         decision_time = pd.Timestamp(m5.iloc[index]["time_jp_dt"])
+        last_decision_time = decision_time
+        current_position = position + 1
+        if current_position == 1 or current_position % 50 == 0:
+            _write_progress(
+                paths["progress"],
+                pair_name=pair_name,
+                args=args,
+                status="running",
+                phase="processing",
+                wall_started=wall_started,
+                process_started=process_started,
+                total_positions=total_positions,
+                current_position=current_position,
+                evaluated_events=evaluated_events,
+                candidate_rows=len(candidate_rows),
+                decision_time=decision_time,
+            )
         event_base: dict[str, Any] = {
             "event_id": _event_id(pair_name, decision_time),
             "pair": pair_name,
@@ -1884,7 +2303,13 @@ def run_sweep(
             continue
 
         try:
-            rebuilt = rebuild_candidates_at(m5, index, pair_name)
+            rebuilt = rebuild_candidates_at(
+                m5,
+                index,
+                pair_name,
+                h1=h1,
+                h1_stair_cache=h1_stair_cache,
+            )
         except Exception as error:
             event_rows.append(
                 {
@@ -1912,6 +2337,11 @@ def run_sweep(
                     rebuilt["stair_context"],
                     int(peak.get("direction") or 0),
                 ),
+                **stair_analysis_columns(
+                    rebuilt["h1_stair_context"],
+                    int(peak.get("direction") or 0),
+                    prefix="h1_stair",
+                ),
             }
         )
         touches_by_candidate: dict[int, dict[str, Any]] = {}
@@ -1929,19 +2359,60 @@ def run_sweep(
             )
             touches_by_candidate[id(candidate)] = touches
 
-        eligible_candidates = [
+        counterfactual_candidates = [
             candidate
             for candidate in rebuilt["candidates"]
             if candidate.get("current_policy_reversal_target") is True
         ]
         rebuilt["profile"].rank_predict_reversal_candidates(
-            eligible_candidates,
+            counterfactual_candidates,
             rsi_info=rebuilt["rsi_info"],
             latest_peak_info={
                 "direction": peak.get("direction"),
                 "count": peak.get("count"),
             },
         )
+        for candidate in rebuilt["candidates"]:
+            candidate["counterfactual_predict_candidate_rank"] = (
+                candidate.get("predict_candidate_rank")
+            )
+            candidate["counterfactual_predict_selected"] = (
+                candidate.get("predict_candidate_rank") == 1
+            )
+
+        previous_peak = (
+            rebuilt["m5_peaks"][1]
+            if len(rebuilt["m5_peaks"]) > 1
+            else {}
+        )
+        latest_peak_info = {
+            "direction": peak.get("direction"),
+            "count": peak.get("count"),
+            "rsi": peak.get("rsi"),
+            "previous_rsi": previous_peak.get("rsi"),
+        }
+        live_eligible_candidates = []
+        for candidate in counterfactual_candidates:
+            passes = rebuilt[
+                "profile"
+            ]._predict_reversal_candidate_passes_filters(
+                candidate,
+                latest_peak_info,
+            )
+            candidate["current_policy_live_eligible"] = bool(passes)
+            if passes:
+                live_eligible_candidates.append(candidate)
+        rebuilt["profile"].rank_predict_reversal_candidates(
+            live_eligible_candidates,
+            rsi_info=rebuilt["rsi_info"],
+            latest_peak_info=latest_peak_info,
+        )
+        for candidate in rebuilt["candidates"]:
+            candidate.setdefault("current_policy_live_eligible", False)
+            candidate["current_policy_live_selected"] = bool(
+                candidate["current_policy_live_eligible"]
+                and candidate.get("predict_candidate_rank") == 1
+            )
 
         rows_for_event: list[dict[str, Any]] = []
         for candidate in rebuilt["candidates"]:
@@ -2038,7 +2509,25 @@ def run_sweep(
                     "predict_distance_rank"
                 ),
                 "current_policy_predict_selected": (
-                    candidate.get("predict_candidate_rank") == 1
+                    candidate.get("counterfactual_predict_selected")
+                ),
+                "counterfactual_predict_candidate_rank": candidate.get(
+                    "counterfactual_predict_candidate_rank"
+                ),
+                "current_policy_live_eligible": candidate.get(
+                    "current_policy_live_eligible"
+                ),
+                "predict_reversal_filter_policy_version": candidate.get(
+                    "predict_reversal_filter_policy_version"
+                ),
+                "predict_reversal_top15_matches": "|".join(
+                    candidate.get("predict_reversal_top15_matches") or []
+                ),
+                "predict_reversal_top15_match_count": candidate.get(
+                    "predict_reversal_top15_match_count"
+                ),
+                "current_policy_live_selected": candidate.get(
+                    "current_policy_live_selected"
                 ),
                 "line_side": candidate["line_side"],
                 "trade_direction": candidate["trade_direction"],
@@ -2081,24 +2570,67 @@ def run_sweep(
 
         while decision_time >= next_notice:
             elapsed_minutes = (time.monotonic() - process_started) / 60
+            progress_percent = (
+                100.0 * current_position / total_positions
+                if total_positions
+                else 0.0
+            )
+            remaining_minutes = (
+                elapsed_minutes
+                * (total_positions - current_position)
+                / current_position
+                if current_position > 0
+                else None
+            )
             _notify(
                 (
                     f"{pair_name} count2 resistance inspection 進捗\n"
                     f"- 到達時刻: {next_notice:%Y-%m-%d %H:%M}\n"
+                    f"- 処理位置: {current_position}/{total_positions} "
+                    f"({progress_percent:.1f}%)\n"
                     f"- 評価イベント: {evaluated_events}\n"
                     f"- 候補行: {len(candidate_rows)}\n"
-                    f"- 経過時間: {elapsed_minutes:.1f}分"
+                    f"- 経過時間: {elapsed_minutes:.1f}分\n"
+                    f"- 推定残り時間: "
+                    + (
+                        f"{remaining_minutes:.1f}分"
+                        if remaining_minutes is not None
+                        else "算出中"
+                    )
                 )
             )
             next_notice = next_notice + pd.DateOffset(months=2)
 
         if evaluated_events % 250 == 0:
+            progress_percent = (
+                100.0 * current_position / total_positions
+                if total_positions
+                else 0.0
+            )
             print(
                 f"[PROGRESS] {pair_name}: "
+                f"position={current_position}/{total_positions} "
+                f"({progress_percent:.1f}%), "
                 f"events={evaluated_events}, candidates={len(candidate_rows)}"
             )
         if args.max_events is not None and evaluated_events >= args.max_events:
             break
+
+    processed_positions = min(total_positions, len(event_rows))
+    _write_progress(
+        paths["progress"],
+        pair_name=pair_name,
+        args=args,
+        status="running",
+        phase="writing_results",
+        wall_started=wall_started,
+        process_started=process_started,
+        total_positions=total_positions,
+        current_position=processed_positions,
+        evaluated_events=evaluated_events,
+        candidate_rows=len(candidate_rows),
+        decision_time=last_decision_time,
+    )
 
     candidates = pd.DataFrame(candidate_rows)
     events = pd.DataFrame(event_rows)
@@ -2109,6 +2641,11 @@ def run_sweep(
     )
     ranking = make_ranking(candidates, args.min_group_size)
     stair_analysis = make_stair_analysis(candidates, args.min_group_size)
+    h1_stair_analysis = make_h1_stair_analysis(
+        candidates,
+        args.min_group_size,
+    )
+    stair_policy_analysis = make_stair_policy_analysis(candidates)
     paths = output_paths(pair_name, args)
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     candidates.to_csv(paths["candidates"], index=False, encoding="utf-8-sig")
@@ -2117,6 +2654,16 @@ def run_sweep(
     ranking.to_csv(paths["ranking"], index=False, encoding="utf-8-sig")
     stair_analysis.to_csv(
         paths["stair_analysis"],
+        index=False,
+        encoding="utf-8-sig",
+    )
+    h1_stair_analysis.to_csv(
+        paths["h1_stair_analysis"],
+        index=False,
+        encoding="utf-8-sig",
+    )
+    stair_policy_analysis.to_csv(
+        paths["stair_policy_analysis"],
         index=False,
         encoding="utf-8-sig",
     )
@@ -2203,6 +2750,21 @@ def run_sweep(
             + "\n".join(f"- {line}" for line in summary_lines)
         )
     )
+    _write_progress(
+        paths["progress"],
+        pair_name=pair_name,
+        args=args,
+        status="complete",
+        phase="complete",
+        wall_started=wall_started,
+        process_started=process_started,
+        total_positions=total_positions,
+        current_position=processed_positions,
+        evaluated_events=evaluated_events,
+        candidate_rows=len(candidate_rows),
+        decision_time=last_decision_time,
+    )
+    paths["progress"] = _archive_progress(paths["progress"])
     return paths
 
 
@@ -2222,6 +2784,14 @@ def main(
     try:
         return run_sweep(pair_name, args)
     except Exception as error:
+        progress_path = output_paths(pair_name, args)["progress"]
+        try:
+            _mark_progress_failed(progress_path, error)
+        except Exception as progress_error:
+            print(
+                "[PROGRESS] failed to archive progress status: "
+                f"{type(progress_error).__name__}: {progress_error}"
+            )
         _notify(
             (
                 f"{pair_name} count2 resistance inspection 異常終了\n"

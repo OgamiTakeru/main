@@ -13,6 +13,7 @@ import fGeneric as gene
 import fLineAnalysis as ti
 import tokens as tk
 import send_notice as notice
+from fStairTrend import STAIR_CONTEXT_FIELDS
 
 
 class Inspection:
@@ -1125,71 +1126,11 @@ class Inspection:
             **force_results,
             **extra_results,
             **{
-                "m5_stair_" + field: order_plan.get("m5_stair_" + field)
-                for field in (
-                    "state",
-                    "direction",
-                    "observed_direction",
-                    "confirmed",
-                    "candidate_passed",
-                    "confirmed_passed",
-                    "analysis_leg_count",
-                    "detected_leg_count",
-                    "reason",
-                    "foot_count_sequence",
-                    "direction_sequence",
-                    "distance_pips_sequence",
-                    "impulse_foot_count_sequence",
-                    "pullback_foot_count_sequence",
-                    "impulse_distance_pips_sequence",
-                    "pullback_distance_pips_sequence",
-                    "pullback_ratio_sequence",
-                    "impulse_break_pips_sequence",
-                    "structure_progress_pips_sequence",
-                    "impulse_distance_pips",
-                    "pullback_distance_pips",
-                    "dominance_ratio",
-                    "first_impulse_foot_count",
-                    "first_impulse_pips",
-                    "first_pullback_foot_count",
-                    "first_pullback_pips",
-                    "first_pullback_ratio",
-                    "first_pullback_foot_ratio",
-                    "first_impulse_pips_per_foot",
-                    "first_pullback_pips_per_foot",
-                    "first_impulse_required_ratio",
-                    "second_impulse_foot_count",
-                    "second_impulse_pips",
-                    "second_pullback_foot_count",
-                    "second_pullback_pips",
-                    "second_pullback_ratio",
-                    "second_pullback_foot_ratio",
-                    "second_impulse_pips_per_foot",
-                    "second_pullback_pips_per_foot",
-                    "second_impulse_required_ratio",
-                    "third_impulse_foot_count",
-                    "third_impulse_pips",
-                    "third_impulse_pips_per_foot",
-                    "third_impulse_required_ratio",
-                    "net_progress_pips",
-                    "second_impulse_break_pips",
-                    "third_impulse_break_pips",
-                    "first_structure_progress_pips",
-                    "second_structure_progress_pips",
-                    "candidate_failed_conditions",
-                    "confirmed_failed_conditions",
-                    "required_impulse_pips",
-                    "median_m5_range_pips",
-                    "threshold_min_impulse_foot_count",
-                    "threshold_min_latest_impulse_foot_count",
-                    "threshold_max_pullback_foot_count",
-                    "threshold_min_impulse_pips",
-                    "threshold_volatility_lookback",
-                    "threshold_volatility_multiplier",
-                    "threshold_max_pullback_ratio",
-                    "threshold_min_break_pips",
-                    "threshold_min_dominance_ratio",
+                timeframe + "_stair_" + field: order_plan.get(
+                    timeframe + "_stair_" + field
                 )
+                for timeframe in ("m5", "h1")
+                for field in STAIR_CONTEXT_FIELDS
             },
             "source": order_plan.get("source"),
             "line_order_mode": order_plan.get("line_order_mode"),

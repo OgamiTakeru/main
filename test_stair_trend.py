@@ -3,7 +3,7 @@ import unittest
 import pandas as pd
 
 from count2_resistance_sweep import make_stair_analysis, stair_analysis_columns
-from fStairTrend import detect_m5_stair_trend
+from fStairTrend import detect_h1_stair_trend, detect_m5_stair_trend
 
 
 def foot(direction, count, start, end, oldest, latest):
@@ -102,6 +102,26 @@ class StairTrendDetectionTest(unittest.TestCase):
             "completed_impulse_foot_count",
             rejected["confirmed_failed_conditions"],
         )
+
+    def test_h1_wrapper_uses_macro_thresholds_and_h1_range_field(self):
+        default_result = detect_h1_stair_trend(
+            self.peaks,
+            "USD_JPY",
+            completed_ranges(),
+        )
+        accepted = detect_h1_stair_trend(
+            self.peaks,
+            "USD_JPY",
+            completed_ranges(),
+            min_impulse_pips=3.0,
+            min_break_pips=0.5,
+        )
+
+        self.assertEqual(default_result["timeframe"], "H1")
+        self.assertEqual(default_result["required_impulse_pips"], 10.0)
+        self.assertEqual(default_result["median_h1_range_pips"], 2.0)
+        self.assertIsNone(default_result["median_m5_range_pips"])
+        self.assertEqual(accepted["state"], "UP_CONFIRMED")
 
 
 class StairValidationOutputTest(unittest.TestCase):
