@@ -402,6 +402,28 @@ class order_information:
             else:
                 notice.line_send(*args)
 
+    def notify_order_cancelled(self, reason, order_id=None, detail=None):
+        """Report a confirmed pending-order cancellation for every pair."""
+        pair = getattr(self, "pair", None) or getattr(
+            gene.currentPair,
+            "name",
+            "USD_JPY",
+        )
+        resolved_order_id = (
+            order_id
+            if order_id not in (None, "")
+            else getattr(self, "o_id", None)
+        )
+        parts = [
+            "■■■オーダー解消(" + str(reason) + ")",
+            str(getattr(self, "name", "")),
+            "通貨:" + str(pair),
+            "OrderID:" + str(resolved_order_id),
+        ]
+        if detail not in (None, ""):
+            parts.append("詳細:" + str(detail))
+        self.send_line(*parts)
+
     def order_plan_registration(self, order_class):
         """
         【最重要】
@@ -784,13 +806,18 @@ class order_information:
                         "" + current_price_info + \
                         "【memo】" + str(self.plan_json['memo'])
 
-    def close_order(self):
+    def close_order(self, reason="システム指示", detail=None):
         # オーダークローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
         if not self.life:
             print("  order既にないが、CloseOrder指示あり", self.name)
             return 0  # Lifeが既にない場合は、実行無し
         self.life_set(False)  # まずはクローズ状態にする　（エラー時の反復を防ぐため。ただし毎回保存される？？）
         if self.o_state == "Watching":
+            self.o_state = "CANCELLED"
+            watching_detail = "未発行Watching"
+            if detail not in (None, ""):
+                watching_detail += "/" + str(detail)
+            self.notify_order_cancelled(reason, self.o_id, watching_detail)
             return 0
 
         order_res_dic = self.oa.OrderDetails_exe(self.o_id)  # トレード情報の取得
@@ -807,6 +834,7 @@ class order_information:
             self.o_state = "CANCELLED"
             # self.life_set(False)  # 本当はここに欲しい
             print("    orderCancel@close_order", self.o_id)
+            self.notify_order_cancelled(reason, self.o_id, detail)
 
             # (0) -2 LINE送信用のNameリストを生成する(name listはPositionControlで生成される。)
             open_positions_names = ""
@@ -825,7 +853,16 @@ class order_information:
             return name_list
 
             # ここでは、、ファイルに書き込みに行かなくてもいいか。。。
-        else:  # FIEELDとかCANCELLEDの場合は、lifeにfalseを入れておく
+        elif order_info['state'] == "CANCELLED":
+            self.o_state = "CANCELLED"
+            observed_reason = (
+                "OANDA側取消確認"
+                if reason == "システム指示"
+                else reason
+            )
+            self.notify_order_cancelled(observed_reason, self.o_id, detail)
+            print("   order cancelled already@close_order")
+        else:  # FILLED等の場合はキャンセル通知を出さない
             print("   order無し(決済済orキャンセル済)@close_order")
 
     def after_close_trade_function(self):
@@ -1288,8 +1325,10 @@ class order_information:
             if linkage_class.o_state == "PENDING":
                 # まだ相手がオーダーの状態であれば、クローズしてしまう
                 pass
-                linkage_class.close_order()
-                notice.line_send("リンケージオーダーのクローズ", linkage_class.name, "　約定した方⇒", self.name)
+                linkage_class.close_order(
+                    reason="リンケージ",
+                    detail="約定した方=" + str(self.name),
+                )
             else:
                 # 相手の状態が既にキャンセルか約定済みの場合
                 print(" リンケージオーダークローズ　相手の状態", linkage_class.name, linkage_class.o_state,
@@ -1329,9 +1368,15 @@ class order_information:
         if order_latest['state'] == "PENDING":
             # print("    時間的な解消を検討", self.o_time_past, self.o_state, "基準", self.order_timeout_min * 60)
             if self.o_time_past_sec > self.order_timeout_min * 60 and (self.o_state == "" or self.o_state == "PENDING"):
-                name_list = self.close_order()
-                self.send_line("   オーダー解消(時間)@", self.name, self.o_time_past_sec, ",", self.order_timeout_min
-                               , name_list)
+                name_list = self.close_order(
+                    reason="時間切れ",
+                    detail=(
+                        str(self.o_time_past_sec)
+                        + "秒/設定"
+                        + str(self.order_timeout_min)
+                        + "分"
+                    ),
+                )
                 result_dic = {
                     "name": self.name,
                     "pair": self.pair,
@@ -1893,8 +1938,7 @@ class order_information:
                     # ウォッチの時間も経過している場合
                     # print("オーダー/ウォッチタイムアウト(またはgap_seconds_from_start_watchingが０でウォッチ状態ではない)",
                     #       self.order_register_time, "から", self.order_timeout_min ,"分経過,", gap_seconds_from_start_watching)
-                    self.close_order()
-                    notice.line_send("ウォンチングのみのオーダーを解消", self.name)
+                    self.close_order(reason="時間切れ/ウォッチング")
                     return 0
                 else:
                     # ウォッチの時間は時間内、または０ではなないため、このまま継続
@@ -1998,8 +2042,7 @@ class order_information:
                     #     "オーダー/ウォッチタイムアウト(またはgap_seconds_from_start_watchingが０でウォッチ状態ではない)",
                     #     self.order_register_time, "から", self.order_timeout_min, "分経過,",
                     #     gap_seconds_from_start_watching)
-                    self.close_order()
-                    notice.line_send("ウォンチングのみのオーダーを解消", self.name)
+                    self.close_order(reason="時間切れ/ウォッチング")
                     return 0
                 else:
                     # ウォッチの時間は時間内、または０ではなないため、このまま継続

@@ -77,11 +77,15 @@ class Inspection:
             self.progress_notice_months,
         )
 
-        print("Inspection start")
-        self.get_data()
-        self.print_loaded_data_range()
-        self.save_loaded_data()
-        self.run()
+        # Analysis code can emit order-shaped notices that do not contain the
+        # word "inspection". Keep the whole validation lifecycle pinned to
+        # the validation Discord instead of inferring its route from text.
+        with notice.inspection_notice_scope():
+            print("Inspection start")
+            self.get_data()
+            self.print_loaded_data_range()
+            self.save_loaded_data()
+            self.run()
 
     def get_data(self):
         if self.gl_exist_data:

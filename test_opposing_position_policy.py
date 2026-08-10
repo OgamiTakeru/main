@@ -178,6 +178,7 @@ class PredictPendingConflictTest(unittest.TestCase):
             o_state="PENDING",
             o_id=order_id,
             oa=api,
+            notify_order_cancelled=Mock(),
             plan_json={
                 "source": "line",
                 "line_entry_type": "breakout",
@@ -203,6 +204,11 @@ class PredictPendingConflictTest(unittest.TestCase):
         self.assertEqual(allowed, [candidate])
         slot.oa.OrderDetails_exe.assert_called_once_with("42")
         slot.oa.OrderCancel_exe.assert_called_once_with("42")
+        slot.notify_order_cancelled.assert_called_once_with(
+            "他オーダー輻輳",
+            "42",
+            "競合Breakout",
+        )
         self.assertFalse(slot.life)
         self.assertEqual(slot.o_state, "CANCELLED")
         self.assertEqual(
@@ -230,6 +236,7 @@ class PredictPendingConflictTest(unittest.TestCase):
         )
 
         self.assertEqual(allowed, [])
+        slot.notify_order_cancelled.assert_not_called()
         self.assertTrue(slot.life)
         self.assertEqual(
             candidate.exe_order_plan["pending_conflict_reason"],
@@ -410,6 +417,11 @@ class PredictPendingConflictTest(unittest.TestCase):
 
         self.assertEqual(allowed, [breakout])
         self.assertFalse(predict_slot.life)
+        predict_slot.notify_order_cancelled.assert_called_once_with(
+            "OANDA側取消確認",
+            "42",
+            None,
+        )
 
     def test_filled_predict_defers_local_transition_to_regular_update(self):
         controller = self.controller()
@@ -494,6 +506,11 @@ class PredictPendingConflictTest(unittest.TestCase):
         self.assertEqual(allowed, [candidate])
         previous.oa.OrderDetails_exe.assert_called_once_with("41")
         previous.oa.OrderCancel_exe.assert_called_once_with("41")
+        previous.notify_order_cancelled.assert_called_once_with(
+            "他オーダー輻輳",
+            "41",
+            "旧PredictReversal",
+        )
         self.assertFalse(previous.life)
         self.assertEqual(
             candidate.exe_order_plan["pending_conflict_action"],
@@ -564,6 +581,11 @@ class PredictPendingConflictTest(unittest.TestCase):
         self.assertFalse(second.life)
         first.oa.OrderCancel_exe.assert_not_called()
         second.oa.OrderCancel_exe.assert_called_once_with("42")
+        second.notify_order_cancelled.assert_called_once_with(
+            "他オーダー輻輳",
+            "42",
+            "同一count2重複",
+        )
         self.assertEqual(
             candidate.exe_order_plan[
                 "pending_conflict_cancelled_same_signal_order_ids"

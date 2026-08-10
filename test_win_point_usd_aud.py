@@ -225,7 +225,7 @@ def load_data(
 def send_inspection_notice(message: str) -> None:
     """通知失敗で長時間の検証本体を停止させない。"""
     try:
-        notice.line_send(message)
+        notice.send_inspection_notice(message)
     except Exception as error:
         print("[Discord notification error]", error)
 

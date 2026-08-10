@@ -1,4 +1,6 @@
 import datetime
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 import requests
 import tokens as tk
@@ -8,6 +10,7 @@ import fGeneric as gene
 line_send_last_message = ""
 line_send_last_message_count = 0
 LINE_SEND_DUPLICATE_LIMIT = 2
+_notice_route = ContextVar("notice_route", default=None)
 INSPECTION_NOTICE_MARKS = {
     "AUD_USD": "⭐︎",
     "USD_JPY": "●",
@@ -21,6 +24,9 @@ def is_live_notice_message(message):
         stripped.startswith("★★★オーダー発行") or
         stripped.startswith("■■■解消：") or
         stripped.startswith("■■■解消:") or
+        stripped.startswith("■■■ 解消:") or
+        stripped.startswith("■■■強制クローズ解消:") or
+        stripped.startswith("■■■オーダー解消") or
         (stripped.startswith("【") and " no order】" in stripped)
     )
 
@@ -59,6 +65,22 @@ def webhook_url_for_pair(pair):
     return getattr(tk, "WEBHOOK_URL_usdyen", getattr(tk, "WEBHOOK_URL_main", ""))
 
 
+@contextmanager
+def inspection_notice_scope():
+    """Force every notice in this validation scope to its Discord webhook."""
+    token = _notice_route.set("inspection")
+    try:
+        yield
+    finally:
+        _notice_route.reset(token)
+
+
+def send_inspection_notice(*msg):
+    """Send one notice explicitly to the validation Discord webhook."""
+    with inspection_notice_scope():
+        return line_send(*msg)
+
+
 def line_send(*msg):
     global line_send_last_message, line_send_last_message_count
 
@@ -86,8 +108,11 @@ def line_send(*msg):
         message = "Discord受信許容文字数オーバー" + str(len(message)) + "@" + message[:50]
 
     is_inspection_notice = (
-        is_inspection_notice_message(raw_message)
-        and not is_live_notice_message(raw_message)
+        _notice_route.get() == "inspection"
+        or (
+            is_inspection_notice_message(raw_message)
+            and not is_live_notice_message(raw_message)
+        )
     )
     notice_mark = ""
     if is_inspection_notice:

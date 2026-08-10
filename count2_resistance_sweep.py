@@ -30,6 +30,7 @@ import pandas as pd
 import classOanda
 from classCandlePeaks import PeaksClass
 import fGeneric as gene
+import send_notice as notice
 from fLineAnalysis import (
     LineStrengthCal,
     line_strategy_profile,
@@ -2781,25 +2782,26 @@ def main(
         default_start=default_start,
         default_end=default_end,
     )
-    try:
-        return run_sweep(pair_name, args)
-    except Exception as error:
-        progress_path = output_paths(pair_name, args)["progress"]
+    with notice.inspection_notice_scope():
         try:
-            _mark_progress_failed(progress_path, error)
-        except Exception as progress_error:
-            print(
-                "[PROGRESS] failed to archive progress status: "
-                f"{type(progress_error).__name__}: {progress_error}"
+            return run_sweep(pair_name, args)
+        except Exception as error:
+            progress_path = output_paths(pair_name, args)["progress"]
+            try:
+                _mark_progress_failed(progress_path, error)
+            except Exception as progress_error:
+                print(
+                    "[PROGRESS] failed to archive progress status: "
+                    f"{type(progress_error).__name__}: {progress_error}"
+                )
+            _notify(
+                (
+                    f"{pair_name} count2 resistance inspection 異常終了\n"
+                    f"- エラー種別: {type(error).__name__}\n"
+                    f"- 内容: {error}"
+                )
             )
-        _notify(
-            (
-                f"{pair_name} count2 resistance inspection 異常終了\n"
-                f"- エラー種別: {type(error).__name__}\n"
-                f"- 内容: {error}"
-            )
-        )
-        raise
+            raise
 
 
 if __name__ == "__main__":

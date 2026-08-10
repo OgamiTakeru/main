@@ -466,6 +466,11 @@ class position_control:
                 if state == "CANCELLED":
                     item.o_state = state
                     item.life_set(False)
+                    self.notify_pending_order_cancelled(
+                        item,
+                        "OANDA側取消確認",
+                        order_id,
+                    )
                     continue
                 if state == "FILLED":
                     # It is no longer a pending-order conflict.  The existing
@@ -551,6 +556,35 @@ class position_control:
             return None
         return str(direction) + ":" + str(signal_time)
 
+    def notify_pending_order_cancelled(
+        self,
+        item,
+        reason,
+        order_id=None,
+        detail=None,
+    ):
+        """Notify a confirmed pending-order cancellation with pair identity."""
+        notifier = getattr(item, "notify_order_cancelled", None)
+        if callable(notifier):
+            notifier(reason, order_id, detail)
+            return
+        plan = getattr(item, "plan_json", None) or {}
+        pair = plan.get("pair") or self.pair
+        resolved_order_id = (
+            order_id
+            if order_id not in (None, "")
+            else getattr(item, "o_id", None)
+        )
+        parts = [
+            "■■■オーダー解消(" + str(reason) + ")",
+            str(getattr(item, "name", "")),
+            "通貨:" + str(pair),
+            "OrderID:" + str(resolved_order_id),
+        ]
+        if detail not in (None, ""):
+            parts.append("詳細:" + str(detail))
+        notice.line_send(*parts)
+
     def _resolve_pending_orders_for_predict(
         self,
         predict_plan,
@@ -589,6 +623,11 @@ class position_control:
                     local_state = getattr(item, "o_state", None)
                     if local_state == "CANCELLED":
                         item.life_set(False)
+                        self.notify_pending_order_cancelled(
+                            item,
+                            "OANDA側取消確認",
+                            getattr(item, "o_id", None),
+                        )
                         continue
                     if (
                         local_state == "FILLED"
@@ -618,6 +657,11 @@ class position_control:
                 order_id = getattr(item, "o_id", None)
                 if local_state == "CANCELLED":
                     item.life_set(False)
+                    self.notify_pending_order_cancelled(
+                        item,
+                        "OANDA側取消確認",
+                        order_id,
+                    )
                     continue
                 if local_state not in (None, "", "PENDING"):
                     predict_plan["pending_conflict_reason"] = (
@@ -696,6 +740,11 @@ class position_control:
             if state == "CANCELLED":
                 item.o_state = state
                 item.life_set(False)
+                self.notify_pending_order_cancelled(
+                    item,
+                    "OANDA側取消確認",
+                    order_id,
+                )
                 continue
             if state == "FILLED":
                 # Preserve local PENDING so the regular update owns the
@@ -752,6 +801,11 @@ class position_control:
             if state == "CANCELLED":
                 item.o_state = state
                 item.life_set(False)
+                self.notify_pending_order_cancelled(
+                    item,
+                    "OANDA側取消確認",
+                    order_id,
+                )
                 continue
 
             # FILLED or an unknown server state: do not place an opposite order.
@@ -778,6 +832,17 @@ class position_control:
                 return False
             item.o_state = "CANCELLED"
             item.life_set(False)
+            conflict_label = {
+                "previous_predict": "旧PredictReversal",
+                "pending_breakout": "競合Breakout",
+                "duplicate_same_signal_predict": "同一count2重複",
+            }.get(conflict_kind, conflict_kind)
+            self.notify_pending_order_cancelled(
+                item,
+                "他オーダー輻輳",
+                order_id,
+                conflict_label,
+            )
             cancelled_ids.append(order_id)
             if conflict_kind == "previous_predict":
                 cancelled_predict_ids.append(order_id)
