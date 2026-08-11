@@ -73,7 +73,10 @@ class PredictReversalDirectionTest(unittest.TestCase):
                         "line_side": "upper",
                         "direction": -1,
                         "line": {"count": 2},
-                        "m5_stair_context": {"state": "NONE"},
+                        "m5_stair_context": {
+                            "state": "NONE",
+                            "second_pullback_pips_per_foot": 3.5,
+                        },
                         "h1_stair_context": {
                             "criteria": {"pullback_ratio": True}
                         },
@@ -95,7 +98,10 @@ class PredictReversalDirectionTest(unittest.TestCase):
                         "line_side": "lower",
                         "direction": 1,
                         "line": {"count": 2},
-                        "m5_stair_context": {"state": "NONE"},
+                        "m5_stair_context": {
+                            "state": "NONE",
+                            "second_pullback_pips_per_foot": 3.5,
+                        },
                         "h1_stair_context": {
                             "criteria": {"pullback_ratio": True}
                         },
@@ -137,10 +143,10 @@ class PredictReversalTop15FilterTest(unittest.TestCase):
     def test_any_top15_condition_allows_candidate(self):
         profile = LineStrategyProfileUsdJpy()
         candidate = {
-            "m5_stair_context": {},
-            "h1_stair_context": {
-                "criteria": {"pullback_ratio": True},
+            "m5_stair_context": {
+                "second_pullback_pips_per_foot": 3.5,
             },
+            "h1_stair_context": {},
         }
 
         self.assertTrue(
@@ -151,16 +157,17 @@ class PredictReversalTop15FilterTest(unittest.TestCase):
         )
         self.assertEqual(
             candidate["predict_reversal_top15_matches"],
-            ["H1 pullback ratio criterion passed"],
+            [
+                "BOTH M5 second pullback pace "
+                "3.00-3.99 pips per foot"
+            ],
         )
 
     def test_candidate_without_top15_match_is_rejected(self):
         profile = LineStrategyProfileUsdJpy()
         candidate = {
             "m5_stair_context": {},
-            "h1_stair_context": {
-                "criteria": {"pullback_ratio": False},
-            },
+            "h1_stair_context": {},
         }
 
         self.assertFalse(
@@ -173,10 +180,10 @@ class PredictReversalTop15FilterTest(unittest.TestCase):
     def test_top15_ranges_use_inclusive_lower_exclusive_upper(self):
         profile = LineStrategyProfileUsdJpy()
         candidate = {
-            "m5_stair_context": {},
-            "h1_stair_context": {
-                "second_impulse_required_ratio": 2.0,
+            "m5_stair_context": {
+                "second_pullback_pips_per_foot": 3.0,
             },
+            "h1_stair_context": {},
         }
 
         self.assertTrue(
@@ -185,9 +192,9 @@ class PredictReversalTop15FilterTest(unittest.TestCase):
                 {},
             )
         )
-        candidate["h1_stair_context"][
-            "second_impulse_required_ratio"
-        ] = 3.0
+        candidate["m5_stair_context"][
+            "second_pullback_pips_per_foot"
+        ] = 4.0
         self.assertFalse(
             profile._predict_reversal_candidate_passes_filters(
                 candidate,
@@ -214,7 +221,7 @@ class PredictReversalTop15FilterTest(unittest.TestCase):
         self.assertTrue(policy["permission"])
         self.assertEqual(
             policy["reason"],
-            "top15 OR eligibility replaces regime gate",
+            "win40 grid OR eligibility replaces regime gate",
         )
 
 
@@ -534,6 +541,10 @@ class PredictReversalSelectionTest(unittest.TestCase):
 
     def test_highest_pair_score_inside_distance_cap_becomes_predict_order(self):
         profile = LineStrategyProfileUsdJpy()
+        profile._detect_predict_reversal_m5_stair = lambda coordinator: {
+            "criteria": {"impulse_progression": True}
+        }
+        profile._detect_predict_reversal_h1_stair = lambda coordinator: {}
         close = {
             "distance_pips": 0.1,
             "target_price": 150.001,
@@ -581,7 +592,11 @@ class PredictReversalSelectionTest(unittest.TestCase):
 
             @staticmethod
             def predict_reversal_target_parameters(*args, **kwargs):
-                return {"tp_pips": 15, "lc_pips": 12.5}
+                return {
+                    "predict_recent_m5_avg_range_pips": 5.0,
+                    "tp_pips": 15,
+                    "lc_pips": 12.5,
+                }
 
             def create_orders_from_candidates(
                 self,
@@ -621,8 +636,15 @@ class PredictReversalSelectionTest(unittest.TestCase):
         self.assertGreater(far["predict_rank_score"], close["predict_rank_score"])
         self.assertEqual(
             far["predict_candidate_scope"],
-            "m5_reversal_target_after_regime",
+            "m5_reversal_win40_grid_raw_distance_rank",
         )
+        self.assertEqual(
+            far["predict_reversal_selected_condition"],
+            "BOTH M5 impulse progression criterion passed",
+        )
+        self.assertEqual(far["predict_grid_entry_rank"], 2)
+        self.assertEqual(far["tp_pips"], 30.0)
+        self.assertEqual(far["lc_pips"], 7.5)
         self.assertEqual(
             far["predict_pending_policy"],
             "next_count2_or_distance_ttl_15_30_45m",
@@ -740,11 +762,18 @@ class PredictReversalSelectionTest(unittest.TestCase):
 
     def test_live_filtered_predict_order_still_emits_expiry_control(self):
         profile = LineStrategyProfileUsdJpy()
+        profile._detect_predict_reversal_m5_stair = lambda coordinator: {
+            "second_pullback_pips_per_foot": 3.5
+        }
+        profile._detect_predict_reversal_h1_stair = lambda coordinator: {}
         candidate = {
             "distance_pips": 1,
             "target_price": 150.01,
+            "line_price": 150.01,
+            "line_index": 0,
             "line_side": "upper",
             "direction": -1,
+            "line": {},
         }
 
         class AnalysisStub:
@@ -774,7 +803,11 @@ class PredictReversalSelectionTest(unittest.TestCase):
 
             @staticmethod
             def predict_reversal_target_parameters(*args, **kwargs):
-                return {"tp_pips": 15, "lc_pips": 12.5}
+                return {
+                    "predict_recent_m5_avg_range_pips": 5.0,
+                    "tp_pips": 15,
+                    "lc_pips": 12.5,
+                }
 
             @staticmethod
             def create_orders_from_candidates(*args, **kwargs):

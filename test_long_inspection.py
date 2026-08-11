@@ -1,9 +1,9 @@
-"""Run the current USD/JPY count2 TOP15 policy over the latest full year.
+"""Run the current USD/JPY count2 win40 grid policy over the latest full year.
 
 This is the same causal resistance sweep used for the 2026 YTD inspection,
 but the requested window is 2025-07-30 through 2026-07-30.  The active
-USD/JPY profile applies the 2026 YTD TOP15 conditions as an OR eligibility
-gate before the existing candidate ranking selects one executable line.
+USD/JPY applies the full-year positive-rate-40% conditions as an OR gate and
+uses each selected raw line rank, entry offset and TP/LC grid parameters.
 
 Run without options to reuse compatible caches and fetch only missing or
 incompatible frames from OANDA.  Add ``--existing-data`` to prohibit network

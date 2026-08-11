@@ -1359,15 +1359,21 @@ class LineOrderCoordinator:
             "immediate": "Immediate",
             "predict_reversal": "PredictReversal",
         }.get(order_mode, "")
+        order_name = (
+            strategy.name_prefix
+            + order_mode_suffix
+            + "_"
+            + candidate["line_side"]
+            + "_"
+            + str(candidate["line_index"])
+        )
+        policy_name_prefix = candidate.get(
+            "predict_reversal_order_name_prefix"
+        )
+        if policy_name_prefix:
+            order_name = str(policy_name_prefix) + "_" + order_name
         order_class = OCreate.Order({
-            "name": (
-                strategy.name_prefix
-                + order_mode_suffix
-                + "_"
-                + candidate["line_side"]
-                + "_"
-                + str(candidate["line_index"])
-            ),
+            "name": order_name,
             "current_price": current_price,
             "target": target_price,
             "direction": candidate["direction"],
@@ -1400,7 +1406,10 @@ class LineOrderCoordinator:
         order_plan["line_order_mode"] = order_mode
         order_plan["line_timeframe"] = strategy.timeframe
         order_plan["line_entry_type"] = strategy.entry_type
-        order_plan["line_entry_offset_pips"] = strategy.entry_offset_pips
+        order_plan["line_entry_offset_pips"] = candidate.get(
+            "predict_entry_offset_pips",
+            strategy.entry_offset_pips,
+        )
         order_plan["configured_tp_pips"] = tp_pips
         order_plan["configured_lc_pips"] = lc_pips
         for key in (
@@ -1414,6 +1423,25 @@ class LineOrderCoordinator:
             "predict_reversal_filter_policy_version",
             "predict_reversal_top15_matches",
             "predict_reversal_top15_match_count",
+            "predict_reversal_selected_condition",
+            "predict_reversal_selected_condition_priority",
+            "predict_reversal_selected_ranking_source",
+            "predict_reversal_selected_parameter_source",
+            "predict_reversal_grid_matches",
+            "predict_reversal_grid_match_count",
+            "predict_reversal_order_name_prefix",
+            "predict_grid_positive_rate",
+            "predict_grid_sum_yen",
+            "predict_grid_sum_pips",
+            "predict_grid_entry_rank_source",
+            "predict_grid_entry_rank",
+            "predict_grid_entry_offset_range_multiplier",
+            "predict_grid_tp_range_multiplier",
+            "predict_grid_lc_range_multiplier",
+            "predict_entry_offset_requested_pips",
+            "predict_entry_offset_pips",
+            "predict_adjusted_distance_pips",
+            "predict_lc_multiplier",
             "predict_rank_input_scope",
             "predict_rank_score",
             "predict_rank_pair",

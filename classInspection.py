@@ -1147,6 +1147,55 @@ class Inspection:
             "predict_candidate_rank": order_plan.get("predict_candidate_rank"),
             "predict_distance_rank": order_plan.get("predict_distance_rank"),
             "predict_candidate_scope": order_plan.get("predict_candidate_scope"),
+            "predict_reversal_selected_condition": order_plan.get(
+                "predict_reversal_selected_condition"
+            ),
+            "predict_reversal_selected_condition_priority": order_plan.get(
+                "predict_reversal_selected_condition_priority"
+            ),
+            "predict_reversal_selected_ranking_source": order_plan.get(
+                "predict_reversal_selected_ranking_source"
+            ),
+            "predict_reversal_selected_parameter_source": order_plan.get(
+                "predict_reversal_selected_parameter_source"
+            ),
+            "predict_reversal_grid_matches": order_plan.get(
+                "predict_reversal_grid_matches"
+            ),
+            "predict_reversal_grid_match_count": order_plan.get(
+                "predict_reversal_grid_match_count"
+            ),
+            "predict_grid_positive_rate": order_plan.get(
+                "predict_grid_positive_rate"
+            ),
+            "predict_grid_sum_yen": order_plan.get("predict_grid_sum_yen"),
+            "predict_grid_sum_pips": order_plan.get(
+                "predict_grid_sum_pips"
+            ),
+            "predict_grid_entry_rank_source": order_plan.get(
+                "predict_grid_entry_rank_source"
+            ),
+            "predict_grid_entry_rank": order_plan.get(
+                "predict_grid_entry_rank"
+            ),
+            "predict_grid_entry_offset_range_multiplier": order_plan.get(
+                "predict_grid_entry_offset_range_multiplier"
+            ),
+            "predict_grid_tp_range_multiplier": order_plan.get(
+                "predict_grid_tp_range_multiplier"
+            ),
+            "predict_grid_lc_range_multiplier": order_plan.get(
+                "predict_grid_lc_range_multiplier"
+            ),
+            "predict_entry_offset_requested_pips": order_plan.get(
+                "predict_entry_offset_requested_pips"
+            ),
+            "predict_entry_offset_pips": order_plan.get(
+                "predict_entry_offset_pips"
+            ),
+            "predict_adjusted_distance_pips": order_plan.get(
+                "predict_adjusted_distance_pips"
+            ),
             "predict_ranking_version": order_plan.get(
                 "predict_ranking_version"
             ),
@@ -1245,6 +1294,7 @@ class Inspection:
             "predict_pending_policy": order_plan.get("predict_pending_policy"),
             "predict_tp_lookback": order_plan.get("predict_tp_lookback"),
             "predict_tp_multiplier": order_plan.get("predict_tp_multiplier"),
+            "predict_lc_multiplier": order_plan.get("predict_lc_multiplier"),
             "predict_rr": order_plan.get("predict_rr"),
             "predict_target_source_first_time": order_plan.get(
                 "predict_target_source_first_time"

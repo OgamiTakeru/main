@@ -39,6 +39,8 @@ class LineStrategyProfileUsdJpy:
     # count2予測反転注文は、検証と同じく直前の完成M5 6本から
     # TP/LCを決める。実際の「次のcount2」の時刻や価格は使わない。
     predict_reversal_tp_lookback = 6
+    # Reference width used by the legacy quality-score audit.  Executable
+    # TP/LC multipliers now come from predict_reversal_grid_conditions.
     predict_reversal_tp_multiplier = 3.0
     predict_reversal_rr = 1.2
     # Pair-specific count2 candidate ranking.  Every input is fixed at the
@@ -46,140 +48,298 @@ class LineStrategyProfileUsdJpy:
     predict_reversal_ranking_version = "pair_v2_usd_rsi_strength_reach"
     predict_reversal_distance_ratio_cap = 0.5
     predict_reversal_distance_cap_fallback = "nearest"
-    # PredictReversal entry eligibility is the OR of the 2026 YTD condition
-    # top 15.  These replace the former line-count, peak-RSI, regime and
-    # same-direction stair blockers; structural count2/side checks and the
-    # candidate ranking remain separate.
-    predict_reversal_filter_policy_version = "count2_top15_2026_ytd_net_or"
-    predict_reversal_top15_conditions = (
+    # PredictReversal entry eligibility is the OR of the full-year grid
+    # conditions whose completed-trade positive rate was at least 40%.
+    # Each policy also fixes the raw distance rank, entry offset and TP/LC
+    # widths that produced that result.  Conditions found in both the
+    # risk-sized-yen and raw-pips Top15 start with BOTH.
+    predict_reversal_filter_policy_version = "count2_grid_1y_win40_v1"
+    predict_reversal_min_target_pips = 1.6
+    predict_reversal_grid_conditions = (
         {
-            "label": "H1 second impulse required ratio 2.00-2.99",
-            "timeframe": "h1",
-            "field": "second_impulse_required_ratio",
-            "operator": "range",
-            "minimum": 2.0,
-            "maximum": 3.0,
-        },
-        {
-            "label": "H1 pullback ratio criterion passed",
-            "timeframe": "h1",
-            "field": "criteria.pullback_ratio",
-            "operator": "equals",
-            "value": True,
-        },
-        {
-            "label": "M5 third impulse break 3.00-4.99 pips",
+            "label": "BOTH M5 second pullback pace 3.00-3.99 pips per foot",
+            "ranking_source": "BOTH",
+            "selected_parameter_source": "PIPS",
             "timeframe": "m5",
-            "field": "third_impulse_break_pips",
-            "operator": "range",
-            "minimum": 3.0,
-            "maximum": 5.0,
-        },
-        {
-            "label": "H1 first pullback ratio 0.65-0.79",
-            "timeframe": "h1",
-            "field": "first_pullback_ratio",
-            "operator": "range",
-            "minimum": 0.65,
-            "maximum": 0.80,
-        },
-        {
-            "label": "M5 confirmed failures distance pullback progression",
-            "timeframe": "m5",
-            "field": "confirmed_failed_conditions",
-            "operator": "sequence_equals",
-            "value": (
-                "impulse_distance",
-                "pullback_ratio",
-                "impulse_progression",
-            ),
-        },
-        {
-            "label": "M5 third impulse pace 3.00-3.99 pips per foot",
-            "timeframe": "m5",
-            "field": "third_impulse_pips_per_foot",
+            "field": "second_pullback_pips_per_foot",
             "operator": "range",
             "minimum": 3.0,
             "maximum": 4.0,
+            "entry_rank": 1,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 3.0,
+            "lc_range_multiplier": 1.25,
+            "grid_positive_rate": 0.421311475409836,
+            "grid_sum_yen": 2787.71,
+            "grid_sum_pips": 564.7,
         },
         {
-            "label": "H1 confirmed failures distance progression",
-            "timeframe": "h1",
-            "field": "confirmed_failed_conditions",
-            "operator": "sequence_equals",
-            "value": (
-                "impulse_distance",
-                "impulse_progression",
-            ),
-        },
-        {
-            "label": "H1 second structure progress 1.00-1.99 pips",
-            "timeframe": "h1",
-            "field": "second_structure_progress_pips",
-            "operator": "range",
-            "minimum": 1.0,
-            "maximum": 2.0,
-        },
-        {
-            "label": "H1 first structure progress 1.00-1.99 pips",
-            "timeframe": "h1",
-            "field": "first_structure_progress_pips",
-            "operator": "range",
-            "minimum": 1.0,
-            "maximum": 2.0,
-        },
-        {
-            "label": "M5 third impulse required ratio 1.25-1.49",
+            "label": "BOTH M5 first pullback pace 4.00-4.99 pips per foot",
+            "ranking_source": "BOTH",
+            "selected_parameter_source": "YEN",
             "timeframe": "m5",
-            "field": "third_impulse_required_ratio",
+            "field": "first_pullback_pips_per_foot",
             "operator": "range",
-            "minimum": 1.25,
-            "maximum": 1.50,
+            "minimum": 4.0,
+            "maximum": 5.0,
+            "entry_rank": 1,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 2.5,
+            "lc_range_multiplier": 1.0,
+            "grid_positive_rate": 0.4115384615384615,
+            "grid_sum_yen": 2274.93,
+            "grid_sum_pips": 478.6,
         },
         {
-            "label": "M5 first pullback ratio 0.55-0.64",
+            "label": "BOTH M5 impulse progression criterion passed",
+            "ranking_source": "BOTH",
+            "selected_parameter_source": "YEN",
             "timeframe": "m5",
-            "field": "first_pullback_ratio",
-            "operator": "range",
-            "minimum": 0.55,
-            "maximum": 0.65,
+            "field": "criteria.impulse_progression",
+            "operator": "equals",
+            "value": True,
+            "entry_rank": 2,
+            "entry_offset_range_multiplier": 0.0,
+            "tp_range_multiplier": 6.0,
+            "lc_range_multiplier": 1.5,
+            "grid_positive_rate": 0.455,
+            "grid_sum_yen": 1784.025,
+            "grid_sum_pips": 389.1,
         },
         {
-            "label": "M5 first impulse foot count 5",
+            "label": "M5 second pullback foot count 6",
+            "ranking_source": "YEN",
             "timeframe": "m5",
+            "field": "second_pullback_foot_count",
+            "operator": "equals_number",
+            "value": 6,
+            "entry_rank": 3,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 4.0,
+            "lc_range_multiplier": 1.0,
+            "grid_positive_rate": 0.4247787610619469,
+            "grid_sum_yen": 2067.77,
+            "grid_sum_pips": 242.2,
+        },
+        {
+            "label": "M5 first pullback pace 3.00-3.99 pips per foot",
+            "ranking_source": "YEN",
+            "timeframe": "m5",
+            "field": "first_pullback_pips_per_foot",
+            "operator": "range",
+            "minimum": 3.0,
+            "maximum": 4.0,
+            "entry_rank": 2,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 6.0,
+            "lc_range_multiplier": 1.25,
+            "grid_positive_rate": 0.4102564102564102,
+            "grid_sum_yen": 1757.315,
+            "grid_sum_pips": 255.0,
+        },
+        {
+            "label": "M5 first pullback foot count 7",
+            "ranking_source": "YEN",
+            "timeframe": "m5",
+            "field": "first_pullback_foot_count",
+            "operator": "equals_number",
+            "value": 7,
+            "entry_rank": 2,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 3.0,
+            "lc_range_multiplier": 1.25,
+            "grid_positive_rate": 0.4305555555555556,
+            "grid_sum_yen": 1741.045,
+            "grid_sum_pips": 257.6,
+        },
+        {
+            "label": "H1 first impulse foot count 6",
+            "ranking_source": "YEN",
+            "timeframe": "h1",
             "field": "first_impulse_foot_count",
             "operator": "equals_number",
-            "value": 5,
+            "value": 6,
+            "entry_rank": 3,
+            "entry_offset_range_multiplier": 0.0,
+            "tp_range_multiplier": 3.0,
+            "lc_range_multiplier": 1.25,
+            "grid_positive_rate": 0.453781512605042,
+            "grid_sum_yen": 1695.555,
+            "grid_sum_pips": 241.4,
         },
         {
-            "label": "H1 first pullback foot ratio 0.55-0.64",
+            "label": "H1 first structure progress below 0 pips",
+            "ranking_source": "PIPS",
             "timeframe": "h1",
-            "field": "first_pullback_foot_ratio",
-            "operator": "range",
-            "minimum": 0.55,
-            "maximum": 0.65,
+            "field": "first_structure_progress_pips",
+            "operator": "less_than",
+            "maximum": 0.0,
+            "entry_rank": 3,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 6.0,
+            "lc_range_multiplier": 4.0,
+            "grid_positive_rate": 0.5164319248826291,
+            "grid_sum_yen": 951.765,
+            "grid_sum_pips": 657.4,
         },
         {
-            "label": "M5 candidate failures count distance pullback structure",
-            "timeframe": "m5",
-            "field": "candidate_failed_conditions",
-            "operator": "sequence_equals",
-            "value": (
-                "completed_impulse_foot_count",
-                "impulse_distance",
-                "pullback_ratio",
-                "structure_progression",
-            ),
+            "label": "H1 first pullback ratio 1.00 or higher",
+            "ranking_source": "PIPS",
+            "timeframe": "h1",
+            "field": "first_pullback_ratio",
+            "operator": "at_least",
+            "minimum": 1.0,
+            "entry_rank": 3,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 6.0,
+            "lc_range_multiplier": 4.0,
+            "grid_positive_rate": 0.5154798761609907,
+            "grid_sum_yen": 923.45,
+            "grid_sum_pips": 657.1,
         },
         {
-            "label": "M5 first pullback foot ratio 0.80-0.99",
+            "label": "M5 second pullback pace 4.00-4.99 pips per foot",
+            "ranking_source": "PIPS",
             "timeframe": "m5",
-            "field": "first_pullback_foot_ratio",
+            "field": "second_pullback_pips_per_foot",
             "operator": "range",
-            "minimum": 0.80,
-            "maximum": 1.00,
+            "minimum": 4.0,
+            "maximum": 5.0,
+            "entry_rank": 1,
+            "entry_offset_range_multiplier": -0.25,
+            "tp_range_multiplier": 6.0,
+            "lc_range_multiplier": 3.0,
+            "grid_positive_rate": 0.5470383275261324,
+            "grid_sum_yen": 873.53,
+            "grid_sum_pips": 559.5,
+        },
+        {
+            "label": "H1 third impulse pace 8.00+ pips per foot",
+            "ranking_source": "PIPS",
+            "timeframe": "h1",
+            "field": "third_impulse_pips_per_foot",
+            "operator": "at_least",
+            "minimum": 8.0,
+            "entry_rank": 3,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 5.0,
+            "lc_range_multiplier": 3.0,
+            "grid_positive_rate": 0.5085227272727273,
+            "grid_sum_yen": 932.295,
+            "grid_sum_pips": 495.4,
+        },
+        {
+            "label": "H1 dominance ratio below 1.00",
+            "ranking_source": "PIPS",
+            "timeframe": "h1",
+            "field": "dominance_ratio",
+            "operator": "less_than",
+            "maximum": 1.0,
+            "entry_rank": 3,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 2.5,
+            "lc_range_multiplier": 2.0,
+            "grid_positive_rate": 0.508274231678487,
+            "grid_sum_yen": 1134.25,
+            "grid_sum_pips": 414.8,
+        },
+        {
+            "label": "H1 net progress below 1.00 pips",
+            "ranking_source": "PIPS",
+            "timeframe": "h1",
+            "field": "net_progress_pips",
+            "operator": "less_than",
+            "maximum": 1.0,
+            "entry_rank": 3,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 2.5,
+            "lc_range_multiplier": 2.0,
+            "grid_positive_rate": 0.5034965034965035,
+            "grid_sum_yen": 1037.895,
+            "grid_sum_pips": 410.8,
+        },
+        {
+            "label": "H1 first pullback foot count 5",
+            "ranking_source": "PIPS",
+            "timeframe": "h1",
+            "field": "first_pullback_foot_count",
+            "operator": "equals_number",
+            "value": 5,
+            "entry_rank": 3,
+            "entry_offset_range_multiplier": 0.0,
+            "tp_range_multiplier": 6.0,
+            "lc_range_multiplier": 4.0,
+            "grid_positive_rate": 0.5401069518716578,
+            "grid_sum_yen": 637.73,
+            "grid_sum_pips": 391.6,
+        },
+        {
+            "label": "M5 third impulse break 1.00-1.99 pips",
+            "ranking_source": "PIPS",
+            "timeframe": "m5",
+            "field": "third_impulse_break_pips",
+            "operator": "range",
+            "minimum": 1.0,
+            "maximum": 2.0,
+            "entry_rank": 2,
+            "entry_offset_range_multiplier": 0.0,
+            "tp_range_multiplier": 6.0,
+            "lc_range_multiplier": 3.0,
+            "grid_positive_rate": 0.5506607929515418,
+            "grid_sum_yen": 939.61,
+            "grid_sum_pips": 377.1,
+        },
+        {
+            "label": "M5 third impulse pace 5.00-7.99 pips per foot",
+            "ranking_source": "PIPS",
+            "timeframe": "m5",
+            "field": "third_impulse_pips_per_foot",
+            "operator": "range",
+            "minimum": 5.0,
+            "maximum": 8.0,
+            "entry_rank": 1,
+            "entry_offset_range_multiplier": -0.25,
+            "tp_range_multiplier": 2.0,
+            "lc_range_multiplier": 1.5,
+            "grid_positive_rate": 0.4984025559105431,
+            "grid_sum_yen": 748.26,
+            "grid_sum_pips": 361.5,
+        },
+        {
+            "label": "H1 first pullback ratio 0.40-0.54",
+            "ranking_source": "PIPS",
+            "timeframe": "h1",
+            "field": "first_pullback_ratio",
+            "operator": "range",
+            "minimum": 0.40,
+            "maximum": 0.55,
+            "entry_rank": 2,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 5.0,
+            "lc_range_multiplier": 4.0,
+            "grid_positive_rate": 0.5263157894736842,
+            "grid_sum_yen": 704.04,
+            "grid_sum_pips": 353.7,
+        },
+        {
+            "label": "M5 first impulse pace 2.00-2.99 pips per foot",
+            "ranking_source": "PIPS",
+            "timeframe": "m5",
+            "field": "first_impulse_pips_per_foot",
+            "operator": "range",
+            "minimum": 2.0,
+            "maximum": 3.0,
+            "entry_rank": 3,
+            "entry_offset_range_multiplier": 0.25,
+            "tp_range_multiplier": 5.0,
+            "lc_range_multiplier": 4.0,
+            "grid_positive_rate": 0.5399239543726235,
+            "grid_sum_yen": 563.455,
+            "grid_sum_pips": 334.8,
         },
     )
+    # Compatibility alias for existing inspection/logging integrations.
+    predict_reversal_top15_conditions = predict_reversal_grid_conditions
     predict_reversal_m5_stair_enabled = True
     predict_reversal_m5_stair_min_impulse_foot_count = 3
     predict_reversal_m5_stair_min_latest_impulse_foot_count = 2
@@ -295,7 +455,7 @@ class LineStrategyProfileUsdJpy:
                 "trend_direction": trend_direction,
                 "entry_type": entry_type,
                 "order_direction": direction,
-                "reason": "top15 OR eligibility replaces regime gate",
+                "reason": "win40 grid OR eligibility replaces regime gate",
             }
         permission = True
         reason = "regime allows order"
@@ -1438,11 +1598,10 @@ class LineStrategyProfileUsdJpy:
     def predict_reversal_order(self, grouped_lines):
         """Create one causal LIMIT toward the predicted second count2.
 
-        Eligible lines are ranked by pair-specific decision-time evidence and
-        only rank 1 becomes executable.  Distance/TP ratio, completed-M5 RSI,
-        estimated line strength and causal reach history all contribute to
-        the score.  Other lines remain counterfactual analysis candidates and
-        must not become simultaneous production orders.
+        Eligible lines retain the pair-specific quality ranking for audit,
+        while execution follows the raw distance rank and entry/TP/LC values
+        selected by the full-year win40 grid.  At most one policy and one line
+        become executable for each count2 event.
         """
         coordinator = grouped_lines["coordinator"]
         latest_peak_info = coordinator._latest_peak_info("m5")
@@ -1496,13 +1655,13 @@ class LineStrategyProfileUsdJpy:
                 "no_eligible_resistance_candidate",
             )
 
-        target = coordinator.predict_reversal_target_parameters(
+        ranking_target = coordinator.predict_reversal_target_parameters(
             grouped_lines["decision_time"],
             lookback=self.predict_reversal_tp_lookback,
             multiplier=self.predict_reversal_tp_multiplier,
             rr=self.predict_reversal_rr,
         )
-        if target is None:
+        if ranking_target is None:
             return self.predict_reversal_count2_control(
                 coordinator,
                 predict_signal_id,
@@ -1522,7 +1681,8 @@ class LineStrategyProfileUsdJpy:
             )
         for candidate in candidates:
             candidate["predict_distance_to_tp_ratio"] = (
-                float(candidate["distance_pips"]) / float(target["tp_pips"])
+                float(candidate["distance_pips"])
+                / float(ranking_target["tp_pips"])
             )
 
         candidates = self.rank_predict_reversal_candidates(
@@ -1537,18 +1697,30 @@ class LineStrategyProfileUsdJpy:
                 latest_peak_info,
                 "no_rankable_resistance_candidate",
             )
-        selected = candidates[0]
+        selected = self._select_predict_reversal_grid_policy(
+            candidates,
+            ranking_target=ranking_target,
+            current_price=grouped_lines["current_price"],
+        )
+        if selected is None:
+            return self.predict_reversal_count2_control(
+                coordinator,
+                predict_signal_id,
+                latest_peak_info,
+                "no_win40_grid_policy_candidate",
+            )
 
         analysis_mode = getattr(
             getattr(coordinator, "analysis", None),
             "mode",
             "live",
         )
-        selected.update(target)
         selected.update({
             "predict_signal_id": predict_signal_id,
             "predict_candidate_count": len(candidates),
-            "predict_candidate_scope": "m5_reversal_target_after_regime",
+            "predict_candidate_scope": (
+                "m5_reversal_win40_grid_raw_distance_rank"
+            ),
             "predict_pending_policy": (
                 "next_count2_or_distance_ttl_15_30_45m"
             ),
@@ -1578,6 +1750,165 @@ class LineStrategyProfileUsdJpy:
             latest_peak_info,
             "predict_order_creation_filtered",
         )
+
+    def _select_predict_reversal_grid_policy(
+        self,
+        candidates,
+        *,
+        ranking_target,
+        current_price,
+    ):
+        """Choose one executable raw-rank policy in configured priority order."""
+        average_range = self._finite_float_or_none(
+            ranking_target.get("predict_recent_m5_avg_range_pips")
+        )
+        current_price = self._finite_float_or_none(current_price)
+        if average_range is None or average_range <= 0 or current_price is None:
+            return None
+
+        matches = []
+        for candidate in candidates:
+            raw_rank = self._int_or_none(candidate.get("predict_distance_rank"))
+            if raw_rank is None:
+                continue
+            contexts = {
+                "m5": candidate.get("m5_stair_context") or {},
+                "h1": candidate.get("h1_stair_context") or {},
+            }
+            for priority, policy in enumerate(
+                self.predict_reversal_grid_conditions
+            ):
+                if raw_rank != int(policy["entry_rank"]):
+                    continue
+                context = contexts.get(policy["timeframe"], {})
+                value = self._nested_value(context, policy["field"])
+                if not self._top15_condition_matches(value, policy):
+                    continue
+                parameters = self._predict_reversal_grid_parameters(
+                    candidate,
+                    policy,
+                    ranking_target=ranking_target,
+                    average_range=average_range,
+                    current_price=current_price,
+                )
+                if parameters is None:
+                    continue
+                matches.append((priority, candidate, policy, parameters))
+
+        if not matches:
+            return None
+        priority, selected, policy, parameters = min(
+            matches,
+            key=lambda item: (
+                item[0],
+                int(item[1].get("predict_candidate_rank") or 10**9),
+                int(item[1].get("line_index") or 0),
+            ),
+        )
+        raw_rank_matches = [
+            item[2]["label"]
+            for item in matches
+            if item[1] is selected
+        ]
+        selected.update(parameters)
+        selected.update({
+            "predict_reversal_selected_condition": policy["label"],
+            "predict_reversal_selected_condition_priority": priority + 1,
+            "predict_reversal_selected_ranking_source": policy[
+                "ranking_source"
+            ],
+            "predict_reversal_selected_parameter_source": policy.get(
+                "selected_parameter_source",
+                policy["ranking_source"],
+            ),
+            "predict_reversal_grid_matches": raw_rank_matches,
+            "predict_reversal_grid_match_count": len(raw_rank_matches),
+            "predict_grid_positive_rate": policy["grid_positive_rate"],
+            "predict_grid_sum_yen": policy["grid_sum_yen"],
+            "predict_grid_sum_pips": policy["grid_sum_pips"],
+            "predict_grid_entry_rank_source": "raw_distance_rank",
+            "predict_grid_entry_rank": int(policy["entry_rank"]),
+            "predict_grid_entry_offset_range_multiplier": policy[
+                "entry_offset_range_multiplier"
+            ],
+            "predict_grid_tp_range_multiplier": policy[
+                "tp_range_multiplier"
+            ],
+            "predict_grid_lc_range_multiplier": policy[
+                "lc_range_multiplier"
+            ],
+            "predict_reversal_order_name_prefix": (
+                "BOTH" if policy["label"].startswith("BOTH ") else None
+            ),
+        })
+        memo = str(selected.get("memo") or "").strip()
+        selected["memo"] = (
+            (memo + " | " if memo else "")
+            + "Win40Grid="
+            + policy["label"]
+        )
+        return selected
+
+    def _predict_reversal_grid_parameters(
+        self,
+        candidate,
+        policy,
+        *,
+        ranking_target,
+        average_range,
+        current_price,
+    ):
+        """Build tick-normalized live prices from one validated grid policy."""
+        pair = gene.currency_pair(self.pair)
+        direction = self._int_or_none(candidate.get("direction"))
+        line_price = self._finite_float_or_none(candidate.get("line_price"))
+        if direction not in (-1, 1) or line_price is None:
+            return None
+
+        offset_multiplier = float(policy["entry_offset_range_multiplier"])
+        requested_offset_pips = average_range * offset_multiplier
+        offset_range = pair.pips_to_price(requested_offset_pips)
+        actual_offset_pips = pair.price_to_pips(offset_range)
+        target_price = pair.round_price(
+            line_price - direction * offset_range
+        )
+        adjusted_distance_pips = (
+            (target_price - current_price) * -direction / pair.pip_value
+        )
+        if adjusted_distance_pips <= -(self.h1_spread_pips / 2.0):
+            return None
+
+        def executable_pips(multiplier):
+            requested = max(
+                average_range * float(multiplier),
+                float(self.predict_reversal_min_target_pips),
+            )
+            return abs(pair.pips_to_price(requested)) / pair.pip_value
+
+        tp_pips = executable_pips(policy["tp_range_multiplier"])
+        lc_pips = executable_pips(policy["lc_range_multiplier"])
+        if tp_pips <= 0 or lc_pips <= 0:
+            return None
+
+        parameters = dict(ranking_target)
+        parameters.update({
+            "line_target_price": line_price,
+            "target_price": target_price,
+            "line_distance_pips": candidate.get("distance_pips"),
+            "distance_pips": adjusted_distance_pips,
+            "predict_entry_offset_requested_pips": requested_offset_pips,
+            "predict_entry_offset_pips": actual_offset_pips,
+            "predict_adjusted_distance_pips": adjusted_distance_pips,
+            "predict_tp_multiplier": float(policy["tp_range_multiplier"]),
+            "predict_lc_multiplier": float(policy["lc_range_multiplier"]),
+            "predict_rr": tp_pips / lc_pips,
+            "tp_pips": tp_pips,
+            "lc_pips": lc_pips,
+            "predict_distance_to_tp_ratio": (
+                adjusted_distance_pips / tp_pips
+            ),
+        })
+        return parameters
 
     def rank_predict_reversal_candidates(
         self,
@@ -2018,7 +2349,7 @@ class LineStrategyProfileUsdJpy:
         candidate,
         _latest_peak_info,
     ):
-        """Allow a candidate when any configured 2026 YTD top condition matches."""
+        """Allow a candidate when any configured win40 grid condition matches."""
         matches = self._predict_reversal_top15_matches(candidate)
         candidate["predict_reversal_filter_policy_version"] = (
             self.predict_reversal_filter_policy_version
@@ -2033,7 +2364,7 @@ class LineStrategyProfileUsdJpy:
             "h1": candidate.get("h1_stair_context") or {},
         }
         matches = []
-        for condition in self.predict_reversal_top15_conditions:
+        for condition in self.predict_reversal_grid_conditions:
             context = contexts.get(condition["timeframe"], {})
             value = self._nested_value(context, condition["field"])
             if self._top15_condition_matches(value, condition):
@@ -2058,6 +2389,18 @@ class LineStrategyProfileUsdJpy:
                 number is not None
                 and number >= float(condition["minimum"])
                 and number < float(condition["maximum"])
+            )
+        if operator == "less_than":
+            number = cls._finite_float_or_none(value)
+            return bool(
+                number is not None
+                and number < float(condition["maximum"])
+            )
+        if operator == "at_least":
+            number = cls._finite_float_or_none(value)
+            return bool(
+                number is not None
+                and number >= float(condition["minimum"])
             )
         if operator == "equals_number":
             number = cls._finite_float_or_none(value)
