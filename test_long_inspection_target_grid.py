@@ -30,4 +30,5 @@ if __name__ == "__main__":
     main(
         default_start=START_TIME,
         default_end=END_TIME,
+        default_pair=PAIR,
     )

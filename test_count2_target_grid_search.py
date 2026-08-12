@@ -237,6 +237,26 @@ class GridCliAndCombinationTest(unittest.TestCase):
                 ):
                     parse_args([flag, value])
 
+    def test_cli_builds_pair_specific_default_sources(self):
+        args = parse_args(
+            [
+                "--pair",
+                "EUR_USD",
+                "--start",
+                "2025-07-30",
+                "--end",
+                "2026-07-30",
+            ]
+        )
+
+        self.assertEqual(args.pair, "EUR_USD")
+        self.assertIn("EUR_USD_20250730_20260730", args.source_candidates.name)
+        self.assertIn("EUR_USD_20250730_20260730", args.source_events.name)
+        self.assertEqual(
+            args.s5_cache.name,
+            "s5_EUR_USD_20250730000000_20260730000000.csv",
+        )
+
     def test_build_grid_combos_is_complete_unique_and_prefix_addressable(self):
         args = _args(
             entry_ranks=(1, 3),
@@ -899,6 +919,9 @@ class EventLedgerDenominatorTest(unittest.TestCase):
                 peak_direction=-1,
             ),
         ]
+        # A pair may keep the detector disabled for live orders while still
+        # retaining its computed staircase context for offline research.
+        event_rows[0]["m5_stair_profile_enabled"] = False
         with tempfile.TemporaryDirectory() as folder:
             event_path = Path(folder) / "events.csv"
             pd.DataFrame(event_rows).to_csv(event_path, index=False)

@@ -1,4 +1,4 @@
-"""Future-safe USD/JPY count-2 entry/TP/LC grid search.
+"""Future-safe count-2 entry/TP/LC grid search for supported pairs.
 
 This module consumes the causal candidate CSV created by
 ``count2_resistance_sweep.py``, its foot2 event ledger, and the matching S5
@@ -52,8 +52,8 @@ from count2_resistance_sweep import (
 )
 
 
-PAIR_NAME = "USD_JPY"
-GRID_VERSION = "usd_jpy_count2_entry_tp_lc_grid_v6"
+DEFAULT_PAIR_NAME = "USD_JPY"
+GRID_VERSION = "count2_entry_tp_lc_grid_v7"
 S5_TYPED_CACHE_VERSION = "s5_ohlc_memmap_v1"
 DEFAULT_START = dt.datetime(2025, 7, 30)
 DEFAULT_END = dt.datetime(2026, 7, 30)
@@ -116,24 +116,46 @@ def _csv_value(values: Iterable[float | int]) -> str:
     return ",".join(f"{float(value):g}" for value in values)
 
 
-def _default_candidate_path(start: dt.datetime, end: dt.datetime) -> Path:
+def _pair_name(args: argparse.Namespace) -> str:
+    return str(getattr(args, "pair", DEFAULT_PAIR_NAME))
+
+
+def _grid_version(args: argparse.Namespace) -> str:
+    return f"{_pair_name(args).lower()}_{GRID_VERSION}"
+
+
+def _default_candidate_path(
+    pair_name: str,
+    start: dt.datetime,
+    end: dt.datetime,
+    spread_pips: float,
+) -> Path:
     stem = (
-        f"{PAIR_NAME}_{start:%Y%m%d}_{end:%Y%m%d}"
-        "_m5line60_range6x3_rr1.2_sp0.8_60m"
+        f"{pair_name}_{start:%Y%m%d}_{end:%Y%m%d}"
+        f"_m5line60_range6x3_rr1.2_sp{spread_pips:g}_60m"
     )
     return Path(tk.folder_path) / f"resistance_sweep_candidates_{stem}.csv"
 
 
-def _default_event_path(start: dt.datetime, end: dt.datetime) -> Path:
+def _default_event_path(
+    pair_name: str,
+    start: dt.datetime,
+    end: dt.datetime,
+    spread_pips: float,
+) -> Path:
     stem = (
-        f"{PAIR_NAME}_{start:%Y%m%d}_{end:%Y%m%d}"
-        "_m5line60_range6x3_rr1.2_sp0.8_60m"
+        f"{pair_name}_{start:%Y%m%d}_{end:%Y%m%d}"
+        f"_m5line60_range6x3_rr1.2_sp{spread_pips:g}_60m"
     )
     return Path(tk.folder_path) / f"resistance_sweep_events_{stem}.csv"
 
 
-def _default_s5_path(start: dt.datetime, end: dt.datetime) -> Path:
-    name = f"{PAIR_NAME}_{start:%Y%m%d%H%M%S}_{end:%Y%m%d%H%M%S}"
+def _default_s5_path(
+    pair_name: str,
+    start: dt.datetime,
+    end: dt.datetime,
+) -> Path:
+    name = f"{pair_name}_{start:%Y%m%d%H%M%S}_{end:%Y%m%d%H%M%S}"
     return Path(tk.folder_path) / f"s5_{name}.csv"
 
 
@@ -142,12 +164,18 @@ def parse_args(
     *,
     default_start: dt.datetime = DEFAULT_START,
     default_end: dt.datetime = DEFAULT_END,
+    default_pair: str = DEFAULT_PAIR_NAME,
 ) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "USD_JPY foot count 2: entry line / TP / LC exhaustive grid "
+            "Foot count 2: entry line / TP / LC exhaustive grid "
             "using an existing causal resistance-sweep CSV"
         )
+    )
+    parser.add_argument(
+        "--pair",
+        default=default_pair,
+        choices=tuple(gene.CURRENCY_PAIRS),
     )
     parser.add_argument("--start", default=default_start.isoformat(" "))
     parser.add_argument("--end", default=default_end.isoformat(" "))
@@ -278,19 +306,21 @@ def parse_args(
     if args.max_source_rows is not None and args.max_source_rows < 1:
         parser.error("--max-source-rows must be positive")
     args.source_candidates = args.source_candidates or _default_candidate_path(
-        args.start, args.end
+        args.pair, args.start, args.end, args.spread_pips
     )
     args.source_events = args.source_events or _default_event_path(
-        args.start, args.end
+        args.pair, args.start, args.end, args.spread_pips
     )
-    args.s5_cache = args.s5_cache or _default_s5_path(args.start, args.end)
+    args.s5_cache = args.s5_cache or _default_s5_path(
+        args.pair, args.start, args.end
+    )
     return args
 
 
 def _grid_config(args: argparse.Namespace) -> dict[str, Any]:
     return {
-        "version": GRID_VERSION,
-        "pair": PAIR_NAME,
+        "version": _grid_version(args),
+        "pair": _pair_name(args),
         "start": args.start.isoformat(" "),
         "end": args.end.isoformat(" "),
         "entry_rank_source": "raw_distance_rank",
@@ -304,6 +334,11 @@ def _grid_config(args: argparse.Namespace) -> dict[str, Any]:
         "horizon_minutes": args.horizon_minutes,
         "min_target_pips": args.min_target_pips,
         "risk_yen": args.risk_yen,
+        "yen_result_method": (
+            "rounded_units_at_entry"
+            if _pair_name(args) == "USD_JPY"
+            else "fixed_risk_yen_times_result_r"
+        ),
         "min_completed": args.min_completed,
         "min_rr": args.min_rr,
         "min_profit_factor": args.min_profit_factor,
@@ -325,7 +360,10 @@ def _grid_config(args: argparse.Namespace) -> dict[str, Any]:
 def output_paths(args: argparse.Namespace) -> dict[str, Path]:
     config_json = json.dumps(_grid_config(args), sort_keys=True, ensure_ascii=True)
     fingerprint = hashlib.sha256(config_json.encode("ascii")).hexdigest()[:10]
-    stem = f"{PAIR_NAME}_{args.start:%Y%m%d}_{args.end:%Y%m%d}_g{fingerprint}"
+    stem = (
+        f"{_pair_name(args)}_{args.start:%Y%m%d}_{args.end:%Y%m%d}"
+        f"_g{fingerprint}"
+    )
     folder = Path(args.output_dir)
     return {
         "paths": folder / f"count2_target_grid_paths_{stem}.csv",
@@ -770,11 +808,11 @@ def _write_progress(
         else None
     )
     payload = {
-        "pair": PAIR_NAME,
+        "pair": _pair_name(args),
         "pid": os.getpid(),
         "status": status,
         "phase": phase,
-        "grid_version": GRID_VERSION,
+        "grid_version": _grid_version(args),
         "started_at": started_at.astimezone().isoformat(timespec="seconds"),
         "updated_at": dt.datetime.now().astimezone().isoformat(
             timespec="seconds"
@@ -1727,20 +1765,29 @@ def _outcome_matrices(
             out=np.zeros_like(result_pips),
             where=actual_lc > 0,
         )
-        units_by_lc = np.asarray(
-            [
-                gene.calculate_units(
-                    pair,
-                    pair.pips_to_price(value),
-                    risk_yen=args.risk_yen,
-                    rounding_tag="l",
-                )
-                for value in record.lc_pips
-            ],
-            dtype=float,
-        )
-        units = np.tile(units_by_lc, tp_count)
-        result_yen = result_pips * pair.pip_value * units
+        if pair.name == "USD_JPY":
+            # Preserve the established USD/JPY result contract, including
+            # order-unit rounding. USD-quoted pairs cannot use this formula
+            # without a causal USD/JPY conversion series.
+            units_by_lc = np.asarray(
+                [
+                    gene.calculate_units(
+                        pair,
+                        pair.pips_to_price(value),
+                        risk_yen=args.risk_yen,
+                        rounding_tag="l",
+                    )
+                    for value in record.lc_pips
+                ],
+                dtype=float,
+            )
+            units = np.tile(units_by_lc, tp_count)
+            result_yen = result_pips * pair.pip_value * units
+        else:
+            # EUR/USD and AUD/USD use fixed-risk-normalized yen. A -1R stop is
+            # exactly -risk_yen and every other outcome scales by its realized
+            # R multiple. This avoids importing a future or constant FX rate.
+            result_yen = result_r * float(args.risk_yen)
 
         metrics["known_count"][row_index] = known.astype(float)
         metrics["unresolved_count"][row_index] = (
@@ -2343,11 +2390,11 @@ def grid_path_row(
     grid_entry_id = f"{record.event_id}_rank{record.entry_rank}"
     grid_path_id = f"{grid_entry_id}_off{record.offset_index}"
     row: dict[str, Any] = {
-        "grid_version": GRID_VERSION,
+        "grid_version": _grid_version(args),
         "event_id": record.event_id,
         "grid_entry_id": grid_entry_id,
         "grid_path_id": grid_path_id,
-        "pair": PAIR_NAME,
+        "pair": _pair_name(args),
         "decision_time": record.decision_time.isoformat(" "),
         "pending_expiry_time": record.expiry_time.isoformat(" "),
         "entry_rank_source": "raw_distance_rank",
@@ -2532,7 +2579,7 @@ def aggregate_row(
     )
     positive_month_rate = _safe_ratio(positive_month_count, active_month_count)
     row = {
-        "grid_version": GRID_VERSION,
+        "grid_version": _grid_version(accumulator.args),
         "segment": segment,
         "condition_id": condition_id,
         "condition_source": condition.source,
@@ -2693,7 +2740,7 @@ def write_aggregate_monthly(
                 completed = monthly_values["completed_count"]
                 monthly_writer.writerow(
                     {
-                        "grid_version": GRID_VERSION,
+                        "grid_version": _grid_version(accumulator.args),
                         "segment": segment,
                         "month": month,
                         "condition_id": condition_id,
@@ -2732,17 +2779,37 @@ def _source_row_dict(row: pd.Series) -> dict[str, Any]:
     return {column: row[column] for column in row.index}
 
 
+def _has_stair_context(row: dict[str, Any], prefix: str) -> bool:
+    """Return whether a staircase detector result is present.
+
+    ``profile_enabled`` controls whether the live strategy uses that detector;
+    it does not control whether its causal output may be researched.  The
+    resistance sweep computes and stores the context even for a disabled live
+    profile, so False is valid here.  Missing/malformed flags or states are not.
+    """
+    profile_enabled = _bool_value(row.get(f"{prefix}_stair_profile_enabled"))
+    state = row.get(f"{prefix}_stair_state")
+    state_text = "" if state is None else str(state).strip()
+    return profile_enabled is not None and state_text.lower() not in {
+        "",
+        "nan",
+    }
+
+
 def _validate_source_decision(
     source: dict[str, Any],
     args: argparse.Namespace,
 ) -> tuple[pd.Timestamp, pd.Timestamp]:
-    if str(source.get("pair")) != PAIR_NAME:
-        raise ValueError(f"Source row pair is not {PAIR_NAME}: {source.get('pair')}")
+    pair_name = _pair_name(args)
+    if str(source.get("pair")) != pair_name:
+        raise ValueError(
+            f"Source row pair is not {pair_name}: {source.get('pair')}"
+        )
     decision_time = pd.to_datetime(source.get("decision_time"), errors="raise")
     expiry_time = pd.to_datetime(source.get("next_count2_time"), errors="raise")
     if not pd.Timestamp(args.start) <= decision_time < pd.Timestamp(args.end):
         raise ValueError(f"Source decision is outside requested period: {decision_time}")
-    expected_event_id = f"{PAIR_NAME}_{pd.Timestamp(decision_time):%Y%m%d%H%M%S}"
+    expected_event_id = f"{pair_name}_{pd.Timestamp(decision_time):%Y%m%d%H%M%S}"
     if str(source.get("event_id")) != expected_event_id:
         raise ValueError(
             f"Source event_id/time mismatch: {source.get('event_id')} != "
@@ -2782,15 +2849,14 @@ def _validate_source_decision(
         or _bool_value(source.get("pending_expiry_exclusive")) is not True
     ):
         raise ValueError(
-            f"Source line/pending contract does not match the USD_JPY grid "
+            f"Source line/pending contract does not match the target grid "
             f"at {decision_time}"
         )
-    if (
-        _bool_value(source.get("m5_stair_profile_enabled")) is not True
-        or _bool_value(source.get("h1_stair_profile_enabled")) is not True
+    if not _has_stair_context(source, "m5") or not _has_stair_context(
+        source, "h1"
     ):
         raise ValueError(
-            f"Source is missing enabled M5/H1 staircase context at "
+            f"Source is missing valid M5/H1 staircase context at "
             f"{decision_time}"
         )
     average_range = _numeric(source.get("recent_m5_avg_range_pips"))
@@ -2855,9 +2921,10 @@ def _validate_event_decision(
     event: dict[str, Any],
     args: argparse.Namespace,
 ) -> tuple[pd.Timestamp, pd.Timestamp, int]:
-    if str(event.get("pair")) != PAIR_NAME:
+    pair_name = _pair_name(args)
+    if str(event.get("pair")) != pair_name:
         raise ValueError(
-            f"Event ledger pair is not {PAIR_NAME}: {event.get('pair')}"
+            f"Event ledger pair is not {pair_name}: {event.get('pair')}"
         )
     decision_time = pd.to_datetime(event.get("decision_time"), errors="raise")
     expiry_time = pd.to_datetime(event.get("next_count2_time"), errors="raise")
@@ -2865,7 +2932,7 @@ def _validate_event_decision(
         raise ValueError(
             f"Event ledger decision is outside requested period: {decision_time}"
         )
-    expected_event_id = f"{PAIR_NAME}_{pd.Timestamp(decision_time):%Y%m%d%H%M%S}"
+    expected_event_id = f"{pair_name}_{pd.Timestamp(decision_time):%Y%m%d%H%M%S}"
     if str(event.get("event_id")) != expected_event_id:
         raise ValueError(
             f"Event ledger id/time mismatch: {event.get('event_id')} != "
@@ -2915,12 +2982,11 @@ def _validate_event_decision(
     peak_latest = pd.to_datetime(event.get("peak_latest_time"), errors="coerce")
     if pd.isna(peak_latest) or peak_latest + pd.Timedelta(minutes=5) > decision_time:
         raise ValueError(f"Event ledger peak is not completed at {decision_time}")
-    if (
-        _bool_value(event.get("m5_stair_profile_enabled")) is not True
-        or _bool_value(event.get("h1_stair_profile_enabled")) is not True
+    if not _has_stair_context(event, "m5") or not _has_stair_context(
+        event, "h1"
     ):
         raise ValueError(
-            f"Event ledger lacks enabled M5/H1 staircase context at "
+            f"Event ledger lacks valid M5/H1 staircase context at "
             f"{decision_time}"
         )
     candidate_count_value = _numeric(event.get("candidate_count"))
@@ -3051,10 +3117,12 @@ def _coverage_manifest(accumulator: GridAccumulator) -> dict[str, Any]:
 
 
 def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
-    """Run the USD/JPY grid from existing causal outputs; never fetch data."""
+    """Run a pair grid from existing causal outputs; never fetch data."""
+    pair_name = _pair_name(args)
     if not args.source_candidates.exists():
         raise FileNotFoundError(
-            "Causal candidate CSV not found. Run test_long_inspection.py first: "
+            "Causal candidate CSV not found. Run the matching pair's "
+            "count2 resistance sweep first: "
             f"{args.source_candidates}"
         )
     if not args.source_events.exists():
@@ -3089,7 +3157,7 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
     _notify(
         "\n".join(
             [
-                f"{PAIR_NAME} foot count 2 entry/TP/LC grid 開始",
+                f"{pair_name} foot count 2 entry/TP/LC grid 開始",
                 f"- 期間: {args.start:%Y-%m-%d} から {args.end:%Y-%m-%d} 未満",
                 "- 出力: 1年全期間の全組み合わせ（順位付けなし）",
                 f"- entry: 距離順位 {list(args.entry_ranks)} × offset {list(args.entry_offset_range_multipliers)}A",
@@ -3102,7 +3170,7 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
     )
 
     try:
-        pair = gene.currency_pair(PAIR_NAME)
+        pair = gene.currency_pair(pair_name)
         inspector, s5_metadata = _load_typed_s5_inspector(
             args.s5_cache,
             pair,
@@ -3142,7 +3210,7 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
         _notify(
             "\n".join(
                 [
-                    f"{PAIR_NAME} foot count 2 entry/TP/LC grid 起動失敗",
+                    f"{pair_name} foot count 2 entry/TP/LC grid 起動失敗",
                     f"- エラー種別: {type(error).__name__}",
                     f"- 内容: {error}",
                     "- progress/temp: archiveへ移動済み",
@@ -3439,7 +3507,7 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
                 _notify(
                     "\n".join(
                         [
-                            f"{PAIR_NAME} entry/TP/LC grid 進捗",
+                            f"{pair_name} entry/TP/LC grid 進捗",
                             f"- 処理: {source_rows_processed}/{source_rows_total} ({percent:.1f}%)",
                             f"- entryライン: {selected_line_rows}",
                             f"- entry path: {grid_path_rows}",
@@ -3538,6 +3606,7 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
                 "target_preceding_six_completed_m5_enforced": True,
                 "available_peak_line_retouch_m5_completion_enforced": True,
                 "h1_stair_causality_inherited_from_source_generator": True,
+                "stair_profile_enablement_not_used_as_research_gate": True,
                 "s5_used_only_for_outcome": True,
                 "s5_signal_period_coverage_enforced": True,
                 "s5_at_or_after_requested_end_excluded": True,
@@ -3559,6 +3628,13 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
                 "The source CSV records lookback=6 and first/last M5 times but not all six source timestamps; exact six-row membership relies on the source generator contract.",
                 "Gap-through LIMIT fills are conservatively recorded at the limit price without price improvement.",
                 "When a timeout horizon ends during a known market closure, the last tradable S5 close is used as the timeout mark.",
+                (
+                    "EUR/USD and AUD/USD yen results are fixed-risk-normalized "
+                    "as realized R times risk_yen; no non-causal USD/JPY "
+                    "conversion series is used."
+                    if pair_name in ("EUR_USD", "AUD_USD")
+                    else None
+                ),
                 "A max-source-rows run is incomplete and must not be used as final evidence."
                 if args.max_source_rows is not None
                 else None,
@@ -3583,13 +3659,13 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
             f"月別結果: {paths['monthly']}",
             f"経過: {elapsed_minutes:.1f}分",
         ]
-        print(f"{PAIR_NAME} foot count 2 entry/TP/LC grid complete")
+        print(f"{pair_name} foot count 2 entry/TP/LC grid complete")
         for line in completion_lines:
             print(f"- {line}")
         _notify(
             "\n".join(
                 [
-                    f"{PAIR_NAME} foot count 2 entry/TP/LC grid 完了",
+                    f"{pair_name} foot count 2 entry/TP/LC grid 完了",
                     *(f"- {line}" for line in completion_lines),
                 ]
             )
@@ -3634,7 +3710,7 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
             _notify(
                 "\n".join(
                     [
-                        f"{PAIR_NAME} foot count 2 entry/TP/LC grid 異常終了",
+                        f"{pair_name} foot count 2 entry/TP/LC grid 異常終了",
                         f"- エラー種別: {type(error).__name__}",
                         f"- 内容: {error}",
                     ]
@@ -3648,11 +3724,13 @@ def main(
     *,
     default_start: dt.datetime = DEFAULT_START,
     default_end: dt.datetime = DEFAULT_END,
+    default_pair: str = DEFAULT_PAIR_NAME,
 ) -> dict[str, Path]:
     args = parse_args(
         argv,
         default_start=default_start,
         default_end=default_end,
+        default_pair=default_pair,
     )
     try:
         return run_grid_search(args)
@@ -3674,7 +3752,7 @@ def main(
             _notify(
                 "\n".join(
                     [
-                        f"{PAIR_NAME} foot count 2 entry/TP/LC grid 起動失敗",
+                        f"{_pair_name(args)} foot count 2 entry/TP/LC grid 起動失敗",
                         f"- エラー種別: {type(error).__name__}",
                         f"- 内容: {error}",
                         "- temp/progress: archiveへ移動済み",
