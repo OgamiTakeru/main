@@ -2604,6 +2604,9 @@ class UsdJpyLineOrderStrategy:
     tp_pips = 0
     timeframe_risk_multiplier = 1
     order_timeout_min = 0
+    trade_timeout_min = 60
+    allow_followup_order = False
+    profit_lock_ratio = 0.5
 
     def __init__(self, profile=None):
         self.profile = profile or LineStrategyProfileUsdJpy()

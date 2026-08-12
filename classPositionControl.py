@@ -32,6 +32,10 @@ class position_control:
         self.u = self.p.round_keta
         self.position_classes = []
         self.count_true = 0
+        self.catch_up_position_state_unknown = False
+        self.pending_orders_state_unknown = False
+        self.open_trades_state_unknown = False
+        self.position_restore_state_unknown = False
         self.oa = classOanda.Oanda(tk.accountIDl, tk.access_tokenl, tk.environmentl)
         self.oa2 = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
 
@@ -168,6 +172,13 @@ class position_control:
         # max_dict = max(order_dic_list, key=lambda d: d["priority"], default=None)
         # max_dict = max(order_dic_list, key=lambda d: d.get("priority", float("-inf")))
         # order_max_priority = max_dict['priority']
+        order_classes = self.filter_orders_by_followup_permission(
+            order_classes,
+            open_only=True,
+        )
+        if len(order_classes) == 0:
+            print("No order classes while an open position blocks follow-up orders.")
+            return 0
         order_classes = self.process_predict_reversal_count2_controls(
             order_classes
         )
@@ -192,10 +203,19 @@ class position_control:
         if len(order_classes) == 0:
             print("No order classes after pending-order conflict filter.")
             return 0
+        order_classes = self.filter_orders_by_followup_permission(order_classes)
+        if len(order_classes) == 0:
+            print("No order classes while an open position blocks follow-up orders.")
+            return 0
         order_classes = self.filter_similar_order_classes(order_classes, threshold_pips=3)
         if len(order_classes) == 0:
             print("No order classes after similar-order filter.")
             return 0
+        order_classes = self.filter_exclusive_followup_candidates(order_classes)
+        if len(order_classes) == 0:
+            print("No exclusive follow-up order while another order is unresolved.")
+            return 0
+        order_classes = self.limit_followup_order_batch(order_classes)
         order_classes = self.apply_opposing_position_policy(order_classes)
         if len(order_classes) == 0:
             print("No order classes after opposing-position policy.")
@@ -321,6 +341,106 @@ class position_control:
                         break
 
         return line_send
+
+    def filter_orders_by_followup_permission(
+        self,
+        order_classes,
+        open_only=False,
+    ):
+        """Block new orders while an active managed order disallows them."""
+        self.catch_up_position_state_unknown = any((
+            self.pending_orders_state_unknown,
+            self.open_trades_state_unknown,
+            self.position_restore_state_unknown,
+        ))
+        blocking_positions = [
+            item
+            for item in self.position_classes
+            if (
+                item.life
+                and getattr(item, "allow_followup_order", None) is False
+                and (not open_only or item.t_state == "OPEN")
+            )
+        ]
+        if not blocking_positions and not self.catch_up_position_state_unknown:
+            return order_classes
+
+        blocking_names = [item.name for item in blocking_positions]
+        blocked = []
+        allowed_controls = []
+        for order_class in order_classes:
+            plan = getattr(order_class, "exe_order_plan", None) or {}
+            if plan.get("line_order_mode") == "predict_reversal_count2_control":
+                allowed_controls.append(order_class)
+                continue
+            plan["followup_order_blocked"] = True
+            plan["followup_order_blocked_by"] = list(blocking_names)
+            blocked.append(order_class)
+        print(
+            "Follow-up orders blocked by active managed orders:",
+            ", ".join(blocking_names) or "unknown OANDA startup state",
+        )
+        return allowed_controls
+
+    def filter_exclusive_followup_candidates(self, order_classes):
+        """Do not start an exclusive order beside an unresolved pending order."""
+        unresolved_positions = [
+            item
+            for item in self.position_classes
+            if item.life and item.t_state != "OPEN"
+        ]
+        if not unresolved_positions:
+            return order_classes
+
+        unresolved_names = [item.name for item in unresolved_positions]
+        allowed = []
+        for order_class in order_classes:
+            plan = getattr(order_class, "exe_order_plan", None) or {}
+            if plan.get("allow_followup_order") is not False:
+                allowed.append(order_class)
+                continue
+            plan["followup_order_blocked"] = True
+            plan["followup_order_blocked_by"] = list(unresolved_names)
+            plan["followup_order_block_reason"] = "unresolved_active_order"
+        return allowed
+
+    @staticmethod
+    def limit_followup_order_batch(order_classes):
+        """Submit only one exclusive order from the same analysis cycle."""
+        exclusive_orders = [
+            order_class
+            for order_class in order_classes
+            if (
+                (getattr(order_class, "exe_order_plan", None) or {}).get(
+                    "allow_followup_order"
+                )
+                is False
+            )
+        ]
+        if not exclusive_orders:
+            return order_classes
+
+        selected = max(
+            exclusive_orders,
+            key=lambda item: (
+                getattr(item, "exe_order_plan", None) or {}
+            ).get("priority", 0),
+        )
+        selected_name = (
+            getattr(selected, "exe_order_plan", None) or {}
+        ).get("name")
+        nonexclusive_orders = []
+        for order_class in order_classes:
+            plan = getattr(order_class, "exe_order_plan", None) or {}
+            if plan.get("allow_followup_order") is not False:
+                nonexclusive_orders.append(order_class)
+                continue
+            if order_class is selected:
+                continue
+            plan["followup_order_blocked"] = True
+            plan["followup_order_blocked_by"] = [selected_name]
+            plan["followup_order_block_reason"] = "same_cycle_exclusive_order"
+        return nonexclusive_orders + [selected]
 
     def process_predict_reversal_count2_controls(self, order_classes):
         """Expire older pending predicts even when a new count2 has no order."""
@@ -1266,6 +1386,9 @@ class position_control:
                         "direction": item.plan_json.get('direction'),
                         "source": item.plan_json.get('source'),
                         "line_strategy": item.plan_json.get('line_strategy'),
+                        "allow_followup_order": getattr(item, "allow_followup_order", None),
+                        "profit_protected": getattr(item, "profit_protected", False),
+                        "profit_lock_price": getattr(item, "profit_lock_price", 0),
                         "unrealizedPL": item.t_json['unrealizedPL'],
                         "t_time_past_sec": item.t_time_past_sec
                     })
@@ -1361,7 +1484,17 @@ class position_control:
         """
         最初に実行される
         """
+        self.position_restore_state_unknown = False
         res = self.oa2.OpenTrades_exe()
+        if res.get('error') != 0:
+            self.open_trades_state_unknown = True
+            notice.line_send(
+                "● 既存ポジション取得失敗\n"
+                + "- pair: " + str(self.pair) + "\n"
+                + "- 新規注文: 起動中は停止"
+            )
+            return 0
+        self.open_trades_state_unknown = False
         if len(res['data']) == 0:
             return 0
         trades_all = res['json']['trades']
@@ -1375,6 +1508,7 @@ class position_control:
             for i, exist_position_json in enumerate(trades):
                 # クラスのスロットの空きをひとつづつ確認
                 print("o,", exist_position_json)
+                restored = False
                 for class_index, each_exist_class in enumerate(self.position_classes):
                     if each_exist_class.life:
                         # Trueの所には上書きしない
@@ -1385,8 +1519,21 @@ class position_control:
                         "既存" + str(i),
                         2,
                         5,
-                        exist_position_json)
+                        exist_position_json,
+                        allow_followup_order=False,
+                        trade_timeout_min=60,
+                        profit_lock_ratio=0.5,
+                    )
+                    restored = True
                     break
+                if not restored:
+                    self.position_restore_state_unknown = True
+                    notice.line_send(
+                        "● 既存ポジション復元スロット不足\n"
+                        + "- pair: " + str(self.pair) + "\n"
+                        + "- trade_id: " + str(exist_position_json.get('id')) + "\n"
+                        + "- 新規注文: 起動中は停止"
+                    )
         self.print_classes_and_count()
 
     def reset_all_position(self):
@@ -1396,10 +1543,60 @@ class position_control:
         # self.oa.TradeAllClose_exe()
         # 両建て用のオアンダクラスのオーダーの削除（API）
         self.oa2.OrderCancel_All_exe()
+        pending_result = self.oa2.OrdersWaitPending_exe()
+        if (
+            not isinstance(pending_result, dict)
+            or pending_result.get('error') != 0
+            or len(pending_result.get('data', [])) != 0
+        ):
+            self.pending_orders_state_unknown = True
+            notice.line_send(
+                "● 起動時PENDING取消未確認\n"
+                + "- pair: " + str(self.pair) + "\n"
+                + "- 新規注文: 起動中は停止"
+            )
+        else:
+            self.pending_orders_state_unknown = False
         # self.oa2.TradeAllClose_exe()
 
         # プログラム内のクラスの整理
         self.all_update_information()  # 関数呼び出し（アップデート）
+
+    def refresh_startup_safety_state(self):
+        """Recheck startup fail-closed conditions without cancelling orders."""
+        if not any((
+            self.pending_orders_state_unknown,
+            self.open_trades_state_unknown,
+            self.position_restore_state_unknown,
+        )):
+            return
+        pending_result = self.oa2.OrdersWaitPending_exe()
+        if (
+            isinstance(pending_result, dict)
+            and pending_result.get('error') == 0
+            and len(pending_result.get('data', [])) == 0
+        ):
+            self.pending_orders_state_unknown = False
+
+        trades_result = self.oa2.OpenTrades_exe()
+        if not isinstance(trades_result, dict) or trades_result.get('error') != 0:
+            self.open_trades_state_unknown = True
+            return
+        self.open_trades_state_unknown = False
+        pair_trades = [
+            trade
+            for trade in trades_result.get('json', {}).get('trades', [])
+            if trade.get('instrument') == self.pair
+        ]
+        tracked_ids = {
+            str(item.t_id)
+            for item in self.position_classes
+            if item.life and item.t_id not in (None, 0, "")
+        }
+        self.position_restore_state_unknown = any(
+            str(trade.get('id')) not in tracked_ids
+            for trade in pair_trades
+        )
 
     # def linkage_control(self):
     #     """

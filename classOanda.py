@@ -1554,7 +1554,10 @@ def cal_past_time(x):
                                 int(target_col[11:13]),
                                 int(target_col[14:16]),
                                 int(target_col[17:19]))
-    time_past = (datetime.datetime.now() - time_dt).seconds  # 差分を秒で求める
+    time_past = max(
+        0,
+        int((datetime.datetime.now() - time_dt).total_seconds()),
+    )  # 差分を秒で求める
     return time_past
 
 
@@ -1575,7 +1578,16 @@ def cal_past_time_single(x):
                                     int(target_col[14:16]),
                                     int(target_col[17:19]))
         # 差分を秒で求める（タイミングで-値になるので、現在時刻-2秒)
-        time_past = (datetime.datetime.now() + datetime.timedelta(seconds=2) - time_dt).seconds
+        time_past = max(
+            0,
+            int(
+                (
+                    datetime.datetime.now()
+                    + datetime.timedelta(seconds=2)
+                    - time_dt
+                ).total_seconds()
+            ),
+        )
         return time_past
     except Exception as e:
         # print("  時刻形式が異なります", e)

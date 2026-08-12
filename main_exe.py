@@ -205,6 +205,7 @@ class main():
         5分に一度行わる処理
         """
         print("■■■■■■5分ごと調査■■■■", self.now, self.past_time_from_latest_mode1_exe)  # 表示用（実行時）
+        self.positions_control_class.refresh_startup_safety_state()
 
         # ■処理
         if self.first_exe:

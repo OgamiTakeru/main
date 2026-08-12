@@ -2,6 +2,7 @@ import fGeneric as gene
 import tokens as tk
 import send_notice as notice
 import copy
+import math
 
 class Order:
     """
@@ -56,6 +57,8 @@ class Order:
         self.name_ymdhms = "name_for_test"  # 大量処理のテストで1年を通じて同じ名前が発生しないように、年月日をくっつけたものも準備
         self.trade_timeout_min = 0
         self.order_timeout_min = 0
+        self.allow_followup_order = None
+        self.profit_lock_ratio = None
         self.order_permission = True
         self.lc_change = []
         self.linkage_order_classes = []
@@ -107,6 +110,13 @@ class Order:
                     # }
                 }
             }
+        if self.allow_followup_order is False:
+            self.data["order"]["clientExtensions"] = {
+                "tag": "managed_profit_lock",
+            }
+            self.data["order"]["tradeClientExtensions"] = {
+                "tag": "managed_profit_lock",
+            }
         # ■ポジション管理用含めた情報
         self.exe_order_plan = {
             "decision_time": self.decision_time,
@@ -124,6 +134,8 @@ class Order:
             "oa_mode": self.oa_mode,
             "order_timeout_min": self.order_timeout_min,
             "trade_timeout_min": self.trade_timeout_min,
+            "allow_followup_order": self.allow_followup_order,
+            "profit_lock_ratio": self.profit_lock_ratio,
             "order_permission": self.order_permission,
             "priority": self.priority,
             "watching_price": 0,
@@ -189,6 +201,8 @@ class Order:
         self.name_ymdhms = "name_for_test"  # 大量処理のテストで1年を通じて同じ名前が発生しないように、年月日をくっつけたものも準備
         self.trade_timeout_min = 0
         self.order_timeout_min = 0
+        self.allow_followup_order = None
+        self.profit_lock_ratio = None
         self.order_permission = True
         self.lc_change = []
         self.linkage_order_classes = []
@@ -408,6 +422,38 @@ class Order:
             self.trade_timeout_min = order_json['trade_timeout_min']
         else:
             self.trade_timeout_min = self.trade_timeout_min_base
+
+        allow_followup_order = order_json.get('allow_followup_order')
+        if allow_followup_order is not None and not isinstance(allow_followup_order, bool):
+            raise ValueError("allow_followup_order must be bool or None")
+        self.allow_followup_order = allow_followup_order
+
+        profit_lock_ratio = order_json.get('profit_lock_ratio')
+        if profit_lock_ratio is not None:
+            if isinstance(profit_lock_ratio, bool):
+                raise ValueError("profit_lock_ratio must be numeric or None")
+            try:
+                profit_lock_ratio = float(profit_lock_ratio)
+            except (TypeError, ValueError):
+                raise ValueError("profit_lock_ratio must be numeric or None")
+            if not math.isfinite(profit_lock_ratio) or not 0 < profit_lock_ratio <= 1:
+                raise ValueError("profit_lock_ratio must be greater than 0 and at most 1")
+        self.profit_lock_ratio = profit_lock_ratio
+        if self.allow_followup_order is False:
+            try:
+                trade_timeout_min = float(self.trade_timeout_min)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "allow_followup_order=False requires a positive trade_timeout_min"
+                )
+            if not math.isfinite(trade_timeout_min) or trade_timeout_min <= 0:
+                raise ValueError(
+                    "allow_followup_order=False requires a positive trade_timeout_min"
+                )
+            if self.profit_lock_ratio is None:
+                raise ValueError(
+                    "allow_followup_order=False requires profit_lock_ratio"
+                )
 
         # オーダーの特殊な設定達
         # オーダーパーミッション

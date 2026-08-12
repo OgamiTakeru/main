@@ -1389,6 +1389,18 @@ class LineOrderCoordinator:
             "candle_analysis_class": self.analysis.candle_analysis_all,
             "lc_change_candle_type": "M5",
             "order_timeout_min": order_timeout_min,
+            "trade_timeout_min": candidate.get(
+                "trade_timeout_min",
+                getattr(strategy, "trade_timeout_min", 240),
+            ),
+            "allow_followup_order": candidate.get(
+                "allow_followup_order",
+                getattr(strategy, "allow_followup_order", None),
+            ),
+            "profit_lock_ratio": candidate.get(
+                "profit_lock_ratio",
+                getattr(strategy, "profit_lock_ratio", None),
+            ),
             "memo": candidate.get("memo", ""),
         })
         order_plan = order_class.exe_order_plan

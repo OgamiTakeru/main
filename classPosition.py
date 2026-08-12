@@ -146,6 +146,12 @@ class order_information:
         # 経過時間管理
         self.order_timeout_min = self.ORDER_TIMEOUT_MIN_DEFAULT  # 分単位で指定
         self.trade_timeout_min = self.TRADE_TIMEOUT_MIN_DEFAULT  # 分単位で指定
+        self.allow_followup_order = None
+        self.profit_lock_ratio = None
+        self.profit_lock_done = False
+        self.profit_protected = False
+        self.profit_lock_price = 0
+        self.profit_lock_last_attempt_elapsed_sec = None
         # 勝ち負け情報更新用(一つの関数を使いまわすため、辞書化する）
         self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
         self.win_hold_time_sec = 0
@@ -269,6 +275,12 @@ class order_information:
         # 経過時間管理
         self.order_timeout_min = 45  # 分単位で指定
         self.trade_timeout_min = 45
+        self.allow_followup_order = None
+        self.profit_lock_ratio = None
+        self.profit_lock_done = False
+        self.profit_protected = False
+        self.profit_lock_price = 0
+        self.profit_lock_last_attempt_elapsed_sec = None
         # 勝ち負け情報更新用
         self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
         self.win_hold_time_sec = 0
@@ -468,6 +480,8 @@ class order_information:
             self.trade_timeout_min = plan['trade_timeout_min']
         if 'order_timeout_min' in plan:  # していない場合は初期値50分
             self.order_timeout_min = plan['order_timeout_min']
+        self.allow_followup_order = plan.get('allow_followup_order')
+        self.profit_lock_ratio = plan.get('profit_lock_ratio')
         self.name = plan['name']  #  + "(" + str(self.priority) + ")"  # 名前を入れる(クラス内の変更）
         self.name_ymdhms = plan['name_ymdhms']
         # (2)各フラグを指定しておく
@@ -1442,6 +1456,9 @@ class order_information:
         self.t_price_diff = trade_latest['price_diff']
         self.t_pl_pips = trade_latest['pl_pips']
 
+        if trade_latest['state'] == "OPEN":
+            self.trade_timeout_profit_lock()
+
         # クローズの場合はクローズ処理を実施
         if trade_latest['state'] == "CLOSED":
             if self.life:
@@ -1465,6 +1482,123 @@ class order_information:
         #                            ",LoseHold",
         #                            self.win_max_price_diff, self.t_price_diff)
         #             self.close_trade(None)
+
+    def trade_timeout_profit_lock(self):
+        """Protect part of an open trade's profit after its configured timeout."""
+        if self.t_state != "OPEN" or self.profit_lock_done:
+            return False
+        if self.allow_followup_order is not False:
+            return False
+        if self.profit_lock_ratio is None:
+            return False
+
+        try:
+            timeout_min = float(self.trade_timeout_min)
+            elapsed_sec = float(self.t_time_past_sec)
+            price_diff = float(self.t_price_diff)
+            execution_price = float(self.t_execution_price)
+            profit_lock_ratio = float(self.profit_lock_ratio)
+        except (TypeError, ValueError):
+            return False
+        if not all(math.isfinite(value) for value in (
+            timeout_min,
+            elapsed_sec,
+            price_diff,
+            execution_price,
+            profit_lock_ratio,
+        )):
+            return False
+        if not 0 < profit_lock_ratio <= 1:
+            return False
+        if timeout_min <= 0 or elapsed_sec < timeout_min * 60:
+            return False
+        if price_diff <= 0:
+            return False
+
+        last_attempt = self.profit_lock_last_attempt_elapsed_sec
+        if last_attempt is not None and elapsed_sec - last_attempt < 60:
+            return False
+
+        try:
+            direction = int(self.plan_json.get("direction"))
+        except (TypeError, ValueError):
+            return False
+        if direction not in (-1, 1):
+            return False
+
+        lock_distance = price_diff * profit_lock_ratio
+        new_lc_price = self.p.round_price(
+            execution_price + direction * lock_distance
+        )
+        if direction * (new_lc_price - execution_price) <= 0:
+            return False
+
+        try:
+            current_lc_price = float(
+                (self.t_json.get("stopLossOrder") or {}).get("price")
+            )
+        except (TypeError, ValueError):
+            current_lc_price = None
+        if (
+            current_lc_price is not None
+            and math.isfinite(current_lc_price)
+            and current_lc_price > 0
+            and direction * (current_lc_price - new_lc_price) >= 0
+        ):
+            self.plan_json['lc_price'] = current_lc_price
+            self.complete_trade_timeout_profit_lock(current_lc_price)
+            return True
+
+        self.profit_lock_last_attempt_elapsed_sec = elapsed_sec
+        data = {
+            "instrument": self.pair,
+            "stopLoss": {
+                "price": str(new_lc_price),
+                "timeInForce": "GTC",
+            },
+        }
+        try:
+            result = self.oa.TradeCRCDO_exe(self.t_id, data)
+        except Exception:
+            result = {"error": -1}
+        if (
+            not isinstance(result, dict)
+            or result.get("error") != 0
+            or not isinstance(result.get("data"), dict)
+            or "stopLossOrderTransaction" not in result["data"]
+        ):
+            self.send_line(
+                "● trade timeout profit lock 失敗\n"
+                + "- pair: " + str(self.pair) + "\n"
+                + "- order: " + str(self.name) + "\n"
+                + "- trade_id: " + str(self.t_id) + "\n"
+                + "- target_lc: " + str(new_lc_price)
+            )
+            return False
+
+        self.plan_json['lc_price'] = new_lc_price
+        self.lc_change_num += 1
+        self.complete_trade_timeout_profit_lock(new_lc_price)
+        self.send_line(
+            "● trade timeout profit lock 完了\n"
+            + "- pair: " + str(self.pair) + "\n"
+            + "- order: " + str(self.name) + "\n"
+            + "- elapsed_min: " + str(round(elapsed_sec / 60, 1)) + "\n"
+            + "- profit_lock_ratio: " + str(profit_lock_ratio) + "\n"
+            + "- lc_price: " + str(new_lc_price) + "\n"
+            + "- allow_followup_order: True"
+        )
+        return True
+
+    def complete_trade_timeout_profit_lock(self, lc_price):
+        """Mark profit protection complete and permit subsequent orders."""
+        self.profit_lock_done = True
+        self.profit_protected = True
+        self.profit_lock_price = lc_price
+        self.allow_followup_order = True
+        self.plan_json['allow_followup_order'] = True
+        self.plan_json['profit_lock_done'] = True
+        self.plan_json['profit_lock_price'] = lc_price
 
     def update_information(self, candle_analysis_class=None):  # orderとpositionを両方更新する
         """
@@ -2564,7 +2698,16 @@ class order_information:
         # LC Priceの入れ替え
         self.plan_json['lc_price'] = new_lc_price
 
-    def catch_exist_position(self, name, oa_mode, priority, json):
+    def catch_exist_position(
+        self,
+        name,
+        oa_mode,
+        priority,
+        json,
+        allow_followup_order=None,
+        trade_timeout_min=60,
+        profit_lock_ratio=0.5,
+    ):
         """
         既存のポジションを、登録する
         """
@@ -2597,6 +2740,29 @@ class order_information:
         self.plan_json['units'] = json['currentUnits']
         self.plan_json['type'] = "Already"
         self.plan_json['priority'] = 5
+        trade_tag = str(
+            (json.get('clientExtensions') or {}).get('tag', '')
+        )
+        is_managed_profit_lock = trade_tag == "managed_profit_lock"
+        self.allow_followup_order = (
+            allow_followup_order if is_managed_profit_lock else None
+        )
+        self.profit_lock_ratio = (
+            profit_lock_ratio if is_managed_profit_lock else None
+        )
+        self.profit_lock_done = False
+        self.profit_protected = False
+        self.profit_lock_price = 0
+        self.profit_lock_last_attempt_elapsed_sec = None
+        self.plan_json['allow_followup_order'] = self.allow_followup_order
+        self.plan_json['profit_lock_ratio'] = self.profit_lock_ratio
+        self.plan_json['trade_timeout_min'] = (
+            trade_timeout_min
+            if is_managed_profit_lock
+            else self.TRADE_TIMEOUT_MIN_DEFAULT
+        )
+        self.plan_json['profit_lock_done'] = self.profit_lock_done
+        self.plan_json['profit_lock_price'] = self.profit_lock_price
 
         self.life = True
         self.name = name + "_" + str(gene.delYearDay(datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")))
@@ -2617,14 +2783,15 @@ class order_information:
         self.o_json['time_past'] = 0
         # トレード情報
         self.t_id = json['id']  # ★大事な代入
-        self.t_state = ""  # ★大事な代入
+        self.t_json = json
+        self.t_state = json.get("state", "OPEN")  # ★大事な代入
         self.t_type = ""  # 結合ポジションか？　plantとinitialとcurrentのユニットの推移でわかる？
-        self.t_initial_units = 0  # Planで代用可？少し意味異なる？
-        self.t_current_units = 0
-        self.t_time = 0
-        self.t_time_past_sec = 0
-        self.t_execution_price = 0  # 約定価格
-        self.t_unrealize_pl = 0
+        self.t_initial_units = json.get('initialUnits', json['currentUnits'])
+        self.t_current_units = json['currentUnits']
+        self.t_time = classOanda.iso_to_jstdt_single(json.get('openTime', 0))
+        self.t_time_past_sec = classOanda.cal_past_time_single(self.t_time)
+        self.t_execution_price = float(price)  # 約定価格
+        self.t_unrealize_pl = json.get('unrealizedPL', 0)
         self.t_realize_pl = 0
         self.t_price_diff = 0  # price_diff。価格差相当で、USD_JPYでは0.01が1pip相当。
         self.t_pl_pips = 0
@@ -2633,7 +2800,7 @@ class order_information:
         self.already_offset_notice = False  # オーダーが既存のオーダーを完全相殺し、さらにポジションもある場合の通知を2回目以降やらないため
         # 経過時間管理
         self.order_timeout_min = self.ORDER_TIMEOUT_MIN_DEFAULT  # 分単位で指定
-        self.trade_timeout_min = self.TRADE_TIMEOUT_MIN_DEFAULT
+        self.trade_timeout_min = self.plan_json['trade_timeout_min']
         # 勝ち負け情報更新用
         self.win_lose_border_range = 0  # この値を超えている時間をWin、以下の場合Loseとする
         self.win_hold_time_sec = 0
