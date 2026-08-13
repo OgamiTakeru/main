@@ -4,6 +4,11 @@ import math
 from types import SimpleNamespace
 
 import fGeneric as gene
+from fFootCountShape import (
+    attach_line_wick_context,
+    flatten_foot_count2_shape,
+    foot_count2_shape_context,
+)
 from fStairTrend import detect_h1_stair_trend, detect_m5_stair_trend
 
 
@@ -1630,6 +1635,19 @@ class LineStrategyProfileUsdJpy:
             str(signal_direction) + ":" + str(signal_time)
         )
 
+        candle_analysis = getattr(
+            getattr(coordinator, "analysis", None),
+            "candle_analysis_all",
+            None,
+        )
+        fc2_shape = foot_count2_shape_context(
+            getattr(candle_analysis, "d5_df_r", None),
+            latest_peak_info,
+            grouped_lines["decision_time"],
+            coordinator.p,
+        )
+        latest_peak_info["fc2_shape_context"] = fc2_shape
+
         m5_stair_context = self._detect_predict_reversal_m5_stair(
             coordinator
         )
@@ -1639,6 +1657,12 @@ class LineStrategyProfileUsdJpy:
         for candidate in grouped_lines["future_resist_candidates"]:
             candidate["m5_stair_context"] = m5_stair_context
             candidate["h1_stair_context"] = h1_stair_context
+            candidate["fc2_shape_context"] = attach_line_wick_context(
+                fc2_shape,
+                line_price=candidate.get("line_price"),
+                line_side=candidate.get("line_side"),
+                pair=coordinator.p,
+            )
 
         candidates = coordinator.select_line_candidates(
             grouped_lines["future_resist_candidates"],
@@ -1774,6 +1798,7 @@ class LineStrategyProfileUsdJpy:
             contexts = {
                 "m5": candidate.get("m5_stair_context") or {},
                 "h1": candidate.get("h1_stair_context") or {},
+                "fc2": candidate.get("fc2_shape_context") or {},
             }
             for priority, policy in enumerate(
                 self.predict_reversal_grid_conditions
@@ -2295,8 +2320,7 @@ class LineStrategyProfileUsdJpy:
         ):
             return []
 
-        control = SimpleNamespace(
-            exe_order_plan={
+        control_plan = {
                 "name": "PredictReversalCount2Control",
                 "source": "line_control",
                 "line_order_mode": "predict_reversal_count2_control",
@@ -2305,8 +2329,13 @@ class LineStrategyProfileUsdJpy:
                 "latest_peak_time": latest_peak_info.get("time"),
                 "predict_control_reason": reason,
                 "priority": 0,
-            }
+        }
+        control_plan.update(
+            flatten_foot_count2_shape(
+                latest_peak_info.get("fc2_shape_context")
+            )
         )
+        control = SimpleNamespace(exe_order_plan=control_plan)
         analysis.add_order_to_this_class([control])
         return [control]
 
@@ -2362,6 +2391,7 @@ class LineStrategyProfileUsdJpy:
         contexts = {
             "m5": candidate.get("m5_stair_context") or {},
             "h1": candidate.get("h1_stair_context") or {},
+            "fc2": candidate.get("fc2_shape_context") or {},
         }
         matches = []
         for condition in self.predict_reversal_grid_conditions:

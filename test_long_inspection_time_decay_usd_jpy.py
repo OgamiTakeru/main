@@ -1,8 +1,7 @@
-"""Kick the USD/JPY count2 time-decay analysis using existing artifacts only.
+"""Kick the USD/JPY count2 time-decay analysis for the cached prior two years.
 
-The default window is the latest completed research year.  Override it with
-``--start`` and ``--end`` to analyze the preceding two-year window.  This
-launcher never contacts OANDA and never changes the live strategy.
+This launcher reads existing completed artifacts only, never contacts OANDA,
+and never changes the live strategy.
 """
 
 import datetime
@@ -11,8 +10,8 @@ from count2_time_decay_analysis import main
 
 
 PAIR = "USD_JPY"
-START_TIME = datetime.datetime(2025, 7, 30, 0, 0, 0)
-END_TIME = datetime.datetime(2026, 7, 30, 0, 0, 0)
+START_TIME = datetime.datetime(2023, 7, 30, 0, 0, 0)
+END_TIME = datetime.datetime(2025, 7, 30, 0, 0, 0)
 
 
 if __name__ == "__main__":

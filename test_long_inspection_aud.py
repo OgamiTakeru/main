@@ -1,40 +1,23 @@
+"""Build the AUD/USD causal count2 source artifacts for the prior two years.
+
+The launcher reuses compatible M5/H1/S5 caches and emits event/candidate
+ledgers with completed M5/H1 staircase context.  It does not change the live
+strategy.  Add ``--existing-data`` to prohibit OANDA fallback fetching.
+"""
+
 import datetime
 
-import classInspection as ci
+from count2_resistance_sweep import main
 
 
 PAIR = "AUD_USD"
-# Previous inspection ranges kept for quick switching.
-# START_TIME = datetime.dattetime(2025, 12, 24, 0, 0, 0)
-# START_TIME = datetime.datetime(2026, 6, 24, 0, 0, 0)
-# END_TIME = datetime.datetime(2026, 6, 24, 0, 0, 0)
-
-# START_TIME = datetime.datetime(2026, 7, 16, 6, 0, 0)
-# END_TIME = datetime.datetime(2026, 7, 16, 23, 30, 0)
-
-# START_TIME = datetime.datetime(2026, 7, 14, 0, 0, 0)
-# END_TIME = datetime.datetime(2026, 7, 18, 6, 0, 0)
-
-START_TIME = datetime.datetime(2024, 6, 24, 0, 0, 0)
-END_TIME = datetime.datetime(2025, 6, 24, 0, 0, 0)
+START_TIME = datetime.datetime(2023, 7, 30, 0, 0, 0)
+END_TIME = datetime.datetime(2025, 7, 30, 0, 0, 0)
 
 
-memo = f"{PAIR} line inspection"
-cache_name = f"{PAIR}_{START_TIME:%Y%m%d%H%M%S}_{END_TIME:%Y%m%d%H%M%S}"
-
-inspection = ci.Inspection(
-    is_exist_data=False,
-    start_time=START_TIME,
-    end_time=END_TIME,
-    h1_data_path=f"C:/Users/taker/OneDrive/Desktop/oanda_logs/h1_{cache_name}.csv",
-    m5_data_path=f"C:/Users/taker/OneDrive/Desktop/oanda_logs/m5_{cache_name}.csv",
-    m30_data_path=None,
-    s5_data_path=f"C:/Users/taker/OneDrive/Desktop/oanda_logs/s5_{cache_name}.csv",
-    memo=memo,
-    anaN=60,
-    insN=8640,
-    target_interval_minutes=5,
-    pair=PAIR,
-)
-
-print(inspection.result_df)
+if __name__ == "__main__":
+    main(
+        PAIR,
+        default_start=START_TIME,
+        default_end=END_TIME,
+    )

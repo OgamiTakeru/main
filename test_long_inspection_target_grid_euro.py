@@ -1,4 +1,4 @@
-"""Run the EUR/USD foot-count-2 entry/TP/LC grid for the cached full year.
+"""Run the EUR/USD foot-count-2 entry/TP/LC grid for the cached prior two years.
 
 Prerequisite: the matching causal resistance-sweep candidate/event CSVs and
 S5 cache must already exist. This launcher does not contact OANDA, change the
@@ -11,8 +11,8 @@ from count2_target_grid_search import main
 
 
 PAIR = "EUR_USD"
-START_TIME = datetime.datetime(2025, 7, 30, 0, 0, 0)
-END_TIME = datetime.datetime(2026, 7, 30, 0, 0, 0)
+START_TIME = datetime.datetime(2023, 7, 30, 0, 0, 0)
+END_TIME = datetime.datetime(2025, 7, 30, 0, 0, 0)
 
 
 if __name__ == "__main__":

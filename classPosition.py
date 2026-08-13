@@ -1038,6 +1038,11 @@ class order_information:
                 "tp_touch_history_oldest_time": self.plan_json.get("tp_touch_history_oldest_time"),
                 "tp_touch_history_coverage_minutes": self.plan_json.get("tp_touch_history_coverage_minutes")
             }
+            result_dic.update({
+                key: value
+                for key, value in self.plan_json.items()
+                if str(key).startswith("fc2_")
+            })
             order_information.result_dic_arr.append(result_dic)
             # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
         else:
@@ -1102,6 +1107,11 @@ class order_information:
                 "tp_touch_history_oldest_time": self.plan_json.get("tp_touch_history_oldest_time"),
                 "tp_touch_history_coverage_minutes": self.plan_json.get("tp_touch_history_coverage_minutes")
             }
+            result_dic.update({
+                key: value
+                for key, value in self.plan_json.items()
+                if str(key).startswith("fc2_")
+            })
             order_information.result_dic_arr.append(result_dic)
             # order_information.result_class_arr.append(copy.deepcopy(self))  # 自身のその時点のコピーを格納
 

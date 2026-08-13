@@ -1,6 +1,7 @@
 import copy
 
 import fGeneric as gene
+from fFootCountShape import flatten_foot_count2_shape
 import sys
 from pympler import asizeof
 import pandas as pd
@@ -687,6 +688,8 @@ class LineOrderCoordinator:
                 "count": int(latest_peak.get("count") or 0),
                 "gap": latest_peak.get("gap"),
                 "time": latest_peak.get("latest_time_jp"),
+                "latest_time_jp": latest_peak.get("latest_time_jp"),
+                "oldest_time_jp": latest_peak.get("oldest_time_jp"),
                 "strength": latest_peak.get("peak_strength"),
                 "price": latest_peak.get("latest_body_peak_price"),
                 "rsi": latest_peak.get("rsi"),
@@ -704,6 +707,8 @@ class LineOrderCoordinator:
                 "count": 0,
                 "gap": None,
                 "time": None,
+                "latest_time_jp": None,
+                "oldest_time_jp": None,
                 "strength": None,
                 "price": None,
                 "rsi": None,
@@ -1523,6 +1528,11 @@ class LineOrderCoordinator:
                 order_plan[
                     timeframe + "_stair_" + field
                 ] = stair_context.get(field)
+        order_plan.update(
+            flatten_foot_count2_shape(
+                candidate.get("fc2_shape_context")
+            )
+        )
         order_plan["line_side"] = candidate["line_side"]
         order_plan["line_price"] = candidate["line_price"]
         order_plan["line_total_strength"] = line.get("total_strength")

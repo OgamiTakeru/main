@@ -30,6 +30,11 @@ import pandas as pd
 import classOanda
 from classCandlePeaks import PeaksClass
 import fGeneric as gene
+from fFootCountShape import (
+    attach_line_wick_context,
+    flatten_foot_count2_shape,
+    foot_count2_shape_context,
+)
 import send_notice as notice
 from fLineAnalysis import (
     LineStrengthCal,
@@ -2326,10 +2331,34 @@ def run_sweep(
             continue
 
         peak = rebuilt["newest_peak"]
+        fc2_shape = foot_count2_shape_context(
+            rebuilt["completed_history"],
+            peak,
+            decision_time,
+            pair,
+            average_range_pips=target["recent_m5_avg_range_pips"],
+        )
+        if not fc2_shape.get("valid"):
+            event_rows.append(
+                {
+                    **event_base,
+                    **target,
+                    **_peak_columns(peak, pair),
+                    **flatten_foot_count2_shape(fc2_shape),
+                    "event_status": "skipped",
+                    "event_skip_reason": (
+                        "foot_count2_shape_error:"
+                        + str(fc2_shape.get("reason"))
+                    ),
+                    "candidate_count": 0,
+                }
+            )
+            continue
         event_base.update(
             {
                 **target,
                 **_peak_columns(peak, pair),
+                **flatten_foot_count2_shape(fc2_shape),
                 "decision_price": rebuilt["current_price"],
                 "rsi_1": rebuilt["rsi_info"].get("rsi_1"),
                 "rsi_2": rebuilt["rsi_info"].get("rsi_2"),
@@ -2347,6 +2376,12 @@ def run_sweep(
         )
         touches_by_candidate: dict[int, dict[str, Any]] = {}
         for candidate in rebuilt["candidates"]:
+            candidate["fc2_shape_context"] = attach_line_wick_context(
+                fc2_shape,
+                line_price=candidate["line_price"],
+                line_side=candidate["line_side"],
+                pair=pair,
+            )
             touches = line_touch_features(
                 rebuilt["completed_history"],
                 candidate["line"],
@@ -2549,6 +2584,9 @@ def run_sweep(
                 "fixed_spread_pips": args.spread_pips,
                 "pending_expiry_exclusive": True,
                 "position_horizon_minutes": args.horizon_minutes,
+                **flatten_foot_count2_shape(
+                    candidate.get("fc2_shape_context")
+                ),
                 **_line_columns(line),
                 **touches,
                 **path,

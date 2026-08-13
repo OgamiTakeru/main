@@ -14,6 +14,10 @@ every TP x LC combination:
 * ``grid_aggregate`` stores condition x complete grid summaries.
 * ``grid_monthly`` stores every condition x grid combination by month.
 
+The condition catalog includes the causal A-normalized foot-count-2 shape
+(REJECTION / ENGULFING / STALL / CONTINUATION), retrace/pushback strength and
+candidate-line wick/body overshoot fields.
+
 Policy/TOP15-derived fields are deliberately excluded from condition search.
 Full-period outcomes use a common completed path cohort for every TP x LC
 width; marketable and boundary-incomplete opportunities remain
@@ -53,7 +57,7 @@ from count2_resistance_sweep import (
 
 
 DEFAULT_PAIR_NAME = "USD_JPY"
-GRID_VERSION = "count2_entry_tp_lc_grid_v7"
+GRID_VERSION = "count2_entry_tp_lc_grid_v8_fc2_shape"
 S5_TYPED_CACHE_VERSION = "s5_ohlc_memmap_v1"
 DEFAULT_START = dt.datetime(2025, 7, 30)
 DEFAULT_END = dt.datetime(2026, 7, 30)
@@ -957,6 +961,18 @@ DISTANCE_EDGES = [-np.inf, 3, 5, 8, 12, 20, 30, 50, np.inf]
 DISTANCE_LABELS = ["<3", "3-4", "5-7", "8-11", "12-19", "20-29", "30-49", "50+"]
 RSI_EDGES = [-np.inf, 35, 45, 55, 65, np.inf]
 RSI_LABELS = ["<35", "35-44", "45-54", "55-64", "65+"]
+FC2_A_EDGES = [-np.inf, 0.0, 0.10, 0.25, 0.50, 0.75, 1.0, 1.5, 2.0, np.inf]
+FC2_A_LABELS = [
+    "<0",
+    "0-0.09",
+    "0.10-0.24",
+    "0.25-0.49",
+    "0.50-0.74",
+    "0.75-0.99",
+    "1.00-1.49",
+    "1.50-1.99",
+    "2.00+",
+]
 
 
 def condition_memberships(row: dict[str, Any]) -> list[Condition]:
@@ -989,6 +1005,47 @@ def condition_memberships(row: dict[str, Any]) -> list[Condition]:
     add("LINE", "flip_count", row.get("line_flip_count"))
     add("LINE", "origin_role", row.get("line_origin_role"))
     add("LINE", "current_role", row.get("line_current_role"))
+    # ``shape`` is the requested resistance-aware classification.  The
+    # candidate-independent candle classification remains separately visible.
+    add("FC2", "candle_shape", row.get("fc2_shape"))
+    add("FC2", "shape", row.get("fc2_line_shape"))
+    for field in ("engulfing", "rejection", "stall", "continuation"):
+        add(
+            "FC2",
+            "candle_" + field,
+            _bool_value(row.get("fc2_" + field)),
+        )
+    for field in (
+        "approach_impulse_A",
+        "reversal_strength_A",
+        "second_close_pushback_A",
+        "second_wick_A",
+        "mean_body_A",
+        "pattern_range_A",
+        "directional_progress_A",
+        "line_wick_overshoot_A",
+        "line_body_break_A",
+    ):
+        add(
+            "FC2",
+            field + "_bin",
+            _bin_label(row.get("fc2_" + field), FC2_A_EDGES, FC2_A_LABELS),
+        )
+    add(
+        "FC2",
+        "prior_impulse_retrace_ratio_bin",
+        _bin_label(
+            row.get("fc2_prior_impulse_retrace_ratio"),
+            RATIO_EDGES,
+            RATIO_LABELS,
+        ),
+    )
+    for field in (
+        "line_crossed_by_wick",
+        "line_crossed_by_body",
+        "line_rejection",
+    ):
+        add("FC2", field, _bool_value(row.get("fc2_" + field)))
     for rsi_name in ("rsi_1", "rsi_2", "rsi_3"):
         add(
             "OTHER",
@@ -2026,6 +2083,41 @@ class GridAccumulator:
         return summary
 
 
+FC2_EVENT_COLUMNS = {
+    "fc2_version",
+    "fc2_valid",
+    "fc2_reason",
+    "fc2_shape",
+    "fc2_direction",
+    "fc2_source_first_time",
+    "fc2_source_last_time",
+    "fc2_prior_source_time",
+    "fc2_a_range_pips",
+    "fc2_approach_impulse_A",
+    "fc2_reversal_strength_A",
+    "fc2_prior_impulse_retrace_ratio",
+    "fc2_second_close_pushback_A",
+    "fc2_second_wick_A",
+    "fc2_mean_body_A",
+    "fc2_pattern_range_A",
+    "fc2_directional_progress_A",
+    "fc2_engulfing",
+    "fc2_rejection",
+    "fc2_stall",
+    "fc2_continuation",
+}
+
+FC2_LINE_COLUMNS = {
+    "fc2_line_shape",
+    "fc2_line_wick_overshoot_pips",
+    "fc2_line_wick_overshoot_A",
+    "fc2_line_body_break_pips",
+    "fc2_line_body_break_A",
+    "fc2_line_crossed_by_wick",
+    "fc2_line_crossed_by_body",
+    "fc2_line_rejection",
+}
+
 SOURCE_REQUIRED_COLUMNS = {
     "event_id",
     "pair",
@@ -2059,7 +2151,7 @@ SOURCE_REQUIRED_COLUMNS = {
     "m5_stair_state",
     "h1_stair_profile_enabled",
     "h1_stair_state",
-}
+} | FC2_EVENT_COLUMNS | FC2_LINE_COLUMNS
 
 SOURCE_BASIC_CONDITION_COLUMNS = {
     "rsi_1",
@@ -2099,7 +2191,7 @@ EVENT_REQUIRED_COLUMNS = {
     "h1_stair_state",
     "event_status",
     "candidate_count",
-}
+} | FC2_EVENT_COLUMNS
 
 EVENT_SIGNATURE_FIELDS = {
     "decision_time",
@@ -2120,7 +2212,7 @@ EVENT_SIGNATURE_FIELDS = {
     "rsi_3",
     "m5_stair_profile_enabled",
     "h1_stair_profile_enabled",
-}
+} | FC2_EVENT_COLUMNS
 
 STAIR_CONDITION_SUFFIXES = {
     "state",
@@ -2205,6 +2297,9 @@ def _signature_scalar(field: str, value: Any) -> Any:
         "target_source_first_time",
         "target_source_last_time",
         "peak_latest_time",
+        "fc2_source_first_time",
+        "fc2_source_last_time",
+        "fc2_prior_source_time",
     }:
         return _timestamp_text(value)
     stair_suffix = field.removeprefix("m5_stair_").removeprefix("h1_stair_")
@@ -2212,6 +2307,11 @@ def _signature_scalar(field: str, value: Any) -> Any:
         "target_valid",
         "m5_stair_profile_enabled",
         "h1_stair_profile_enabled",
+        "fc2_valid",
+        "fc2_engulfing",
+        "fc2_rejection",
+        "fc2_stall",
+        "fc2_continuation",
     } or (
         _is_stair_condition_column(field)
         and (
@@ -2241,6 +2341,16 @@ def _signature_scalar(field: str, value: Any) -> Any:
         "rsi_1",
         "rsi_2",
         "rsi_3",
+        "fc2_direction",
+        "fc2_a_range_pips",
+        "fc2_approach_impulse_A",
+        "fc2_reversal_strength_A",
+        "fc2_prior_impulse_retrace_ratio",
+        "fc2_second_close_pushback_A",
+        "fc2_second_wick_A",
+        "fc2_mean_body_A",
+        "fc2_pattern_range_A",
+        "fc2_directional_progress_A",
     } or (_is_stair_condition_column(field) and stair_suffix in STAIR_NUMERIC_SUFFIXES)
     if numeric_field:
         parsed_number = _numeric(value)
@@ -2796,6 +2906,99 @@ def _has_stair_context(row: dict[str, Any], prefix: str) -> bool:
     }
 
 
+def _validate_fc2_context(
+    row: dict[str, Any],
+    *,
+    decision_time: pd.Timestamp,
+    average_range: float,
+    peak_direction: float,
+    include_line: bool,
+) -> None:
+    """Validate the causal/A-normalized foot-count-2 feature contract."""
+    if _bool_value(row.get("fc2_valid")) is not True:
+        raise ValueError(f"Invalid FC2 shape context at {decision_time}")
+    if str(row.get("fc2_version")) != "foot_count2_shape_a_v1":
+        raise ValueError(f"Unknown FC2 shape version at {decision_time}")
+    if _numeric(row.get("fc2_direction")) != peak_direction:
+        raise ValueError(f"FC2/peak direction mismatch at {decision_time}")
+    shape = str(row.get("fc2_shape")).strip().upper()
+    if shape not in {"REJECTION", "ENGULFING", "STALL", "CONTINUATION"}:
+        raise ValueError(f"Invalid FC2 shape at {decision_time}: {shape}")
+    shape_flag = _bool_value(row.get("fc2_" + shape.lower()))
+    if shape_flag is not True:
+        raise ValueError(f"FC2 shape flag mismatch at {decision_time}: {shape}")
+    shape_flags = [
+        _bool_value(row.get("fc2_" + value.lower()))
+        for value in ("REJECTION", "ENGULFING", "STALL", "CONTINUATION")
+    ]
+    if any(value is None for value in shape_flags) or sum(shape_flags) != 1:
+        raise ValueError(f"FC2 shape flags are not one-hot at {decision_time}")
+    a_range = _numeric(row.get("fc2_a_range_pips"))
+    if a_range is None or not math.isclose(
+        a_range,
+        average_range,
+        rel_tol=1e-9,
+        abs_tol=1e-9,
+    ):
+        raise ValueError(f"FC2 A width mismatch at {decision_time}")
+    source_times = [
+        pd.to_datetime(row.get(field), errors="coerce")
+        for field in (
+            "fc2_prior_source_time",
+            "fc2_source_first_time",
+            "fc2_source_last_time",
+        )
+    ]
+    if any(pd.isna(value) for value in source_times):
+        raise ValueError(f"FC2 source timestamps are missing at {decision_time}")
+    prior, first, last = (pd.Timestamp(value) for value in source_times)
+    if not prior < first <= last or last + pd.Timedelta(minutes=5) > decision_time:
+        raise ValueError(f"FC2 source timestamps are not causal at {decision_time}")
+    numeric_fields = {
+        "fc2_approach_impulse_A",
+        "fc2_reversal_strength_A",
+        "fc2_second_close_pushback_A",
+        "fc2_second_wick_A",
+        "fc2_mean_body_A",
+        "fc2_pattern_range_A",
+        "fc2_directional_progress_A",
+    }
+    if include_line:
+        numeric_fields.update(FC2_LINE_COLUMNS.intersection({
+            "fc2_line_wick_overshoot_pips",
+            "fc2_line_wick_overshoot_A",
+            "fc2_line_body_break_pips",
+            "fc2_line_body_break_A",
+        }))
+    missing_numeric = sorted(
+        field for field in numeric_fields if _numeric(row.get(field)) is None
+    )
+    if missing_numeric:
+        raise ValueError(
+            f"FC2 numeric fields are missing at {decision_time}: "
+            + ", ".join(missing_numeric)
+        )
+    if include_line:
+        line_shape = str(row.get("fc2_line_shape")).strip().upper()
+        if line_shape not in {
+            "REJECTION",
+            "ENGULFING",
+            "STALL",
+            "CONTINUATION",
+        }:
+            raise ValueError(
+                f"Invalid FC2 line shape at {decision_time}: {line_shape}"
+            )
+        for field in (
+            "fc2_line_wick_overshoot_pips",
+            "fc2_line_wick_overshoot_A",
+            "fc2_line_body_break_pips",
+            "fc2_line_body_break_A",
+        ):
+            if float(row[field]) < 0:
+                raise ValueError(f"Negative {field} at {decision_time}")
+
+
 def _validate_source_decision(
     source: dict[str, Any],
     args: argparse.Namespace,
@@ -2874,6 +3077,13 @@ def _validate_source_decision(
         )
     ):
         raise ValueError(f"Source target width contract failed at {decision_time}")
+    _validate_fc2_context(
+        source,
+        decision_time=pd.Timestamp(decision_time),
+        average_range=float(average_range),
+        peak_direction=_numeric(source.get("peak_direction")),
+        include_line=True,
+    )
     for field in ("peak_latest_time", "line_newest_source_time"):
         value = source.get(field)
         if value is None or bool(pd.isna(value)):
@@ -2979,6 +3189,13 @@ def _validate_event_decision(
         )
     ):
         raise ValueError(f"Event ledger target width mismatch at {decision_time}")
+    _validate_fc2_context(
+        event,
+        decision_time=pd.Timestamp(decision_time),
+        average_range=float(average_range),
+        peak_direction=float(peak_direction),
+        include_line=False,
+    )
     peak_latest = pd.to_datetime(event.get("peak_latest_time"), errors="coerce")
     if pd.isna(peak_latest) or peak_latest + pd.Timedelta(minutes=5) > decision_time:
         raise ValueError(f"Event ledger peak is not completed at {decision_time}")
@@ -3606,6 +3823,8 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
                 "target_preceding_six_completed_m5_enforced": True,
                 "available_peak_line_retouch_m5_completion_enforced": True,
                 "h1_stair_causality_inherited_from_source_generator": True,
+                "fc2_shape_completed_m5_only_enforced": True,
+                "fc2_a_equals_preceding_six_m5_average_enforced": True,
                 "stair_profile_enablement_not_used_as_research_gate": True,
                 "s5_used_only_for_outcome": True,
                 "s5_signal_period_coverage_enforced": True,

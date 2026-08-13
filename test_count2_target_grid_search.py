@@ -187,7 +187,58 @@ def _event_ledger_row(
         "h1_stair_state": "NONE",
         "event_status": event_status,
         "candidate_count": candidate_count,
+        **_fc2_fields(
+            decision_time,
+            peak_direction=peak_direction,
+            average_range_pips=2.0,
+            include_line=False,
+        ),
     }
+
+
+def _fc2_fields(
+    decision_time,
+    *,
+    peak_direction,
+    average_range_pips,
+    include_line,
+):
+    decision_time = pd.Timestamp(decision_time)
+    fields = {
+        "fc2_version": "foot_count2_shape_a_v1",
+        "fc2_valid": True,
+        "fc2_reason": None,
+        "fc2_shape": "CONTINUATION",
+        "fc2_direction": peak_direction,
+        "fc2_source_first_time": decision_time - pd.Timedelta(minutes=10),
+        "fc2_source_last_time": decision_time - pd.Timedelta(minutes=5),
+        "fc2_prior_source_time": decision_time - pd.Timedelta(minutes=15),
+        "fc2_a_range_pips": average_range_pips,
+        "fc2_approach_impulse_A": 0.8,
+        "fc2_reversal_strength_A": 0.2,
+        "fc2_prior_impulse_retrace_ratio": 0.25,
+        "fc2_second_close_pushback_A": 0.2,
+        "fc2_second_wick_A": 0.1,
+        "fc2_mean_body_A": 0.5,
+        "fc2_pattern_range_A": 1.0,
+        "fc2_directional_progress_A": 0.6,
+        "fc2_engulfing": False,
+        "fc2_rejection": False,
+        "fc2_stall": False,
+        "fc2_continuation": True,
+    }
+    if include_line:
+        fields.update({
+            "fc2_line_shape": "CONTINUATION",
+            "fc2_line_wick_overshoot_pips": 0.0,
+            "fc2_line_wick_overshoot_A": 0.0,
+            "fc2_line_body_break_pips": 0.0,
+            "fc2_line_body_break_A": 0.0,
+            "fc2_line_crossed_by_wick": False,
+            "fc2_line_crossed_by_body": False,
+            "fc2_line_rejection": False,
+        })
+    return fields
 
 
 class GridCliAndCombinationTest(unittest.TestCase):
@@ -1295,6 +1346,15 @@ class MarketableLimitSymmetryTest(unittest.TestCase):
             }
             for offset in (0, 5, 300, 305)
         ]
+        for source_row in source_rows:
+            source_row.update(
+                _fc2_fields(
+                    source_row["decision_time"],
+                    peak_direction=source_row["peak_direction"],
+                    average_range_pips=source_row["recent_m5_avg_range_pips"],
+                    include_line=True,
+                )
+            )
 
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
