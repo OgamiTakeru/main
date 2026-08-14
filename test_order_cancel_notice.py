@@ -38,7 +38,7 @@ class OrderCancelNoticeTest(unittest.TestCase):
         self.assertEqual(item.o_state, "CANCELLED")
         item.oa.OrderCancel_exe.assert_called_once_with("123")
         item.send_line.assert_called_once_with(
-            "■■■オーダー解消(他オーダー輻輳)",
+            "オーダー解消(他オーダー輻輳)",
             "PredictReversal_upper_1_12:00",
             "通貨:EUR_USD",
             "OrderID:123",
@@ -55,7 +55,7 @@ class OrderCancelNoticeTest(unittest.TestCase):
         self.assertEqual(item.o_state, "CANCELLED")
         item.oa.OrderDetails_exe.assert_not_called()
         item.send_line.assert_called_once_with(
-            "■■■オーダー解消(時間切れ/ウォッチング)",
+            "オーダー解消(時間切れ/ウォッチング)",
             "PredictReversal_upper_1_12:00",
             "通貨:EUR_USD",
             "OrderID:-1",
@@ -69,7 +69,7 @@ class OrderCancelNoticeTest(unittest.TestCase):
 
         item.oa.OrderCancel_exe.assert_not_called()
         item.send_line.assert_called_once_with(
-            "■■■オーダー解消(OANDA側取消確認)",
+            "オーダー解消(OANDA側取消確認)",
             "PredictReversal_upper_1_12:00",
             "通貨:EUR_USD",
             "OrderID:123",

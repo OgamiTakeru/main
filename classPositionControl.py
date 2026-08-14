@@ -696,7 +696,7 @@ class position_control:
             else getattr(item, "o_id", None)
         )
         parts = [
-            "■■■オーダー解消(" + str(reason) + ")",
+            "オーダー解消(" + str(reason) + ")",
             str(getattr(item, "name", "")),
             "通貨:" + str(pair),
             "OrderID:" + str(resolved_order_id),

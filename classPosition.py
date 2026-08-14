@@ -427,7 +427,7 @@ class order_information:
             else getattr(self, "o_id", None)
         )
         parts = [
-            "■■■オーダー解消(" + str(reason) + ")",
+            "オーダー解消(" + str(reason) + ")",
             str(getattr(self, "name", "")),
             "通貨:" + str(pair),
             "OrderID:" + str(resolved_order_id),
@@ -1710,7 +1710,7 @@ class order_information:
                         # ただし、tradeCloseIDsもある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
                         # ★トレード有かつ相殺有の場合は、このオーダーがトレードよりも多いユニット注文があったことを意味する。
                         #  その為、オーダーのユニットの一部が相殺され、残るユニットがトレードとして存在する（その為Lifeを消さない）
-                        notice.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
+                        notice.line_send("オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
                                      self.name, "(",
                                      self.o_json['id'], ")")
                     #
@@ -1736,7 +1736,7 @@ class order_information:
                     # print("トレード")
                     # print(trade_latest)
                     # 以下相殺発生分のみの情報に置き換え
-                    notice.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
+                    notice.line_send("オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
                                  "相殺したトレード", str(reduced_trade_id) + ",相殺したUNIT",
                                  transaction_info['transactions'][0]['requestedUnits'])
                     trade_latest['state'] = "CLOSE"
@@ -1754,7 +1754,7 @@ class order_information:
                     # tradeCloseIDsがある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
                     # ★この場合は、このオーダーでの通知（クローズ処理）は実施不要で、Lifeをクローズにする
                     self.life_set(False)
-                    notice.line_send("■■■オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
+                    notice.line_send("オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
                                  self.o_json['id'], ")")
                     return 0
                 else:
@@ -1893,7 +1893,7 @@ class order_information:
                         # ただし、tradeCloseIDsもある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
                         # ★トレード有かつ相殺有の場合は、このオーダーがトレードよりも多いユニット注文があったことを意味する。
                         #  その為、オーダーのユニットの一部が相殺され、残るユニットがトレードとして存在する（その為Lifeを消さない）
-                        notice.line_send("■■■オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
+                        notice.line_send("オーダー解消（このオーダーは他のトレードを相殺＆残存ユニットのトレードへ↓）",
                                      self.name, "(",
                                      self.o_json['id'], ")")
                     #
@@ -1919,7 +1919,7 @@ class order_information:
                     # print("トレード")
                     # print(trade_latest)
                     # 以下相殺発生分のみの情報に置き換え
-                    notice.line_send("■■■オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
+                    notice.line_send("オーダー解消（相殺で消滅）", self.name, "(", self.o_json['id'], ")",
                                  "相殺したトレード", str(reduced_trade_id) + ",相殺したUNIT",
                                  transaction_info['transactions'][0]['requestedUnits'])
                     trade_latest['state'] = "CLOSE"
@@ -1937,7 +1937,7 @@ class order_information:
                     # tradeCloseIDsがある場合は、このオーダーが他のオーダーを相殺した場合に発生する項目
                     # ★この場合は、このオーダーでの通知（クローズ処理）は実施不要で、Lifeをクローズにする
                     self.life_set(False)
-                    notice.line_send("■■■オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
+                    notice.line_send("オーダー解消（このオーダーは他のトレードと完全相殺し終了）", self.name, "(",
                                  self.o_json['id'], ")")
                     return 0
                 else:

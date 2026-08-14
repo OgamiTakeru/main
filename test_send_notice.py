@@ -98,7 +98,7 @@ class InspectionNoticeMarkTest(unittest.TestCase):
         ):
             for pair in webhook_by_pair:
                 send_notice.line_send(
-                    "■■■オーダー解消(他オーダー輻輳)",
+                    "オーダー解消(他オーダー輻輳)",
                     "order-name",
                     pair,
                     "OrderID:1",

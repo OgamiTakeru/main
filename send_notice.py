@@ -27,6 +27,7 @@ def is_live_notice_message(message):
         stripped.startswith("■■■ 解消:") or
         stripped.startswith("■■■強制クローズ解消:") or
         stripped.startswith("■■■オーダー解消") or
+        stripped.startswith("オーダー解消") or
         (stripped.startswith("【") and " no order】" in stripped)
     )
 

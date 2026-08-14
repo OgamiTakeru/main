@@ -33,6 +33,7 @@ gl_previous_exe_df60_order_time = None
 gl_previous_bb_h1_class = None
 gl_latest_trend_trigger_time = None
 gl_risk_yen = 50
+gl_live_usd_jpy_risk_yen = gl_risk_yen * 10
 
 PREDICT_REVERSAL_RETOUCH_TOLERANCE_PIPS = 1.0
 
@@ -44,6 +45,13 @@ def line_strategy_profile(pair):
     if pair == "EUR_USD":
         return LineStrategyProfileEurUsd()
     return LineStrategyProfileUsdJpy()
+
+
+def base_risk_yen(pair, mode):
+    """Return the base risk without changing inspection or other-pair sizing."""
+    if pair == "USD_JPY" and mode == "live":
+        return gl_live_usd_jpy_risk_yen
+    return gl_risk_yen
 
 
 def predict_reversal_last_reach_context(
@@ -1357,7 +1365,11 @@ class LineOrderCoordinator:
         lc_range = p.pips_to_price(lc_pips)
         tp_range = p.pips_to_price(tp_pips)
         risk_multiplier = self._get_risk_multiplier(candidate, decision_time)
-        risk_yen = gl_risk_yen * risk_multiplier
+        base_risk = base_risk_yen(
+            self.pair,
+            getattr(self.analysis, "mode", "inspection"),
+        )
+        risk_yen = base_risk * risk_multiplier
         usd_jpy_rate = self._get_usd_jpy_rate(decision_time)
 
         order_mode_suffix = {
@@ -1414,7 +1426,7 @@ class LineOrderCoordinator:
         order_plan["line_distance_pips"] = candidate.get("line_distance_pips", candidate.get("distance_pips"))
         order_plan["line_target_price"] = candidate.get("line_target_price", candidate.get("target_price"))
         order_plan["source"] = "line"
-        order_plan["base_risk_yen"] = gl_risk_yen
+        order_plan["base_risk_yen"] = base_risk
         order_plan["risk_timeframe"] = strategy.timeframe
         order_plan["timeframe_risk_multiplier"] = strategy.timeframe_risk_multiplier
         order_plan["risk_multiplier"] = risk_multiplier
