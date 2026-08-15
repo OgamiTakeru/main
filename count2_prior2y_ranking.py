@@ -1,7 +1,8 @@
 """Rank a completed prior-two-year count2 grid without rerunning outcomes.
 
-The grid aggregate already contains every causal single-factor condition x
-entry-rank x offset x TP x LC combination.  This module applies explicit
+The grid aggregate contains every causal M5/H1 morphology condition, every
+same-feature M5 x H1 interaction, and every entry-rank x offset x TP x LC
+combination.  This module applies explicit
 minimum guards, keeps the best parameter combination per condition, and emits
 separate risk-normalized-yen and raw-pips Top lists.  A condition appearing in
 both lists receives the ``BOTH_`` order-name prefix.
@@ -75,6 +76,15 @@ def parse_args(
     parser.add_argument("--min-rr", type=float, default=1.20)
     parser.add_argument("--min-profit-factor", type=float, default=1.10)
     parser.add_argument("--min-outcome-coverage", type=float, default=0.95)
+    parser.add_argument(
+        "--condition-scope",
+        choices=("shape", "all"),
+        default="shape",
+        help=(
+            "shape ranks M5/H1 morphology and their interactions only; "
+            "all also admits legacy line/session/stair conditions"
+        ),
+    )
     args = parser.parse_args(argv)
     args.pair = str(args.pair).upper()
     args.start = pd.Timestamp(args.start).to_pydatetime()
@@ -125,7 +135,7 @@ def _load_complete_grid_manifest(
         )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     expected_version = (
-        f"{args.pair.lower()}_count2_entry_tp_lc_grid_v8_fc2_shape"
+        f"{args.pair.lower()}_count2_entry_tp_lc_grid_v9_m5_h1_shape"
     )
     expected_start = args.start.isoformat(" ")
     expected_end = args.end.isoformat(" ")
@@ -203,11 +213,12 @@ def _discover_source(args: argparse.Namespace) -> Path:
 
 def _output_paths(args: argparse.Namespace) -> dict[str, Path]:
     stem = f"{args.pair}_{args.start:%Y%m%d}_{args.end:%Y%m%d}"
+    scope_suffix = "" if args.condition_scope == "shape" else "_all"
     folder = args.output_dir
     return {
-        "yen": folder / f"count2_prior2y_top_yen_{stem}.csv",
-        "pips": folder / f"count2_prior2y_top_pips_{stem}.csv",
-        "manifest": folder / f"count2_prior2y_ranking_{stem}.json",
+        "yen": folder / f"count2_prior2y_top_yen_{stem}{scope_suffix}.csv",
+        "pips": folder / f"count2_prior2y_top_pips_{stem}{scope_suffix}.csv",
+        "manifest": folder / f"count2_prior2y_ranking_{stem}{scope_suffix}.json",
     }
 
 
@@ -218,6 +229,12 @@ def _safe_name(value: Any) -> str:
 
 def _eligible_rows(frame: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
     work = frame[frame["segment"].astype(str).eq("full")].copy()
+    if args.condition_scope == "shape":
+        work = work[
+            work["condition_source"].astype(str).isin(
+                {"FC2", "H1_PAIR", "M5_FC2_X_H1_PAIR"}
+            )
+        ].copy()
     numeric = [
         "completed_count",
         "positive_rate_completed",
@@ -275,13 +292,18 @@ def build_rankings(frame: pd.DataFrame, args: argparse.Namespace) -> tuple[pd.Da
             "Aggregate CSV is missing required columns: " + ", ".join(sorted(missing))
         )
     versions = set(frame["grid_version"].dropna().astype(str))
-    expected_version = f"{args.pair.lower()}_count2_entry_tp_lc_grid_v8_fc2_shape"
+    expected_version = f"{args.pair.lower()}_count2_entry_tp_lc_grid_v9_m5_h1_shape"
     if versions != {expected_version}:
         raise ValueError(
             f"Aggregate version mismatch: expected {expected_version}, got {sorted(versions)}"
         )
-    if not frame["condition_source"].astype(str).eq("FC2").any():
-        raise ValueError("Aggregate does not contain FC2 shape conditions")
+    sources = set(frame["condition_source"].dropna().astype(str))
+    required_sources = {"FC2", "H1_PAIR", "M5_FC2_X_H1_PAIR"}
+    if not required_sources.issubset(sources):
+        raise ValueError(
+            "Aggregate does not contain the complete M5/H1 shape catalog: "
+            + ", ".join(sorted(required_sources.difference(sources)))
+        )
     eligible = _eligible_rows(frame, args)
     yen = _top_per_condition(eligible, metric="sum_yen", top=args.top)
     pips = _top_per_condition(eligible, metric="sum_pips", top=args.top)
@@ -358,7 +380,14 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
             f"Aggregate filename does not match requested period: {source.name}"
         )
     grid_manifest_path, grid_manifest = _load_complete_grid_manifest(source, args)
-    frame = pd.read_csv(source, low_memory=False)
+    # The aggregate can exceed a gigabyte after M5 x H1 interactions.  Load
+    # only fields needed by the guards/ranking rather than materializing all
+    # diagnostic metric columns.
+    frame = pd.read_csv(
+        source,
+        usecols=sorted(REQUIRED_COLUMNS),
+        low_memory=False,
+    )
     yen, pips = build_rankings(frame, args)
     paths = _output_paths(args)
     for path in paths.values():
@@ -378,6 +407,7 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
             "min_profit_factor": args.min_profit_factor,
             "min_outcome_coverage": args.min_outcome_coverage,
             "positive_yen_and_pips_required": True,
+            "condition_scope": args.condition_scope,
         },
         "selection": {
             "best_grid_combination_per_condition": True,

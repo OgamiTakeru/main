@@ -1,7 +1,7 @@
 """Build the AUD/USD causal count2 source artifacts for the prior two years.
 
 The launcher reuses compatible M5/H1/S5 caches and emits event/candidate
-ledgers with completed M5/H1 staircase context.  It does not change the live
+ledgers with completed M5/H1 shape and staircase context.  It does not change the live
 strategy.  Add ``--existing-data`` to prohibit OANDA fallback fetching.
 """
 

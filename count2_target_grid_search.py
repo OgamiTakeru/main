@@ -12,11 +12,15 @@ every TP x LC combination:
 * ``grid_paths`` stores one row per event, entry-line rank and entry offset,
   including the first reach of every TP and LC threshold.
 * ``grid_aggregate`` stores condition x complete grid summaries.
-* ``grid_monthly`` stores every condition x grid combination by month.
+* ``grid_monthly`` stores standalone conditions x grid combinations by month.
+  M5 x H1 interactions retain the same monthly stability figures in the
+  aggregate, but their enormous detailed monthly Cartesian output is omitted.
 
-The condition catalog includes the causal A-normalized foot-count-2 shape
-(REJECTION / ENGULFING / STALL / CONTINUATION), retrace/pushback strength and
-candidate-line wick/body overshoot fields.
+The condition catalog includes the causal A-normalized M5 foot-count-2 shape,
+the latest two fully completed H1 candles as macro morphology, and every
+same-feature M5 x H1 value pairing.  It covers REJECTION / ENGULFING / STALL /
+CONTINUATION, candle bodies/wicks/ranges, retrace/pushback strength, formation
+age and candidate-line wick/body overshoot fields.
 
 Policy/TOP15-derived fields are deliberately excluded from condition search.
 Full-period outcomes use a common completed path cohort for every TP x LC
@@ -54,10 +58,11 @@ from count2_resistance_sweep import (
     data_coverage_errors,
     s5_cache_has_no_tick_completion,
 )
+from fFootCountShape import FOOT_COUNT2_SHAPE_FIELDS, FOOT_COUNT2_SHAPE_VERSION
 
 
 DEFAULT_PAIR_NAME = "USD_JPY"
-GRID_VERSION = "count2_entry_tp_lc_grid_v8_fc2_shape"
+GRID_VERSION = "count2_entry_tp_lc_grid_v9_m5_h1_shape"
 S5_TYPED_CACHE_VERSION = "s5_ohlc_memmap_v1"
 DEFAULT_START = dt.datetime(2025, 7, 30)
 DEFAULT_END = dt.datetime(2026, 7, 30)
@@ -355,6 +360,11 @@ def _grid_config(args: argparse.Namespace) -> dict[str, Any]:
         "top15_pre_filter_applied": False,
         "policy_derived_conditions_in_search": False,
         "causal_stair_failed_condition_signatures_in_search": True,
+        "m5_shape_context": "actual_foot_count2_completed_m5",
+        "h1_shape_context": "latest_two_completed_h1_oriented_to_m5_peak",
+        "shape_normalization": "own_timeframe_preceding_six_completed_ranges",
+        "m5_h1_interaction_scope": "same_semantic_feature_all_value_pairs",
+        "interaction_monthly_detail": "aggregate_rollup_only",
         "target_width_floor_pips": args.min_target_pips,
         "target_price_normalization": "rounded_order_price_then_effective_pips",
         "s5_typed_cache_version": S5_TYPED_CACHE_VERSION,
@@ -889,6 +899,24 @@ def _condition(
     )
 
 
+def _interaction_value_text(value: Any) -> str | None:
+    """Canonicalize each side before composing a cross-timeframe ID."""
+    item = _condition("_", "_", value)
+    if item is None:
+        return None
+    text = item.value
+    lowered = text.lower()
+    if lowered in {"true", "false"}:
+        return lowered
+    try:
+        number = float(text)
+    except ValueError:
+        return text
+    if not math.isfinite(number):
+        return None
+    return str(int(number)) if number.is_integer() else str(number)
+
+
 def _bool_value(value: Any) -> bool | None:
     if value is None or pd.isna(value):
         return None
@@ -924,6 +952,16 @@ def _bin_label(value: Any, edges: list[float], labels: list[str]) -> str | None:
     if position < 0 or position >= len(labels):
         return None
     return labels[position]
+
+
+_MISSING = object()
+
+
+def _ratio_bin_label(value: Any = _MISSING) -> str | None:
+    """Keep mathematically undefined zero-denominator ratios in the grid."""
+    if value is _MISSING:
+        return None
+    return _bin_label(value, RATIO_EDGES, RATIO_LABELS) or "UNDEFINED"
 
 
 RATIO_EDGES = [-np.inf, 0.25, 0.40, 0.55, 0.65, 0.80, 1.0, np.inf]
@@ -973,6 +1011,50 @@ FC2_A_LABELS = [
     "1.50-1.99",
     "2.00+",
 ]
+SHAPE_TIME_EDGES = [-np.inf, 0, 5, 10, 15, 30, 60, 120, 240, 480, np.inf]
+SHAPE_TIME_LABELS = [
+    "<0",
+    "0-4",
+    "5-9",
+    "10-14",
+    "15-29",
+    "30-59",
+    "60-119",
+    "120-239",
+    "240-479",
+    "480+",
+]
+
+SHAPE_A_FIELDS = (
+    "approach_impulse_A",
+    "reversal_strength_A",
+    "second_close_pushback_A",
+    "second_wick_A",
+    "mean_body_A",
+    "pattern_range_A",
+    "directional_progress_A",
+    "first_range_A",
+    "first_body_A",
+    "first_upper_wick_A",
+    "first_lower_wick_A",
+    "second_range_A",
+    "second_body_A",
+    "second_upper_wick_A",
+    "second_lower_wick_A",
+    "reversal_speed_A_per_hour",
+)
+SHAPE_RATIO_FIELDS = (
+    "prior_impulse_retrace_ratio",
+    "second_range_to_first_ratio",
+    "second_body_to_first_ratio",
+    "second_recovery_of_first_ratio",
+)
+SHAPE_CATEGORICAL_FIELDS = (
+    "shape",
+    "first_direction",
+    "second_direction",
+    "candle_sequence",
+)
 
 
 def condition_memberships(row: dict[str, Any]) -> list[Condition]:
@@ -1016,13 +1098,7 @@ def condition_memberships(row: dict[str, Any]) -> list[Condition]:
             _bool_value(row.get("fc2_" + field)),
         )
     for field in (
-        "approach_impulse_A",
-        "reversal_strength_A",
-        "second_close_pushback_A",
-        "second_wick_A",
-        "mean_body_A",
-        "pattern_range_A",
-        "directional_progress_A",
+        *SHAPE_A_FIELDS,
         "line_wick_overshoot_A",
         "line_body_break_A",
     ):
@@ -1031,15 +1107,24 @@ def condition_memberships(row: dict[str, Any]) -> list[Condition]:
             field + "_bin",
             _bin_label(row.get("fc2_" + field), FC2_A_EDGES, FC2_A_LABELS),
         )
+    for field in SHAPE_RATIO_FIELDS:
+        add(
+            "FC2",
+            field + "_bin",
+            _ratio_bin_label(row.get("fc2_" + field, _MISSING)),
+        )
+    for field in ("first_direction", "second_direction", "candle_sequence"):
+        add("FC2", field, row.get("fc2_" + field))
     add(
         "FC2",
-        "prior_impulse_retrace_ratio_bin",
+        "age_at_decision_minutes_bin",
         _bin_label(
-            row.get("fc2_prior_impulse_retrace_ratio"),
-            RATIO_EDGES,
-            RATIO_LABELS,
+            row.get("fc2_age_at_decision_minutes"),
+            SHAPE_TIME_EDGES,
+            SHAPE_TIME_LABELS,
         ),
     )
+    add("FC2", "bars_since_pattern", row.get("fc2_bars_since_pattern"))
     for field in (
         "line_crossed_by_wick",
         "line_crossed_by_body",
@@ -1052,6 +1137,83 @@ def condition_memberships(row: dict[str, Any]) -> list[Condition]:
             rsi_name + "_bin",
             _bin_label(row.get(rsi_name), RSI_EDGES, RSI_LABELS),
         )
+
+    # H1 macro morphology uses the latest two fully completed H1 candles,
+    # oriented to the M5 count2 direction.  It is intentionally named PAIR,
+    # because those H1 candles are not asserted to be an H1 foot-count 2.
+    for field in SHAPE_CATEGORICAL_FIELDS:
+        add("H1_PAIR", field, row.get("h1_pair_" + field))
+    for field in SHAPE_A_FIELDS:
+        add(
+            "H1_PAIR",
+            field + "_bin",
+            _bin_label(
+                row.get("h1_pair_" + field),
+                FC2_A_EDGES,
+                FC2_A_LABELS,
+            ),
+        )
+    for field in SHAPE_RATIO_FIELDS:
+        add(
+            "H1_PAIR",
+            field + "_bin",
+            _ratio_bin_label(row.get("h1_pair_" + field, _MISSING)),
+        )
+    add(
+        "H1_PAIR",
+        "age_at_decision_minutes_bin",
+        _bin_label(
+            row.get("h1_pair_age_at_decision_minutes"),
+            SHAPE_TIME_EDGES,
+            SHAPE_TIME_LABELS,
+        ),
+    )
+    add("H1_PAIR", "bars_since_pattern", row.get("h1_pair_bars_since_pattern"))
+
+    # Exhaust every value pairing for the same semantic M5/H1 feature.  This
+    # captures cross-timeframe agreement/disagreement without generating the
+    # meaningless and explosive power set of unrelated fields.
+    paired_values: dict[str, tuple[Any, Any]] = {}
+    for field in SHAPE_CATEGORICAL_FIELDS:
+        paired_values[field] = (
+            row.get("fc2_" + field),
+            row.get("h1_pair_" + field),
+        )
+    for field in SHAPE_A_FIELDS:
+        paired_values[field + "_bin"] = (
+            _bin_label(row.get("fc2_" + field), FC2_A_EDGES, FC2_A_LABELS),
+            _bin_label(row.get("h1_pair_" + field), FC2_A_EDGES, FC2_A_LABELS),
+        )
+    for field in SHAPE_RATIO_FIELDS:
+        paired_values[field + "_bin"] = (
+            _ratio_bin_label(row.get("fc2_" + field, _MISSING)),
+            _ratio_bin_label(row.get("h1_pair_" + field, _MISSING)),
+        )
+    paired_values["age_at_decision_minutes_bin"] = (
+        _bin_label(
+            row.get("fc2_age_at_decision_minutes"),
+            SHAPE_TIME_EDGES,
+            SHAPE_TIME_LABELS,
+        ),
+        _bin_label(
+            row.get("h1_pair_age_at_decision_minutes"),
+            SHAPE_TIME_EDGES,
+            SHAPE_TIME_LABELS,
+        ),
+    )
+    paired_values["bars_since_pattern"] = (
+        row.get("fc2_bars_since_pattern"),
+        row.get("h1_pair_bars_since_pattern"),
+    )
+    for field, (m5_value, h1_value) in paired_values.items():
+        m5_text = _interaction_value_text(m5_value)
+        h1_text = _interaction_value_text(h1_value)
+        if m5_text is not None and h1_text is not None:
+            add(
+                "M5_FC2_X_H1_PAIR",
+                field,
+                f"M5={m5_text}|H1={h1_text}",
+            )
 
     decision_time = pd.to_datetime(row.get("decision_time"), errors="coerce")
     if not pd.isna(decision_time):
@@ -1949,6 +2111,16 @@ class GridAccumulator:
         self.monthly_states: dict[
             tuple[str, str, str], dict[str, np.ndarray]
         ] = {}
+        # Cross-timeframe interactions can create thousands of condition IDs.
+        # Keep only their current month at full combo resolution and roll old
+        # months into the four stability arrays used by aggregate/ranking.
+        self.interaction_monthly_states: dict[
+            tuple[str, str, str], dict[str, np.ndarray]
+        ] = {}
+        self.interaction_monthly_summary: dict[
+            tuple[str, str], dict[str, np.ndarray]
+        ] = {}
+        self.latest_input_month: str | None = None
         self.catalog: dict[str, Condition] = {}
         self.foot2_event_counts: dict[tuple[str, str], int] = {}
 
@@ -1965,11 +2137,76 @@ class GridAccumulator:
         condition_id: str,
     ) -> dict[str, np.ndarray]:
         key = (segment, month, condition_id)
-        if key not in self.monthly_states:
-            self.monthly_states[key] = _new_monthly_state(self.combo_count)
-        return self.monthly_states[key]
+        condition = self.catalog.get(condition_id)
+        store = (
+            self.interaction_monthly_states
+            if condition is not None
+            and condition.source == "M5_FC2_X_H1_PAIR"
+            else self.monthly_states
+        )
+        if key not in store:
+            store[key] = _new_monthly_state(self.combo_count)
+        return store[key]
+
+    def _rollup_interaction_month(
+        self,
+        segment: str,
+        condition_id: str,
+        metrics: dict[str, np.ndarray],
+    ) -> None:
+        key = (segment, condition_id)
+        target = self.interaction_monthly_summary.setdefault(
+            key,
+            {
+                "active_month_count": np.zeros(self.combo_count),
+                "positive_month_count": np.zeros(self.combo_count),
+                "negative_month_count": np.zeros(self.combo_count),
+                "worst_month_r": np.full(self.combo_count, np.nan),
+            },
+        )
+        active = metrics["completed_count"] > 0
+        positive = active & (metrics["sum_r"] > 0)
+        negative = active & (metrics["sum_r"] < 0)
+        target["active_month_count"] += active.astype(float)
+        target["positive_month_count"] += positive.astype(float)
+        target["negative_month_count"] += negative.astype(float)
+        current = target["worst_month_r"]
+        values = np.where(active, metrics["sum_r"], np.nan)
+        target["worst_month_r"] = np.where(
+            np.isnan(current),
+            values,
+            np.where(np.isnan(values), current, np.minimum(current, values)),
+        )
+
+    def _flush_interaction_months_before(self, cutoff: str | None) -> None:
+        keys = [
+            key
+            for key in self.interaction_monthly_states
+            if cutoff is None or key[1] < cutoff
+        ]
+        for segment, month, condition_id in keys:
+            metrics = self.interaction_monthly_states.pop(
+                (segment, month, condition_id)
+            )
+            self._rollup_interaction_month(segment, condition_id, metrics)
 
     def add_records(self, records: list[GridRecord]) -> None:
+        if not records:
+            return
+        input_months = sorted(
+            {record.decision_time.strftime("%Y-%m") for record in records}
+        )
+        first_month = input_months[0]
+        if self.latest_input_month is not None and first_month < self.latest_input_month:
+            raise ValueError(
+                "Grid records are not chronological by month: "
+                f"{first_month} < {self.latest_input_month}"
+            )
+        self._flush_interaction_months_before(first_month)
+        self.latest_input_month = max(
+            self.latest_input_month or first_month,
+            input_months[-1],
+        )
         grouped: dict[tuple[int, int], list[GridRecord]] = defaultdict(list)
         for record in records:
             grouped[(record.entry_rank, record.offset_index)].append(record)
@@ -2056,7 +2293,10 @@ class GridAccumulator:
     def monthly_summary(
         self,
     ) -> dict[tuple[str, str], dict[str, np.ndarray]]:
-        summary: dict[tuple[str, str], dict[str, np.ndarray]] = {}
+        self._flush_interaction_months_before(None)
+        summary: dict[tuple[str, str], dict[str, np.ndarray]] = dict(
+            self.interaction_monthly_summary
+        )
         for (segment, _month, condition_id), metrics in self.monthly_states.items():
             key = (segment, condition_id)
             if key not in summary:
@@ -2083,39 +2323,26 @@ class GridAccumulator:
         return summary
 
 
-FC2_EVENT_COLUMNS = {
-    "fc2_version",
-    "fc2_valid",
-    "fc2_reason",
-    "fc2_shape",
-    "fc2_direction",
-    "fc2_source_first_time",
-    "fc2_source_last_time",
-    "fc2_prior_source_time",
-    "fc2_a_range_pips",
-    "fc2_approach_impulse_A",
-    "fc2_reversal_strength_A",
-    "fc2_prior_impulse_retrace_ratio",
-    "fc2_second_close_pushback_A",
-    "fc2_second_wick_A",
-    "fc2_mean_body_A",
-    "fc2_pattern_range_A",
-    "fc2_directional_progress_A",
-    "fc2_engulfing",
-    "fc2_rejection",
-    "fc2_stall",
-    "fc2_continuation",
+SHAPE_LINE_FIELDS = {
+    "line_shape",
+    "line_wick_overshoot_pips",
+    "line_wick_overshoot_A",
+    "line_body_break_pips",
+    "line_body_break_A",
+    "line_crossed_by_wick",
+    "line_crossed_by_body",
+    "line_rejection",
 }
-
-FC2_LINE_COLUMNS = {
-    "fc2_line_shape",
-    "fc2_line_wick_overshoot_pips",
-    "fc2_line_wick_overshoot_A",
-    "fc2_line_body_break_pips",
-    "fc2_line_body_break_A",
-    "fc2_line_crossed_by_wick",
-    "fc2_line_crossed_by_body",
-    "fc2_line_rejection",
+FC2_EVENT_COLUMNS = {
+    "fc2_" + field
+    for field in FOOT_COUNT2_SHAPE_FIELDS
+    if field not in SHAPE_LINE_FIELDS
+}
+FC2_LINE_COLUMNS = {"fc2_" + field for field in SHAPE_LINE_FIELDS}
+H1_PAIR_COLUMNS = {
+    "h1_pair_" + field
+    for field in FOOT_COUNT2_SHAPE_FIELDS
+    if field not in SHAPE_LINE_FIELDS
 }
 
 SOURCE_REQUIRED_COLUMNS = {
@@ -2151,7 +2378,7 @@ SOURCE_REQUIRED_COLUMNS = {
     "m5_stair_state",
     "h1_stair_profile_enabled",
     "h1_stair_state",
-} | FC2_EVENT_COLUMNS | FC2_LINE_COLUMNS
+} | FC2_EVENT_COLUMNS | FC2_LINE_COLUMNS | H1_PAIR_COLUMNS
 
 SOURCE_BASIC_CONDITION_COLUMNS = {
     "rsi_1",
@@ -2191,7 +2418,7 @@ EVENT_REQUIRED_COLUMNS = {
     "h1_stair_state",
     "event_status",
     "candidate_count",
-} | FC2_EVENT_COLUMNS
+} | FC2_EVENT_COLUMNS | H1_PAIR_COLUMNS
 
 EVENT_SIGNATURE_FIELDS = {
     "decision_time",
@@ -2212,7 +2439,7 @@ EVENT_SIGNATURE_FIELDS = {
     "rsi_3",
     "m5_stair_profile_enabled",
     "h1_stair_profile_enabled",
-} | FC2_EVENT_COLUMNS
+} | FC2_EVENT_COLUMNS | H1_PAIR_COLUMNS
 
 STAIR_CONDITION_SUFFIXES = {
     "state",
@@ -2300,9 +2527,19 @@ def _signature_scalar(field: str, value: Any) -> Any:
         "fc2_source_first_time",
         "fc2_source_last_time",
         "fc2_prior_source_time",
+        "h1_pair_source_first_time",
+        "h1_pair_source_last_time",
+        "h1_pair_prior_source_time",
     }:
         return _timestamp_text(value)
     stair_suffix = field.removeprefix("m5_stair_").removeprefix("h1_stair_")
+    shape_suffix = (
+        field.removeprefix("fc2_")
+        if field.startswith("fc2_")
+        else field.removeprefix("h1_pair_")
+        if field.startswith("h1_pair_")
+        else None
+    )
     boolean_field = field in {
         "target_valid",
         "m5_stair_profile_enabled",
@@ -2312,7 +2549,21 @@ def _signature_scalar(field: str, value: Any) -> Any:
         "fc2_rejection",
         "fc2_stall",
         "fc2_continuation",
+        "fc2_actual_foot_count2",
+        "fc2_line_crossed_by_wick",
+        "fc2_line_crossed_by_body",
+        "fc2_line_rejection",
     } or (
+        shape_suffix
+        in {
+            "valid",
+            "actual_foot_count2",
+            "engulfing",
+            "rejection",
+            "stall",
+            "continuation",
+        }
+    ) or (
         _is_stair_condition_column(field)
         and (
             stair_suffix
@@ -2330,7 +2581,7 @@ def _signature_scalar(field: str, value: Any) -> Any:
         parsed = _bool_value(value)
         if parsed is not None:
             return parsed
-    numeric_field = field in {
+    numeric_field = shape_suffix is not None or field in {
         "tp_lookback",
         "tp_multiplier",
         "tp_pips",
@@ -2917,8 +3168,12 @@ def _validate_fc2_context(
     """Validate the causal/A-normalized foot-count-2 feature contract."""
     if _bool_value(row.get("fc2_valid")) is not True:
         raise ValueError(f"Invalid FC2 shape context at {decision_time}")
-    if str(row.get("fc2_version")) != "foot_count2_shape_a_v1":
+    if str(row.get("fc2_version")) != FOOT_COUNT2_SHAPE_VERSION:
         raise ValueError(f"Unknown FC2 shape version at {decision_time}")
+    if _numeric(row.get("fc2_timeframe_minutes")) != 5:
+        raise ValueError(f"FC2 timeframe is not M5 at {decision_time}")
+    if _bool_value(row.get("fc2_actual_foot_count2")) is not True:
+        raise ValueError(f"FC2 context is not an actual count2 at {decision_time}")
     if _numeric(row.get("fc2_direction")) != peak_direction:
         raise ValueError(f"FC2/peak direction mismatch at {decision_time}")
     shape = str(row.get("fc2_shape")).strip().upper()
@@ -2952,7 +3207,7 @@ def _validate_fc2_context(
     if any(pd.isna(value) for value in source_times):
         raise ValueError(f"FC2 source timestamps are missing at {decision_time}")
     prior, first, last = (pd.Timestamp(value) for value in source_times)
-    if not prior < first <= last or last + pd.Timedelta(minutes=5) > decision_time:
+    if not prior < first < last or last + pd.Timedelta(minutes=5) > decision_time:
         raise ValueError(f"FC2 source timestamps are not causal at {decision_time}")
     numeric_fields = {
         "fc2_approach_impulse_A",
@@ -2962,6 +3217,18 @@ def _validate_fc2_context(
         "fc2_mean_body_A",
         "fc2_pattern_range_A",
         "fc2_directional_progress_A",
+        "fc2_first_range_A",
+        "fc2_first_body_A",
+        "fc2_first_upper_wick_A",
+        "fc2_first_lower_wick_A",
+        "fc2_second_range_A",
+        "fc2_second_body_A",
+        "fc2_second_upper_wick_A",
+        "fc2_second_lower_wick_A",
+        "fc2_formation_minutes",
+        "fc2_age_at_decision_minutes",
+        "fc2_bars_since_pattern",
+        "fc2_reversal_speed_A_per_hour",
     }
     if include_line:
         numeric_fields.update(FC2_LINE_COLUMNS.intersection({
@@ -2997,6 +3264,64 @@ def _validate_fc2_context(
         ):
             if float(row[field]) < 0:
                 raise ValueError(f"Negative {field} at {decision_time}")
+
+
+def _validate_h1_pair_context(
+    row: dict[str, Any],
+    *,
+    decision_time: pd.Timestamp,
+    peak_direction: float,
+) -> None:
+    """Validate that H1 morphology uses only two fully completed H1 bars."""
+    prefix = "h1_pair_"
+    if _bool_value(row.get(prefix + "valid")) is not True:
+        raise ValueError(f"Invalid H1 pair context at {decision_time}")
+    if str(row.get(prefix + "version")) != FOOT_COUNT2_SHAPE_VERSION:
+        raise ValueError(f"Unknown H1 pair shape version at {decision_time}")
+    if _numeric(row.get(prefix + "timeframe_minutes")) != 60:
+        raise ValueError(f"H1 pair timeframe mismatch at {decision_time}")
+    if _bool_value(row.get(prefix + "actual_foot_count2")) is not False:
+        raise ValueError(f"H1 pair was incorrectly labelled count2 at {decision_time}")
+    if _numeric(row.get(prefix + "direction")) != peak_direction:
+        raise ValueError(f"H1 pair/M5 peak direction mismatch at {decision_time}")
+    source_times = [
+        pd.to_datetime(row.get(prefix + field), errors="coerce")
+        for field in ("prior_source_time", "source_first_time", "source_last_time")
+    ]
+    if any(pd.isna(value) for value in source_times):
+        raise ValueError(f"H1 pair source timestamps are missing at {decision_time}")
+    prior, first, last = (pd.Timestamp(value) for value in source_times)
+    if not prior < first < last or last + pd.Timedelta(hours=1) > decision_time:
+        raise ValueError(f"H1 pair source timestamps are not causal at {decision_time}")
+    a_range = _numeric(row.get(prefix + "a_range_pips"))
+    if a_range is None or a_range <= 0:
+        raise ValueError(f"H1 pair A width is invalid at {decision_time}")
+    shape = str(row.get(prefix + "shape")).strip().upper()
+    if shape not in {"REJECTION", "ENGULFING", "STALL", "CONTINUATION"}:
+        raise ValueError(f"Invalid H1 pair shape at {decision_time}: {shape}")
+    flags = [
+        _bool_value(row.get(prefix + value.lower()))
+        for value in ("REJECTION", "ENGULFING", "STALL", "CONTINUATION")
+    ]
+    if any(value is None for value in flags) or sum(flags) != 1:
+        raise ValueError(f"H1 pair shape flags are not one-hot at {decision_time}")
+    required_numeric = {
+        prefix + field
+        for field in (
+            *SHAPE_A_FIELDS,
+            "formation_minutes",
+            "age_at_decision_minutes",
+            "bars_since_pattern",
+        )
+    }
+    missing_numeric = sorted(
+        field for field in required_numeric if _numeric(row.get(field)) is None
+    )
+    if missing_numeric:
+        raise ValueError(
+            f"H1 pair numeric fields are missing at {decision_time}: "
+            + ", ".join(missing_numeric)
+        )
 
 
 def _validate_source_decision(
@@ -3083,6 +3408,11 @@ def _validate_source_decision(
         average_range=float(average_range),
         peak_direction=_numeric(source.get("peak_direction")),
         include_line=True,
+    )
+    _validate_h1_pair_context(
+        source,
+        decision_time=pd.Timestamp(decision_time),
+        peak_direction=_numeric(source.get("peak_direction")),
     )
     for field in ("peak_latest_time", "line_newest_source_time"):
         value = source.get(field)
@@ -3195,6 +3525,11 @@ def _validate_event_decision(
         average_range=float(average_range),
         peak_direction=float(peak_direction),
         include_line=False,
+    )
+    _validate_h1_pair_context(
+        event,
+        decision_time=pd.Timestamp(decision_time),
+        peak_direction=float(peak_direction),
     )
     peak_latest = pd.to_datetime(event.get("peak_latest_time"), errors="coerce")
     if pd.isna(peak_latest) or peak_latest + pd.Timedelta(minutes=5) > decision_time:
@@ -3825,6 +4160,10 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
                 "h1_stair_causality_inherited_from_source_generator": True,
                 "fc2_shape_completed_m5_only_enforced": True,
                 "fc2_a_equals_preceding_six_m5_average_enforced": True,
+                "h1_pair_uses_latest_two_completed_h1_only": True,
+                "h1_pair_a_uses_six_completed_h1": True,
+                "m5_h1_shape_same_feature_interactions_exhausted": True,
+                "m5_h1_interaction_months_rolled_up_chronologically": True,
                 "stair_profile_enablement_not_used_as_research_gate": True,
                 "s5_used_only_for_outcome": True,
                 "s5_signal_period_coverage_enforced": True,
@@ -3843,7 +4182,8 @@ def run_grid_search(args: argparse.Namespace) -> dict[str, Path]:
                 "Per-foot2 expectancy includes unavailable ranks as zero only for event-level conditions; line-specific conditions have no definition when a line is absent.",
                 "Boundary events without a next count2 and source-rebuild/target-invalid skipped events are censored from the valid-foot2 denominator.",
                 "Existing non-policy condition definitions may themselves have prior research history.",
-                "The source CSV has no standalone H1 feature-last-close column; H1 causality relies on the audited source generator contract.",
+                "H1 morphology describes the latest two completed H1 candles; it does not assert that the H1 peak itself has foot count 2.",
+                "Detailed monthly rows omit M5_FC2_X_H1_PAIR; aggregate active/positive/negative/worst-month metrics remain complete.",
                 "The source CSV records lookback=6 and first/last M5 times but not all six source timestamps; exact six-row membership relies on the source generator contract.",
                 "Gap-through LIMIT fills are conservatively recorded at the limit price without price improvement.",
                 "When a timeout horizon ends during a known market closure, the last tradable S5 close is used as the timeout mark.",

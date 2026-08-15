@@ -1,8 +1,9 @@
-"""Causal, volatility-normalized shape features for the newest M5 foot-count 2.
+"""Causal, volatility-normalized two-candle shape features.
 
-``A`` is the mean high-low range of the six completed M5 candles immediately
-before the decision.  Callers may pass the already calculated value so live
-orders and inspection CSVs use exactly the same normalization base.
+``A`` is the mean high-low range of the six completed candles of the selected
+timeframe immediately before the decision.  Callers may pass the already
+calculated value so live orders and inspection CSVs use exactly the same
+normalization base.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from typing import Any
 import pandas as pd
 
 
-FOOT_COUNT2_SHAPE_VERSION = "foot_count2_shape_a_v1"
+FOOT_COUNT2_SHAPE_VERSION = "foot_count2_shape_a_v2"
 REJECTION_MIN_A = 0.25
 STALL_MAX_MEAN_BODY_A = 0.35
 STALL_MAX_NET_PROGRESS_A = 0.35
@@ -24,6 +25,8 @@ FOOT_COUNT2_SHAPE_FIELDS = (
     "reason",
     "shape",
     "direction",
+    "timeframe_minutes",
+    "actual_foot_count2",
     "source_first_time",
     "source_last_time",
     "prior_source_time",
@@ -36,6 +39,24 @@ FOOT_COUNT2_SHAPE_FIELDS = (
     "mean_body_A",
     "pattern_range_A",
     "directional_progress_A",
+    "first_range_A",
+    "first_body_A",
+    "first_upper_wick_A",
+    "first_lower_wick_A",
+    "second_range_A",
+    "second_body_A",
+    "second_upper_wick_A",
+    "second_lower_wick_A",
+    "first_direction",
+    "second_direction",
+    "candle_sequence",
+    "second_range_to_first_ratio",
+    "second_body_to_first_ratio",
+    "second_recovery_of_first_ratio",
+    "formation_minutes",
+    "age_at_decision_minutes",
+    "bars_since_pattern",
+    "reversal_speed_A_per_hour",
     "engulfing",
     "rejection",
     "stall",
@@ -82,6 +103,73 @@ def _invalid(reason: str) -> dict[str, Any]:
     return result
 
 
+def _source_bars_are_contiguous(
+    times: list[pd.Timestamp] | pd.Series,
+    timeframe: pd.Timedelta,
+) -> bool:
+    """Allow normal bars and known closed-market gaps, never unknown holes."""
+    def annual_holiday_closed_mask(index: pd.DatetimeIndex) -> Any:
+        """Cover only the observed NY-rollover Christmas/New-Year closure."""
+        local = index.tz_convert("America/New_York")
+        seconds = local.hour * 3600 + local.minute * 60 + local.second
+        holiday = (
+            ((local.month == 1) & (local.day == 1))
+            | ((local.month == 12) & (local.day == 25))
+        )
+        following_day = local + pd.Timedelta(days=1)
+        holiday_eve = (
+            ((following_day.month == 1) & (following_day.day == 1))
+            | ((following_day.month == 12) & (following_day.day == 25))
+        )
+        # OANDA's final/first quote can fall several minutes either side of
+        # 17:00 NY.  This is the same deliberately narrow 16:30-17:30
+        # boundary used by the S5 OOS replay holiday-gap contract.
+        return (
+            (holiday_eve & (seconds >= 16 * 3600 + 30 * 60))
+            | (holiday & (seconds <= 17 * 3600 + 30 * 60))
+        )
+
+    ordered = [pd.Timestamp(value) for value in times]
+    for previous, following in zip(ordered, ordered[1:]):
+        difference = following - previous
+        if difference == timeframe:
+            continue
+        if difference <= timeframe or difference % timeframe != pd.Timedelta(0):
+            return False
+        # A genuine FX closure is short.  Reject corrupt multi-day jumps
+        # before allocating a large intermediate date range.
+        if difference > pd.Timedelta(days=7):
+            return False
+        missing_interval = pd.date_range(
+            previous + timeframe,
+            following,
+            freq=pd.Timedelta(seconds=5),
+            inclusive="left",
+        )
+        if missing_interval.empty:
+            return False
+        if missing_interval.tz is None:
+            missing_interval = missing_interval.tz_localize("Asia/Tokyo")
+        else:
+            missing_interval = missing_interval.tz_convert("Asia/Tokyo")
+        # Import locally so the shared live feature module stays free of a
+        # module-load dependency cycle.
+        import classOanda
+
+        regular_open = classOanda._oanda_market_open_mask(missing_interval)
+        # The annual exception is for the observed full-day closure only.
+        # Never let its rollover envelope hide a short missing candle during
+        # otherwise tradable time.
+        if difference < pd.Timedelta(hours=12):
+            if bool(regular_open.any()):
+                return False
+            continue
+        known_holiday_closed = annual_holiday_closed_mask(missing_interval)
+        if bool((regular_open & ~known_holiday_closed).any()):
+            return False
+    return True
+
+
 def foot_count2_shape_context(
     frame: pd.DataFrame | None,
     peak: dict[str, Any] | None,
@@ -90,8 +178,10 @@ def foot_count2_shape_context(
     *,
     average_range_pips: float | None = None,
     lookback: int = 6,
+    timeframe_minutes: int = 5,
+    require_actual_foot_count2: bool = True,
 ) -> dict[str, Any]:
-    """Describe the newest count2 using completed M5 candles only.
+    """Describe an oriented two-candle pattern using completed candles only.
 
     The two foot candles are selected by the peak's oldest/latest timestamps,
     not by positional assumptions.  The preceding close is also required for
@@ -104,8 +194,10 @@ def foot_count2_shape_context(
         count = int(float(peak.get("count")))
     except (TypeError, ValueError):
         return _invalid("invalid_peak_identity")
-    if count != 2 or direction not in (-1, 1):
+    if (require_actual_foot_count2 and count != 2) or direction not in (-1, 1):
         return _invalid("not_foot_count2")
+    if not isinstance(timeframe_minutes, int) or timeframe_minutes < 1:
+        return _invalid("invalid_timeframe_minutes")
 
     time_column = _time_column(frame)
     required = {"open", "close", "high", "low"}
@@ -128,17 +220,16 @@ def foot_count2_shape_context(
     for column in required:
         work[column] = pd.to_numeric(work[column], errors="coerce")
     work.dropna(subset=["_time", *required], inplace=True)
-    work = work[
-        work["_time"] + pd.Timedelta(minutes=5) <= decision
-    ].sort_values("_time")
+    timeframe = pd.Timedelta(minutes=timeframe_minutes)
+    work = work[work["_time"] + timeframe <= decision].sort_values("_time")
     work.drop_duplicates("_time", keep="last", inplace=True)
     work.reset_index(drop=True, inplace=True)
     if work.empty or (work["_time"] >= decision).any():
-        return _invalid("no_completed_m5")
+        return _invalid("no_completed_candles")
 
     foot = work[(work["_time"] >= oldest) & (work["_time"] <= latest)]
     if len(foot) != 2:
-        return _invalid("peak_does_not_map_to_exactly_two_m5")
+        return _invalid("pattern_does_not_map_to_exactly_two_candles")
     foot_positions = [int(value) for value in foot.index]
     first_position = foot_positions[0]
     if first_position <= 0 or foot_positions != [first_position, first_position + 1]:
@@ -154,10 +245,23 @@ def foot_count2_shape_context(
     if not all(math.isfinite(value) for value in source_values):
         return _invalid("non_finite_foot_candle")
 
+    source_times = [
+        pd.Timestamp(previous["_time"]),
+        pd.Timestamp(first["_time"]),
+        pd.Timestamp(second["_time"]),
+    ]
+    if not _source_bars_are_contiguous(source_times, timeframe):
+        return _invalid("unknown_gap_in_pattern_source")
+
+    completed_for_a = work[work["_time"] < decision].tail(int(lookback))
+    if len(completed_for_a) != int(lookback):
+        return _invalid("insufficient_a_lookback")
+    if not _source_bars_are_contiguous(
+        completed_for_a["_time"].tolist(),
+        timeframe,
+    ):
+        return _invalid("unknown_gap_in_a_lookback")
     if average_range_pips is None:
-        completed_for_a = work[work["_time"] < decision].tail(int(lookback))
-        if len(completed_for_a) != int(lookback):
-            return _invalid("insufficient_a_lookback")
         ranges = (
             completed_for_a["high"] - completed_for_a["low"]
         ) / float(pair.pip_value)
@@ -205,6 +309,43 @@ def foot_count2_shape_context(
     first_open = float(first["open"])
     first_close = float(first["close"])
     second_open = float(second["open"])
+    first_high = float(first["high"])
+    first_low = float(first["low"])
+    second_high = float(second["high"])
+    second_low = float(second["low"])
+    first_body_price = abs(first_close - first_open)
+    second_body_price = abs(second_close - second_open)
+    first_range_price = first_high - first_low
+    second_range_price = second_high - second_low
+    first_body_high = max(first_open, first_close)
+    first_body_low = min(first_open, first_close)
+    second_body_high = max(second_open, second_close)
+    second_body_low = min(second_open, second_close)
+
+    def candle_direction(open_price: float, close_price: float) -> str:
+        if close_price > open_price:
+            return "BULL"
+        if close_price < open_price:
+            return "BEAR"
+        return "DOJI"
+
+    first_direction = candle_direction(first_open, first_close)
+    second_direction = candle_direction(second_open, second_close)
+    first_push_price = max(direction * (first_close - first_open), 0.0)
+    second_recovery_price = max(
+        -direction * (second_close - first_close),
+        0.0,
+    )
+    # Active formation time is two bars.  A weekend/market closure between
+    # bars must not make the pattern look artificially slow.
+    formation_minutes = float(2 * timeframe_minutes)
+    age_at_decision_minutes = float(
+        (decision - (pd.Timestamp(second["_time"]) + timeframe)).total_seconds()
+        / 60.0
+    )
+    bars_since_pattern = int(
+        (work["_time"] > pd.Timestamp(second["_time"])).sum()
+    )
     if direction == 1:
         engulfing_detected = bool(
             second_close < second_open
@@ -242,6 +383,8 @@ def foot_count2_shape_context(
         "reason": None,
         "shape": shape,
         "direction": direction,
+        "timeframe_minutes": timeframe_minutes,
+        "actual_foot_count2": bool(require_actual_foot_count2),
         "source_first_time": pd.Timestamp(first["_time"]),
         "source_last_time": pd.Timestamp(second["_time"]),
         "prior_source_time": pd.Timestamp(previous["_time"]),
@@ -256,6 +399,34 @@ def foot_count2_shape_context(
         "mean_body_A": mean_body_a,
         "pattern_range_A": (pattern_high - pattern_low) / a_price,
         "directional_progress_A": directional_progress_a,
+        "first_range_A": first_range_price / a_price,
+        "first_body_A": first_body_price / a_price,
+        "first_upper_wick_A": (first_high - first_body_high) / a_price,
+        "first_lower_wick_A": (first_body_low - first_low) / a_price,
+        "second_range_A": second_range_price / a_price,
+        "second_body_A": second_body_price / a_price,
+        "second_upper_wick_A": (second_high - second_body_high) / a_price,
+        "second_lower_wick_A": (second_body_low - second_low) / a_price,
+        "first_direction": first_direction,
+        "second_direction": second_direction,
+        "candle_sequence": f"{first_direction}_{second_direction}",
+        "second_range_to_first_ratio": (
+            second_range_price / first_range_price if first_range_price > 0 else None
+        ),
+        "second_body_to_first_ratio": (
+            second_body_price / first_body_price if first_body_price > 0 else None
+        ),
+        "second_recovery_of_first_ratio": (
+            second_recovery_price / first_push_price if first_push_price > 0 else None
+        ),
+        "formation_minutes": formation_minutes,
+        "age_at_decision_minutes": age_at_decision_minutes,
+        "bars_since_pattern": bars_since_pattern,
+        "reversal_speed_A_per_hour": (
+            (reversal_price / a_price) * 60.0 / formation_minutes
+            if formation_minutes > 0
+            else None
+        ),
         # Classification flags are intentionally one-hot.  The priority
         # above resolves candles satisfying more than one raw predicate.
         "engulfing": shape == "ENGULFING",
@@ -276,6 +447,61 @@ def foot_count2_shape_context(
         ],
     })
     return result
+
+
+def latest_two_candle_shape_context(
+    frame: pd.DataFrame | None,
+    decision_time: Any,
+    pair: Any,
+    *,
+    direction: int,
+    timeframe_minutes: int,
+    lookback: int = 6,
+) -> dict[str, Any]:
+    """Describe the latest two completed candles as higher-timeframe context.
+
+    This is deliberately not labelled as an H1 foot-count 2.  At an M5
+    signal the latest H1 peak may have any foot count; the latest two completed
+    H1 candles are nevertheless available macro context.  The orientation is
+    the M5 peak direction so M5/H1 values have the same sign convention.
+    """
+    if frame is None or frame.empty:
+        return _invalid("missing_frame")
+    time_column = _time_column(frame)
+    if time_column is None:
+        return _invalid("missing_time_column")
+    decision = _timestamp(decision_time)
+    if decision is None:
+        return _invalid("invalid_decision_time")
+    times = pd.to_datetime(frame[time_column], errors="coerce")
+    if getattr(times.dt, "tz", None) is not None:
+        times = times.dt.tz_convert("Asia/Tokyo").dt.tz_localize(None)
+    completed = frame.loc[
+        times + pd.Timedelta(minutes=timeframe_minutes) <= decision
+    ].copy()
+    completed["_shape_time"] = times.loc[completed.index]
+    completed.sort_values("_shape_time", inplace=True)
+    completed.drop_duplicates("_shape_time", keep="last", inplace=True)
+    if len(completed) < max(3, int(lookback)):
+        return _invalid("insufficient_completed_candles")
+    pair_rows = completed.tail(2)
+    oldest = pd.Timestamp(pair_rows.iloc[0]["_shape_time"])
+    latest = pd.Timestamp(pair_rows.iloc[1]["_shape_time"])
+    peak = {
+        "count": 2,
+        "direction": direction,
+        "oldest_time_jp": oldest,
+        "latest_time_jp": latest,
+    }
+    return foot_count2_shape_context(
+        frame,
+        peak,
+        decision,
+        pair,
+        lookback=lookback,
+        timeframe_minutes=timeframe_minutes,
+        require_actual_foot_count2=False,
+    )
 
 
 def attach_line_wick_context(

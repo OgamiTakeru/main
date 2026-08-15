@@ -68,7 +68,12 @@ DEFAULT_FILL_DELAY_EDGES = (5, 10, 15, 30, 60)
 DEFAULT_LAST_REACH_EDGES = (30, 60, 120, 240, 480, 1440)
 DEFAULT_READ_CHUNK_SIZE = 2000
 SUPPORTED_LEGACY_GRID_VERSIONS = {
-    "USD_JPY": frozenset({"usd_jpy_count2_entry_tp_lc_grid_v6"}),
+    "USD_JPY": frozenset({
+        "usd_jpy_count2_entry_tp_lc_grid_v6",
+        "usd_jpy_count2_entry_tp_lc_grid_v8_fc2_shape",
+    }),
+    "EUR_USD": frozenset({"eur_usd_count2_entry_tp_lc_grid_v8_fc2_shape"}),
+    "AUD_USD": frozenset({"aud_usd_count2_entry_tp_lc_grid_v8_fc2_shape"}),
 }
 
 

@@ -1,4 +1,4 @@
-"""Create AUD/USD Top rankings from the completed prior-two-year grid."""
+"""Create AUD/USD M5/H1 shape Top rankings from the prior-two-year grid."""
 
 import datetime
 

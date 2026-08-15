@@ -34,6 +34,7 @@ from fFootCountShape import (
     attach_line_wick_context,
     flatten_foot_count2_shape,
     foot_count2_shape_context,
+    latest_two_candle_shape_context,
 )
 import send_notice as notice
 from fLineAnalysis import (
@@ -728,12 +729,14 @@ def rebuild_candidates_at(
             "count2_prefilter_mismatch:"
             + str(newest_peak.get("count"))
         )
+    peak_direction = int(newest_peak["direction"])
 
     if h1 is None:
         h1_snapshot = snapshot
         h1_peaks = peaks
         h1_cache_key = None
         h1_stair_context = None
+        completed_h1 = None
     else:
         completed_h1_end = int(
             h1["time_jp_dt"].searchsorted(
@@ -908,7 +911,13 @@ def rebuild_candidates_at(
         )
         if h1_stair_cache is not None and h1_cache_key is not None:
             h1_stair_cache[h1_cache_key] = h1_stair_context
-    peak_direction = int(newest_peak["direction"])
+    h1_pair_shape = latest_two_candle_shape_context(
+        completed_h1,
+        decision_time,
+        pair,
+        direction=peak_direction,
+        timeframe_minutes=60,
+    )
     candidates = select_ahead_lines(
         peak_direction,
         current_price,
@@ -953,6 +962,7 @@ def rebuild_candidates_at(
         "rsi_info": rsi_info,
         "stair_context": stair_context,
         "h1_stair_context": h1_stair_context,
+        "h1_pair_shape_context": h1_pair_shape,
     }
 
 
@@ -2125,6 +2135,27 @@ def _archive_progress(path: Path) -> Path:
     return destination
 
 
+def _archive_existing_output(path: Path) -> list[Path]:
+    """Preserve an older result and any residual temp beside it."""
+    archived = []
+    for candidate in (path, path.with_suffix(path.suffix + ".tmp")):
+        if not candidate.exists():
+            continue
+        archive = candidate.parent / "archive"
+        archive.mkdir(parents=True, exist_ok=True)
+        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        destination = archive / f"{candidate.stem}_{timestamp}{candidate.suffix}"
+        sequence = 1
+        while destination.exists():
+            destination = archive / (
+                f"{candidate.stem}_{timestamp}_{sequence}{candidate.suffix}"
+            )
+            sequence += 1
+        candidate.replace(destination)
+        archived.append(destination)
+    return archived
+
+
 def _mark_progress_failed(path: Path, error: Exception) -> Path:
     if not path.exists():
         return path
@@ -2200,6 +2231,7 @@ def run_sweep(
     wall_started = dt.datetime.now().astimezone()
     paths = output_paths(pair_name, args)
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    _archive_existing_output(paths["progress"])
     _write_progress(
         paths["progress"],
         pair_name=pair_name,
@@ -2337,6 +2369,7 @@ def run_sweep(
             decision_time,
             pair,
             average_range_pips=target["recent_m5_avg_range_pips"],
+            timeframe_minutes=5,
         )
         if not fc2_shape.get("valid"):
             event_rows.append(
@@ -2354,11 +2387,30 @@ def run_sweep(
                 }
             )
             continue
+        h1_pair_shape = rebuilt["h1_pair_shape_context"]
+        if not h1_pair_shape.get("valid"):
+            event_rows.append(
+                {
+                    **event_base,
+                    **target,
+                    **_peak_columns(peak, pair),
+                    **flatten_foot_count2_shape(fc2_shape),
+                    **flatten_foot_count2_shape(h1_pair_shape, prefix="h1_pair_"),
+                    "event_status": "skipped",
+                    "event_skip_reason": (
+                        "h1_two_candle_shape_error:"
+                        + str(h1_pair_shape.get("reason"))
+                    ),
+                    "candidate_count": 0,
+                }
+            )
+            continue
         event_base.update(
             {
                 **target,
                 **_peak_columns(peak, pair),
                 **flatten_foot_count2_shape(fc2_shape),
+                **flatten_foot_count2_shape(h1_pair_shape, prefix="h1_pair_"),
                 "decision_price": rebuilt["current_price"],
                 "rsi_1": rebuilt["rsi_info"].get("rsi_1"),
                 "rsi_2": rebuilt["rsi_info"].get("rsi_2"),
@@ -2687,6 +2739,9 @@ def run_sweep(
     stair_policy_analysis = make_stair_policy_analysis(candidates)
     paths = output_paths(pair_name, args)
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    for key, path in paths.items():
+        if key != "progress":
+            _archive_existing_output(path)
     candidates.to_csv(paths["candidates"], index=False, encoding="utf-8-sig")
     wins.to_csv(paths["wins"], index=False, encoding="utf-8-sig")
     events.to_csv(paths["events"], index=False, encoding="utf-8-sig")

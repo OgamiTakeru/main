@@ -1,4 +1,4 @@
-"""Create EUR/USD Top rankings from the completed prior-two-year grid."""
+"""Create EUR/USD M5/H1 shape Top rankings from the prior-two-year grid."""
 
 import datetime
 

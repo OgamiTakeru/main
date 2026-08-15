@@ -1,7 +1,8 @@
 """Run the EUR/USD foot-count-2 entry/TP/LC grid for the cached prior two years.
 
 Prerequisite: the matching causal resistance-sweep candidate/event CSVs and
-S5 cache must already exist. This launcher does not contact OANDA, change the
+S5 cache must already exist. It exhausts M5/H1 shape conditions and their
+same-feature interactions. This launcher does not contact OANDA, change the
 live strategy, rank conditions, or select a Top3/Top15.
 """
 

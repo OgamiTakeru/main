@@ -1,4 +1,4 @@
-"""Create USD/JPY Top rankings from the completed prior-two-year grid."""
+"""Create USD/JPY M5/H1 shape Top rankings from the prior-two-year grid."""
 
 import datetime
 

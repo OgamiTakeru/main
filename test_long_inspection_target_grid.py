@@ -12,7 +12,7 @@ bounded before END_TIME; rows at or after END_TIME are never read as labels.
 The complete requested two-year window is emitted without ranking or condition selection:
 
 * full-window grid output: 2023-07-30 through 2025-07-30 (exclusive)
-* all condition and entry/TP/LC combinations are retained
+* all M5/H1 shape conditions, same-feature interactions and entry/TP/LC combinations are retained
 * no Top3 selection or train/holdout split is applied
 """
 

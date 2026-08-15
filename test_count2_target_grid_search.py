@@ -193,6 +193,7 @@ def _event_ledger_row(
             average_range_pips=2.0,
             include_line=False,
         ),
+        **_h1_pair_fields(decision_time, peak_direction=peak_direction),
     }
 
 
@@ -205,11 +206,13 @@ def _fc2_fields(
 ):
     decision_time = pd.Timestamp(decision_time)
     fields = {
-        "fc2_version": "foot_count2_shape_a_v1",
+        "fc2_version": "foot_count2_shape_a_v2",
         "fc2_valid": True,
         "fc2_reason": None,
         "fc2_shape": "CONTINUATION",
         "fc2_direction": peak_direction,
+        "fc2_timeframe_minutes": 5,
+        "fc2_actual_foot_count2": True,
         "fc2_source_first_time": decision_time - pd.Timedelta(minutes=10),
         "fc2_source_last_time": decision_time - pd.Timedelta(minutes=5),
         "fc2_prior_source_time": decision_time - pd.Timedelta(minutes=15),
@@ -222,6 +225,27 @@ def _fc2_fields(
         "fc2_mean_body_A": 0.5,
         "fc2_pattern_range_A": 1.0,
         "fc2_directional_progress_A": 0.6,
+        "fc2_first_range_A": 1.0,
+        "fc2_first_body_A": 0.5,
+        "fc2_first_upper_wick_A": 0.25,
+        "fc2_first_lower_wick_A": 0.25,
+        "fc2_second_range_A": 1.0,
+        "fc2_second_body_A": 0.5,
+        "fc2_second_upper_wick_A": 0.25,
+        "fc2_second_lower_wick_A": 0.25,
+        "fc2_first_direction": "BULL",
+        "fc2_second_direction": "BEAR",
+        "fc2_candle_sequence": "BULL_BEAR",
+        "fc2_second_range_to_first_ratio": 1.0,
+        "fc2_second_body_to_first_ratio": 1.0,
+        "fc2_second_recovery_of_first_ratio": 0.5,
+        "fc2_formation_minutes": 10.0,
+        "fc2_age_at_decision_minutes": 0.0,
+        "fc2_bars_since_pattern": 0,
+        "fc2_reversal_speed_A_per_hour": 1.2,
+        "fc2_pattern_extreme_price": 100.02,
+        "fc2_pattern_body_edge_price": 100.01,
+        "fc2_second_body_edge_price": 100.01,
         "fc2_engulfing": False,
         "fc2_rejection": False,
         "fc2_stall": False,
@@ -239,6 +263,29 @@ def _fc2_fields(
             "fc2_line_rejection": False,
         })
     return fields
+
+
+def _h1_pair_fields(decision_time, *, peak_direction):
+    decision_time = pd.Timestamp(decision_time)
+    fields = _fc2_fields(
+        decision_time,
+        peak_direction=peak_direction,
+        average_range_pips=20.0,
+        include_line=False,
+    )
+    result = {
+        "h1_pair_" + key.removeprefix("fc2_"): value
+        for key, value in fields.items()
+    }
+    result.update({
+        "h1_pair_timeframe_minutes": 60,
+        "h1_pair_actual_foot_count2": False,
+        "h1_pair_prior_source_time": decision_time - pd.Timedelta(hours=3),
+        "h1_pair_source_first_time": decision_time - pd.Timedelta(hours=2),
+        "h1_pair_source_last_time": decision_time - pd.Timedelta(hours=1),
+        "h1_pair_formation_minutes": 120.0,
+    })
+    return result
 
 
 class GridCliAndCombinationTest(unittest.TestCase):
@@ -898,6 +945,58 @@ class CompactFirstHitGoldenTest(unittest.TestCase):
 
 
 class ConditionTerminologyTest(unittest.TestCase):
+    def test_m5_h1_shape_values_are_exhausted_individually_and_as_pairs(self):
+        decision = pd.Timestamp("2025-01-06 09:00:00")
+        row = {
+            "decision_time": decision,
+            "peak_count": 2,
+            **_fc2_fields(
+                decision,
+                peak_direction=1,
+                average_range_pips=2.0,
+                include_line=False,
+            ),
+            **_h1_pair_fields(decision, peak_direction=1),
+        }
+        row["fc2_second_recovery_of_first_ratio"] = None
+        row["h1_pair_second_recovery_of_first_ratio"] = None
+        conditions = {
+            item.condition_id for item in condition_memberships(row)
+        }
+        self.assertIn("FC2::candle_shape::CONTINUATION", conditions)
+        self.assertIn("H1_PAIR::shape::CONTINUATION", conditions)
+        self.assertIn(
+            "M5_FC2_X_H1_PAIR::shape::M5=CONTINUATION|H1=CONTINUATION",
+            conditions,
+        )
+        self.assertTrue(
+            any(
+                value.startswith(
+                    "M5_FC2_X_H1_PAIR::second_wick_A_bin::M5="
+                )
+                for value in conditions
+            )
+        )
+        self.assertIn(
+            "M5_FC2_X_H1_PAIR::second_recovery_of_first_ratio_bin::"
+            "M5=UNDEFINED|H1=UNDEFINED",
+            conditions,
+        )
+        self.assertIn(
+            "M5_FC2_X_H1_PAIR::bars_since_pattern::M5=0|H1=0",
+            conditions,
+        )
+
+        row["fc2_bars_since_pattern"] = 0.0
+        row["h1_pair_bars_since_pattern"] = "0.0"
+        mixed_dtype_conditions = {
+            item.condition_id for item in condition_memberships(row)
+        }
+        self.assertIn(
+            "M5_FC2_X_H1_PAIR::bars_since_pattern::M5=0|H1=0",
+            mixed_dtype_conditions,
+        )
+
     def test_foot_peaks_and_core_peak_use_the_registered_meanings(self):
         conditions = {
             item.condition_id: item
@@ -1059,6 +1158,15 @@ class EventSnapshotDigestTest(unittest.TestCase):
                 "h1_stair_profile_enabled": "yes",
                 "m5_stair_confirmed": "true",
                 "h1_stair_criterion_pullback_ratio": "0",
+                "fc2_valid": "true",
+                "fc2_actual_foot_count2": "1",
+                "fc2_continuation": "yes",
+                "h1_pair_valid": "1",
+                "h1_pair_actual_foot_count2": "false",
+                "h1_pair_continuation": "true",
+                "h1_pair_timeframe_minutes": "60.0",
+                "h1_pair_direction": "1",
+                "h1_pair_first_body_A": "0.500000",
                 "tp_lookback": "6",
                 "tp_multiplier": "3.0",
                 "tp_pips": "6.000",
@@ -1173,6 +1281,45 @@ class AggregateMonthlyAllCombinationsTest(unittest.TestCase):
         self.assertEqual(set(aggregate_rows["combo_index"]), {0, 1})
         self.assertEqual(set(monthly_rows["combo_index"]), {0, 1})
         self.assertNotIn("selection_metric", monthly_rows.columns)
+
+    def test_interaction_months_roll_up_without_retaining_detailed_states(self):
+        args = _args(
+            entry_ranks=(1,),
+            entry_offset_range_multipliers=(0.0,),
+            tp_range_multipliers=(1.0,),
+            lc_range_multipliers=(1.0,),
+        )
+        combos, prefixes = build_grid_combos(args)
+        accumulator = GridAccumulator(
+            args,
+            gene.currency_pair("USD_JPY"),
+            combos,
+            prefixes,
+        )
+        condition = Condition(
+            "M5_FC2_X_H1_PAIR::shape::M5=A|H1=B",
+            "M5_FC2_X_H1_PAIR",
+            "shape",
+            "M5=A|H1=B",
+            "shape pair",
+        )
+        accumulator.catalog[condition.condition_id] = condition
+        for month, result_r in (("2025-01", 1.0), ("2025-02", -0.5)):
+            state = _new_monthly_state(len(combos))
+            state["completed_count"][0] = 1
+            state["sum_r"][0] = result_r
+            accumulator.interaction_monthly_states[
+                ("full", month, condition.condition_id)
+            ] = state
+
+        summary = accumulator.monthly_summary()[
+            ("full", condition.condition_id)
+        ]
+        self.assertFalse(accumulator.interaction_monthly_states)
+        self.assertEqual(summary["active_month_count"][0], 2)
+        self.assertEqual(summary["positive_month_count"][0], 1)
+        self.assertEqual(summary["negative_month_count"][0], 1)
+        self.assertEqual(summary["worst_month_r"][0], -0.5)
 
 
 class MarketableLimitSymmetryTest(unittest.TestCase):
@@ -1353,6 +1500,12 @@ class MarketableLimitSymmetryTest(unittest.TestCase):
                     peak_direction=source_row["peak_direction"],
                     average_range_pips=source_row["recent_m5_avg_range_pips"],
                     include_line=True,
+                )
+            )
+            source_row.update(
+                _h1_pair_fields(
+                    source_row["decision_time"],
+                    peak_direction=source_row["peak_direction"],
                 )
             )
 
