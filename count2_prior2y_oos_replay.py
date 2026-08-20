@@ -33,9 +33,10 @@ import datetime as dt
 import json
 import math
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from types import MappingProxyType
+from typing import Any, Callable, Iterable, Mapping
 
 import numpy as np
 import pandas as pd
@@ -109,6 +110,50 @@ class Policy:
 
 
 @dataclass(frozen=True)
+class LossStage:
+    after_min: float
+    action: str
+    cap_r: float | None = None
+    trigger_r_max: float = 0.0
+    evaluation: str = "armed"
+    name: str | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.after_min, bool)
+            or not isinstance(self.after_min, (int, float))
+            or not math.isfinite(float(self.after_min))
+            or self.after_min <= 0
+        ):
+            raise ValueError("A loss stage requires a finite after_min > 0")
+        if self.action not in {"cap", "market_exit"}:
+            raise ValueError(f"Unsupported loss-stage action: {self.action}")
+        if self.action == "cap":
+            if (
+                isinstance(self.cap_r, bool)
+                or not isinstance(self.cap_r, (int, float))
+                or not math.isfinite(float(self.cap_r))
+                or not 0 < float(self.cap_r) < 1
+            ):
+                raise ValueError("A cap loss stage requires 0 < cap_r < 1")
+        elif self.cap_r is not None:
+            raise ValueError("cap_r is valid only for a cap loss stage")
+        if (
+            isinstance(self.trigger_r_max, bool)
+            or not isinstance(self.trigger_r_max, (int, float))
+            or not math.isfinite(float(self.trigger_r_max))
+            or self.trigger_r_max > 0
+        ):
+            raise ValueError("A loss-stage trigger_r_max must be finite and <= 0")
+        if self.evaluation not in {"armed", "boundary_once"}:
+            raise ValueError(
+                "A loss-stage evaluation must be 'armed' or 'boundary_once'"
+            )
+        if self.name is not None and not self.name.strip():
+            raise ValueError("A loss-stage name must be non-empty when supplied")
+
+
+@dataclass(frozen=True)
 class ExitManagementPolicy:
     name: str
     profit_lock_enabled: bool = True
@@ -116,6 +161,7 @@ class ExitManagementPolicy:
     loss_cap_r: float | None = None
     step_trigger_tp_fractions: tuple[float, ...] = ()
     step_ensure_trigger_ratio: float | None = None
+    loss_stages: tuple[LossStage, ...] = ()
 
     def __post_init__(self) -> None:
         if self.loss_action not in {"none", "cap", "market_exit"}:
@@ -125,6 +171,28 @@ class ExitManagementPolicy:
                 raise ValueError("A loss-cap policy requires 0 < loss_cap_r < 1")
         elif self.loss_cap_r is not None:
             raise ValueError("loss_cap_r is valid only for a loss-cap policy")
+        if self.loss_action != "none" and self.loss_stages:
+            raise ValueError("Legacy loss_action and loss_stages cannot be combined")
+        previous_after_min = 0.0
+        previous_cap_r: float | None = None
+        stage_names: set[str] = set()
+        for index, stage in enumerate(self.loss_stages):
+            if not isinstance(stage, LossStage):
+                raise TypeError("loss_stages must contain only LossStage values")
+            if stage.after_min <= previous_after_min:
+                raise ValueError("Loss stages must have strictly increasing after_min")
+            previous_after_min = float(stage.after_min)
+            if stage.action == "market_exit" and index != len(self.loss_stages) - 1:
+                raise ValueError("A market_exit loss stage must be terminal")
+            if stage.action == "cap":
+                assert stage.cap_r is not None
+                if previous_cap_r is not None and stage.cap_r >= previous_cap_r:
+                    raise ValueError("Successive cap loss stages must tighten cap_r")
+                previous_cap_r = float(stage.cap_r)
+            stage_name = stage.name or f"loss_stage_{index + 1}"
+            if stage_name in stage_names:
+                raise ValueError("Loss-stage names must be unique inside a policy")
+            stage_names.add(stage_name)
         if self.step_trigger_tp_fractions:
             if not self.profit_lock_enabled:
                 raise ValueError("A step-profit policy requires profit_lock_enabled")
@@ -149,6 +217,30 @@ class ExitManagementPolicy:
             )
 
 
+def exit_management_policy_from_dict(
+    payload: Mapping[str, Any],
+) -> ExitManagementPolicy:
+    """Restore a policy (including nested stages) from JSON-like data."""
+    values = dict(payload)
+    raw_stages = values.get("loss_stages", ())
+    if raw_stages is None:
+        raw_stages = ()
+    stages: list[LossStage] = []
+    for raw_stage in raw_stages:
+        if isinstance(raw_stage, LossStage):
+            stages.append(raw_stage)
+        elif isinstance(raw_stage, Mapping):
+            stages.append(LossStage(**dict(raw_stage)))
+        else:
+            raise TypeError("Each loss_stages item must be a mapping or LossStage")
+    values["loss_stages"] = tuple(stages)
+    if "step_trigger_tp_fractions" in values:
+        values["step_trigger_tp_fractions"] = tuple(
+            values["step_trigger_tp_fractions"] or ()
+        )
+    return ExitManagementPolicy(**values)
+
+
 CURRENT_EXIT_POLICY = ExitManagementPolicy(name="current")
 STEP_TP_FRACTION_EXIT_POLICY = ExitManagementPolicy(
     name="step_tp20_40_60_80_lock50",
@@ -163,6 +255,209 @@ EXIT_COMPARISON_POLICIES = (
     ExitManagementPolicy(name="loss_market_exit_60m", loss_action="market_exit"),
     ExitManagementPolicy(name="no_profit_lock", profit_lock_enabled=False),
 )
+
+
+def _build_lifecycle_loss_policies() -> tuple[ExitManagementPolicy, ...]:
+    policies: list[ExitManagementPolicy] = [CURRENT_EXIT_POLICY]
+    for after_min in (30, 45, 60):
+        for cap_r in (0.75, 0.5, 0.25):
+            cap_text = f"{cap_r:.2f}".rstrip("0").rstrip(".")
+            policies.append(
+                ExitManagementPolicy(
+                    name=f"loss_armed_{after_min}m_cap_{cap_text}r",
+                    loss_stages=(
+                        LossStage(
+                            after_min=after_min,
+                            action="cap",
+                            cap_r=cap_r,
+                            name=f"cap_{cap_text}r_after_{after_min}m",
+                        ),
+                    ),
+                )
+            )
+        policies.append(
+            ExitManagementPolicy(
+                name=f"loss_armed_{after_min}m_market_exit",
+                loss_stages=(
+                    LossStage(
+                        after_min=after_min,
+                        action="market_exit",
+                        name=f"market_exit_after_{after_min}m",
+                    ),
+                ),
+            )
+        )
+
+    policies.extend(
+        (
+            ExitManagementPolicy(
+                name="loss_armed_30m_cap_0.75r_then_45m_cap_0.5r",
+                loss_stages=(
+                    LossStage(30, "cap", 0.75, name="cap_0.75r_after_30m"),
+                    LossStage(45, "cap", 0.5, name="cap_0.5r_after_45m"),
+                ),
+            ),
+            ExitManagementPolicy(
+                name="loss_armed_30m_cap_0.75r_then_60m_market_exit",
+                loss_stages=(
+                    LossStage(30, "cap", 0.75, name="cap_0.75r_after_30m"),
+                    LossStage(60, "market_exit", name="market_exit_after_60m"),
+                ),
+            ),
+            ExitManagementPolicy(
+                name="loss_armed_30m_cap_0.75r_then_45m_cap_0.5r_then_60m_cap_0.25r",
+                loss_stages=(
+                    LossStage(30, "cap", 0.75, name="cap_0.75r_after_30m"),
+                    LossStage(45, "cap", 0.5, name="cap_0.5r_after_45m"),
+                    LossStage(60, "cap", 0.25, name="cap_0.25r_after_60m"),
+                ),
+            ),
+        )
+    )
+    names = [policy.name for policy in policies]
+    if len(names) != len(set(names)):
+        raise RuntimeError("Lifecycle loss-policy names must be unique")
+    return tuple(policies)
+
+
+LIFECYCLE_LOSS_POLICIES = _build_lifecycle_loss_policies()
+
+
+# Frozen A/B contract used only by the stability-selection pipeline.  Keep the
+# broader 16-policy lifecycle catalog above intact for legacy inspection runs.
+STABILITY_LC_CONTRACT_VERSION = "count2_stability_lc_ab_v1"
+STABILITY_LC_CANDIDATE_A = "A"
+STABILITY_LC_CANDIDATE_B = "B"
+STABILITY_LC_TRADE_TIMEOUT_MIN = 60
+STABILITY_LC_PROFIT_LOCK_RATIO = 0.5
+STABILITY_LC_B_POLICY_NAME = "loss_armed_60m_cap_0.5r"
+
+_stability_lc_b_matches = tuple(
+    policy
+    for policy in LIFECYCLE_LOSS_POLICIES
+    if policy.name == STABILITY_LC_B_POLICY_NAME
+)
+if len(_stability_lc_b_matches) != 1:
+    raise RuntimeError(
+        "The stability LC B policy must exist exactly once in "
+        "LIFECYCLE_LOSS_POLICIES"
+    )
+STABILITY_LC_B_EXIT_POLICY = _stability_lc_b_matches[0]
+STABILITY_LC_POLICY_BY_CANDIDATE: Mapping[str, ExitManagementPolicy] = (
+    MappingProxyType(
+        {
+            STABILITY_LC_CANDIDATE_A: CURRENT_EXIT_POLICY,
+            STABILITY_LC_CANDIDATE_B: STABILITY_LC_B_EXIT_POLICY,
+        }
+    )
+)
+
+
+def stability_lc_policy(candidate_name: str) -> ExitManagementPolicy:
+    """Return the canonical policy for one frozen stability candidate."""
+    try:
+        return STABILITY_LC_POLICY_BY_CANDIDATE[candidate_name]
+    except (KeyError, TypeError) as error:
+        raise ValueError(
+            f"Unknown stability LC candidate: {candidate_name!r}"
+        ) from error
+
+
+def stability_lc_policy_payload(candidate_name: str) -> dict[str, Any]:
+    """Return an artifact-safe payload for one canonical A/B policy."""
+    return asdict(stability_lc_policy(candidate_name))
+
+
+def _canonical_stability_lc_payload(payload: Any) -> str:
+    try:
+        return json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("Stability LC payload is not canonical JSON data") from error
+
+
+def stability_lc_policy_from_payload(
+    candidate_name: str,
+    payload: Mapping[str, Any],
+) -> ExitManagementPolicy:
+    """Validate an artifact policy payload and return its canonical object."""
+    expected_policy = stability_lc_policy(candidate_name)
+    if not isinstance(payload, Mapping):
+        raise ValueError(
+            f"Stability LC {candidate_name} policy payload must be a mapping"
+        )
+    if _canonical_stability_lc_payload(payload) != (
+        _canonical_stability_lc_payload(asdict(expected_policy))
+    ):
+        raise ValueError(
+            f"Stability LC {candidate_name} policy payload mismatch"
+        )
+    try:
+        restored_policy = exit_management_policy_from_dict(payload)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"Stability LC {candidate_name} policy payload is malformed"
+        ) from error
+    if _canonical_stability_lc_payload(asdict(restored_policy)) != (
+        _canonical_stability_lc_payload(asdict(expected_policy))
+    ):
+        raise ValueError(
+            f"Stability LC {candidate_name} policy payload mismatch"
+        )
+    return expected_policy
+
+
+def stability_lc_contract_payload() -> dict[str, Any]:
+    """Serialize the complete, versioned A/B contract for an artifact."""
+    candidate_order = list(STABILITY_LC_POLICY_BY_CANDIDATE)
+    return {
+        "version": STABILITY_LC_CONTRACT_VERSION,
+        "settings": {
+            "trade_timeout_min": STABILITY_LC_TRADE_TIMEOUT_MIN,
+            "profit_lock_ratio": STABILITY_LC_PROFIT_LOCK_RATIO,
+        },
+        "candidate_order": candidate_order,
+        "policies": {
+            name: stability_lc_policy_payload(name)
+            for name in candidate_order
+        },
+    }
+
+
+def stability_lc_contract_from_payload(
+    payload: Mapping[str, Any],
+) -> Mapping[str, ExitManagementPolicy]:
+    """Hard-validate an artifact contract and restore the canonical mapping."""
+    if not isinstance(payload, Mapping):
+        raise ValueError("Stability LC contract payload must be a mapping")
+    if payload.get("version") != STABILITY_LC_CONTRACT_VERSION:
+        raise ValueError(
+            "Unsupported stability LC contract version: "
+            f"{payload.get('version')!r}"
+        )
+    expected = stability_lc_contract_payload()
+    if payload.get("candidate_order") != expected["candidate_order"]:
+        raise ValueError("Stability LC candidate names or order mismatch")
+    raw_policies = payload.get("policies")
+    if not isinstance(raw_policies, Mapping) or set(raw_policies) != set(
+        STABILITY_LC_POLICY_BY_CANDIDATE
+    ):
+        raise ValueError("Stability LC policy mapping mismatch")
+    for candidate_name in STABILITY_LC_POLICY_BY_CANDIDATE:
+        stability_lc_policy_from_payload(
+            candidate_name,
+            raw_policies[candidate_name],
+        )
+    if _canonical_stability_lc_payload(payload) != (
+        _canonical_stability_lc_payload(expected)
+    ):
+        raise ValueError("Stability LC contract payload mismatch")
+    return STABILITY_LC_POLICY_BY_CANDIDATE
 
 
 @dataclass(frozen=True)
@@ -204,6 +499,14 @@ class OpenPosition:
     trade_timeout_evaluated: bool = False
     loss_cap_done: bool = False
     loss_cap_r: float | None = None
+    loss_stage_next_index: int = 0
+    loss_stage_applied_count: int = 0
+    loss_stage_last_index: int | None = None
+    loss_stage_last_name: str | None = None
+    loss_stage_last_action: str | None = None
+    loss_stage_last_action_time: pd.Timestamp | None = None
+    loss_stage_last_action_r: float | None = None
+    loss_stage_history: list[dict[str, Any]] = field(default_factory=list)
     allow_followup_order: bool = False
     max_favorable_pips: float = 0.0
     max_adverse_pips: float = 0.0
@@ -562,12 +865,14 @@ def _is_expected_annual_holiday_closure_gap(
     previous_time: pd.Timestamp,
     next_time: pd.Timestamp,
 ) -> bool:
-    """Recognize only the observed Christmas/New-Year full-day FX closures.
+    """Recognize only Christmas/New-Year closures, including weekend joins.
 
     OANDA's regular-hours mask covers daily pauses and weekends, but not the
-    roughly one-day closures that start near the New York rollover on
-    Christmas Eve and New Year's Eve.  Keep this deliberately narrow so an
-    ordinary weekday data outage cannot be mistaken for a market closure.
+    full-day holiday extension.  When Christmas or New Year falls next to a
+    weekend, one observed no-quote interval can span several calendar days.
+    Keep this deliberately narrow: both edges must be at the New York
+    rollover, every intervening weekday must be the holiday (or its observed
+    weekday), and the total gap cannot exceed four days.
     """
     previous_jst = pd.Timestamp(previous_time)
     next_jst = pd.Timestamp(next_time)
@@ -580,64 +885,42 @@ def _is_expected_annual_holiday_closure_gap(
     else:
         next_jst = next_jst.tz_convert("Asia/Tokyo")
 
-    gap = next_jst - previous_jst
-    if gap < pd.Timedelta(hours=12) or gap > pd.Timedelta(hours=30):
-        return False
-
     previous_ny = previous_jst.tz_convert("America/New_York")
     next_ny = next_jst.tz_convert("America/New_York")
-    if next_ny.date() != previous_ny.date() + dt.timedelta(days=1):
-        return False
-    if (next_ny.month, next_ny.day) not in {(1, 1), (12, 25)}:
+    gap = next_ny - previous_ny
+    if gap < pd.Timedelta(hours=12) or gap > pd.Timedelta(hours=96):
         return False
 
     rollover_start = dt.time(16, 30)
     rollover_end = dt.time(17, 30)
-    return (
+    if not (
         rollover_start <= previous_ny.time() <= rollover_end
         and rollover_start <= next_ny.time() <= rollover_end
-    )
-
-
-def _is_expected_annual_holiday_reopen_gap(
-    previous_time: pd.Timestamp,
-    next_time: pd.Timestamp,
-) -> bool:
-    """Allow a short no-quote tail in the first hour after a holiday reopen.
-
-    The causal S5 completion step carries the last actual close for at most
-    fifteen minutes.  Around the Christmas/New-Year reopen, the next actual
-    quote can arrive later and leave a short residual gap.  Do not fabricate a
-    price for that tail; replay state resumes at the next actual S5 instead.
-    """
-    previous_jst = pd.Timestamp(previous_time)
-    next_jst = pd.Timestamp(next_time)
-    if previous_jst.tzinfo is None:
-        previous_jst = previous_jst.tz_localize("Asia/Tokyo")
-    else:
-        previous_jst = previous_jst.tz_convert("Asia/Tokyo")
-    if next_jst.tzinfo is None:
-        next_jst = next_jst.tz_localize("Asia/Tokyo")
-    else:
-        next_jst = next_jst.tz_convert("Asia/Tokyo")
-
-    gap = next_jst - previous_jst
-    if gap <= pd.Timedelta(seconds=5) or gap > pd.Timedelta(minutes=15):
+    ):
         return False
 
-    previous_ny = previous_jst.tz_convert("America/New_York")
-    next_ny = next_jst.tz_convert("America/New_York")
-    if previous_ny.date() != next_ny.date():
-        return False
-    if (previous_ny.month, previous_ny.day) not in {(1, 1), (12, 25)}:
+    def is_holiday(day: dt.date) -> bool:
+        if (day.month, day.day) in {(1, 1), (12, 25)}:
+            return True
+        # Saturday holidays are observed on Friday; Sunday holidays on Monday.
+        if day.weekday() == 4:
+            following = day + dt.timedelta(days=1)
+            return (following.month, following.day) in {(1, 1), (12, 25)}
+        if day.weekday() == 0:
+            previous = day - dt.timedelta(days=1)
+            return (previous.month, previous.day) in {(1, 1), (12, 25)}
         return False
 
-    reopen_start = dt.time(17, 5)
-    reopen_end = dt.time(18, 0)
-    return (
-        reopen_start <= previous_ny.time() <= reopen_end
-        and reopen_start <= next_ny.time() <= reopen_end
-    )
+    day = previous_ny.date() + dt.timedelta(days=1)
+    final_day = next_ny.date()
+    holiday_seen = False
+    while day <= final_day:
+        holiday = is_holiday(day)
+        holiday_seen = holiday_seen or holiday
+        if day.weekday() < 5 and not holiday:
+            return False
+        day += dt.timedelta(days=1)
+    return holiday_seen
 
 
 def _is_expected_no_quote_interval(
@@ -651,19 +934,128 @@ def _is_expected_no_quote_interval(
     if next_quote_time <= start_time:
         return False
     previous = start_time - pd.Timedelta(seconds=5)
-    return bool(
+    if bool(
         inspector._is_expected_market_closed_gap(previous, next_quote_time)
         or _is_expected_annual_holiday_closure_gap(previous, next_quote_time)
-        or _is_expected_annual_holiday_reopen_gap(previous, next_quote_time)
+    ):
+        return True
+    return any(
+        gap_previous < start_time < gap_following
+        and next_quote_time == gap_following
+        for gap_previous, gap_following in getattr(
+            inspector,
+            "_causally_proven_no_tick_gaps",
+            (),
+        )
     )
 
 
-def _validate_s5_timeline(inspector: Any) -> None:
+def _csv_truth(value: Any) -> bool:
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    return str(value).strip().lower() in {"true", "1", "1.0"}
+
+
+def _causally_proven_no_tick_gaps(
+    source: Path,
+    gaps: list[tuple[pd.Timestamp, pd.Timestamp]],
+) -> set[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Prove bounded residual no-tick gaps from the causal S5 CSV metadata.
+
+    The acquisition layer fills at most the first fifteen minutes of a raw
+    no-tick interval from the last known close.  A remaining tail is accepted
+    only when its exact source endpoints show the completed 15-minute causal
+    prefix followed by a real, positive-volume candle.  No price is created
+    for the tail; replay state simply waits for the next available S5.
+    """
+    if not gaps:
+        return set()
+    source = Path(source)
+    required = {
+        "time_jp",
+        "volume",
+        "is_synthetic_s5",
+        "synthetic_seconds_since_previous_actual",
+        "s5_completion_causal_v2",
+    }
+    try:
+        with source.open("r", encoding="utf-8-sig", newline="") as handle:
+            columns = set(next(csv.reader(handle)))
+    except (OSError, StopIteration):
+        return set()
+    if not required.issubset(columns):
+        return set()
+
+    labels = {
+        timestamp.strftime("%Y/%m/%d %H:%M:%S")
+        for gap in gaps
+        for timestamp in gap
+    }
+    rows: dict[str, dict[str, Any]] = {}
+    for chunk in pd.read_csv(
+        source,
+        usecols=sorted(required),
+        chunksize=250_000,
+        low_memory=False,
+    ):
+        matches = chunk[chunk["time_jp"].astype(str).isin(labels)]
+        for row in matches.to_dict("records"):
+            rows[str(row["time_jp"])] = row
+        if labels.issubset(rows):
+            break
+
+    proven: set[tuple[pd.Timestamp, pd.Timestamp]] = set()
+    maximum_tail = pd.Timedelta(minutes=15)
+    causal_prefix_seconds = 15 * 60
+    for previous, following in gaps:
+        gap = following - previous
+        if (
+            gap <= pd.Timedelta(seconds=5)
+            or gap > maximum_tail
+            or gap % pd.Timedelta(seconds=5) != pd.Timedelta(0)
+        ):
+            continue
+        previous_row = rows.get(previous.strftime("%Y/%m/%d %H:%M:%S"))
+        following_row = rows.get(following.strftime("%Y/%m/%d %H:%M:%S"))
+        if previous_row is None or following_row is None:
+            continue
+        try:
+            elapsed = float(
+                previous_row["synthetic_seconds_since_previous_actual"]
+            )
+            previous_volume = float(previous_row["volume"])
+            following_volume = float(following_row["volume"])
+        except (TypeError, ValueError):
+            continue
+        if (
+            _csv_truth(previous_row["s5_completion_causal_v2"])
+            and _csv_truth(following_row["s5_completion_causal_v2"])
+            and _csv_truth(previous_row["is_synthetic_s5"])
+            and not _csv_truth(following_row["is_synthetic_s5"])
+            and math.isclose(
+                elapsed,
+                causal_prefix_seconds,
+                rel_tol=0.0,
+                abs_tol=1e-9,
+            )
+            and previous_volume == 0
+            and following_volume > 0
+        ):
+            proven.add((previous, following))
+    return proven
+
+
+def _validate_s5_timeline(
+    inspector: Any,
+    *,
+    s5_source: Path | None = None,
+) -> None:
     """Reject every unknown interior gap; weekends/known closures remain valid."""
     times = inspector.times
     if not len(times):
-        raise ValueError("OOS S5 cache is empty")
+        raise ValueError("Replay S5 cache is empty")
     unexpected = np.flatnonzero(np.diff(times) != np.timedelta64(5, "s"))
+    unresolved: list[tuple[pd.Timestamp, pd.Timestamp]] = []
     for index in unexpected:
         previous = pd.Timestamp(times[int(index)])
         following = pd.Timestamp(times[int(index) + 1])
@@ -671,9 +1063,23 @@ def _validate_s5_timeline(inspector: Any) -> None:
             continue
         if _is_expected_annual_holiday_closure_gap(previous, following):
             continue
-        if _is_expected_annual_holiday_reopen_gap(previous, following):
+        unresolved.append((previous, following))
+    proven = (
+        _causally_proven_no_tick_gaps(Path(s5_source), unresolved)
+        if s5_source is not None
+        else set()
+    )
+    setattr(
+        inspector,
+        "_causally_proven_no_tick_gaps",
+        tuple(sorted(proven)),
+    )
+    for previous, following in unresolved:
+        if (previous, following) in proven:
             continue
-        raise ValueError(f"Unknown S5 gap inside OOS period: {previous} -> {following}")
+        raise ValueError(
+            f"Unknown S5 gap inside replay period: {previous} -> {following}"
+        )
 
 
 def _result_yen(pair: gene.CurrencyPair, result_pips: float, lc_pips: float, risk_yen: float) -> float:
@@ -727,6 +1133,19 @@ def _trade_row(
         "trade_timeout_evaluated": position.trade_timeout_evaluated,
         "loss_cap_done": position.loss_cap_done,
         "loss_cap_r": position.loss_cap_r,
+        "loss_stage_applied_count": position.loss_stage_applied_count,
+        "loss_stage_index": position.loss_stage_last_index,
+        "loss_stage_name": position.loss_stage_last_name,
+        "loss_stage_action": position.loss_stage_last_action,
+        "loss_stage_action_time": position.loss_stage_last_action_time,
+        "loss_stage_action_r": position.loss_stage_last_action_r,
+        "loss_stage_result_r": position.loss_stage_last_action_r,
+        "loss_stage_history": json.dumps(
+            position.loss_stage_history,
+            ensure_ascii=False,
+            default=str,
+            separators=(",", ":"),
+        ),
         "final_lc_price": position.current_lc_price,
         "final_lc_pips": (
             intent.direction
@@ -774,6 +1193,12 @@ def replay_metric(
         "loss_caps": 0,
         "loss_cap_immediate_exits": 0,
         "loss_timeout_market_exits": 0,
+        "loss_stage_actions": 0,
+        "loss_stage_caps": 0,
+        "loss_stage_cap_updates": 0,
+        "loss_stage_cap_immediate_exits": 0,
+        "loss_stage_market_exits": 0,
+        "loss_stage_boundary_skips": 0,
         "decisions_activated_at_next_s5_after_closure": 0,
     }
     slot_caps = {"normal": 6, "mid": 8, "high": 1}
@@ -786,6 +1211,97 @@ def replay_metric(
             _trade_row(pair, position, exit_time=when, exit_price=price, result_type=kind)
         )
         positions.remove(position)
+
+    def apply_next_loss_stage(
+        position: OpenPosition,
+        *,
+        bar_time: pd.Timestamp,
+        close_quote: float,
+        current_r: float,
+    ) -> bool:
+        """Apply at most one due stage using only this completed S5 close."""
+        stages = management_policy.loss_stages
+        while position.loss_stage_next_index < len(stages):
+            stage_index = position.loss_stage_next_index
+            stage = stages[stage_index]
+            elapsed = (bar_time + pd.Timedelta(seconds=5)) - position.fill_time
+            if elapsed < pd.Timedelta(minutes=stage.after_min):
+                return False
+
+            trigger_reached = current_r < stage.trigger_r_max or math.isclose(
+                current_r,
+                stage.trigger_r_max,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            )
+            if not trigger_reached:
+                if stage.evaluation == "armed":
+                    return False
+                position.loss_stage_next_index += 1
+                counters["loss_stage_boundary_skips"] += 1
+                continue
+
+            stage_name = stage.name or f"loss_stage_{stage_index + 1}"
+            position.loss_stage_next_index += 1
+            position.loss_stage_applied_count += 1
+            position.loss_stage_last_index = stage_index
+            position.loss_stage_last_name = stage_name
+            position.loss_stage_last_action = stage.action
+            position.loss_stage_last_action_time = bar_time
+            position.loss_stage_last_action_r = current_r
+            position.loss_stage_history.append(
+                {
+                    "index": stage_index,
+                    "name": stage_name,
+                    "action": stage.action,
+                    "action_time": bar_time,
+                    "current_r": current_r,
+                    "cap_r": stage.cap_r,
+                    "trigger_r_max": stage.trigger_r_max,
+                    "evaluation": stage.evaluation,
+                }
+            )
+            counters["loss_stage_actions"] += 1
+
+            if stage.action == "market_exit":
+                counters["loss_stage_market_exits"] += 1
+                close_position(
+                    position,
+                    bar_time,
+                    close_quote,
+                    "loss_stage_market_exit",
+                )
+                return True
+
+            assert stage.cap_r is not None
+            cap_price = pair.round_price(
+                position.intent.entry_price
+                - position.intent.direction
+                * pair.pips_to_price(position.intent.lc_pips * stage.cap_r)
+            )
+            counters["loss_stage_caps"] += 1
+            position.loss_cap_done = True
+            position.loss_cap_r = stage.cap_r
+            if position.intent.direction * (close_quote - cap_price) <= 0:
+                counters["loss_stage_cap_immediate_exits"] += 1
+                counters["loss_cap_immediate_exits"] += 1
+                close_position(
+                    position,
+                    bar_time,
+                    close_quote,
+                    "loss_stage_cap_immediate_exit",
+                )
+                return True
+            if (
+                position.intent.direction
+                * (cap_price - position.current_lc_price)
+                > 0
+            ):
+                position.current_lc_price = cap_price
+                counters["loss_stage_cap_updates"] += 1
+            counters["loss_caps"] += 1
+            return False
+        return False
 
     def process_event(event_id: str, event_time: pd.Timestamp) -> None:
         nonlocal pending
@@ -840,14 +1356,14 @@ def replay_metric(
     total_bars = len(inspector.times)
     for bar_index in range(total_bars):
         bar_time = pd.Timestamp(inspector.times[bar_index])
-        # Wall-clock expiry can pass inside a known market closure.  Resolve it
-        # before a later count2 event so the new signal does not appear to have
-        # cancelled an order that had already timed out.
-        if pending is not None and bar_time > pending.expiry_time:
-            counters["not_filled_timeout"] += 1
-            pending = None
         while event_index < len(event_times) and event_times[event_index][1] <= bar_time:
             event_id, event_time = event_times[event_index]
+            # Preserve wall-clock ordering while several decisions wait for
+            # the first S5 after a no-quote interval.  An already expired order
+            # must time out before a later decision can cancel it.
+            if pending is not None and event_time > pending.expiry_time:
+                counters["not_filled_timeout"] += 1
+                pending = None
             if event_time < bar_time:
                 if not _is_expected_no_quote_interval(inspector, event_time, bar_time):
                     raise ValueError(
@@ -857,6 +1373,12 @@ def replay_metric(
                 counters["decisions_activated_at_next_s5_after_closure"] += 1
             process_event(event_id, event_time)
             event_index += 1
+
+        # A decision inside a long closure can itself expire before the first
+        # later S5.  Do not let that expired order fill on the reopening bar.
+        if pending is not None and bar_time > pending.expiry_time:
+            counters["not_filled_timeout"] += 1
+            pending = None
 
         open_mid = float(inspector.opens[bar_index])
         high_mid = float(inspector.highs[bar_index])
@@ -931,6 +1453,12 @@ def replay_metric(
             if lc_touch:
                 if valid_tp_touch:
                     kind = "both_same_s5_lc_assumed"
+                elif (
+                    position.loss_stage_applied_count > 0
+                    and position.loss_stage_last_action == "cap"
+                    and not position.profit_lock_done
+                ):
+                    kind = "loss_stage_cap_lc"
                 elif position.loss_cap_done and not position.profit_lock_done:
                     kind = "loss_cap_lc"
                 else:
@@ -941,15 +1469,24 @@ def replay_metric(
                 close_position(position, bar_time, position.tp_price, "tp")
                 continue
 
+            current_pips = direction * (
+                close_quote - position.intent.entry_price
+            ) / pair.pip_value
+            if management_policy.loss_stages:
+                current_r = current_pips / position.intent.lc_pips
+                if apply_next_loss_stage(
+                    position,
+                    bar_time=bar_time,
+                    close_quote=close_quote,
+                    current_r=current_r,
+                ):
+                    continue
+
             timeout_reached = (
                 (bar_time + pd.Timedelta(seconds=5)) - position.fill_time
                 >= pd.Timedelta(minutes=args.trade_timeout_min)
             )
             if timeout_reached:
-                current_pips = direction * (
-                    close_quote - position.intent.entry_price
-                ) / pair.pip_value
-
                 if not position.trade_timeout_evaluated:
                     position.trade_timeout_evaluated = True
                     if current_pips <= 0 and management_policy.loss_action == "market_exit":
@@ -1241,8 +1778,9 @@ def _write_outputs(
                 "s5_read_only_at_or_after_decision": True,
                 "s5_at_or_after_oos_end_excluded": True,
                 "unknown_s5_gaps_rejected": True,
+                "residual_no_tick_gaps_require_causal_csv_proof": True,
+                "decision_in_proven_no_tick_gap_waits_for_next_s5": True,
                 "known_christmas_and_new_year_closures_allowed": True,
-                "holiday_reopen_no_quote_tail_carried_without_prices": True,
                 "closed_market_decision_uses_next_actual_s5_for_first_path_bar": True,
             },
             "result": summary,
@@ -1254,7 +1792,8 @@ def _write_outputs(
                 "Cross-pair yen is fixed-risk normalized (result R times risk_yen), avoiding a future FX conversion rate.",
                 "A profitable opposite position is closed and the new cycle blocked; other opposite positions block. Stop-and-reverse is not inferred without the live API trade payload.",
                 "Positions still open at OOS end are marked at the final in-period executable close and labeled period_end_mark.",
-                "Known Christmas/New-Year closures and narrowly bounded sparse-reopen gaps carry existing state to the next actual quote; no holiday price is synthesized.",
+                "Known Christmas/New-Year closures carry existing state to the next actual quote; no holiday price is synthesized.",
+                "A bounded residual no-tick tail is carried only when causal-v2 CSV metadata proves a 15-minute synthetic prefix followed by a real positive-volume S5; no tail price is synthesized.",
                 "A decision during a verified market closure keeps its original causal decision time and wall-clock order expiry; path evaluation starts at the next actual S5.",
             ],
         }
@@ -1285,11 +1824,11 @@ def _write_outputs(
 
 
 def _notice_result(args: argparse.Namespace, metric: str, summary: dict[str, Any], paths: dict[str, Path]) -> None:
-    label = "円Top15" if metric == "yen" else "pips Top15"
+    label = "円 Top15" if metric == "yen" else "pips Top15"
     lines = [
         f"{args.pair} prior-2y {label} / following-1y 仮想運用 完了",
         f"- 学習期間: {args.train_start:%Y-%m-%d} 以上 ～ {args.train_end:%Y-%m-%d} 未満",
-        f"- 運用期間: {args.oos_start:%Y-%m-%d} 以上 ～ {args.oos_end:%Y-%m-%d} 未満",
+        f"- OOS期間: {args.oos_start:%Y-%m-%d} 以上 ～ {args.oos_end:%Y-%m-%d} 未満",
         f"- 注文: {summary.get('submitted', 0)}件 / 約定: {summary.get('filled', 0)}件",
         f"- 完了取引: {summary.get('completed_trades', 0)}件",
         f"- 純損益: {summary.get('sum_yen', 0):.0f}円",
@@ -1297,7 +1836,7 @@ def _notice_result(args: argparse.Namespace, metric: str, summary: dict[str, Any
         f"- 勝率: {100 * summary.get('win_rate', 0):.1f}%",
         f"- 最大DD: {summary.get('max_drawdown_yen', 0):.0f}円",
         f"- 月別: {paths['monthly']}",
-        "- 条件は二年ランキングで固定し、運用一年では再選択なし",
+        "- 条件は過去2年ランキングで固定し、OOS期間内では再選択していません",
     ]
     message = "\n".join(lines)
     print(message)
@@ -1310,7 +1849,7 @@ def run(args: argparse.Namespace) -> dict[str, dict[str, Path]]:
     pair = gene.currency_pair(args.pair)
     inspector, _metadata = _load_typed_s5_inspector(Path(args.s5_cache), pair)
     inspector = _bound_inspector_before(inspector, pd.Timestamp(args.oos_end))
-    _validate_s5_timeline(inspector)
+    _validate_s5_timeline(inspector, s5_source=Path(args.s5_cache))
     coverage_args = argparse.Namespace(start=args.oos_start, end=args.oos_end)
     errors = _s5_coverage_errors(inspector.times, coverage_args)
     if errors:

@@ -1,6 +1,9 @@
 import argparse
 import datetime as dt
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,15 +12,29 @@ import pandas as pd
 from count2_prior2y_oos_replay import (
     CURRENT_EXIT_POLICY,
     EXIT_COMPARISON_POLICIES,
+    LIFECYCLE_LOSS_POLICIES,
+    STABILITY_LC_B_EXIT_POLICY,
+    STABILITY_LC_CANDIDATE_A,
+    STABILITY_LC_CANDIDATE_B,
+    STABILITY_LC_CONTRACT_VERSION,
+    STABILITY_LC_POLICY_BY_CANDIDATE,
+    STABILITY_LC_PROFIT_LOCK_RATIO,
+    STABILITY_LC_TRADE_TIMEOUT_MIN,
     STEP_TP_FRACTION_EXIT_POLICY,
     ExitManagementPolicy,
     Intent,
+    LossStage,
     Policy,
+    _causally_proven_no_tick_gaps,
     _is_expected_annual_holiday_closure_gap,
-    _is_expected_annual_holiday_reopen_gap,
     _is_expected_no_quote_interval,
     _validate_s5_timeline,
+    exit_management_policy_from_dict,
     replay_metric,
+    stability_lc_contract_from_payload,
+    stability_lc_contract_payload,
+    stability_lc_policy,
+    stability_lc_policy_from_payload,
 )
 
 
@@ -485,6 +502,347 @@ class Count2Prior2yOosReplayTest(unittest.TestCase):
         self.assertEqual(pd.Timestamp(trades.iloc[0]["exit_time"]), start + pd.Timedelta(minutes=59, seconds=55))
         self.assertGreater(float(trades.iloc[0]["result_r"]), -1.0)
 
+    def test_loss_stage_dict_round_trip_and_lifecycle_names_are_unique(self):
+        policy = exit_management_policy_from_dict(
+            {
+                "name": "round_trip",
+                "loss_stages": [
+                    {
+                        "after_min": 60,
+                        "action": "cap",
+                        "cap_r": 0.5,
+                        "trigger_r_max": -0.1,
+                        "evaluation": "armed",
+                        "name": "hour_cap",
+                    }
+                ],
+                "step_trigger_tp_fractions": [0.2, 0.4],
+                "step_ensure_trigger_ratio": 0.5,
+            }
+        )
+
+        self.assertEqual(policy.loss_stages, (
+            LossStage(60, "cap", 0.5, -0.1, "armed", "hour_cap"),
+        ))
+        self.assertEqual(policy.step_trigger_tp_fractions, (0.2, 0.4))
+        names = [candidate.name for candidate in LIFECYCLE_LOSS_POLICIES]
+        self.assertIs(LIFECYCLE_LOSS_POLICIES[0], CURRENT_EXIT_POLICY)
+        self.assertEqual(len(LIFECYCLE_LOSS_POLICIES), 16)
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_stability_lc_ab_contract_round_trip_and_hard_fail(self):
+        original_lifecycle_names = [
+            policy.name for policy in LIFECYCLE_LOSS_POLICIES
+        ]
+        payload = stability_lc_contract_payload()
+        artifact_payload = json.loads(json.dumps(payload, allow_nan=False))
+        restored = stability_lc_contract_from_payload(artifact_payload)
+
+        self.assertEqual(payload["version"], STABILITY_LC_CONTRACT_VERSION)
+        self.assertEqual(
+            payload["settings"],
+            {
+                "trade_timeout_min": STABILITY_LC_TRADE_TIMEOUT_MIN,
+                "profit_lock_ratio": STABILITY_LC_PROFIT_LOCK_RATIO,
+            },
+        )
+        self.assertEqual(
+            payload["candidate_order"],
+            [STABILITY_LC_CANDIDATE_A, STABILITY_LC_CANDIDATE_B],
+        )
+        self.assertEqual(tuple(restored), ("A", "B"))
+        self.assertIs(restored, STABILITY_LC_POLICY_BY_CANDIDATE)
+        self.assertIs(stability_lc_policy("A"), CURRENT_EXIT_POLICY)
+        self.assertIs(stability_lc_policy("B"), STABILITY_LC_B_EXIT_POLICY)
+        self.assertIs(
+            stability_lc_policy_from_payload(
+                "B",
+                artifact_payload["policies"]["B"],
+            ),
+            STABILITY_LC_B_EXIT_POLICY,
+        )
+        self.assertEqual(
+            STABILITY_LC_B_EXIT_POLICY.loss_stages,
+            (
+                LossStage(
+                    60,
+                    "cap",
+                    0.5,
+                    trigger_r_max=0.0,
+                    evaluation="armed",
+                    name="cap_0.5r_after_60m",
+                ),
+            ),
+        )
+        self.assertEqual(len(LIFECYCLE_LOSS_POLICIES), 16)
+        self.assertEqual(
+            [policy.name for policy in LIFECYCLE_LOSS_POLICIES],
+            original_lifecycle_names,
+        )
+
+        with self.assertRaisesRegex(ValueError, "Unknown stability LC candidate"):
+            stability_lc_policy("C")
+
+        wrong_version = stability_lc_contract_payload()
+        wrong_version["version"] = "count2_stability_lc_ab_v999"
+        with self.assertRaisesRegex(ValueError, "contract version"):
+            stability_lc_contract_from_payload(wrong_version)
+
+        tampered = stability_lc_contract_payload()
+        tampered["policies"]["B"]["loss_stages"][0]["cap_r"] = 0.25
+        with self.assertRaisesRegex(ValueError, "policy payload mismatch"):
+            stability_lc_contract_from_payload(tampered)
+
+    def test_stability_lc_b_uses_half_profit_lock_or_half_r_loss_cap_at_60m(self):
+        start = pd.Timestamp("2025-07-30 00:00:00")
+        action_time = start + pd.Timedelta(minutes=59, seconds=55)
+        exit_time = start + pd.Timedelta(minutes=60)
+
+        profitable = self.inspector(start, 61, price=100.0)
+        action_bar = profitable.times == np.datetime64(action_time)
+        profitable.opens[action_bar] = 100.20
+        profitable.highs[action_bar] = 100.205
+        profitable.lows[action_bar] = 100.19
+        profitable.closes[action_bar] = 100.20
+        exit_bar = profitable.times == np.datetime64(exit_time)
+        profitable.opens[exit_bar] = 100.08
+        profitable.highs[exit_bar] = 100.09
+        profitable.lows[exit_bar] = 100.05
+        profitable.closes[exit_bar] = 100.08
+
+        profitable_trades, profitable_summary = replay_metric(
+            self.args(
+                spread_pips=0.0,
+                trade_timeout_min=STABILITY_LC_TRADE_TIMEOUT_MIN,
+                profit_lock_ratio=STABILITY_LC_PROFIT_LOCK_RATIO,
+            ),
+            "yen",
+            [self.policy()],
+            [("profit", start)],
+            {"profit": self.intent("profit", start, entry=100.0)},
+            profitable,
+            management_policy=STABILITY_LC_B_EXIT_POLICY,
+        )
+
+        self.assertEqual(profitable_summary["profit_locks"], 1)
+        self.assertEqual(profitable_summary["loss_stage_actions"], 0)
+        self.assertEqual(
+            pd.Timestamp(profitable_trades.iloc[0]["exit_time"]),
+            exit_time,
+        )
+        self.assertTrue(bool(profitable_trades.iloc[0]["profit_lock_done"]))
+        self.assertAlmostEqual(float(profitable_trades.iloc[0]["result_r"]), 0.1)
+
+        losing = self.inspector(start, 61, price=100.0)
+        action_bar = losing.times == np.datetime64(action_time)
+        losing.opens[action_bar] = 99.80
+        losing.highs[action_bar] = 99.805
+        losing.lows[action_bar] = 99.79
+        losing.closes[action_bar] = 99.80
+        exit_bar = losing.times == np.datetime64(exit_time)
+        losing.opens[exit_bar] = 99.60
+        losing.highs[exit_bar] = 99.605
+        losing.lows[exit_bar] = 99.40
+        losing.closes[exit_bar] = 99.60
+
+        losing_trades, losing_summary = replay_metric(
+            self.args(
+                spread_pips=0.0,
+                trade_timeout_min=STABILITY_LC_TRADE_TIMEOUT_MIN,
+                profit_lock_ratio=STABILITY_LC_PROFIT_LOCK_RATIO,
+            ),
+            "yen",
+            [self.policy()],
+            [("loss", start)],
+            {"loss": self.intent("loss", start, entry=100.0)},
+            losing,
+            management_policy=STABILITY_LC_B_EXIT_POLICY,
+        )
+
+        self.assertEqual(losing_summary["profit_locks"], 0)
+        self.assertEqual(losing_summary["loss_stage_actions"], 1)
+        self.assertEqual(losing_summary["loss_stage_cap_updates"], 1)
+        self.assertEqual(
+            pd.Timestamp(losing_trades.iloc[0]["loss_stage_action_time"]),
+            action_time,
+        )
+        self.assertEqual(
+            pd.Timestamp(losing_trades.iloc[0]["exit_time"]),
+            exit_time,
+        )
+        self.assertAlmostEqual(float(losing_trades.iloc[0]["result_r"]), -0.5)
+
+    def test_armed_loss_stage_waits_for_trigger_and_new_lc_starts_next_s5(self):
+        start = pd.Timestamp("2025-07-30 00:00:00")
+        inspector = self.inspector(start, 31, price=100.0)
+        boundary_time = start + pd.Timedelta(minutes=29, seconds=55)
+        boundary = inspector.times == np.datetime64(boundary_time)
+        inspector.opens[boundary] = 100.020
+        inspector.highs[boundary] = 100.025
+        inspector.lows[boundary] = 99.990
+        inspector.closes[boundary] = 100.020
+        action_time = start + pd.Timedelta(minutes=30)
+        action_bar = inspector.times == np.datetime64(action_time)
+        inspector.opens[action_bar] = 99.800
+        inspector.highs[action_bar] = 99.805
+        inspector.lows[action_bar] = 99.400
+        inspector.closes[action_bar] = 99.800
+        exit_time = action_time + pd.Timedelta(seconds=5)
+        exit_bar = inspector.times == np.datetime64(exit_time)
+        inspector.opens[exit_bar] = 99.800
+        inspector.highs[exit_bar] = 99.805
+        inspector.lows[exit_bar] = 99.400
+        inspector.closes[exit_bar] = 99.600
+        intent = self.intent("e1", start, entry=100.0)
+        policy = ExitManagementPolicy(
+            name="armed_cap",
+            loss_stages=(
+                LossStage(
+                    30,
+                    "cap",
+                    0.5,
+                    trigger_r_max=-0.1,
+                    name="cap_after_30m",
+                ),
+            ),
+        )
+
+        trades, summary = replay_metric(
+            self.args(spread_pips=0.0),
+            "yen",
+            [self.policy()],
+            [("e1", start)],
+            {"e1": intent},
+            inspector,
+            management_policy=policy,
+        )
+
+        self.assertEqual(summary["loss_stage_actions"], 1)
+        self.assertEqual(summary["loss_stage_cap_updates"], 1)
+        self.assertEqual(trades.iloc[0]["result_type"], "loss_stage_cap_lc")
+        self.assertEqual(pd.Timestamp(trades.iloc[0]["exit_time"]), exit_time)
+        self.assertEqual(pd.Timestamp(trades.iloc[0]["loss_stage_action_time"]), action_time)
+        self.assertEqual(trades.iloc[0]["loss_stage_name"], "cap_after_30m")
+        self.assertAlmostEqual(float(trades.iloc[0]["loss_stage_action_r"]), -0.2)
+        self.assertAlmostEqual(float(trades.iloc[0]["result_r"]), -0.5)
+
+    def test_loss_stage_market_exit_uses_first_eligible_completed_close(self):
+        start = pd.Timestamp("2025-07-30 00:00:00")
+        inspector = self.inspector(start, 31, price=100.0)
+        action_time = start + pd.Timedelta(minutes=29, seconds=55)
+        action_bar = inspector.times == np.datetime64(action_time)
+        inspector.opens[action_bar] = 99.800
+        inspector.highs[action_bar] = 99.805
+        inspector.lows[action_bar] = 99.790
+        inspector.closes[action_bar] = 99.800
+        intent = self.intent("e1", start, entry=100.0)
+        policy = ExitManagementPolicy(
+            name="armed_market_exit",
+            loss_stages=(LossStage(30, "market_exit", name="exit_after_30m"),),
+        )
+
+        trades, summary = replay_metric(
+            self.args(spread_pips=0.0),
+            "yen",
+            [self.policy()],
+            [("e1", start)],
+            {"e1": intent},
+            inspector,
+            management_policy=policy,
+        )
+
+        self.assertEqual(summary["loss_stage_market_exits"], 1)
+        self.assertEqual(trades.iloc[0]["result_type"], "loss_stage_market_exit")
+        self.assertEqual(pd.Timestamp(trades.iloc[0]["exit_time"]), action_time)
+        self.assertEqual(trades.iloc[0]["loss_stage_action"], "market_exit")
+
+    def test_boundary_once_loss_stage_does_not_wait_for_a_later_loss(self):
+        start = pd.Timestamp("2025-07-30 00:00:00")
+        inspector = self.inspector(start, 31, price=100.0)
+        after_boundary = inspector.times >= np.datetime64(
+            start + pd.Timedelta(minutes=30)
+        )
+        inspector.opens[after_boundary] = 99.800
+        inspector.highs[after_boundary] = 99.805
+        inspector.lows[after_boundary] = 99.790
+        inspector.closes[after_boundary] = 99.800
+        intent = self.intent("e1", start, entry=100.0)
+        policy = ExitManagementPolicy(
+            name="once_cap",
+            loss_stages=(
+                LossStage(
+                    30,
+                    "cap",
+                    0.5,
+                    trigger_r_max=-0.1,
+                    evaluation="boundary_once",
+                ),
+            ),
+        )
+
+        trades, summary = replay_metric(
+            self.args(spread_pips=0.0),
+            "yen",
+            [self.policy()],
+            [("e1", start)],
+            {"e1": intent},
+            inspector,
+            management_policy=policy,
+        )
+
+        self.assertEqual(summary["loss_stage_boundary_skips"], 1)
+        self.assertEqual(summary["loss_stage_actions"], 0)
+        self.assertEqual(int(trades.iloc[0]["loss_stage_applied_count"]), 0)
+        self.assertAlmostEqual(float(trades.iloc[0]["final_lc_pips"]), -100.0)
+
+    def test_due_armed_loss_stages_apply_at_most_one_per_completed_s5(self):
+        start = pd.Timestamp("2025-07-30 00:00:00")
+        inspector = self.inspector(start, 46, price=100.0)
+        first_action_time = start + pd.Timedelta(minutes=44, seconds=55)
+        negative = inspector.times >= np.datetime64(first_action_time)
+        inspector.opens[negative] = 99.800
+        inspector.highs[negative] = 99.805
+        inspector.lows[negative] = 99.790
+        inspector.closes[negative] = 99.800
+        intent = self.intent("e1", start, entry=100.0)
+        policy = ExitManagementPolicy(
+            name="two_armed_caps",
+            loss_stages=(
+                LossStage(30, "cap", 0.75, name="first_cap"),
+                LossStage(45, "cap", 0.5, name="second_cap"),
+            ),
+        )
+
+        trades, summary = replay_metric(
+            self.args(spread_pips=0.0),
+            "yen",
+            [self.policy()],
+            [("e1", start)],
+            {"e1": intent},
+            inspector,
+            management_policy=policy,
+        )
+
+        self.assertEqual(summary["loss_stage_actions"], 2)
+        self.assertEqual(int(trades.iloc[0]["loss_stage_applied_count"]), 2)
+        self.assertEqual(trades.iloc[0]["loss_stage_name"], "second_cap")
+        self.assertEqual(
+            pd.Timestamp(trades.iloc[0]["loss_stage_action_time"]),
+            first_action_time + pd.Timedelta(seconds=5),
+        )
+        self.assertAlmostEqual(float(trades.iloc[0]["final_lc_pips"]), -50.0)
+
+    def test_loss_stage_rejects_non_loss_trigger_and_mixed_legacy_mode(self):
+        with self.assertRaisesRegex(ValueError, "trigger_r_max"):
+            LossStage(60, "cap", 0.5, trigger_r_max=0.1)
+        with self.assertRaisesRegex(ValueError, "cannot be combined"):
+            ExitManagementPolicy(
+                name="mixed",
+                loss_action="cap",
+                loss_cap_r=0.5,
+                loss_stages=(LossStage(60, "cap", 0.25),),
+            )
+
     def test_current_policy_remains_default(self):
         start = pd.Timestamp("2025-07-30 00:00:00")
         inspector_default = self.inspector(start, 80, price=100.0)
@@ -513,6 +871,12 @@ class Count2Prior2yOosReplayTest(unittest.TestCase):
     def test_known_full_day_holiday_gaps_are_allowed(self):
         self.assertTrue(
             _is_expected_annual_holiday_closure_gap(
+                pd.Timestamp("2023-12-23 06:58:55"),
+                pd.Timestamp("2023-12-26 07:03:00"),
+            )
+        )
+        self.assertTrue(
+            _is_expected_annual_holiday_closure_gap(
                 pd.Timestamp("2025-12-25 07:13:30"),
                 pd.Timestamp("2025-12-26 07:04:55"),
             )
@@ -538,19 +902,78 @@ class Count2Prior2yOosReplayTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown S5 gap"):
             _validate_s5_timeline(inspector)
 
-    def test_short_new_year_reopen_gap_is_allowed(self):
-        self.assertTrue(
-            _is_expected_annual_holiday_reopen_gap(
-                pd.Timestamp("2026-01-02 07:19:55"),
-                pd.Timestamp("2026-01-02 07:26:50"),
+    def test_causal_15_minute_no_tick_prefix_allows_only_its_bounded_tail(self):
+        previous = pd.Timestamp("2023-09-05 04:15:00")
+        following = pd.Timestamp("2023-09-05 04:16:55")
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "s5.csv"
+            source.write_text(
+                "time_jp,volume,is_synthetic_s5,"
+                "synthetic_seconds_since_previous_actual,"
+                "s5_completion_causal_v2\n"
+                "2023/09/05 04:15:00,0,True,900.0,True\n"
+                "2023/09/05 04:16:55,1,False,,True\n",
+                encoding="utf-8",
             )
-        )
-        self.assertFalse(
-            _is_expected_annual_holiday_reopen_gap(
-                pd.Timestamp("2026-02-02 07:19:55"),
-                pd.Timestamp("2026-02-02 07:26:50"),
+            self.assertEqual(
+                _causally_proven_no_tick_gaps(
+                    source,
+                    [(previous, following)],
+                ),
+                {(previous, following)},
             )
-        )
+
+            arbitrary_following = pd.Timestamp("2023-09-05 04:31:55")
+            self.assertEqual(
+                _causally_proven_no_tick_gaps(
+                    source,
+                    [(previous, arbitrary_following)],
+                ),
+                set(),
+            )
+
+    def test_decision_inside_causally_proven_no_tick_tail_waits_for_next_s5(self):
+        gap_previous = pd.Timestamp("2025-04-10 06:19:55")
+        decision_time = pd.Timestamp("2025-04-10 06:20:00")
+        gap_following = pd.Timestamp("2025-04-10 06:20:05")
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "s5.csv"
+            source.write_text(
+                "time_jp,volume,is_synthetic_s5,"
+                "synthetic_seconds_since_previous_actual,"
+                "s5_completion_causal_v2\n"
+                "2025/04/10 06:19:55,0,True,900.0,True\n"
+                "2025/04/10 06:20:05,1,False,,True\n",
+                encoding="utf-8",
+            )
+            proven = _causally_proven_no_tick_gaps(
+                source,
+                [(gap_previous, gap_following)],
+            )
+            self.assertEqual(
+                proven,
+                {(gap_previous, gap_following)},
+            )
+            inspector = SimpleNamespace(
+                _is_expected_market_closed_gap=(
+                    lambda _previous, _following: False
+                ),
+                _causally_proven_no_tick_gaps=tuple(proven),
+            )
+            self.assertTrue(
+                _is_expected_no_quote_interval(
+                    inspector,
+                    decision_time,
+                    gap_following,
+                )
+            )
+            self.assertFalse(
+                _is_expected_no_quote_interval(
+                    inspector,
+                    decision_time,
+                    decision_time + pd.Timedelta(seconds=1),
+                )
+            )
 
     def test_decision_during_daily_pause_waits_for_next_actual_s5(self):
         inspector = SimpleNamespace(
@@ -563,6 +986,33 @@ class Count2Prior2yOosReplayTest(unittest.TestCase):
                 pd.Timestamp("2025-07-30 06:04:55"),
             )
         )
+
+    def test_order_expired_inside_no_quote_interval_cannot_fill_on_reopen(self):
+        decision_time = pd.Timestamp("2025-07-30 00:00:00")
+        reopen_time = decision_time + pd.Timedelta(hours=2)
+        inspector = SimpleNamespace(
+            times=np.array([np.datetime64(reopen_time, "ns")]),
+            opens=np.array([100.0]),
+            highs=np.array([100.005]),
+            lows=np.array([99.99]),
+            closes=np.array([100.0]),
+            _is_expected_market_closed_gap=(
+                lambda _previous, _following: True
+            ),
+        )
+        intent = self.intent("e1", decision_time, entry=100.0)
+        trades, summary = replay_metric(
+            self.args(),
+            "yen",
+            [self.policy()],
+            [("e1", decision_time)],
+            {"e1": intent},
+            inspector,
+        )
+        self.assertTrue(trades.empty)
+        self.assertEqual(summary["submitted"], 1)
+        self.assertEqual(summary["filled"], 0)
+        self.assertEqual(summary["not_filled_timeout"], 1)
 
     def test_decision_during_unknown_gap_is_rejected(self):
         inspector = SimpleNamespace(

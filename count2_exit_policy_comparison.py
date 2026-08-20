@@ -278,7 +278,7 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         pair = gene.currency_pair(args.pair)
         inspector, metadata = _load_typed_s5_inspector(Path(args.s5_cache), pair)
         inspector = _bound_inspector_before(inspector, pd.Timestamp(args.oos_end))
-        _validate_s5_timeline(inspector)
+        _validate_s5_timeline(inspector, s5_source=Path(args.s5_cache))
         coverage_args = argparse.Namespace(start=args.oos_start, end=args.oos_end)
         coverage_errors = _s5_coverage_errors(inspector.times, coverage_args)
         if coverage_errors:
@@ -407,6 +407,8 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
                 "step_profit_lock_does_not_use_pre_timeout_mfe": True,
                 "step_profit_lock_advances_at_most_one_stage_per_s5": True,
                 "future_path_used_only_for_subsequent_outcome": True,
+                "residual_no_tick_gaps_require_causal_csv_proof": True,
+                "decision_in_proven_no_tick_gap_waits_for_next_s5": True,
                 "oos_end_exclusive": True,
             },
             "s5_cache": str(Path(args.s5_cache).resolve()),
