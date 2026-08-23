@@ -19,6 +19,50 @@ REJECTION_MIN_A = 0.25
 STALL_MAX_MEAN_BODY_A = 0.35
 STALL_MAX_NET_PROGRESS_A = 0.35
 
+# Shared search buckets for causal foot-count-2 morphology.  Strategy modules
+# choose which of these fields to search; the feature definitions and their
+# boundaries live here so live, analysis, and replay code cannot drift.
+FC2_A_BUCKET_EDGES = (
+    -math.inf,
+    0.10,
+    0.25,
+    0.50,
+    0.75,
+    1.00,
+    1.50,
+    2.00,
+    math.inf,
+)
+FC2_A_BUCKET_LABELS = (
+    "lt0p10",
+    "0p10to0p24",
+    "0p25to0p49",
+    "0p50to0p74",
+    "0p75to0p99",
+    "1p00to1p49",
+    "1p50to1p99",
+    "ge2p00",
+)
+FC2_RATIO_BUCKET_EDGES = (
+    -math.inf,
+    0.25,
+    0.40,
+    0.55,
+    0.65,
+    0.80,
+    1.00,
+    math.inf,
+)
+FC2_RATIO_BUCKET_LABELS = (
+    "lt0p25",
+    "0p25to0p39",
+    "0p40to0p54",
+    "0p55to0p64",
+    "0p65to0p79",
+    "0p80to0p99",
+    "ge1p00",
+)
+
 FOOT_COUNT2_SHAPE_FIELDS = (
     "version",
     "valid",
@@ -50,6 +94,7 @@ FOOT_COUNT2_SHAPE_FIELDS = (
     "first_direction",
     "second_direction",
     "candle_sequence",
+    "relative_candle_sequence",
     "second_range_to_first_ratio",
     "second_body_to_first_ratio",
     "second_recovery_of_first_ratio",
@@ -73,6 +118,97 @@ FOOT_COUNT2_SHAPE_FIELDS = (
     "line_crossed_by_body",
     "line_rejection",
 )
+
+
+def relative_foot_count2_candle_sequence(
+    candle_sequence: Any,
+    direction: Any,
+) -> str | None:
+    """Express BULL/BEAR candles relative to the FC2 travel direction."""
+    try:
+        oriented_direction = int(float(direction))
+    except (TypeError, ValueError):
+        return None
+    if oriented_direction not in (-1, 1):
+        return None
+    parts = str(candle_sequence).upper().split("_")
+    if len(parts) != 2 or any(part not in {"BULL", "BEAR", "DOJI"} for part in parts):
+        return None
+
+    def orient(part: str) -> str:
+        if part == "DOJI":
+            return "DOJI"
+        candle_sign = 1 if part == "BULL" else -1
+        return "WITH" if candle_sign == oriented_direction else "AGAINST"
+
+    return "_".join(orient(part) for part in parts)
+
+
+def add_foot_count2_search_buckets(
+    frame: pd.DataFrame,
+    *,
+    source_prefix: str = "fc2_",
+    destination_prefix: str = "f_fc2_",
+) -> pd.DataFrame:
+    """Attach reusable finite buckets for completed-candle FC2 morphology."""
+    result = frame.copy()
+
+    def source(field: str) -> pd.Series:
+        column = source_prefix + field
+        if column in result.columns:
+            return result[column]
+        return pd.Series(pd.NA, index=result.index, dtype="object")
+
+    def text_bucket(field: str) -> pd.Series:
+        return source(field).astype("string").fillna("missing")
+
+    def numeric_bucket(
+        field: str,
+        edges: tuple[float, ...],
+        labels: tuple[str, ...],
+    ) -> pd.Series:
+        values = pd.to_numeric(source(field), errors="coerce")
+        return pd.cut(
+            values,
+            bins=list(edges),
+            labels=list(labels),
+            include_lowest=True,
+            right=False,
+        ).astype("string").fillna("missing")
+
+    result[destination_prefix + "shape"] = text_bucket("shape")
+    result[destination_prefix + "candle_sequence"] = text_bucket(
+        "candle_sequence"
+    )
+    relative_sequence = source("relative_candle_sequence").astype("string")
+    direction_column = "peak_direction"
+    if direction_column in result.columns:
+        directions = result[direction_column]
+    else:
+        directions = source("direction")
+    derived_relative = pd.Series(
+        (
+            relative_foot_count2_candle_sequence(sequence, direction)
+            for sequence, direction in zip(source("candle_sequence"), directions)
+        ),
+        index=result.index,
+        dtype="string",
+    )
+    result[destination_prefix + "relative_candle_sequence"] = (
+        relative_sequence.fillna(derived_relative).fillna("missing")
+    )
+    result[destination_prefix + "second_wick_a"] = numeric_bucket(
+        "second_wick_A", FC2_A_BUCKET_EDGES, FC2_A_BUCKET_LABELS
+    )
+    result[destination_prefix + "second_pushback_a"] = numeric_bucket(
+        "second_close_pushback_A", FC2_A_BUCKET_EDGES, FC2_A_BUCKET_LABELS
+    )
+    result[destination_prefix + "second_body_ratio"] = numeric_bucket(
+        "second_body_to_first_ratio",
+        FC2_RATIO_BUCKET_EDGES,
+        FC2_RATIO_BUCKET_LABELS,
+    )
+    return result
 
 
 def _timestamp(value: Any) -> pd.Timestamp | None:
@@ -410,6 +546,9 @@ def foot_count2_shape_context(
         "first_direction": first_direction,
         "second_direction": second_direction,
         "candle_sequence": f"{first_direction}_{second_direction}",
+        "relative_candle_sequence": relative_foot_count2_candle_sequence(
+            f"{first_direction}_{second_direction}", direction
+        ),
         "second_range_to_first_ratio": (
             second_range_price / first_range_price if first_range_price > 0 else None
         ),
