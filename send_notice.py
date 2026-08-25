@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-08-25 22:05 JST
 import datetime
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -133,5 +134,11 @@ def line_send(*msg):
         "content": content,
         "allowed_mentions": {"parse": ["everyone"]},
     }
-    requests.post(webhook_url, json=data)
+    try:
+        response = requests.post(webhook_url, json=data, timeout=5)
+        response.raise_for_status()
+    except requests.RequestException as error:
+        print("     [Disc error]", type(error).__name__, str(error))
+        return -1
     print("     [Disc]", message)
+    return 0

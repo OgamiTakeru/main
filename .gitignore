@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-08-25 23:23 JST
 # Default ignored files
 
 .idea/
@@ -9,3 +10,8 @@ tokens.py
 SAMPLE_BasicFormats.py
 requirements.txt
 fxTradeTest/
+runtime_state/*.json
+runtime_state/*.lock
+runtime_state/*.tmp
+runtime_state/archive/
+archive/pycache_*/

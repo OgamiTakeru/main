@@ -1,3 +1,9 @@
+# 最新更新日時: 2026-08-25 23:20 JST
+"""USD/JPY live launcher and shared legacy execution loop."""
+
+# True: OANDA通信・実発注を有効化 / False: 接続せず終了
+LIVE = False
+
 import threading  # 定時実行用
 import time
 import datetime
@@ -370,7 +376,17 @@ class main():
             print("ーーー初回の処理終了ーーー")
 
 
-def run(pair=None):
+def run(pair=None, *, live=None):
+    live_enabled = LIVE if live is None else live
+    if type(live_enabled) is not bool:
+        raise TypeError("LIVE must be the boolean True or False")
+    pair_name = pair or f.currentPair.name
+    if not live_enabled:
+        print(
+            f"{pair_name}: OANDAへは接続していません。"
+            "対応するmainファイル先頭のLIVEをTrueにしてください。"
+        )
+        return
     if pair is not None:
         f.set_current_pair(pair)
     main_exe = main()  # インスタンスの生成
@@ -378,4 +394,4 @@ def run(pair=None):
 
 
 if __name__ == "__main__":
-    run()
+    run(live=LIVE)

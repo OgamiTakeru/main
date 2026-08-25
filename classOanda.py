@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-25 22:05 JST
+import copy
 import datetime  # 日付関係
 import json
 import pytz
@@ -408,14 +410,31 @@ class Oanda:
         try:
             res_json = json.dumps(self.api.request(ep), indent=2)
             res_json = json.loads(res_json)  # 何故かこれだけevalが使えないのでloadsで文字列⇒jsonを実施
+            prices = res_json.get('prices') or []
+            if len(prices) != 1:
+                raise ValueError("pricing response must contain exactly one price")
+            price = prices[0]
+            bids = price.get('bids') or []
+            asks = price.get('asks') or []
+            if not bids or not asks:
+                raise ValueError("pricing response has no bid or ask")
+            raw_bid = float(bids[0]['price'])
+            raw_ask = float(asks[0]['price'])
+            if not np.isfinite(raw_bid) or not np.isfinite(raw_ask):
+                raise ValueError("pricing response contains a non-finite quote")
+            if raw_ask < raw_bid:
+                raise ValueError("pricing response ask is below bid")
             pair = gene.currency_pair(instrument)
             res_dic = {
-                'bid': pair.round_price(float(res_json['prices'][0]['bids'][0]['price'])),
-                'ask': pair.round_price(float(res_json['prices'][0]['asks'][0]['price'])),
-                'mid': pair.round_price((float(res_json['prices'][0]['asks'][0]['price']) +
-                                                 float(res_json['prices'][0]['bids'][0]['price'])) / 2),
-                'spread': pair.round_price(float(res_json['prices'][0]['asks'][0]['price']) -
-                                                   float(res_json['prices'][0]['bids'][0]['price'])),
+                'bid': pair.round_price(raw_bid),
+                'ask': pair.round_price(raw_ask),
+                'mid': pair.round_price((raw_ask + raw_bid) / 2),
+                'spread': pair.round_price(raw_ask - raw_bid),
+                'raw_bid': raw_bid,
+                'raw_ask': raw_ask,
+                'instrument': price.get('instrument'),
+                'time': price.get('time'),
+                'tradeable': price.get('tradeable'),
             }
             return {"data": res_dic, "error": 0}
 
@@ -603,6 +622,8 @@ class Oanda:
         order = for_api_json["order"]
         if "price" in order:
             order["price"] = pair.price_to_str(float(order["price"]))
+        if "priceBound" in order:
+            order["priceBound"] = pair.price_to_str(float(order["priceBound"]))
         if "takeProfitOnFill" in order and "price" in order["takeProfitOnFill"]:
             order["takeProfitOnFill"]["price"] = pair.price_to_str(float(order["takeProfitOnFill"]["price"]))
         if "stopLossOnFill" in order and "price" in order["stopLossOnFill"]:
@@ -636,12 +657,16 @@ class Oanda:
                 # print("   ★Order発行完了", order_id, order_time, execution_price)
 
             # オーダー情報履歴をまとめておく
-            order_info = {"price": for_api_json['order']['price'],
+            fill_transaction = res_json.get('orderFillTransaction') or {}
+            trade_opened = fill_transaction.get('tradeOpened') or {}
+            order_info = {"price": for_api_json['order'].get('price'),
                           "execution_price": str(execution_price),  # 約定価格
                           "type": for_api_json['order']['type'],
                           "cancel": canceled,
                           "order_id": order_id,
                           "order_time": order_time,
+                          "trade_id": trade_opened.get('tradeID'),
+                          "fill_time": fill_transaction.get('time'),
                           "json": res_json,  # Oanda空の返却
                           }
             return {"error": 0, "data": order_info}
@@ -992,6 +1017,7 @@ class Oanda:
             res_json = eval(json.dumps(self.api.request(ep), indent=2))
             # いくつか項目を追加しておく
             # timepastを追加する
+            res_json['trade']['openTime_iso'] = res_json['trade']['openTime']
             res_json['trade']['time_past'] = cal_past_time_single(iso_to_jstdt_single(res_json['trade']['openTime']))
             # 価格差を追加する(Open時はunrealizedPL由来、Close時は約定価格と決済価格から算出)
             temp = res_json['trade']
@@ -1013,7 +1039,7 @@ class Oanda:
             return {"data": e_info, "error": 1}
 
     # (14)指定のトレードの変更
-    def TradeCRCDO_exe(self, trade_id, data):
+    def TradeCRCDO_exe(self, trade_id, data, instrument=None):
         """
         :param trade_id:
         :param data:　以下の形式
@@ -1027,16 +1053,18 @@ class Oanda:
         # データの価格情報をStrに変更しておく（priceがstrでもfloatで来ても、いいように。。）
         start_time = datetime.datetime.now().replace(microsecond=0)  # エラー頻発の為、ログ
 
-        pair = gene.currency_pair(data.get("instrument", "USD_JPY"))
-        if 'stopLoss' in data:
-            data['stopLoss']['price'] = pair.price_to_str(float(data['stopLoss']['price']))
-        if 'takeProfit' in data:
-            data['takeProfit']['price'] = pair.price_to_str(float(data['takeProfit']['price']))
-        if 'trailingStopLoss' in data:
-            data['trailingStopLoss']['distance'] = pair.price_to_str(float(data['trailingStopLoss']['distance']))
+        payload = copy.deepcopy(data)
+        payload_instrument = payload.pop("instrument", None)
+        pair = gene.currency_pair(instrument or payload_instrument or "USD_JPY")
+        if isinstance(payload.get('stopLoss'), dict) and 'price' in payload['stopLoss']:
+            payload['stopLoss']['price'] = pair.price_to_str(float(payload['stopLoss']['price']))
+        if isinstance(payload.get('takeProfit'), dict) and 'price' in payload['takeProfit']:
+            payload['takeProfit']['price'] = pair.price_to_str(float(payload['takeProfit']['price']))
+        if isinstance(payload.get('trailingStopLoss'), dict) and 'distance' in payload['trailingStopLoss']:
+            payload['trailingStopLoss']['distance'] = pair.price_to_str(float(payload['trailingStopLoss']['distance']))
 
         try:
-            ep = TradeCRCDO(accountID=self.accountID, tradeID=trade_id, data=data)
+            ep = TradeCRCDO(accountID=self.accountID, tradeID=trade_id, data=payload)
             res_json = eval(json.dumps(self.api.request(ep), indent=2))
             return {"data": res_json, "error": 0}
         except Exception as e:
