@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-25 22:05 JST
+# 最新更新日時: 2026-08-26 06:27 JST
 """EUR/USD ``flip_predict_v19`` LineHolding live execution service.
 
 This module is intentionally independent from ``main_exe``.  It never resets
@@ -83,6 +83,13 @@ BROKER_POLL_SECONDS = 10.0
 S5_POLL_SECONDS = 4.0
 LOOP_SLEEP_SECONDS = 1.0
 RETOUCH_TOLERANCE_PIPS = 1.0
+LIFECYCLE_ERROR_REASONS = frozenset(
+    {
+        "market_order_rejected",
+        "unknown_s5_gap_before_touch",
+        "unknown_s5_gap_during_observation",
+    }
+)
 
 RUNTIME_DIR = Path(__file__).resolve().parent / "runtime_state"
 STATE_PATH = RUNTIME_DIR / "flip_predict_eur_usd_v19.json"
@@ -362,6 +369,10 @@ class LiveDataError(RuntimeError):
     """A fail-closed market-data or broker-state error."""
 
 
+class SpreadTooWideError(LiveDataError):
+    """An expected execution constraint, not an analysis-data failure."""
+
+
 def _utc_now() -> dt.datetime:
     return dt.datetime.now(tz=UTC)
 
@@ -583,12 +594,8 @@ class BrokerSnapshot:
     def entry_block_reason(self) -> str | None:
         if len(self.owned_trades) > 1:
             return "multiple owned EUR/USD trades"
-        if self.foreign_trades:
-            return "unowned EUR/USD trade exists"
         if self.owned_entry_orders:
             return "unexpected owned EUR/USD pending entry order exists"
-        if self.foreign_entry_orders:
-            return "unowned EUR/USD pending entry order exists"
         if self.owned_trades:
             return "owned EUR/USD trade already exists"
         return None
@@ -643,7 +650,7 @@ def _fresh_quote(
     pair = gene.currency_pair(instrument)
     spread_pips = (ask - bid) / pair.pip_value
     if spread_pips > pair.spread_limit_pips + 1e-12:
-        raise LiveDataError(
+        raise SpreadTooWideError(
             f"{instrument} spread {spread_pips:.2f}p exceeds {pair.spread_limit_pips:.2f}p"
         )
     quote_time = _parse_utc(quote.get("time"))
@@ -721,10 +728,13 @@ def _assert_history_coverage(
         difference = following - previous
         if difference == timeframe:
             continue
+        # Candle timestamps are interval starts.  Test only the uncovered span;
+        # the preceding candle itself may contain valid trading time.
+        previous_covered_end = previous + timeframe - pd.Timedelta(seconds=5)
         if (
             difference <= timeframe
             or difference % timeframe != pd.Timedelta(0)
-            or not _is_expected_market_closed_gap(previous, following)
+            or not _is_expected_market_closed_gap(previous_covered_end, following)
         ):
             raise LiveDataError(f"unknown gap in required {name} history")
     return selected.reset_index(drop=True)
@@ -1042,11 +1052,17 @@ class FlipPredictEurLive:
         }
         self.state["active"] = None
         self.save()
-        self.notifier.send(
-            "lifecycle completed",
-            f"reason: {reason}",
-            *(details or (f"signal: {signal_id}",)),
-        )
+        if reason == "broker_trade_closed":
+            self.notifier.send(
+                "owned trade closed",
+                *(details or (f"signal: {signal_id}",)),
+            )
+        elif reason in LIFECYCLE_ERROR_REASONS:
+            self.notifier.send(
+                "lifecycle error",
+                f"reason: {reason}",
+                *(details or (f"signal: {signal_id}",)),
+            )
 
     def reconcile(self, snapshot: BrokerSnapshot) -> None:
         self.snapshot = snapshot
@@ -1061,14 +1077,6 @@ class FlipPredictEurLive:
                 throttle_seconds=300,
             )
             return
-        if snapshot.foreign_trades or snapshot.foreign_entry_orders:
-            self.notifier.send(
-                "entry blocked",
-                "an unowned EUR/USD trade or entry order exists",
-                "the unowned resource was not modified",
-                throttle_key="foreign_resource",
-                throttle_seconds=300,
-            )
         if owned:
             trade = owned[0]
             trade_id = str(trade.get("id"))
@@ -1374,7 +1382,11 @@ class FlipPredictEurLive:
         if active.get("phase") != "READY":
             return
         if now > _parse_utc(active["release_deadline_utc"]):
-            self.finish_active("line_holding_release_stale")
+            spread_detail = active.get("release_spread_wait_detail")
+            if spread_detail:
+                self.finish_active("spread_too_wide_at_release", str(spread_detail))
+            else:
+                self.finish_active("line_holding_release_stale")
             return
         snapshot = _broker_snapshot(self.oa)
         self.reconcile(snapshot)
@@ -1383,12 +1395,20 @@ class FlipPredictEurLive:
             return
         if snapshot.entry_block_reason:
             return
-        usd_jpy_quote = _fresh_quote(self.oa, USD_JPY_NAME)
+        try:
+            usd_jpy_quote = _fresh_quote(self.oa, USD_JPY_NAME)
+            quote = _fresh_quote(self.oa, PAIR_NAME)
+        except SpreadTooWideError as error:
+            detail = str(error)
+            if active.get("release_spread_wait_detail") != detail:
+                active["release_spread_wait_detail"] = detail
+                self.save()
+            return
+        active.pop("release_spread_wait_detail", None)
         usd_jpy_rate = (
             float(usd_jpy_quote["raw_bid"])
             + float(usd_jpy_quote["raw_ask"])
         ) / 2.0
-        quote = _fresh_quote(self.oa, PAIR_NAME)
         direction = int(active["order_direction"])
         entry_price = float(quote["raw_ask"] if direction == 1 else quote["raw_bid"])
         actual_entry_a = (
@@ -1548,19 +1568,27 @@ class FlipPredictEurLive:
         decision_key = _utc_iso(decision_utc)
         if self.state.get("last_decision_time_utc") == decision_key:
             return
-        self.state["last_decision_time_utc"] = decision_key
-        self.save()
-        _fresh_quote(self.oa, PAIR_NAME)
+        try:
+            _fresh_quote(self.oa, PAIR_NAME)
+        except SpreadTooWideError:
+            return
         try:
             signal = build_live_signal(self.oa, decision_utc)
         except ValueError as error:
             if str(error).startswith(("no_peak", "count2_prefilter_mismatch")):
+                self.state["last_decision_time_utc"] = decision_key
+                self.save()
                 return
             raise
         if signal is None:
+            self.state["last_decision_time_utc"] = decision_key
+            self.save()
             return
         if signal["signal_id"] in set(self.state.get("recent_signal_ids") or []):
+            self.state["last_decision_time_utc"] = decision_key
+            self.save()
             return
+        self.state["last_decision_time_utc"] = decision_key
         self.state["active"] = signal
         self.save()
         self.notifier.send(
@@ -1588,7 +1616,8 @@ class FlipPredictEurLive:
             "service started",
             f"policy: {POLICY_VERSION} / LineHolding only",
             "risk: 50 yen; one EUR/USD lifecycle at a time",
-            "unknown or unowned EUR/USD resources block new entries",
+            "manual/unowned EUR/USD resources are ignored and never modified; OPEN_ONLY is active",
+            "wide live spreads silently pause new-signal analysis and order release",
         )
         while True:
             try:
