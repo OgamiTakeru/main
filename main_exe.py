@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-25 23:20 JST
+# 最新更新日時: 2026-08-26 06:31 JST
 """USD/JPY live launcher and shared legacy execution loop."""
 
 # True: OANDA通信・実発注を有効化 / False: 接続せず終了
@@ -394,4 +394,4 @@ def run(pair=None, *, live=None):
 
 
 if __name__ == "__main__":
-    run(live=LIVE)
+    run("USD_JPY", live=LIVE)
