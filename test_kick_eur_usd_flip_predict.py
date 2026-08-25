@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-08-25 15:35 JST
 # 正解バージョン
 """Analyze EUR/USD flip_predict, then run the frozen following-year replay."""
 

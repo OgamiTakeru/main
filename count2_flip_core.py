@@ -1,9 +1,10 @@
+# 最新更新日時: 2026-08-25 14:59 JST
 """First-touch rejection helpers for ``flip_predict``.
 
 The causal foot-count-2 snapshot registers a line in its direction of travel.
-The line's newest constituent peak must point the other way, and the order is
-also placed opposite the foot-count-2 direction.  The first spread-aware S5
-touch fills the LIMIT order; there is no breakout confirmation or retest step.
+The direct baseline fills the opposite-direction LIMIT on the first touch.
+The optional watch policy observes one completed minute after that touch and
+then uses line-holding MARKET, near-line retest LIMIT, or continuation STOP.
 
 Only fields known at ``decision_time`` may be used by feature conditions.
 Fill and trade fields are labels and are never policy inputs.
@@ -24,19 +25,83 @@ from count2_resistance_sweep import LimitPathInspector, S5_SECONDS
 from fFootCountShape import add_foot_count2_search_buckets
 
 
-FLIP_VERSION = "flip_predict_v5"
-DEFAULT_ORDER_WAIT_MINUTES = 120
+FLIP_VERSION = "flip_predict_v19"
+DEFAULT_ORDER_WAIT_MINUTES = 90
+DEFAULT_REPLACE_UNFILLED_ON_NEXT_COUNT2 = False
 DEFAULT_POSITION_HORIZON_MINUTES = 60
 DEFAULT_SPREAD_PIPS = 0.8
 DEFAULT_MIN_WIDTH_PIPS = 1.6
 DEFAULT_RISK_YEN = 50.0
+DEFAULT_MIN_TARGET_DISTANCE_PIPS = 2.0
+DEFAULT_PROFIT_LOCK_ENABLED = False
+DEFAULT_PROFIT_LOCK_MIN_TP_PIPS = 10.0
+DEFAULT_PROFIT_LOCK_TRIGGER_TP_FRACTION = 0.5
+DEFAULT_PROFIT_LOCK_RESULT_PIPS = 1.0
+# Stretch-profit comparison: the frozen tier TP is 1B. Keep the frozen LC,
+# target 2B, arm after 1.2B, and then protect +1B.
+STRETCH_PROFIT_TARGET_B = 2.0
+STRETCH_PROFIT_TRIGGER_B = 1.2
+STRETCH_PROFIT_LOCK_B = 1.0
+STRETCH_PROFIT_TRIGGER_TP_FRACTION = (
+    STRETCH_PROFIT_TRIGGER_B / STRETCH_PROFIT_TARGET_B
+)
+STRETCH_PROFIT_LOCK_TP_FRACTION = (
+    STRETCH_PROFIT_LOCK_B / STRETCH_PROFIT_TARGET_B
+)
+DEFAULT_TIMED_HALF_LC_MINUTES = (3, 6, 9, 12, 15, 18)
+DEFAULT_TIMED_HALF_LC_FRACTIONS = (0.3, 0.4, 0.5, 0.6, 0.7)
+DEFAULT_TIMED_HALF_LC_FRACTION = 0.5
+DEFAULT_TIMED_HALF_LC_TP_FRACTION = 0.5
+DEFAULT_LINE_WICK_LC_FRACTIONS = (0.05, 0.10, 0.15, 0.20)
+WATCH_LINE_HOLDING_MAX_BREAKOUT_A = 0.10
+WATCH_LINE_HOLDING_MAX_CHASE_A = 0.30
+WATCH_NEAR_LINE_MAX_BREAKOUT_A = 1.00
+WATCH_BREAKOUT_CONTINUATION_A = 0.05
+WATCH_MAX_ENTRY_GAP_A = 0.10
+WATCH_OBSERVATION_SECONDS = 60
+EARLY_PATH_MINUTES = (1, 2, 3, 4, 5)
+EARLY_PATH_METRICS = (
+    "checkpoint_time",
+    "checkpoint_evaluable",
+    "position_open",
+    "current_close_pips",
+    "current_close_a",
+    "current_line_distance_pips",
+    "current_line_distance_a",
+    "cumulative_mfe_pips",
+    "cumulative_mfe_a",
+    "cumulative_mae_pips",
+    "cumulative_mae_a",
+    "interval_net_pips",
+    "interval_net_a",
+    "interval_mfe_pips",
+    "interval_mfe_a",
+    "interval_mae_pips",
+    "interval_mae_a",
+    "interval_favorable_s5_fraction",
+    "interval_line_side_close_fraction",
+    "cumulative_line_cross_count",
+)
 TOP_CONDITION_LIMIT = 15
 TIER_HIGH = "HIGH"
 TIER_MIDDLE = "MIDDLE"
 TIER_LOW = "LOW"
 TIER_NAMES = (TIER_HIGH, TIER_MIDDLE, TIER_LOW)
-CONDITION_RANKING_TP_A = 1.7
-CONDITION_RANKING_RR = 1.5
+RANGE_FILTER_FRACTION_A = 0.25
+# The formal timed-LC run holds the causal 0.25A gate at 1.5 pips.
+DEFAULT_RANGE_FILTER_PIPS_GRID = (1.5,)
+# Train-only TP/LC grid.  Combinations below configured RR 1.0 are excluded.
+DEFAULT_TP_A_GRID = (1.0, 1.2, 1.4, 1.5, 1.7, 2.0)
+DEFAULT_LC_A_GRID = (
+    1.0,
+    1.1333333333333333,
+    1.25,
+    1.4,
+    1.5,
+    1.6,
+    1.7,
+    2.0,
+)
 DEFAULT_TIER_TP_A = {
     TIER_HIGH: 1.7,
     TIER_MIDDLE: 1.7,
@@ -116,6 +181,9 @@ def _is_expected_market_closed_gap(
 @dataclass(frozen=True)
 class FlipPathConfig:
     order_wait_minutes: int = DEFAULT_ORDER_WAIT_MINUTES
+    replace_unfilled_on_next_count2: bool = (
+        DEFAULT_REPLACE_UNFILLED_ON_NEXT_COUNT2
+    )
 
     def __post_init__(self) -> None:
         if self.order_wait_minutes < 1:
@@ -123,7 +191,12 @@ class FlipPathConfig:
 
     @property
     def config_id(self) -> str:
-        return f"order_wait{self.order_wait_minutes}m"
+        replacement = (
+            "replace_next_fc2"
+            if self.replace_unfilled_on_next_count2
+            else "keep_through_next_fc2"
+        )
+        return f"order_wait{self.order_wait_minutes}m_{replacement}"
 
 
 @dataclass(frozen=True)
@@ -156,6 +229,248 @@ class TradeCombo:
         if not math.isfinite(rr) or rr <= 0:
             raise ValueError("RR must be finite and positive")
         return cls(tp_a=float(tp_a), lc_a=float(tp_a) / rr)
+
+
+@dataclass(frozen=True)
+class FlipWatchEntryConfig:
+    """Causal one-minute line watch followed by one of three entry modes."""
+
+    observation_seconds: int = WATCH_OBSERVATION_SECONDS
+    line_holding_max_breakout_a: float = (
+        WATCH_LINE_HOLDING_MAX_BREAKOUT_A
+    )
+    line_holding_max_chase_a: float = WATCH_LINE_HOLDING_MAX_CHASE_A
+    near_line_max_breakout_a: float = WATCH_NEAR_LINE_MAX_BREAKOUT_A
+    breakout_continuation_a: float = WATCH_BREAKOUT_CONTINUATION_A
+    max_entry_gap_a: float = WATCH_MAX_ENTRY_GAP_A
+
+    def __post_init__(self) -> None:
+        if self.observation_seconds < S5_SECONDS:
+            raise ValueError("watch observation must be at least one S5")
+        if self.observation_seconds % S5_SECONDS:
+            raise ValueError("watch observation must align to completed S5 bars")
+        values = (
+            self.line_holding_max_breakout_a,
+            self.line_holding_max_chase_a,
+            self.near_line_max_breakout_a,
+            self.breakout_continuation_a,
+            self.max_entry_gap_a,
+        )
+        if any(not math.isfinite(value) or value <= 0 for value in values):
+            raise ValueError("watch A thresholds must be finite and positive")
+        if (
+            self.near_line_max_breakout_a
+            <= self.line_holding_max_breakout_a
+        ):
+            raise ValueError("near-line upper bound must exceed holding bound")
+
+    @property
+    def observation_bars(self) -> int:
+        return self.observation_seconds // S5_SECONDS
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "FlipWatchEntryConfig":
+        return cls(**dict(value))
+
+
+def classify_flip_watch_entry(
+    breakout_distance_a: float,
+    breakout_direction: int,
+    config: FlipWatchEntryConfig,
+) -> dict[str, Any]:
+    """Classify a completed watch window without reading any future price."""
+    breakout_distance_a = float(breakout_distance_a)
+    breakout_direction = int(breakout_direction)
+    if not math.isfinite(breakout_distance_a):
+        raise ValueError("watch breakout distance must be finite")
+    if breakout_direction not in (-1, 1):
+        raise ValueError("watch breakout direction must be -1 or 1")
+    if breakout_distance_a < config.line_holding_max_breakout_a:
+        return {
+            "watch_order_name": "FlipPredict_LineHolding",
+            "watch_entry_mode": "MARKET",
+            "order_direction": -breakout_direction,
+            "watch_chase_filtered": bool(
+                breakout_distance_a < -config.line_holding_max_chase_a
+            ),
+        }
+    if breakout_distance_a <= config.near_line_max_breakout_a:
+        return {
+            "watch_order_name": "FlipPredict_NearLineConsolidation",
+            "watch_entry_mode": "LIMIT_RETEST",
+            "order_direction": breakout_direction,
+            "watch_chase_filtered": False,
+        }
+    return {
+        "watch_order_name": "FlipPredict_Breakout",
+        "watch_entry_mode": "STOP_CONTINUATION",
+        "order_direction": breakout_direction,
+        "watch_chase_filtered": False,
+    }
+
+
+@dataclass(frozen=True)
+class TimedHalfLcConfig:
+    """Causal checkpoint exit when open P/L is at or below a fraction of LC."""
+
+    trigger_minutes: int | None
+    lc_fraction: float = DEFAULT_TIMED_HALF_LC_FRACTION
+    tp_fraction: float = DEFAULT_TIMED_HALF_LC_TP_FRACTION
+
+    def __post_init__(self) -> None:
+        if self.trigger_minutes is not None and self.trigger_minutes < 1:
+            raise ValueError("timed half-LC minutes must be positive")
+        if not math.isfinite(self.lc_fraction) or not 0 < self.lc_fraction <= 1:
+            raise ValueError("timed half-LC fraction must be in (0, 1]")
+        if not math.isfinite(self.tp_fraction) or not 0 < self.tp_fraction < 1:
+            raise ValueError("timed half-LC TP fraction must be in (0, 1)")
+
+    @property
+    def enabled(self) -> bool:
+        return self.trigger_minutes is not None
+
+    @property
+    def config_id(self) -> str:
+        if not self.enabled:
+            return "baseline"
+        fraction = f"{self.lc_fraction:g}".replace(".", "p")
+        return f"timed_{self.trigger_minutes}m_lc{fraction}"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "config_id": self.config_id,
+            "enabled": self.enabled,
+            "trigger_minutes": self.trigger_minutes,
+            "lc_fraction": self.lc_fraction,
+            "tp_fraction": self.tp_fraction,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "TimedHalfLcConfig":
+        minutes = value.get("trigger_minutes")
+        config = cls(
+            trigger_minutes=(
+                None if minutes is None or pd.isna(minutes) else int(minutes)
+            ),
+            lc_fraction=float(value["lc_fraction"]),
+            tp_fraction=float(value["tp_fraction"]),
+        )
+        expected_id = value.get("config_id")
+        if expected_id is not None and str(expected_id) != config.config_id:
+            raise ValueError("timed half-LC config id mismatch")
+        enabled = value.get("enabled")
+        if (
+            enabled is not None
+            and not pd.isna(enabled)
+            and bool(enabled) != config.enabled
+        ):
+            raise ValueError("timed half-LC enabled flag mismatch")
+        return config
+
+
+@dataclass(frozen=True)
+class LineWickLcConfig:
+    """Protective stop when the spread-aware S5 wick crosses the line."""
+
+    width_a: float | None
+
+    def __post_init__(self) -> None:
+        if self.width_a is not None and (
+            not math.isfinite(self.width_a) or self.width_a <= 0
+        ):
+            raise ValueError("line-wick LC width A must be finite and positive")
+
+    @property
+    def enabled(self) -> bool:
+        return self.width_a is not None
+
+    @property
+    def config_id(self) -> str:
+        if not self.enabled:
+            return "baseline"
+        width = f"{self.width_a:g}".replace(".", "p")
+        return f"line_wick_lc_{width}A"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "config_id": self.config_id,
+            "enabled": self.enabled,
+            "width_a": self.width_a,
+            "trigger_source": "spread_aware_s5_wick",
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "LineWickLcConfig":
+        width = value.get("width_a")
+        config = cls(
+            None if width is None or pd.isna(width) else float(width)
+        )
+        expected_id = value.get("config_id")
+        if expected_id is not None and str(expected_id) != config.config_id:
+            raise ValueError("line-wick LC config id mismatch")
+        enabled = value.get("enabled")
+        if (
+            enabled is not None
+            and not pd.isna(enabled)
+            and bool(enabled) != config.enabled
+        ):
+            raise ValueError("line-wick LC enabled flag mismatch")
+        return config
+
+
+def default_timed_half_lc_configs() -> tuple[TimedHalfLcConfig, ...]:
+    return (
+        TimedHalfLcConfig(None),
+        *(
+            TimedHalfLcConfig(minutes, lc_fraction=fraction)
+            for minutes in DEFAULT_TIMED_HALF_LC_MINUTES
+            for fraction in DEFAULT_TIMED_HALF_LC_FRACTIONS
+        ),
+    )
+
+
+def default_line_wick_lc_configs() -> tuple[LineWickLcConfig, ...]:
+    return (
+        LineWickLcConfig(None),
+        *(
+            LineWickLcConfig(width_a)
+            for width_a in DEFAULT_LINE_WICK_LC_FRACTIONS
+        ),
+    )
+
+
+def overlay_outcome_key(
+    combo: TradeCombo,
+    timed_config: TimedHalfLcConfig,
+    line_wick_config: LineWickLcConfig,
+) -> str:
+    enabled_ids = [
+        config.config_id
+        for config in (timed_config, line_wick_config)
+        if config.enabled
+    ]
+    return "__".join((combo.combo_id, *enabled_ids))
+
+
+def timed_outcome_key(combo: TradeCombo, config: TimedHalfLcConfig) -> str:
+    return overlay_outcome_key(
+        combo,
+        config,
+        LineWickLcConfig(None),
+    )
+
+
+def line_wick_outcome_key(
+    combo: TradeCombo, config: LineWickLcConfig
+) -> str:
+    return overlay_outcome_key(
+        combo,
+        TimedHalfLcConfig(None),
+        config,
+    )
 
 
 @dataclass(frozen=True)
@@ -194,6 +509,7 @@ class TierExecutionConfig:
     last_rank: int
     tp_a: float
     rr: float
+    min_range_filter_pips: float = 0.0
 
     def __post_init__(self) -> None:
         if self.tier not in TIER_NAMES:
@@ -204,6 +520,11 @@ class TierExecutionConfig:
             raise ValueError("tier TP must be finite and positive")
         if not math.isfinite(self.rr) or self.rr <= 0:
             raise ValueError("tier RR must be finite and positive")
+        if (
+            not math.isfinite(self.min_range_filter_pips)
+            or self.min_range_filter_pips < 0
+        ):
+            raise ValueError("tier range filter must be finite and non-negative")
 
     @property
     def trade_combo(self) -> TradeCombo:
@@ -217,6 +538,8 @@ class TierExecutionConfig:
             "tp_a": self.tp_a,
             "rr": self.rr,
             "lc_a": self.trade_combo.lc_a,
+            "range_filter_fraction_a": RANGE_FILTER_FRACTION_A,
+            "min_range_filter_pips": self.min_range_filter_pips,
         }
 
     @classmethod
@@ -227,6 +550,9 @@ class TierExecutionConfig:
             last_rank=int(value["last_rank"]),
             tp_a=float(value["tp_a"]),
             rr=float(value["rr"]),
+            min_range_filter_pips=float(
+                value.get("min_range_filter_pips", 0.0)
+            ),
         )
 
 
@@ -261,7 +587,15 @@ class RankedPolicyCondition:
 
 
 def default_path_configs() -> tuple[FlipPathConfig, ...]:
-    return tuple(FlipPathConfig(wait) for wait in (60, 120))
+    return tuple(
+        FlipPathConfig(
+            wait,
+            replace_unfilled_on_next_count2=(
+                DEFAULT_REPLACE_UNFILLED_ON_NEXT_COUNT2
+            ),
+        )
+        for wait in (60, 90)
+    )
 
 
 def default_tier_execution_configs() -> tuple[TierExecutionConfig, ...]:
@@ -306,10 +640,13 @@ def tier_for_rank(
 
 
 def default_trade_combos(min_rr: float = 1.0) -> tuple[TradeCombo, ...]:
-    # Condition ranking needs one common outcome contract.  Tier-specific
-    # RR is applied only after the top-15 triggers have been frozen.
-    combo = TradeCombo.from_tp_rr(CONDITION_RANKING_TP_A, CONDITION_RANKING_RR)
-    return (combo,) if combo.configured_rr + 1e-12 >= min_rr else ()
+    """Return the train-only TP/LC grid with the requested RR floor."""
+    return tuple(
+        TradeCombo(tp_a, lc_a)
+        for tp_a in DEFAULT_TP_A_GRID
+        for lc_a in DEFAULT_LC_A_GRID
+        if tp_a / lc_a + 1e-12 >= min_rr
+    )
 
 
 def expected_role(direction: int) -> str:
@@ -394,6 +731,12 @@ def _as_bool(value: Any) -> bool:
 
 def validate_causal_candidate(row: Mapping[str, Any]) -> None:
     decision = pd.Timestamp(row["decision_time"])
+    required_fields = {
+        "target_source_last_time",
+        "fc2_source_last_time",
+        "h1_pair_source_last_time",
+        "line_newest_source_time",
+    }
     for field in (
         "target_source_last_time",
         "fc2_source_last_time",
@@ -403,9 +746,13 @@ def validate_causal_candidate(row: Mapping[str, Any]) -> None:
     ):
         raw = row.get(field)
         if raw is None or raw == "" or pd.isna(raw):
+            if field in required_fields:
+                raise ValueError(f"missing causal candidate feature: {field}")
             continue
         timestamp = pd.to_datetime(raw, errors="coerce")
         if pd.isna(timestamp):
+            if field in required_fields:
+                raise ValueError(f"invalid causal candidate feature: {field}")
             continue
         if field == "h1_pair_source_last_time":
             # H1 source timestamps are candle starts and need a full hour.
@@ -437,9 +784,42 @@ class FlipPathInspector:
         position_horizon_minutes: int = DEFAULT_POSITION_HORIZON_MINUTES,
         min_width_pips: float = DEFAULT_MIN_WIDTH_PIPS,
         risk_yen: float = DEFAULT_RISK_YEN,
+        profit_lock_enabled: bool = DEFAULT_PROFIT_LOCK_ENABLED,
+        profit_lock_min_tp_pips: float = DEFAULT_PROFIT_LOCK_MIN_TP_PIPS,
+        profit_lock_trigger_tp_fraction: float = (
+            DEFAULT_PROFIT_LOCK_TRIGGER_TP_FRACTION
+        ),
+        profit_lock_result_pips: float = DEFAULT_PROFIT_LOCK_RESULT_PIPS,
+        profit_lock_result_tp_fraction: float | None = None,
     ) -> None:
         if spread_pips < 0 or position_horizon_minutes < 1 or min_width_pips <= 0:
             raise ValueError("invalid flip path execution parameters")
+        result_fraction = (
+            None
+            if profit_lock_result_tp_fraction is None
+            else float(profit_lock_result_tp_fraction)
+        )
+        if (
+            not math.isfinite(profit_lock_min_tp_pips)
+            or profit_lock_min_tp_pips <= 0
+            or not math.isfinite(profit_lock_trigger_tp_fraction)
+            or not 0 < profit_lock_trigger_tp_fraction < 1
+            or not math.isfinite(profit_lock_result_pips)
+            or profit_lock_result_pips <= 0
+            or (
+                result_fraction is None
+                and profit_lock_result_pips
+                >= profit_lock_min_tp_pips * profit_lock_trigger_tp_fraction
+            )
+            or (
+                result_fraction is not None
+                and (
+                    not math.isfinite(result_fraction)
+                    or not 0 < result_fraction < profit_lock_trigger_tp_fraction
+                )
+            )
+        ):
+            raise ValueError("invalid profit-lock parameters")
         self.inspector = inspector
         self.pair = pair
         self.period_end = pd.Timestamp(period_end_exclusive)
@@ -447,6 +827,13 @@ class FlipPathInspector:
         self.position_horizon_minutes = int(position_horizon_minutes)
         self.min_width_pips = float(min_width_pips)
         self.risk_yen = float(risk_yen)
+        self.profit_lock_enabled = bool(profit_lock_enabled)
+        self.profit_lock_min_tp_pips = float(profit_lock_min_tp_pips)
+        self.profit_lock_trigger_tp_fraction = float(
+            profit_lock_trigger_tp_fraction
+        )
+        self.profit_lock_result_pips = float(profit_lock_result_pips)
+        self.profit_lock_result_tp_fraction = result_fraction
         self.times = np.asarray(inspector.times)
         self.opens = np.asarray(inspector.opens)
         self.closes = np.asarray(inspector.closes)
@@ -474,10 +861,33 @@ class FlipPathInspector:
         return {
             "path_status": None,
             "approach_direction": np.nan,
+            "signal_order_direction": np.nan,
             "order_direction": np.nan,
             "order_filled": False,
             "order_deadline": pd.NaT,
             "replaced_before_fill": False,
+            "watch_entry_enabled": False,
+            "watch_order_name": None,
+            "watch_entry_mode": None,
+            "watch_initial_touch_deadline": pd.NaT,
+            "watch_line_touch_time": pd.NaT,
+            "watch_line_touch_known_time": pd.NaT,
+            "watch_observation_known_time": pd.NaT,
+            "watch_order_placed_time": pd.NaT,
+            "watch_order_release_time": pd.NaT,
+            "watch_observation_close": np.nan,
+            "watch_observation_high": np.nan,
+            "watch_observation_low": np.nan,
+            "watch_breakout_direction": np.nan,
+            "watch_breakout_distance_pips": np.nan,
+            "watch_breakout_distance_a": np.nan,
+            "watch_observed_extreme_price": np.nan,
+            "watch_entry_trigger_price": np.nan,
+            "watch_actual_entry_distance_from_line_a": np.nan,
+            "watch_entry_gap_from_trigger_a": np.nan,
+            "watch_chase_filtered": False,
+            "watch_entry_gap_filtered": False,
+            "watch_stop_fill_bar_adverse_censored": False,
             "fill_time": pd.NaT,
             "fill_delay_from_decision_seconds": np.nan,
             "fill_at_bar_open": False,
@@ -574,6 +984,175 @@ class FlipPathInspector:
         )
         return actual_end == pd.Timestamp(expected_end_exclusive)
 
+    def _early_path_fields(
+        self,
+        *,
+        path_times: np.ndarray,
+        timer_anchor: pd.Timestamp,
+        exit_effective_time: pd.Timestamp,
+        entry_price: float,
+        line_price: float,
+        order_direction: int,
+        average_range_pips: float,
+        close_progress: np.ndarray,
+        open_progress: np.ndarray,
+        metric_favorable: np.ndarray,
+        metric_adverse: np.ndarray,
+        path_opens: np.ndarray,
+        path_closes: np.ndarray,
+    ) -> dict[str, Any]:
+        """Return causal, completed-S5 snapshots for minutes 1 through 5.
+
+        Snapshot values are populated only while the position is still open at
+        the checkpoint.  The final outcome and final MFE/MAE remain separate
+        labels, so prices after an earlier exit can never become position data.
+        """
+        output: dict[str, Any] = {}
+        timer_anchor = pd.Timestamp(timer_anchor)
+        exit_effective_time = pd.Timestamp(exit_effective_time)
+        path_times = np.asarray(path_times)
+        close_progress = np.asarray(close_progress, dtype=float)
+        open_progress = np.asarray(open_progress, dtype=float)
+        metric_favorable = np.asarray(metric_favorable, dtype=float)
+        metric_adverse = np.asarray(metric_adverse, dtype=float)
+        path_opens = np.asarray(path_opens, dtype=float)
+        path_closes = np.asarray(path_closes, dtype=float)
+        executable_line_offset_pips = float(
+            order_direction * (entry_price - line_price) / self.pair.pip_value
+        )
+
+        for minute in EARLY_PATH_MINUTES:
+            prefix = f"early_m{minute}_"
+            checkpoint = timer_anchor + pd.Timedelta(minutes=minute)
+            for metric in EARLY_PATH_METRICS:
+                output[prefix + metric] = (
+                    pd.NaT if metric == "checkpoint_time" else np.nan
+                )
+            output[prefix + "checkpoint_time"] = checkpoint
+            if checkpoint >= self.period_end:
+                output[prefix + "checkpoint_time"] = pd.NaT
+                output[prefix + "checkpoint_evaluable"] = False
+                output[prefix + "position_open"] = False
+                continue
+
+            end_i = int(
+                np.searchsorted(
+                    path_times,
+                    np.datetime64(checkpoint, "ns"),
+                    side="left",
+                )
+            )
+            start_time = checkpoint - pd.Timedelta(minutes=1)
+            start_i = int(
+                np.searchsorted(
+                    path_times,
+                    np.datetime64(start_time, "ns"),
+                    side="left",
+                )
+            )
+            expected_bars = int(pd.Timedelta(minutes=1).total_seconds() / S5_SECONDS)
+            interval_complete = bool(
+                end_i > start_i
+                and end_i <= len(path_times)
+                and end_i - start_i == expected_bars
+                and pd.Timestamp(path_times[start_i]) == start_time
+                and pd.Timestamp(path_times[end_i - 1])
+                + pd.Timedelta(seconds=S5_SECONDS)
+                == checkpoint
+                and not np.any(
+                    np.diff(path_times[start_i:end_i])
+                    != np.timedelta64(S5_SECONDS, "s")
+                )
+            )
+            position_open = bool(exit_effective_time > checkpoint)
+            output[prefix + "checkpoint_evaluable"] = bool(
+                interval_complete and position_open
+            )
+            output[prefix + "position_open"] = position_open
+            if not interval_complete or not position_open:
+                continue
+
+            completed = slice(0, end_i)
+            interval = slice(start_i, end_i)
+            current_close_pips = float(close_progress[end_i - 1])
+            line_close = (
+                close_progress[:end_i] + executable_line_offset_pips
+            )
+            initial_line_distance = float(
+                open_progress[0] + executable_line_offset_pips
+            )
+            line_sign = np.sign(
+                np.concatenate(([initial_line_distance], line_close))
+            )
+            nonzero_line_sign = line_sign[line_sign != 0]
+            cross_count = int(
+                np.count_nonzero(
+                    nonzero_line_sign[1:] != nonzero_line_sign[:-1]
+                )
+            )
+            favorable_bodies = (
+                order_direction
+                * (path_closes[interval] - path_opens[interval])
+                > 0
+            )
+            output.update(
+                {
+                    prefix + "current_close_pips": current_close_pips,
+                    prefix + "current_close_a": (
+                        current_close_pips / average_range_pips
+                    ),
+                    prefix + "current_line_distance_pips": float(
+                        line_close[-1]
+                    ),
+                    prefix + "current_line_distance_a": float(
+                        line_close[-1] / average_range_pips
+                    ),
+                    prefix + "cumulative_mfe_pips": float(
+                        np.nanmax(metric_favorable[completed])
+                    ),
+                    prefix + "cumulative_mfe_a": float(
+                        np.nanmax(metric_favorable[completed])
+                        / average_range_pips
+                    ),
+                    prefix + "cumulative_mae_pips": float(
+                        np.nanmin(metric_adverse[completed])
+                    ),
+                    prefix + "cumulative_mae_a": float(
+                        np.nanmin(metric_adverse[completed])
+                        / average_range_pips
+                    ),
+                    prefix + "interval_net_pips": float(
+                        current_close_pips - open_progress[start_i]
+                    ),
+                    prefix + "interval_net_a": float(
+                        (current_close_pips - open_progress[start_i])
+                        / average_range_pips
+                    ),
+                    prefix + "interval_mfe_pips": float(
+                        np.nanmax(metric_favorable[interval])
+                    ),
+                    prefix + "interval_mfe_a": float(
+                        np.nanmax(metric_favorable[interval])
+                        / average_range_pips
+                    ),
+                    prefix + "interval_mae_pips": float(
+                        np.nanmin(metric_adverse[interval])
+                    ),
+                    prefix + "interval_mae_a": float(
+                        np.nanmin(metric_adverse[interval])
+                        / average_range_pips
+                    ),
+                    prefix + "interval_favorable_s5_fraction": float(
+                        np.mean(favorable_bodies)
+                    ),
+                    prefix + "interval_line_side_close_fraction": float(
+                        np.mean(line_close[start_i:end_i] >= 0)
+                    ),
+                    prefix + "cumulative_line_cross_count": cross_count,
+                }
+            )
+        return output
+
     def inspect(
         self,
         *,
@@ -584,6 +1163,9 @@ class FlipPathInspector:
         path_config: FlipPathConfig,
         trade_combos: Iterable[TradeCombo],
         next_count2_time: pd.Timestamp | None = None,
+        timed_half_lc_configs: Iterable[TimedHalfLcConfig] | None = None,
+        line_wick_lc_configs: Iterable[LineWickLcConfig] | None = None,
+        watch_entry_config: FlipWatchEntryConfig | None = None,
     ) -> dict[str, Any]:
         base = self._base()
         decision_time = pd.Timestamp(decision_time)
@@ -608,7 +1190,8 @@ class FlipPathInspector:
         replacement_cutoff = False
         next_count2 = pd.to_datetime(next_count2_time, errors="coerce")
         if (
-            not pd.isna(next_count2)
+            path_config.replace_unfilled_on_next_count2
+            and not pd.isna(next_count2)
             and decision_time < next_count2 < order_deadline
         ):
             order_deadline = pd.Timestamp(next_count2)
@@ -616,8 +1199,14 @@ class FlipPathInspector:
         common = {
             **base,
             "approach_direction": approach_direction,
+            "signal_order_direction": order_direction,
             "order_direction": order_direction,
             "order_deadline": order_deadline,
+            "watch_entry_enabled": watch_entry_config is not None,
+            "watch_initial_touch_deadline": (
+                order_deadline if watch_entry_config is not None else pd.NaT
+            ),
+            "watch_breakout_direction": approach_direction,
         }
         start_i = int(
             np.searchsorted(
@@ -674,16 +1263,16 @@ class FlipPathInspector:
                 "replaced_before_fill": bool(replacement_cutoff and complete),
             }
 
-        fill_i = start_i + int(reached[0])
-        fill_time = pd.Timestamp(self.times[fill_i])
+        touch_i = start_i + int(reached[0])
+        touch_time = pd.Timestamp(self.times[touch_i])
         if not self._indexed_window_complete(
             start_i,
-            fill_i + 1,
+            touch_i + 1,
             decision_time,
-            fill_time + pd.Timedelta(seconds=S5_SECONDS),
+            touch_time + pd.Timedelta(seconds=S5_SECONDS),
         ):
             closed = _is_expected_market_closed_gap(
-                decision_time - pd.Timedelta(seconds=S5_SECONDS), fill_time
+                decision_time - pd.Timedelta(seconds=S5_SECONDS), touch_time
             )
             return {
                 **common,
@@ -693,19 +1282,284 @@ class FlipPathInspector:
                     else "incomplete_order_window"
                 ),
             }
-        fill_at_open = (
+        fill_i = touch_i
+        fill_time = touch_time
+        entry_price = line_price
+        fill_at_open = bool(
             float(self.opens[fill_i]) + half_spread <= line_price
             if order_direction == 1
             else float(self.opens[fill_i]) - half_spread >= line_price
         )
+        watch_fields: dict[str, Any] = {
+            "watch_line_touch_time": touch_time,
+            "watch_line_touch_known_time": (
+                touch_time + pd.Timedelta(seconds=S5_SECONDS)
+            ),
+        }
+        if watch_entry_config is not None:
+            observation_end_i = touch_i + watch_entry_config.observation_bars + 1
+            if observation_end_i >= len(self.times):
+                return {
+                    **common,
+                    **watch_fields,
+                    "path_status": "incomplete_watch_observation",
+                }
+            observation_start_i = touch_i + 1
+            observation_known_time = pd.Timestamp(self.times[observation_end_i])
+            if observation_known_time >= self.period_end:
+                return {
+                    **common,
+                    **watch_fields,
+                    "path_status": "incomplete_watch_observation",
+                }
+            if not self._strict_position_window_complete(
+                observation_start_i,
+                observation_end_i,
+                touch_time + pd.Timedelta(seconds=S5_SECONDS),
+                observation_known_time,
+            ):
+                return {
+                    **common,
+                    **watch_fields,
+                    "path_status": "incomplete_watch_observation",
+                }
+            observation_close = float(self.closes[observation_end_i - 1])
+            observation_high = float(
+                np.max(self.highs[observation_start_i:observation_end_i])
+            )
+            observation_low = float(
+                np.min(self.lows[observation_start_i:observation_end_i])
+            )
+            a_price = self.pair.pips_to_price(average_range_pips)
+            breakout_direction = approach_direction
+            breakout_distance_a = float(
+                (observation_close - line_price) * breakout_direction / a_price
+            )
+            watch_fields.update(
+                {
+                    "watch_observation_known_time": observation_known_time,
+                    "watch_observation_close": observation_close,
+                    "watch_observation_high": observation_high,
+                    "watch_observation_low": observation_low,
+                    "watch_breakout_direction": breakout_direction,
+                    "watch_breakout_distance_pips": (
+                        breakout_distance_a * average_range_pips
+                    ),
+                    "watch_breakout_distance_a": breakout_distance_a,
+                    "watch_order_placed_time": observation_known_time,
+                }
+            )
+            search_start_i = observation_end_i
+            classification = classify_flip_watch_entry(
+                breakout_distance_a,
+                breakout_direction,
+                watch_entry_config,
+            )
+            watch_fields.update(classification)
+            order_direction = int(classification["order_direction"])
+            if classification["watch_entry_mode"] == "MARKET":
+                order_deadline = observation_known_time
+            else:
+                order_deadline = min(
+                    observation_known_time
+                    + pd.Timedelta(minutes=path_config.order_wait_minutes),
+                    self.period_end,
+                )
+            common["order_deadline"] = order_deadline
+            watch_fields["watch_order_release_time"] = order_deadline
+            expiry_i = int(
+                np.searchsorted(
+                    self.times,
+                    np.datetime64(order_deadline, "ns"),
+                    side="left",
+                )
+            )
+            if classification["watch_order_name"] == "FlipPredict_LineHolding":
+                if classification["watch_chase_filtered"]:
+                    return {
+                        **common,
+                        **watch_fields,
+                        "path_status": "watch_line_holding_chase_filtered",
+                        "watch_chase_filtered": True,
+                    }
+                fill_i = search_start_i
+                fill_time = pd.Timestamp(self.times[fill_i])
+                entry_price = float(
+                    self.opens[fill_i] + half_spread * order_direction
+                )
+                fill_at_open = True
+                watch_fields["watch_entry_trigger_price"] = entry_price
+                open_breakout_a = float(
+                    (entry_price - line_price)
+                    * breakout_direction
+                    / a_price
+                )
+                if not (
+                    -watch_entry_config.line_holding_max_chase_a
+                    <= open_breakout_a
+                    < watch_entry_config.line_holding_max_breakout_a
+                ):
+                    return {
+                        **common,
+                        **watch_fields,
+                        "order_direction": order_direction,
+                        "path_status": "watch_line_holding_entry_quote_filtered",
+                        "watch_entry_gap_filtered": True,
+                        "watch_order_release_time": fill_time,
+                    }
+            elif (
+                classification["watch_order_name"]
+                == "FlipPredict_NearLineConsolidation"
+            ):
+                watch_fields["watch_entry_trigger_price"] = line_price
+                if order_direction == 1:
+                    entry_touches = (
+                        self.lows[search_start_i:expiry_i] + half_spread
+                        <= line_price
+                    )
+                else:
+                    entry_touches = (
+                        self.highs[search_start_i:expiry_i] - half_spread
+                        >= line_price
+                    )
+                entry_reached = np.flatnonzero(entry_touches)
+                if not entry_reached.size:
+                    complete = self._indexed_window_complete(
+                        search_start_i,
+                        expiry_i,
+                        observation_known_time,
+                        order_deadline,
+                    )
+                    return {
+                        **common,
+                        **watch_fields,
+                        "order_direction": order_direction,
+                        "path_status": (
+                            "watch_retest_no_fill"
+                            if complete
+                            else "incomplete_order_window"
+                        ),
+                    }
+                fill_i = search_start_i + int(entry_reached[0])
+                fill_time = pd.Timestamp(self.times[fill_i])
+                marketable_open = float(
+                    self.opens[fill_i] + half_spread * order_direction
+                )
+                fill_at_open = bool(
+                    marketable_open <= line_price
+                    if order_direction == 1
+                    else marketable_open >= line_price
+                )
+                entry_price = marketable_open if fill_at_open else line_price
+            else:
+                continuation_price = self.pair.pips_to_price(
+                    average_range_pips
+                    * watch_entry_config.breakout_continuation_a
+                )
+                if order_direction == 1:
+                    observed_extreme = float(
+                        np.max(
+                            self.highs[observation_start_i:observation_end_i]
+                            + half_spread
+                        )
+                    )
+                    trigger_price = observed_extreme + continuation_price
+                    entry_touches = (
+                        self.highs[search_start_i:expiry_i] + half_spread
+                        >= trigger_price
+                    )
+                else:
+                    observed_extreme = float(
+                        np.min(
+                            self.lows[observation_start_i:observation_end_i]
+                            - half_spread
+                        )
+                    )
+                    trigger_price = observed_extreme - continuation_price
+                    entry_touches = (
+                        self.lows[search_start_i:expiry_i] - half_spread
+                        <= trigger_price
+                    )
+                watch_fields["watch_entry_trigger_price"] = trigger_price
+                watch_fields["watch_observed_extreme_price"] = observed_extreme
+                entry_reached = np.flatnonzero(entry_touches)
+                if not entry_reached.size:
+                    complete = self._indexed_window_complete(
+                        search_start_i,
+                        expiry_i,
+                        observation_known_time,
+                        order_deadline,
+                    )
+                    return {
+                        **common,
+                        **watch_fields,
+                        "order_direction": order_direction,
+                        "path_status": (
+                            "watch_breakout_no_fill"
+                            if complete
+                            else "incomplete_order_window"
+                        ),
+                    }
+                fill_i = search_start_i + int(entry_reached[0])
+                fill_time = pd.Timestamp(self.times[fill_i])
+                marketable_open = float(
+                    self.opens[fill_i] + half_spread * order_direction
+                )
+                fill_at_open = bool(
+                    marketable_open >= trigger_price
+                    if order_direction == 1
+                    else marketable_open <= trigger_price
+                )
+                entry_price = marketable_open if fill_at_open else trigger_price
+            watch_fields["watch_actual_entry_distance_from_line_a"] = float(
+                abs(entry_price - line_price) / a_price
+            )
+            watch_fields["watch_entry_gap_from_trigger_a"] = float(
+                abs(entry_price - float(watch_fields["watch_entry_trigger_price"]))
+                / a_price
+            )
+            if not self._indexed_window_complete(
+                touch_i,
+                fill_i + 1,
+                touch_time,
+                fill_time + pd.Timedelta(seconds=S5_SECONDS),
+            ):
+                return {
+                    **common,
+                    **watch_fields,
+                    "order_direction": order_direction,
+                    "path_status": "incomplete_watch_before_fill",
+                }
+            if (
+                fill_at_open
+                and watch_fields.get("watch_entry_mode")
+                in {"LIMIT_RETEST", "STOP_CONTINUATION"}
+                and watch_fields["watch_entry_gap_from_trigger_a"]
+                > watch_entry_config.max_entry_gap_a + 1e-12
+            ):
+                return {
+                    **common,
+                    **watch_fields,
+                    "order_direction": order_direction,
+                    "path_status": "watch_entry_gap_filtered",
+                    "watch_entry_gap_filtered": True,
+                    "watch_order_release_time": fill_time,
+                }
+            watch_fields["watch_order_release_time"] = fill_time
         filled = {
             **common,
+            **watch_fields,
+            "order_direction": order_direction,
             "order_filled": True,
             "fill_time": fill_time,
             "fill_delay_from_decision_seconds": float(
                 (fill_time - decision_time).total_seconds()
             ),
             "fill_at_bar_open": bool(fill_at_open),
+            "watch_stop_fill_bar_adverse_censored": bool(
+                watch_fields.get("watch_entry_mode") == "STOP_CONTINUATION"
+                and not fill_at_open
+            ),
         }
         horizon_end = fill_time + pd.Timedelta(
             minutes=self.position_horizon_minutes
@@ -727,28 +1581,74 @@ class FlipPathInspector:
         low = self.lows[fill_i:end_i]
         close = self.closes[fill_i:end_i]
         if order_direction == 1:
-            favorable = (high - half_spread - line_price) / self.pair.pip_value
-            adverse = (low - half_spread - line_price) / self.pair.pip_value
-            timeout_pips = float(
-                (close[-1] - half_spread - line_price) / self.pair.pip_value
-            )
+            favorable = (high - half_spread - entry_price) / self.pair.pip_value
+            adverse = (low - half_spread - entry_price) / self.pair.pip_value
+            close_progress = (
+                close - half_spread - entry_price
+            ) / self.pair.pip_value
+            open_progress = (
+                self.opens[fill_i:end_i] - half_spread - entry_price
+            ) / self.pair.pip_value
+            timeout_pips = float(close_progress[-1])
             fill_close_progress = float(
-                (close[0] - half_spread - line_price) / self.pair.pip_value
+                (close[0] - half_spread - entry_price) / self.pair.pip_value
             )
         else:
-            favorable = (line_price - (low + half_spread)) / self.pair.pip_value
-            adverse = (line_price - (high + half_spread)) / self.pair.pip_value
-            timeout_pips = float(
-                (line_price - (close[-1] + half_spread)) / self.pair.pip_value
-            )
+            favorable = (entry_price - (low + half_spread)) / self.pair.pip_value
+            adverse = (entry_price - (high + half_spread)) / self.pair.pip_value
+            close_progress = (
+                entry_price - (close + half_spread)
+            ) / self.pair.pip_value
+            open_progress = (
+                entry_price - (self.opens[fill_i:end_i] + half_spread)
+            ) / self.pair.pip_value
+            timeout_pips = float(close_progress[-1])
             fill_close_progress = float(
-                (line_price - (close[0] + half_spread)) / self.pair.pip_value
+                (entry_price - (close[0] + half_spread)) / self.pair.pip_value
             )
-        favorable_cumulative = np.maximum.accumulate(favorable)
-        adverse_cumulative = np.minimum.accumulate(adverse)
         metric_favorable = favorable.copy()
+        metric_adverse = adverse.copy()
         if not fill_at_open:
-            metric_favorable[0] = max(0.0, fill_close_progress)
+            if watch_fields.get("watch_entry_mode") == "STOP_CONTINUATION":
+                # A STOP must cross the favorable side after entry, but the
+                # opposite wick may have occurred before the trigger.  Only
+                # adverse movement confirmed by the fill-bar close is causal.
+                metric_adverse[0] = min(0.0, fill_close_progress)
+            else:
+                # For a LIMIT touch, the favorable wick may precede the fill.
+                metric_favorable[0] = max(0.0, fill_close_progress)
+        favorable_cumulative = np.maximum.accumulate(metric_favorable)
+        adverse_cumulative = np.minimum.accumulate(metric_adverse)
+        metric_favorable_cumulative = np.maximum.accumulate(metric_favorable)
+        timed_configs = tuple(
+            timed_half_lc_configs or (TimedHalfLcConfig(None),)
+        )
+        if not timed_configs:
+            raise ValueError("at least one timed half-LC config is required")
+        config_ids = [config.config_id for config in timed_configs]
+        if len(set(config_ids)) != len(config_ids):
+            raise ValueError("timed half-LC config ids must be unique")
+        line_wick_configs = tuple(
+            line_wick_lc_configs or (LineWickLcConfig(None),)
+        )
+        if not line_wick_configs:
+            raise ValueError("at least one line-wick LC config is required")
+        line_wick_ids = [config.config_id for config in line_wick_configs]
+        if len(set(line_wick_ids)) != len(line_wick_ids):
+            raise ValueError("line-wick LC config ids must be unique")
+        overlay_configs = tuple(
+            (timed_config, line_wick_config)
+            for timed_config in timed_configs
+            for line_wick_config in line_wick_configs
+        )
+        if any(
+            timed_config.enabled and line_wick_config.enabled
+            for timed_config, line_wick_config in overlay_configs
+        ):
+            raise ValueError(
+                "timed half-LC and line-wick LC grids must be inspected "
+                "independently"
+            )
         outcomes: dict[str, dict[str, Any]] = {}
         for combo in trade_combos:
             tp_pips, lc_pips = effective_trade_widths(
@@ -761,67 +1661,807 @@ class FlipPathInspector:
             lc_reached = np.flatnonzero(adverse_cumulative <= -lc_pips)
             tp_index = int(tp_reached[0]) if tp_reached.size else None
             lc_index = int(lc_reached[0]) if lc_reached.size else None
-            # A TP seen inside the fill S5 cannot precede the touch unless the
-            # order was marketable at that bar's open or its close confirms TP.
-            if tp_index == 0 and not fill_at_open and fill_close_progress < tp_pips:
-                later = np.flatnonzero(favorable[1:] >= tp_pips)
-                tp_index = int(later[0]) + 1 if later.size else None
-            if lc_index is not None and (tp_index is None or lc_index <= tp_index):
-                exit_index = lc_index
-                result_name = (
-                    "both_same_s5_lc_assumed"
-                    if tp_index is not None and tp_index == lc_index
-                    else "lc"
-                )
-                result_pips = -lc_pips
-            elif tp_index is not None:
-                exit_index = tp_index
-                result_name = "tp"
-                result_pips = tp_pips
-            else:
-                exit_index = len(path_times) - 1
-                result_name = "timeout"
-                result_pips = timeout_pips
-            outcome_end_i = fill_i + exit_index + 1
-            outcome_end = (
-                horizon_end
-                if result_name == "timeout"
-                else pd.Timestamp(path_times[exit_index])
-                + pd.Timedelta(seconds=S5_SECONDS)
+            original_tp_first_time = (
+                pd.Timestamp(path_times[tp_index])
+                if tp_index is not None
+                else pd.NaT
             )
-            if not self._strict_position_window_complete(
-                fill_i,
-                outcome_end_i,
-                fill_time,
-                outcome_end,
-            ):
-                continue
-            result_r = float(result_pips / lc_pips)
-            outcomes[combo.combo_id] = {
-                "combo_id": combo.combo_id,
-                "tp_a": combo.tp_a,
-                "lc_a": combo.lc_a,
-                "configured_rr": combo.configured_rr,
-                "effective_rr": tp_pips / lc_pips,
-                "tp_pips": tp_pips,
-                "lc_pips": lc_pips,
-                "trade_result": result_name,
-                "trade_result_pips": float(result_pips),
-                "result_r": result_r,
-                "result_yen": result_yen(
-                    self.pair, result_pips, lc_pips, self.risk_yen
-                ),
-                "exit_time": pd.Timestamp(path_times[exit_index]),
-                "actual_entry_price": line_price,
-                "actual_exit_price": float(
-                    line_price
-                    + order_direction * self.pair.pips_to_price(result_pips)
-                ),
-                "max_favorable_pips": float(
-                    np.nanmax(metric_favorable[: exit_index + 1])
-                ),
-                "max_adverse_pips": float(np.nanmin(adverse[: exit_index + 1])),
-            }
+            original_lc_first_time = (
+                pd.Timestamp(path_times[lc_index])
+                if lc_index is not None
+                else pd.NaT
+            )
+            profit_lock_enabled = bool(
+                self.profit_lock_enabled
+                and tp_pips + 1e-12 >= self.profit_lock_min_tp_pips
+            )
+            profit_lock_trigger_pips = (
+                tp_pips * self.profit_lock_trigger_tp_fraction
+                if profit_lock_enabled
+                else np.nan
+            )
+            profit_lock_trigger_index: int | None = None
+            profit_lock_index: int | None = None
+            profit_lock_exit_pips = (
+                tp_pips * self.profit_lock_result_tp_fraction
+                if self.profit_lock_result_tp_fraction is not None
+                else self.profit_lock_result_pips
+            )
+            profit_lock_exit_mode = "not_active"
+            if profit_lock_enabled:
+                trigger_reached = np.flatnonzero(
+                    metric_favorable_cumulative >= profit_lock_trigger_pips
+                )
+                if trigger_reached.size:
+                    profit_lock_trigger_index = int(trigger_reached[0])
+                    # The raised stop becomes causal only after the trigger S5
+                    # has completed.  Never infer intrabar ordering from its
+                    # high and low.
+                    first_active_index = profit_lock_trigger_index + 1
+                    if first_active_index < len(adverse):
+                        lock_open = np.flatnonzero(
+                            open_progress[first_active_index:]
+                            <= profit_lock_exit_pips
+                        )
+                        lock_touch = np.flatnonzero(
+                            adverse[first_active_index:]
+                            <= profit_lock_exit_pips
+                        )
+                        open_index = (
+                            first_active_index + int(lock_open[0])
+                            if lock_open.size
+                            else None
+                        )
+                        touch_index = (
+                            first_active_index + int(lock_touch[0])
+                            if lock_touch.size
+                            else None
+                        )
+                        lock_indices = [
+                            value
+                            for value in (open_index, touch_index)
+                            if value is not None
+                        ]
+                        if lock_indices:
+                            profit_lock_index = min(lock_indices)
+                            if (
+                                open_index is not None
+                                and open_index == profit_lock_index
+                            ):
+                                profit_lock_exit_pips = float(
+                                    open_progress[profit_lock_index]
+                                )
+                                profit_lock_exit_mode = (
+                                    "activation_or_gap_open"
+                                )
+                            else:
+                                profit_lock_exit_mode = "intrabar_touch"
+            for timed_config, line_wick_config in overlay_configs:
+                half_tp_trigger_pips = tp_pips * timed_config.tp_fraction
+                half_tp_reached = np.flatnonzero(
+                    metric_favorable_cumulative >= half_tp_trigger_pips
+                )
+                half_tp_index = (
+                    int(half_tp_reached[0]) if half_tp_reached.size else None
+                )
+                half_tp_first_time = (
+                    pd.Timestamp(path_times[half_tp_index])
+                    if half_tp_index is not None
+                    else pd.NaT
+                )
+                half_tp_known_from = (
+                    half_tp_first_time + pd.Timedelta(seconds=S5_SECONDS)
+                    if half_tp_index is not None
+                    else pd.NaT
+                )
+                fill_bar_half_tp_ambiguous = bool(
+                    not fill_at_open
+                    and favorable[0] + 1e-12 >= half_tp_trigger_pips
+                    and metric_favorable[0] + 1e-12 < half_tp_trigger_pips
+                )
+
+                timer_anchor = (
+                    fill_time
+                    if fill_at_open
+                    else fill_time + pd.Timedelta(seconds=S5_SECONDS)
+                )
+                timed_check_time = pd.NaT
+                timed_active_index: int | None = None
+                timed_checkpoint_evaluable = False
+                position_open_at_checkpoint = False
+                half_tp_before_checkpoint = False
+                timed_lc_activated = False
+                timed_lc_suppressed_by_fill_ambiguity = False
+                timed_lc_active_from = pd.NaT
+                timed_activation_open_pips = np.nan
+                timed_activation_already_breached = False
+                max_favorable_before_checkpoint = np.nan
+                max_adverse_before_checkpoint = np.nan
+                timed_stop_index: int | None = None
+                timed_stop_result_pips = np.nan
+                timed_stop_exit_mode = "not_active"
+
+                tick_pips = (
+                    10.0 ** -int(self.pair.round_keta)
+                ) / float(self.pair.pip_value)
+                timed_requested_lc_pips = lc_pips * timed_config.lc_fraction
+                timed_effective_lc_pips = max(
+                    tick_pips,
+                    math.floor(
+                        timed_requested_lc_pips / tick_pips + 1e-12
+                    )
+                    * tick_pips,
+                )
+                timed_lc_price = float(
+                    entry_price
+                    + order_direction
+                    * self.pair.pips_to_price(-timed_effective_lc_pips)
+                )
+
+                if timed_config.enabled:
+                    timed_check_time = timer_anchor + pd.Timedelta(
+                        minutes=int(timed_config.trigger_minutes)
+                    )
+                    timed_active_index = int(
+                        np.searchsorted(
+                            path_times,
+                            np.datetime64(timed_check_time, "ns"),
+                            side="left",
+                        )
+                    )
+                    timed_checkpoint_evaluable = (
+                        timed_active_index < len(path_times)
+                    )
+                    if timed_checkpoint_evaluable:
+                        completed_slice = slice(0, timed_active_index)
+                        if timed_active_index > 0:
+                            max_favorable_before_checkpoint = float(
+                                np.nanmax(metric_favorable[completed_slice])
+                            )
+                            max_adverse_before_checkpoint = float(
+                                np.nanmin(metric_adverse[completed_slice])
+                            )
+                        half_tp_before_checkpoint = bool(
+                            (
+                                half_tp_index is not None
+                                and half_tp_index < timed_active_index
+                            )
+                            or (
+                                fill_bar_half_tp_ambiguous
+                                and timed_active_index > 0
+                            )
+                        )
+                        prior_tp = tp_index is not None and tp_index < timed_active_index
+                        prior_lc = lc_index is not None and lc_index < timed_active_index
+                        prior_profit_lock = (
+                            profit_lock_index is not None
+                            and profit_lock_index < timed_active_index
+                        )
+                        position_open_at_checkpoint = not (
+                            prior_tp or prior_lc or prior_profit_lock
+                        )
+                        if position_open_at_checkpoint:
+                            timed_activation_open_pips = float(
+                                open_progress[timed_active_index]
+                            )
+                            timed_activation_already_breached = bool(
+                                timed_activation_open_pips
+                                <= -timed_effective_lc_pips + 1e-12
+                            )
+                        timed_lc_suppressed_by_fill_ambiguity = bool(
+                            position_open_at_checkpoint
+                            and timed_activation_already_breached
+                            and fill_bar_half_tp_ambiguous
+                            and timed_active_index > 0
+                        )
+                        timed_lc_activated = bool(
+                            position_open_at_checkpoint
+                            and timed_activation_already_breached
+                            and not timed_lc_suppressed_by_fill_ambiguity
+                        )
+                        if timed_lc_activated:
+                            timed_lc_active_from = pd.Timestamp(
+                                path_times[timed_active_index]
+                            )
+                            # The checkpoint S5 open is the only decision input.
+                            # Once it is already at/below the reduced LC width,
+                            # close at that spread-aware open without inspecting
+                            # any later high/low.
+                            timed_stop_index = timed_active_index
+                            timed_stop_result_pips = timed_activation_open_pips
+                            timed_stop_exit_mode = "activation_or_gap_open"
+
+                line_wick_requested_pips = (
+                    average_range_pips * float(line_wick_config.width_a)
+                    if line_wick_config.enabled
+                    else np.nan
+                )
+                line_wick_effective_pips = (
+                    max(
+                        tick_pips,
+                        math.ceil(
+                            line_wick_requested_pips / tick_pips - 1e-12
+                        )
+                        * tick_pips,
+                    )
+                    if line_wick_config.enabled
+                    else np.nan
+                )
+                line_wick_price = (
+                    float(
+                        line_price
+                        + order_direction
+                        * self.pair.pips_to_price(-line_wick_effective_pips)
+                    )
+                    if line_wick_config.enabled
+                    else np.nan
+                )
+                line_wick_stop_index: int | None = None
+                line_wick_stop_result_pips = np.nan
+                line_wick_stop_exit_mode = "not_active"
+                if line_wick_config.enabled:
+                    line_wick_reached = np.flatnonzero(
+                        adverse_cumulative <= -line_wick_effective_pips
+                    )
+                    if line_wick_reached.size:
+                        line_wick_stop_index = int(line_wick_reached[0])
+                        line_wick_stop_result_pips = -line_wick_effective_pips
+                        line_wick_stop_exit_mode = "intrabar_wick_touch"
+                        if (
+                            line_wick_stop_index > 0 or fill_at_open
+                        ) and open_progress[line_wick_stop_index] <= (
+                            -line_wick_effective_pips + 1e-12
+                        ):
+                            line_wick_stop_result_pips = float(
+                                open_progress[line_wick_stop_index]
+                            )
+                            line_wick_stop_exit_mode = "gap_open"
+
+                original_lc_index = lc_index
+                if (
+                    original_lc_index is not None
+                    and profit_lock_trigger_index is not None
+                    and original_lc_index > profit_lock_trigger_index
+                ):
+                    # Once the trigger S5 closes, +1 pip replaces the original LC.
+                    original_lc_index = None
+                if (
+                    timed_lc_activated
+                    and original_lc_index is not None
+                    and timed_active_index is not None
+                    and original_lc_index >= timed_active_index
+                ):
+                    original_lc_index = None
+                original_lc_result_pips = -lc_pips
+                original_lc_exit_mode = "intrabar_touch"
+                if (
+                    original_lc_index is not None
+                    and (original_lc_index > 0 or fill_at_open)
+                    and open_progress[original_lc_index]
+                    <= -lc_pips + 1e-12
+                ):
+                    original_lc_result_pips = float(
+                        open_progress[original_lc_index]
+                    )
+                    original_lc_exit_mode = "gap_open"
+
+                stop_candidates = []
+                if original_lc_index is not None:
+                    stop_candidates.append(
+                        (
+                            original_lc_index,
+                            "lc",
+                            original_lc_result_pips,
+                            original_lc_exit_mode,
+                        )
+                    )
+                if timed_stop_index is not None:
+                    stop_candidates.append(
+                        (
+                            timed_stop_index,
+                            "timed_half_lc",
+                            timed_stop_result_pips,
+                            timed_stop_exit_mode,
+                        )
+                    )
+                if line_wick_stop_index is not None:
+                    stop_candidates.append(
+                        (
+                            line_wick_stop_index,
+                            "line_wick_lc",
+                            line_wick_stop_result_pips,
+                            line_wick_stop_exit_mode,
+                        )
+                    )
+                if profit_lock_index is not None:
+                    stop_candidates.append(
+                        (
+                            profit_lock_index,
+                            "profit_lock",
+                            profit_lock_exit_pips,
+                            profit_lock_exit_mode,
+                        )
+                    )
+                stop = (
+                    min(stop_candidates, key=lambda value: value[0])
+                    if stop_candidates
+                    else None
+                )
+                if stop is not None and (
+                    tp_index is None or int(stop[0]) <= tp_index
+                ):
+                    exit_index = int(stop[0])
+                    stop_name = str(stop[1])
+                    result_pips = float(stop[2])
+                    exit_mode = str(stop[3])
+                    if stop_name == "profit_lock":
+                        result_name = "profit_lock"
+                    elif stop_name == "timed_half_lc":
+                        result_name = "timed_half_lc"
+                    elif stop_name == "line_wick_lc":
+                        result_name = "line_wick_lc"
+                    else:
+                        result_name = (
+                            "both_same_s5_lc_assumed"
+                            if tp_index is not None and tp_index == exit_index
+                            else "lc"
+                        )
+                elif tp_index is not None:
+                    exit_index = tp_index
+                    result_name = "tp"
+                    result_pips = tp_pips
+                    exit_mode = "intrabar_touch"
+                else:
+                    exit_index = len(path_times) - 1
+                    result_name = "timeout"
+                    result_pips = timeout_pips
+                    exit_mode = "horizon_close"
+                outcome_end_i = fill_i + exit_index + 1
+                outcome_end = (
+                    horizon_end
+                    if result_name == "timeout"
+                    else pd.Timestamp(path_times[exit_index])
+                    + pd.Timedelta(seconds=S5_SECONDS)
+                )
+                if not self._strict_position_window_complete(
+                    fill_i,
+                    outcome_end_i,
+                    fill_time,
+                    outcome_end,
+                ):
+                    continue
+                result_r = float(result_pips / lc_pips)
+                profit_lock_activated = bool(
+                    profit_lock_trigger_index is not None
+                    and exit_index > profit_lock_trigger_index
+                )
+                profit_lock_active_from = (
+                    pd.Timestamp(path_times[profit_lock_trigger_index])
+                    + pd.Timedelta(seconds=S5_SECONDS)
+                    if profit_lock_activated
+                    else pd.NaT
+                )
+                timed_lc_exit = result_name == "timed_half_lc"
+                timed_lc_exit_at_open = bool(
+                    timed_lc_exit
+                    and timed_stop_exit_mode == "activation_or_gap_open"
+                )
+                line_wick_lc_exit = result_name == "line_wick_lc"
+                line_wick_lc_exit_at_open = bool(
+                    line_wick_lc_exit
+                    and line_wick_stop_exit_mode == "gap_open"
+                )
+                line_wick_lc_reached_while_open = bool(
+                    line_wick_stop_index is not None
+                    and (
+                        line_wick_stop_index < exit_index
+                        or (
+                            line_wick_stop_index == exit_index
+                            and line_wick_lc_exit
+                        )
+                    )
+                )
+                exit_at_bar_open = exit_mode in (
+                    "activation_or_gap_open",
+                    "gap_open",
+                )
+                exit_time = pd.Timestamp(path_times[exit_index])
+                half_tp_reached_while_open = bool(
+                    half_tp_index is not None
+                    and (
+                        half_tp_index < exit_index
+                        or (
+                            half_tp_index == exit_index
+                            and result_name in ("tp", "timeout")
+                        )
+                    )
+                )
+                half_tp_after_activation_while_open = bool(
+                    timed_lc_activated
+                    and half_tp_reached_while_open
+                    and half_tp_index is not None
+                    and timed_active_index is not None
+                    and half_tp_index >= timed_active_index
+                )
+                counterfactual_half_tp_after_activation = bool(
+                    timed_lc_activated
+                    and half_tp_index is not None
+                    and timed_active_index is not None
+                    and half_tp_index >= timed_active_index
+                )
+                original_tp_reached_while_open = bool(
+                    tp_index is not None
+                    and (
+                        tp_index < exit_index
+                        or (tp_index == exit_index and result_name == "tp")
+                    )
+                )
+                original_lc_reached_while_open = bool(
+                    lc_index is not None
+                    and (
+                        lc_index < exit_index
+                        or (
+                            lc_index == exit_index
+                            and result_name
+                            in ("lc", "both_same_s5_lc_assumed")
+                        )
+                    )
+                )
+                profit_lock_trigger_reached_while_open = bool(
+                    profit_lock_trigger_index is not None
+                    and (
+                        profit_lock_trigger_index < exit_index
+                        or (
+                            profit_lock_trigger_index == exit_index
+                            and result_name in ("tp", "timeout")
+                        )
+                    )
+                )
+                exit_effective_time = (
+                    exit_time
+                    if exit_at_bar_open
+                    else exit_time + pd.Timedelta(seconds=S5_SECONDS)
+                )
+                exit_s5_opposite_extreme_censored = result_name != "timeout"
+                if exit_s5_opposite_extreme_censored:
+                    # The opposite wick of an intrabar TP/LC S5 may occur
+                    # after the position has already exited.  Keep completed
+                    # prior S5s, the known exit-S5 open, and the exit point.
+                    entry_mark_pips = -self.spread_pips
+                    exit_open_pips = (
+                        float(open_progress[exit_index])
+                        if exit_index > 0 or fill_at_open
+                        else entry_mark_pips
+                    )
+                    known_boundary_points = np.asarray(
+                        (entry_mark_pips, exit_open_pips, float(result_pips)),
+                        dtype=float,
+                    )
+                    final_favorable_points = np.concatenate(
+                        (
+                            metric_favorable[:exit_index],
+                            known_boundary_points,
+                        )
+                    )
+                    final_adverse_points = np.concatenate(
+                        (
+                            metric_adverse[:exit_index],
+                            known_boundary_points,
+                        )
+                    )
+                else:
+                    final_favorable_points = metric_favorable[: exit_index + 1]
+                    final_adverse_points = metric_adverse[: exit_index + 1]
+                final_max_favorable_pips = float(
+                    np.nanmax(final_favorable_points)
+                )
+                final_max_adverse_pips = float(
+                    np.nanmin(final_adverse_points)
+                )
+                early_path_fields: dict[str, Any] = {}
+                if (
+                    watch_fields.get("watch_order_name")
+                    == "FlipPredict_LineHolding"
+                ):
+                    early_path_fields = self._early_path_fields(
+                        path_times=path_times,
+                        timer_anchor=timer_anchor,
+                        exit_effective_time=exit_effective_time,
+                        entry_price=entry_price,
+                        line_price=line_price,
+                        order_direction=order_direction,
+                        average_range_pips=average_range_pips,
+                        close_progress=close_progress,
+                        open_progress=open_progress,
+                        metric_favorable=metric_favorable,
+                        metric_adverse=metric_adverse,
+                        path_opens=self.opens[fill_i:end_i],
+                        path_closes=close,
+                    )
+                outcome_key = overlay_outcome_key(
+                    combo, timed_config, line_wick_config
+                )
+                outcomes[outcome_key] = {
+                    "combo_id": combo.combo_id,
+                    "tp_a": combo.tp_a,
+                    "lc_a": combo.lc_a,
+                    "configured_rr": combo.configured_rr,
+                    "effective_rr": tp_pips / lc_pips,
+                    "tp_pips": tp_pips,
+                    "lc_pips": lc_pips,
+                    "original_tp_first_reached_time": (
+                        original_tp_first_time
+                        if original_tp_reached_while_open
+                        else pd.NaT
+                    ),
+                    "original_tp_known_from": (
+                        original_tp_first_time + pd.Timedelta(seconds=S5_SECONDS)
+                        if original_tp_reached_while_open
+                        else pd.NaT
+                    ),
+                    "minutes_to_original_tp": (
+                        float(
+                            (
+                                original_tp_first_time
+                                + pd.Timedelta(seconds=S5_SECONDS)
+                                - timer_anchor
+                            ).total_seconds()
+                            / 60
+                        )
+                        if original_tp_reached_while_open
+                        else np.nan
+                    ),
+                    "original_lc_first_reached_time": (
+                        original_lc_first_time
+                        if original_lc_reached_while_open
+                        else pd.NaT
+                    ),
+                    "original_lc_known_from": (
+                        original_lc_first_time + pd.Timedelta(seconds=S5_SECONDS)
+                        if original_lc_reached_while_open
+                        else pd.NaT
+                    ),
+                    "minutes_to_original_lc": (
+                        float(
+                            (
+                                original_lc_first_time
+                                + pd.Timedelta(seconds=S5_SECONDS)
+                                - timer_anchor
+                            ).total_seconds()
+                            / 60
+                        )
+                        if original_lc_reached_while_open
+                        else np.nan
+                    ),
+                    "counterfactual_horizon_original_tp_reached": (
+                        tp_index is not None
+                    ),
+                    "counterfactual_horizon_original_tp_first_reached_time": (
+                        original_tp_first_time
+                    ),
+                    "counterfactual_horizon_minutes_to_original_tp": (
+                        float(
+                            (
+                                original_tp_first_time
+                                + pd.Timedelta(seconds=S5_SECONDS)
+                                - timer_anchor
+                            ).total_seconds()
+                            / 60
+                        )
+                        if tp_index is not None
+                        else np.nan
+                    ),
+                    "counterfactual_horizon_original_lc_reached": (
+                        lc_index is not None
+                    ),
+                    "counterfactual_horizon_original_lc_first_reached_time": (
+                        original_lc_first_time
+                    ),
+                    "counterfactual_horizon_minutes_to_original_lc": (
+                        float(
+                            (
+                                original_lc_first_time
+                                + pd.Timedelta(seconds=S5_SECONDS)
+                                - timer_anchor
+                            ).total_seconds()
+                            / 60
+                        )
+                        if lc_index is not None
+                        else np.nan
+                    ),
+                    "half_tp_trigger_fraction": timed_config.tp_fraction,
+                    "half_tp_trigger_pips": half_tp_trigger_pips,
+                    "half_tp_reached": half_tp_reached_while_open,
+                    "half_tp_first_reached_time": (
+                        half_tp_first_time
+                        if half_tp_reached_while_open
+                        else pd.NaT
+                    ),
+                    "half_tp_known_from": (
+                        half_tp_known_from
+                        if half_tp_reached_while_open
+                        else pd.NaT
+                    ),
+                    "minutes_to_half_tp": (
+                        float((half_tp_known_from - timer_anchor).total_seconds() / 60)
+                        if half_tp_reached_while_open
+                        else np.nan
+                    ),
+                    "counterfactual_horizon_half_tp_reached": (
+                        half_tp_index is not None
+                    ),
+                    "counterfactual_horizon_half_tp_first_reached_time": (
+                        half_tp_first_time
+                    ),
+                    "counterfactual_horizon_minutes_to_half_tp": (
+                        float(
+                            (half_tp_known_from - timer_anchor).total_seconds()
+                            / 60
+                        )
+                        if half_tp_index is not None
+                        else np.nan
+                    ),
+                    "fill_bar_half_tp_ambiguous": fill_bar_half_tp_ambiguous,
+                    "profit_lock_enabled": profit_lock_enabled,
+                    "profit_lock_min_tp_pips": self.profit_lock_min_tp_pips,
+                    "profit_lock_trigger_tp_fraction": (
+                        self.profit_lock_trigger_tp_fraction
+                    ),
+                    "profit_lock_trigger_pips": profit_lock_trigger_pips,
+                    "profit_lock_result_pips": self.profit_lock_result_pips,
+                    "profit_lock_result_tp_fraction": (
+                        self.profit_lock_result_tp_fraction
+                    ),
+                    "profit_lock_effective_result_pips": (
+                        profit_lock_exit_pips if profit_lock_enabled else np.nan
+                    ),
+                    "profit_lock_trigger_reached": (
+                        profit_lock_trigger_reached_while_open
+                    ),
+                    "counterfactual_horizon_profit_lock_trigger_reached": (
+                        profit_lock_trigger_index is not None
+                    ),
+                    "profit_lock_activated": profit_lock_activated,
+                    "profit_lock_active_from": profit_lock_active_from,
+                    "profit_lock_exit_at_bar_open": bool(
+                        result_name == "profit_lock" and exit_at_bar_open
+                    ),
+                    "profit_lock_slippage_pips": (
+                        float(result_pips - profit_lock_exit_pips)
+                        if result_name == "profit_lock" and exit_at_bar_open
+                        else 0.0 if result_name == "profit_lock" else np.nan
+                    ),
+                    "original_lc_exit_at_bar_open": bool(
+                        result_name in ("lc", "both_same_s5_lc_assumed")
+                        and exit_at_bar_open
+                    ),
+                    "original_lc_slippage_pips": (
+                        float(result_pips + lc_pips)
+                        if result_name in ("lc", "both_same_s5_lc_assumed")
+                        and exit_at_bar_open
+                        else (
+                            0.0
+                            if result_name
+                            in ("lc", "both_same_s5_lc_assumed")
+                            else np.nan
+                        )
+                    ),
+                    "timed_half_lc_config_id": timed_config.config_id,
+                    "timed_half_lc_enabled": timed_config.enabled,
+                    "timed_half_lc_trigger_minutes": timed_config.trigger_minutes,
+                    "timed_half_lc_fraction": timed_config.lc_fraction,
+                    "timed_half_lc_timer_anchor": timer_anchor,
+                    "timed_half_lc_check_time": timed_check_time,
+                    "timed_half_lc_checkpoint_evaluable": (
+                        timed_checkpoint_evaluable
+                    ),
+                    "timed_half_lc_position_open_at_checkpoint": (
+                        position_open_at_checkpoint
+                    ),
+                    "half_tp_reached_before_timed_checkpoint": (
+                        half_tp_before_checkpoint
+                    ),
+                    "max_favorable_before_timed_checkpoint_pips": (
+                        max_favorable_before_checkpoint
+                    ),
+                    "max_adverse_before_timed_checkpoint_pips": (
+                        max_adverse_before_checkpoint
+                    ),
+                    "timed_half_lc_activated": timed_lc_activated,
+                    "timed_half_lc_suppressed_by_fill_bar_ambiguity": (
+                        timed_lc_suppressed_by_fill_ambiguity
+                    ),
+                    "timed_half_lc_active_from": timed_lc_active_from,
+                    "timed_half_lc_requested_pips": timed_requested_lc_pips,
+                    "timed_half_lc_effective_pips": timed_effective_lc_pips,
+                    "timed_half_lc_price": timed_lc_price,
+                    "timed_half_lc_activation_open_pips": (
+                        timed_activation_open_pips
+                    ),
+                    "timed_half_lc_activation_already_breached": (
+                        timed_activation_already_breached
+                    ),
+                    "half_tp_reached_after_timed_activation": (
+                        half_tp_after_activation_while_open
+                    ),
+                    "counterfactual_half_tp_reached_after_timed_activation": (
+                        counterfactual_half_tp_after_activation
+                    ),
+                    "timed_half_lc_exit": timed_lc_exit,
+                    "timed_half_lc_exit_mode": timed_stop_exit_mode,
+                    "timed_half_lc_exit_at_bar_open": timed_lc_exit_at_open,
+                    "timed_half_lc_exit_time": (
+                        exit_time if timed_lc_exit else pd.NaT
+                    ),
+                    "timed_half_lc_slippage_pips": (
+                        float(result_pips + timed_effective_lc_pips)
+                        if timed_lc_exit_at_open
+                        else 0.0 if timed_lc_exit else np.nan
+                    ),
+                    "line_wick_lc_config_id": line_wick_config.config_id,
+                    "line_wick_lc_enabled": line_wick_config.enabled,
+                    "line_wick_lc_width_a": line_wick_config.width_a,
+                    "line_wick_lc_requested_pips": (
+                        line_wick_requested_pips
+                    ),
+                    "line_wick_lc_effective_pips": (
+                        line_wick_effective_pips
+                    ),
+                    "line_wick_lc_price": line_wick_price,
+                    "line_wick_lc_reached": line_wick_lc_reached_while_open,
+                    "counterfactual_horizon_line_wick_lc_reached": (
+                        line_wick_stop_index is not None
+                    ),
+                    "line_wick_lc_exit": line_wick_lc_exit,
+                    "line_wick_lc_exit_mode": line_wick_stop_exit_mode,
+                    "line_wick_lc_exit_at_bar_open": (
+                        line_wick_lc_exit_at_open
+                    ),
+                    "line_wick_lc_exit_time": (
+                        exit_time if line_wick_lc_exit else pd.NaT
+                    ),
+                    "line_wick_lc_same_s5_tp_assumed_first": bool(
+                        line_wick_lc_exit
+                        and tp_index is not None
+                        and tp_index == exit_index
+                    ),
+                    "line_wick_lc_slippage_pips": (
+                        float(result_pips + line_wick_effective_pips)
+                        if line_wick_lc_exit_at_open
+                        else 0.0 if line_wick_lc_exit else np.nan
+                    ),
+                    "trade_result": result_name,
+                    "trade_result_pips": float(result_pips),
+                    "result_r": result_r,
+                    "result_yen": result_yen(
+                        self.pair, result_pips, lc_pips, self.risk_yen
+                    ),
+                    "exit_time": exit_time,
+                    "exit_effective_time": exit_effective_time,
+                    "minutes_from_fill_to_exit": float(
+                        (exit_effective_time - timer_anchor).total_seconds() / 60
+                    ),
+                    "minutes_from_timed_activation_to_exit": (
+                        float(
+                            (exit_effective_time - timed_lc_active_from).total_seconds()
+                            / 60
+                        )
+                        if timed_lc_activated
+                        else np.nan
+                    ),
+                    "actual_entry_price": entry_price,
+                    "actual_exit_price": float(
+                        entry_price
+                        + order_direction * self.pair.pips_to_price(result_pips)
+                    ),
+                    "max_favorable_pips": final_max_favorable_pips,
+                    "max_adverse_pips": final_max_adverse_pips,
+                    "exit_s5_opposite_extreme_censored": (
+                        exit_s5_opposite_extreme_censored
+                    ),
+                    "exit_execution_mode": exit_mode,
+                    **early_path_fields,
+                }
         completed = bool(outcomes)
         return {
             **filled,

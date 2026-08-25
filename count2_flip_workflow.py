@@ -1,4 +1,4 @@
-# 最終更新: 2026-08-23 08:22 JST
+# 最新更新日時: 2026-08-25 15:35 JST
 """Shared I/O, aggregation, and replay mechanics for ``flip_predict``."""
 
 from __future__ import annotations
@@ -19,17 +19,29 @@ import pandas as pd
 import fGeneric as gene
 import tokens as tk
 from count2_flip_core import (
+    EARLY_PATH_METRICS,
+    EARLY_PATH_MINUTES,
     FEATURE_FIELDS,
     FLIP_VERSION,
+    RANGE_FILTER_FRACTION_A,
+    STRETCH_PROFIT_LOCK_TP_FRACTION,
+    STRETCH_PROFIT_TARGET_B,
+    STRETCH_PROFIT_TRIGGER_TP_FRACTION,
     FlipPathConfig,
     FlipPathInspector,
+    FlipWatchEntryConfig,
+    LineWickLcConfig,
     PolicyCondition,
     RankedPolicyCondition,
     TierExecutionConfig,
+    TimedHalfLcConfig,
     TradeCombo,
     add_feature_buckets,
     condition_mask,
     expected_role,
+    line_wick_outcome_key,
+    overlay_outcome_key,
+    timed_outcome_key,
     tier_for_rank,
 )
 from count2_target_grid_search import (
@@ -40,10 +52,6 @@ from count2_target_grid_search import (
 
 
 Notice = Callable[[str], None]
-
-
-MIN_TRADE_RANGE_FRACTION_A = 0.25
-MIN_TRADE_RANGE_FRACTION_PIPS = 2.0
 
 
 SOURCE_COLUMNS = {
@@ -188,10 +196,29 @@ def archive_file(path: Path) -> Path | None:
 
 
 def atomic_json(path: Path, payload: Mapping[str, Any]) -> None:
+    def json_safe(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return {str(key): json_safe(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [json_safe(item) for item in value]
+        if isinstance(value, np.generic):
+            return json_safe(value.item())
+        if value is pd.NA or value is pd.NaT:
+            return None
+        if isinstance(value, float) and not math.isfinite(value):
+            return None
+        return value
+
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        json.dumps(
+            json_safe(payload),
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+            allow_nan=False,
+        ),
         encoding="utf-8",
     )
     _replace_with_retry(temporary, path)
@@ -308,12 +335,13 @@ def load_candidates(
     available_columns = (SOURCE_COLUMNS | OPTIONAL_SOURCE_COLUMNS).intersection(
         header
     )
-    for chunk in pd.read_csv(
+    reader = pd.read_csv(
         source,
         usecols=lambda column: column in available_columns,
         chunksize=chunksize,
         low_memory=False,
-    ):
+    )
+    for chunk in reader:
         if max_rows is not None:
             remaining = max_rows - rows_read
             if remaining <= 0:
@@ -347,9 +375,6 @@ def load_candidates(
             & work["trade_direction"].eq(-work["peak_direction"])
             & work["line_price"].notna()
             & work["recent_m5_avg_range_pips"].gt(0)
-            & work["recent_m5_avg_range_pips"]
-            .mul(MIN_TRADE_RANGE_FRACTION_A)
-            .ge(MIN_TRADE_RANGE_FRACTION_PIPS)
         ]
         # dirs_grouped is stored newest-first; its first sign is the newest
         # constituent peak direction.  Historical support/resistance labels
@@ -377,19 +402,40 @@ def load_candidates(
             ("line_newest_source_time", pd.Timedelta(minutes=5)),
             ("line_latest_touch_time", pd.Timedelta(minutes=5)),
         )
+        required_causal_columns = {
+            "target_source_last_time",
+            "fc2_source_last_time",
+            "h1_pair_source_last_time",
+            "line_newest_source_time",
+        }
         for column, completion in causal_specs:
             source_time = pd.to_datetime(
                 work[column], format="mixed", errors="coerce"
             )
+            missing_required = (
+                source_time.isna()
+                if column in required_causal_columns
+                else pd.Series(False, index=work.index)
+            )
+            if missing_required.any():
+                bad = work.loc[
+                    missing_required, ["event_id", "decision_time", column]
+                ].iloc[0]
+                reader.close()
+                raise ValueError(
+                    f"missing causal feature in {source.name}: {bad.to_dict()}"
+                )
             future = source_time.notna() & (source_time + completion > decision)
             if future.any():
                 bad = work.loc[future, ["event_id", "decision_time", column]].iloc[0]
+                reader.close()
                 raise ValueError(
                     f"future feature in {source.name}: {bad.to_dict()}"
                 )
         frames.append(work)
         if max_rows is not None and rows_read >= max_rows:
             break
+    reader.close()
     if not frames:
         raise ValueError(f"no eligible flip_predict candidates in {source}")
     result = pd.concat(frames, ignore_index=True)
@@ -419,6 +465,11 @@ def load_path_inspector(
     position_horizon_minutes: int,
     min_width_pips: float,
     risk_yen: float,
+    profit_lock_enabled: bool,
+    profit_lock_min_tp_pips: float,
+    profit_lock_trigger_tp_fraction: float,
+    profit_lock_result_pips: float,
+    profit_lock_result_tp_fraction: float | None = None,
 ) -> tuple[FlipPathInspector, dict[str, Any]]:
     if not s5_source.is_file():
         raise FileNotFoundError(f"flip_predict S5 source not found: {s5_source}")
@@ -438,8 +489,61 @@ def load_path_inspector(
             position_horizon_minutes=position_horizon_minutes,
             min_width_pips=min_width_pips,
             risk_yen=risk_yen,
+            profit_lock_enabled=profit_lock_enabled,
+            profit_lock_min_tp_pips=profit_lock_min_tp_pips,
+            profit_lock_trigger_tp_fraction=(
+                profit_lock_trigger_tp_fraction
+            ),
+            profit_lock_result_pips=profit_lock_result_pips,
+            profit_lock_result_tp_fraction=(
+                profit_lock_result_tp_fraction
+            ),
         ),
         metadata,
+    )
+
+
+def stretch_profit_lock_tier_configs(
+    base_configs: Iterable[TierExecutionConfig],
+) -> tuple[TierExecutionConfig, ...]:
+    """Double the frozen TP (1B -> 2B) while retaining the frozen hard LC."""
+    configs = []
+    for base in base_configs:
+        configs.append(
+            TierExecutionConfig(
+                tier=base.tier,
+                first_rank=base.first_rank,
+                last_rank=base.last_rank,
+                tp_a=base.tp_a * STRETCH_PROFIT_TARGET_B,
+                rr=base.rr * STRETCH_PROFIT_TARGET_B,
+                min_range_filter_pips=base.min_range_filter_pips,
+            )
+        )
+    return tuple(configs)
+
+
+def stretch_profit_lock_inspector(
+    base: FlipPathInspector,
+) -> FlipPathInspector:
+    """Clone an inspector for 2B TP / 1.2B arm / +1B raised-stop paths."""
+    return FlipPathInspector(
+        base.inspector,
+        base.pair,
+        period_end_exclusive=base.period_end,
+        spread_pips=base.spread_pips,
+        position_horizon_minutes=base.position_horizon_minutes,
+        min_width_pips=base.min_width_pips,
+        risk_yen=base.risk_yen,
+        profit_lock_enabled=True,
+        profit_lock_min_tp_pips=base.min_width_pips,
+        profit_lock_trigger_tp_fraction=(
+            STRETCH_PROFIT_TRIGGER_TP_FRACTION
+        ),
+        # Ignored when the event-relative result fraction is present.
+        profit_lock_result_pips=1.0,
+        profit_lock_result_tp_fraction=(
+            STRETCH_PROFIT_LOCK_TP_FRACTION
+        ),
     )
 
 
@@ -449,38 +553,62 @@ class PerformanceAccumulator:
         self.fills = 0
         self.trades = 0
         self.wins = 0
+        self.losses = 0
+        self.profit_locks = 0
         self.sum_win_pips = 0.0
         self.sum_loss_pips = 0.0
         self.sum_pips = 0.0
+        self.sum_a = 0.0
         self.sum_yen = 0.0
         self.gross_profit_yen = 0.0
         self.gross_loss_yen = 0.0
         self.month_yen: dict[str, float] = defaultdict(float)
+        self.period_yen: dict[int, float] = defaultdict(float)
 
     def add_candidate(self, path: Mapping[str, Any]) -> None:
         self.candidates += 1
         self.fills += int(bool(path.get("order_filled")))
 
-    def add_outcome(self, outcome: Mapping[str, Any], month: str) -> None:
+    def add_outcome(
+        self,
+        outcome: Mapping[str, Any],
+        month: str,
+        period_index: int | None = None,
+        average_range_pips: float | None = None,
+    ) -> None:
         pips = float(outcome["trade_result_pips"])
         yen = float(outcome["result_yen"])
         self.trades += 1
+        self.profit_locks += int(outcome.get("trade_result") == "profit_lock")
         self.sum_pips += pips
+        if average_range_pips is not None:
+            average = float(average_range_pips)
+            if math.isfinite(average) and average > 0:
+                self.sum_a += pips / average
         self.sum_yen += yen
         self.month_yen[month] += yen
+        if period_index is not None:
+            self.period_yen[int(period_index)] += yen
         if pips > 0:
             self.wins += 1
             self.sum_win_pips += pips
         elif pips < 0:
+            self.losses += 1
             self.sum_loss_pips += pips
         if yen > 0:
             self.gross_profit_yen += yen
         elif yen < 0:
             self.gross_loss_yen += -yen
 
-    def row(self) -> dict[str, Any]:
+    def row(self, *, period_count: int = 0) -> dict[str, Any]:
         positive_months = sum(value > 0 for value in self.month_yen.values())
         active_months = len(self.month_yen)
+        period_values = [
+            float(self.period_yen.get(index, 0.0))
+            for index in range(period_count)
+        ]
+        positive_period_values = [value for value in period_values if value > 0]
+        positive_period_profit = sum(positive_period_values)
         return {
             "candidate_count": self.candidates,
             "order_fill_count": self.fills,
@@ -489,16 +617,21 @@ class PerformanceAccumulator:
             ),
             "completed_trade_count": self.trades,
             "win_count": self.wins,
+            "profit_lock_count": self.profit_locks,
+            "profit_lock_rate": (
+                self.profit_locks / self.trades if self.trades else 0.0
+            ),
             "win_rate": self.wins / self.trades if self.trades else 0.0,
             "average_win_pips": (
                 self.sum_win_pips / self.wins if self.wins else 0.0
             ),
             "average_loss_pips": (
-                self.sum_loss_pips / (self.trades - self.wins)
-                if self.trades > self.wins
+                self.sum_loss_pips / self.losses
+                if self.losses
                 else 0.0
             ),
             "sum_pips": self.sum_pips,
+            "sum_a": self.sum_a,
             "gross_profit_yen": self.gross_profit_yen,
             "gross_loss_yen": self.gross_loss_yen,
             "sum_yen": self.sum_yen,
@@ -513,7 +646,77 @@ class PerformanceAccumulator:
                 positive_months / active_months if active_months else 0.0
             ),
             "worst_month_yen": min(self.month_yen.values(), default=0.0),
+            "period_yen_json": json.dumps(period_values),
+            "positive_period_count": len(positive_period_values),
+            "max_positive_period_profit_share": (
+                max(positive_period_values) / positive_period_profit
+                if positive_period_profit
+                else 0.0
+            ),
         }
+
+
+def four_period_index(
+    timestamp: pd.Timestamp,
+    period_start: dt.datetime,
+    period_end: dt.datetime,
+) -> int:
+    start = pd.Timestamp(period_start)
+    end = pd.Timestamp(period_end)
+    current = pd.Timestamp(timestamp)
+    if not start <= current < end:
+        raise ValueError("trade timestamp is outside the analysis period")
+    fraction = (current - start) / (end - start)
+    return min(3, max(0, int(float(fraction) * 4.0)))
+
+
+def four_period_metrics(
+    trades: pd.DataFrame,
+    period_start: dt.datetime,
+    period_end: dt.datetime,
+) -> dict[str, Any]:
+    values = [0.0, 0.0, 0.0, 0.0]
+    if not trades.empty:
+        fills = pd.to_datetime(trades["fill_time"], errors="coerce")
+        yen = pd.to_numeric(trades["result_yen"], errors="coerce")
+        for timestamp, result_yen_value in zip(fills, yen):
+            if pd.isna(timestamp) or pd.isna(result_yen_value):
+                continue
+            index = four_period_index(timestamp, period_start, period_end)
+            values[index] += float(result_yen_value)
+    positive = [value for value in values if value > 0]
+    positive_total = sum(positive)
+    return {
+        "period_yen_json": json.dumps(values),
+        "positive_period_count": len(positive),
+        "max_positive_period_profit_share": (
+            max(positive) / positive_total if positive_total else 0.0
+        ),
+    }
+
+
+def range_filter_mask(
+    frame: pd.DataFrame,
+    minimum_fraction_pips: float,
+) -> pd.Series:
+    average = pd.to_numeric(
+        frame["recent_m5_avg_range_pips"], errors="coerce"
+    )
+    return average.mul(RANGE_FILTER_FRACTION_A).add(1e-12).ge(
+        float(minimum_fraction_pips)
+    )
+
+
+def target_distance_filter_mask(
+    frame: pd.DataFrame,
+    minimum_distance_pips: float,
+) -> pd.Series:
+    """Keep lines at least the fixed decision-time distance away."""
+    minimum = float(minimum_distance_pips)
+    if not np.isfinite(minimum) or minimum < 0:
+        raise ValueError("minimum target distance must be finite and non-negative")
+    distance = pd.to_numeric(frame["distance_pips"], errors="coerce")
+    return distance.add(1e-9).ge(minimum)
 
 
 def _notice_progress(
@@ -547,26 +750,38 @@ def scan_global_grid(
     inspector: FlipPathInspector,
     path_configs: Iterable[FlipPathConfig],
     trade_combos: Iterable[TradeCombo],
+    range_filter_pips_values: Iterable[float],
     *,
     pair: str,
     phase: str,
     period_start: dt.datetime,
+    period_end: dt.datetime,
     progress_file: Path,
     started: float,
     notify: Notice | None,
 ) -> pd.DataFrame:
     path_configs = tuple(path_configs)
     trade_combos = tuple(trade_combos)
+    filter_values = tuple(
+        sorted({float(value) for value in range_filter_pips_values})
+    )
+    if not filter_values or any(
+        not math.isfinite(value) or value < 0 for value in filter_values
+    ):
+        raise ValueError("range filter grid must contain finite non-negative values")
     states = {
-        (config.config_id, combo.combo_id): {
+        (config.config_id, combo.combo_id, filter_value): {
             "accumulator": PerformanceAccumulator(),
             "locked_until": pd.NaT,
+            "source_event_count": 0,
             "selected_lifecycle_count": 0,
             "replaced_before_fill_count": 0,
             "skipped_while_locked_count": 0,
+            "pending_order_lock_count": 0,
         }
         for config in path_configs
         for combo in trade_combos
+        for filter_value in filter_values
     }
     # Global execution settings must be selected on the same one-active-flip
     # lifecycle used by the final replay, not on impossible overlapping lines.
@@ -583,18 +798,34 @@ def scan_global_grid(
     next_notice = pd.Timestamp(period_start) + pd.DateOffset(months=2)
     for row_number, row in enumerate(event_frame.itertuples(index=False), start=1):
         decision_time = pd.Timestamp(row.decision_time)
+        available_range_pips = (
+            float(row.recent_m5_avg_range_pips) * RANGE_FILTER_FRACTION_A
+        )
         for config in path_configs:
+            active_filters_by_combo: dict[str, list[float]] = {}
+            for combo in trade_combos:
+                active_filters = []
+                for filter_value in filter_values:
+                    if available_range_pips + 1e-12 < filter_value:
+                        continue
+                    state = states[
+                        (config.config_id, combo.combo_id, filter_value)
+                    ]
+                    state["source_event_count"] += 1
+                    if (
+                        pd.isna(state["locked_until"])
+                        or decision_time >= state["locked_until"]
+                    ):
+                        active_filters.append(filter_value)
+                    else:
+                        state["skipped_while_locked_count"] += 1
+                if active_filters:
+                    active_filters_by_combo[combo.combo_id] = active_filters
             active_combos = [
                 combo
                 for combo in trade_combos
-                if pd.isna(states[(config.config_id, combo.combo_id)]["locked_until"])
-                or decision_time
-                >= states[(config.config_id, combo.combo_id)]["locked_until"]
+                if combo.combo_id in active_filters_by_combo
             ]
-            for combo in trade_combos:
-                state = states[(config.config_id, combo.combo_id)]
-                if combo not in active_combos:
-                    state["skipped_while_locked_count"] += 1
             if not active_combos:
                 continue
             path = inspector.inspect(
@@ -607,36 +838,65 @@ def scan_global_grid(
                 next_count2_time=row.next_count2_time,
             )
             for combo in active_combos:
-                state = states[(config.config_id, combo.combo_id)]
-                accumulator = state["accumulator"]
-                state["selected_lifecycle_count"] += 1
-                accumulator.add_candidate(path)
-                if path.get("replaced_before_fill"):
-                    state["replaced_before_fill_count"] += 1
-                if not path.get("order_filled"):
-                    continue
-                if path.get("path_status") != "trade":
-                    lock_deadline = pd.to_datetime(
-                        path.get("position_horizon_end"), errors="coerce"
-                    )
-                    if not pd.isna(lock_deadline):
-                        state["locked_until"] = lock_deadline
-                    continue
-                outcome = path["outcomes"].get(combo.combo_id)
-                if outcome is not None:
-                    fill_month = pd.Timestamp(path["fill_time"]).strftime("%Y-%m")
-                    accumulator.add_outcome(outcome, fill_month)
-                    exit_time = pd.to_datetime(
-                        outcome.get("exit_time"), errors="coerce"
-                    )
-                    if not pd.isna(exit_time):
-                        state["locked_until"] = exit_time + pd.Timedelta(seconds=5)
-                else:
-                    horizon_end = pd.to_datetime(
-                        path.get("position_horizon_end"), errors="coerce"
-                    )
-                    if not pd.isna(horizon_end):
-                        state["locked_until"] = horizon_end
+                for filter_value in active_filters_by_combo[combo.combo_id]:
+                    state = states[
+                        (config.config_id, combo.combo_id, filter_value)
+                    ]
+                    accumulator = state["accumulator"]
+                    state["selected_lifecycle_count"] += 1
+                    accumulator.add_candidate(path)
+                    if path.get("replaced_before_fill"):
+                        state["replaced_before_fill_count"] += 1
+                    if not path.get("order_filled"):
+                        pending_end = pd.to_datetime(
+                            path.get("order_deadline"), errors="coerce"
+                        )
+                        if (
+                            not pd.isna(pending_end)
+                            and pending_end > decision_time
+                        ):
+                            state["locked_until"] = pending_end
+                            state["pending_order_lock_count"] += 1
+                        continue
+                    if path.get("path_status") != "trade":
+                        lock_deadline = pd.to_datetime(
+                            path.get("position_horizon_end"), errors="coerce"
+                        )
+                        if not pd.isna(lock_deadline):
+                            state["locked_until"] = lock_deadline
+                        continue
+                    outcome = path["outcomes"].get(combo.combo_id)
+                    if outcome is not None:
+                        fill_time = pd.Timestamp(path["fill_time"])
+                        accumulator.add_outcome(
+                            outcome,
+                            fill_time.strftime("%Y-%m"),
+                            four_period_index(
+                                fill_time, period_start, period_end
+                            ),
+                            average_range_pips=float(
+                                row.recent_m5_avg_range_pips
+                            ),
+                        )
+                        exit_effective_time = pd.to_datetime(
+                            outcome.get("exit_effective_time"), errors="coerce"
+                        )
+                        if pd.isna(exit_effective_time):
+                            exit_time = pd.to_datetime(
+                                outcome.get("exit_time"), errors="coerce"
+                            )
+                            if not pd.isna(exit_time):
+                                exit_effective_time = exit_time + pd.Timedelta(
+                                    seconds=5
+                                )
+                        if not pd.isna(exit_effective_time):
+                            state["locked_until"] = exit_effective_time
+                    else:
+                        horizon_end = pd.to_datetime(
+                            path.get("position_horizon_end"), errors="coerce"
+                        )
+                        if not pd.isna(horizon_end):
+                            state["locked_until"] = horizon_end
         while decision_time >= next_notice:
             _notice_progress(
                 notify,
@@ -662,28 +922,42 @@ def scan_global_grid(
     rows = []
     for config in path_configs:
         for combo in trade_combos:
-            state = states[(config.config_id, combo.combo_id)]
-            rows.append(
-                {
-                    "path_config_id": config.config_id,
-                    "order_wait_minutes": config.order_wait_minutes,
-                    "combo_id": combo.combo_id,
-                    "tp_a": combo.tp_a,
-                    "lc_a": combo.lc_a,
-                    "configured_rr": combo.configured_rr,
-                    **state["accumulator"].row(),
-                    "source_event_count": total,
-                    "selected_lifecycle_count": state[
-                        "selected_lifecycle_count"
-                    ],
-                    "replaced_before_fill_count": state[
-                        "replaced_before_fill_count"
-                    ],
-                    "skipped_while_locked_count": state[
-                        "skipped_while_locked_count"
-                    ],
-                }
-            )
+            for filter_value in filter_values:
+                state = states[
+                    (config.config_id, combo.combo_id, filter_value)
+                ]
+                rows.append(
+                    {
+                        "path_config_id": config.config_id,
+                        "order_wait_minutes": config.order_wait_minutes,
+                        "replace_unfilled_on_next_count2": (
+                            config.replace_unfilled_on_next_count2
+                        ),
+                        "combo_id": combo.combo_id,
+                        "tp_a": combo.tp_a,
+                        "lc_a": combo.lc_a,
+                        "configured_rr": combo.configured_rr,
+                        "range_filter_fraction_a": RANGE_FILTER_FRACTION_A,
+                        "min_range_filter_pips": filter_value,
+                        "equivalent_minimum_a_pips": (
+                            filter_value / RANGE_FILTER_FRACTION_A
+                        ),
+                        **state["accumulator"].row(period_count=4),
+                        "source_event_count": state["source_event_count"],
+                        "selected_lifecycle_count": state[
+                            "selected_lifecycle_count"
+                        ],
+                        "replaced_before_fill_count": state[
+                            "replaced_before_fill_count"
+                        ],
+                        "skipped_while_locked_count": state[
+                            "skipped_while_locked_count"
+                        ],
+                        "pending_order_lock_count": state[
+                            "pending_order_lock_count"
+                        ],
+                    }
+                )
     return pd.DataFrame(rows)
 
 
@@ -692,29 +966,86 @@ def choose_global_policy(
     *,
     minimum_trades: int = 100,
 ) -> pd.Series:
-    eligible = summary[
-        summary["completed_trade_count"].ge(minimum_trades)
-        & summary["profit_factor_yen"].ge(1.0)
-        & summary["positive_month_rate"].ge(0.5)
-    ]
-    if eligible.empty:
-        eligible = summary[summary["completed_trade_count"].ge(minimum_trades)]
-    if eligible.empty:
-        eligible = summary
-    return eligible.sort_values(
-        ["sum_yen", "positive_month_rate", "profit_factor_yen", "sum_pips"],
-        ascending=[False, False, False, False],
-        kind="stable",
-    ).iloc[0]
+    stages = (
+        (
+            "strict_stability",
+            summary["completed_trade_count"].ge(minimum_trades)
+            & summary["sum_yen"].gt(0)
+            & summary["profit_factor_yen"].ge(1.1)
+            & summary["positive_period_count"].ge(3)
+            & summary["max_positive_period_profit_share"].le(0.60),
+        ),
+        (
+            "relaxed_pf",
+            summary["completed_trade_count"].ge(minimum_trades)
+            & summary["sum_yen"].gt(0)
+            & summary["profit_factor_yen"].ge(1.0)
+            & summary["positive_period_count"].ge(3)
+            & summary["max_positive_period_profit_share"].le(0.60),
+        ),
+        (
+            "positive_minimum_trades",
+            summary["completed_trade_count"].ge(minimum_trades)
+            & summary["sum_yen"].gt(0),
+        ),
+        (
+            "minimum_trades_only",
+            summary["completed_trade_count"].ge(minimum_trades),
+        ),
+        ("unrestricted_fallback", pd.Series(True, index=summary.index)),
+    )
+    for stage, mask in stages:
+        eligible = summary.loc[mask].copy()
+        if eligible.empty:
+            continue
+        selected = eligible.sort_values(
+            [
+                "sum_yen",
+                "positive_period_count",
+                "profit_factor_yen",
+                "max_positive_period_profit_share",
+                "sum_pips",
+                "min_range_filter_pips",
+                "lc_a",
+            ],
+            ascending=[False, False, False, True, False, True, True],
+            kind="stable",
+        ).iloc[0].copy()
+        selected["selection_stage"] = stage
+        return selected
+    raise ValueError("global grid is empty")
 
 
 PATH_EXPORT_COLUMNS = (
     "path_status",
     "approach_direction",
+    "signal_order_direction",
     "order_direction",
     "order_filled",
     "order_deadline",
     "replaced_before_fill",
+    "watch_entry_enabled",
+    "watch_order_name",
+    "watch_entry_mode",
+    "watch_initial_touch_deadline",
+    "watch_line_touch_time",
+    "watch_line_touch_known_time",
+    "watch_observation_known_time",
+    "watch_order_placed_time",
+    "watch_order_release_time",
+    "watch_observation_close",
+    "watch_observation_high",
+    "watch_observation_low",
+    "watch_breakout_direction",
+    "watch_breakout_distance_pips",
+    "watch_breakout_distance_a",
+    "watch_observed_extreme_price",
+    "watch_entry_trigger_price",
+    "watch_actual_entry_distance_from_line_a",
+    "watch_entry_gap_from_trigger_a",
+    "watch_chase_filtered",
+    "watch_entry_gap_filtered",
+    "watch_stop_fill_bar_adverse_censored",
     "fill_time",
     "fill_delay_from_decision_seconds",
     "fill_at_bar_open",
@@ -730,15 +1061,102 @@ OUTCOME_EXPORT_COLUMNS = (
     "effective_rr",
     "tp_pips",
     "lc_pips",
+    "original_tp_first_reached_time",
+    "original_tp_known_from",
+    "minutes_to_original_tp",
+    "original_lc_first_reached_time",
+    "original_lc_known_from",
+    "minutes_to_original_lc",
+    "counterfactual_horizon_original_tp_reached",
+    "counterfactual_horizon_original_tp_first_reached_time",
+    "counterfactual_horizon_minutes_to_original_tp",
+    "counterfactual_horizon_original_lc_reached",
+    "counterfactual_horizon_original_lc_first_reached_time",
+    "counterfactual_horizon_minutes_to_original_lc",
+    "half_tp_trigger_fraction",
+    "half_tp_trigger_pips",
+    "half_tp_reached",
+    "half_tp_first_reached_time",
+    "half_tp_known_from",
+    "minutes_to_half_tp",
+    "counterfactual_horizon_half_tp_reached",
+    "counterfactual_horizon_half_tp_first_reached_time",
+    "counterfactual_horizon_minutes_to_half_tp",
+    "fill_bar_half_tp_ambiguous",
+    "profit_lock_enabled",
+    "profit_lock_min_tp_pips",
+    "profit_lock_trigger_tp_fraction",
+    "profit_lock_trigger_pips",
+    "profit_lock_result_pips",
+    "profit_lock_result_tp_fraction",
+    "profit_lock_effective_result_pips",
+    "profit_lock_trigger_reached",
+    "counterfactual_horizon_profit_lock_trigger_reached",
+    "profit_lock_activated",
+    "profit_lock_active_from",
+    "profit_lock_exit_at_bar_open",
+    "profit_lock_slippage_pips",
+    "original_lc_exit_at_bar_open",
+    "original_lc_slippage_pips",
+    "timed_half_lc_config_id",
+    "timed_half_lc_enabled",
+    "timed_half_lc_trigger_minutes",
+    "timed_half_lc_fraction",
+    "timed_half_lc_timer_anchor",
+    "timed_half_lc_check_time",
+    "timed_half_lc_checkpoint_evaluable",
+    "timed_half_lc_position_open_at_checkpoint",
+    "half_tp_reached_before_timed_checkpoint",
+    "max_favorable_before_timed_checkpoint_pips",
+    "max_adverse_before_timed_checkpoint_pips",
+    "timed_half_lc_activated",
+    "timed_half_lc_suppressed_by_fill_bar_ambiguity",
+    "timed_half_lc_active_from",
+    "timed_half_lc_requested_pips",
+    "timed_half_lc_effective_pips",
+    "timed_half_lc_price",
+    "timed_half_lc_activation_open_pips",
+    "timed_half_lc_activation_already_breached",
+    "half_tp_reached_after_timed_activation",
+    "counterfactual_half_tp_reached_after_timed_activation",
+    "timed_half_lc_exit",
+    "timed_half_lc_exit_mode",
+    "timed_half_lc_exit_at_bar_open",
+    "timed_half_lc_exit_time",
+    "timed_half_lc_slippage_pips",
+    "line_wick_lc_config_id",
+    "line_wick_lc_enabled",
+    "line_wick_lc_width_a",
+    "line_wick_lc_requested_pips",
+    "line_wick_lc_effective_pips",
+    "line_wick_lc_price",
+    "line_wick_lc_reached",
+    "counterfactual_horizon_line_wick_lc_reached",
+    "line_wick_lc_exit",
+    "line_wick_lc_exit_mode",
+    "line_wick_lc_exit_at_bar_open",
+    "line_wick_lc_exit_time",
+    "line_wick_lc_same_s5_tp_assumed_first",
+    "line_wick_lc_slippage_pips",
     "trade_result",
     "trade_result_pips",
     "result_r",
     "result_yen",
     "exit_time",
+    "exit_effective_time",
+    "minutes_from_fill_to_exit",
+    "minutes_from_timed_activation_to_exit",
     "actual_entry_price",
     "actual_exit_price",
     "max_favorable_pips",
     "max_adverse_pips",
+    "exit_s5_opposite_extreme_censored",
+    "exit_execution_mode",
+    *(
+        f"early_m{minute}_{metric}"
+        for minute in EARLY_PATH_MINUTES
+        for metric in EARLY_PATH_METRICS
+    ),
 )
 
 
@@ -898,8 +1316,23 @@ def select_top_condition_policy_candidates(
     result["tier_lc_a"] = result["signal_tier"].map(
         {tier: config.trade_combo.lc_a for tier, config in config_by_tier.items()}
     )
+    result["range_filter_fraction_a"] = RANGE_FILTER_FRACTION_A
+    result["available_range_filter_pips"] = pd.to_numeric(
+        result["recent_m5_avg_range_pips"], errors="coerce"
+    ).mul(RANGE_FILTER_FRACTION_A)
+    result["tier_min_range_filter_pips"] = result["signal_tier"].map(
+        {
+            tier: config.min_range_filter_pips
+            for tier, config in config_by_tier.items()
+        }
+    )
+    result["range_filter_passed"] = result[
+        "available_range_filter_pips"
+    ].add(1e-12).ge(result["tier_min_range_filter_pips"])
     result["policy_line_selection"] = "highest_tier_then_nearest_line"
-    eligible = result[result["top15_or_triggered"]].copy()
+    eligible = result[
+        result["top15_or_triggered"] & result["range_filter_passed"]
+    ].copy()
     if eligible.empty:
         return eligible
 
@@ -939,9 +1372,14 @@ def inspect_tiered_paths(
     progress_file: Path,
     started: float,
     notify: Notice | None,
+    timed_half_lc_config: TimedHalfLcConfig | None = None,
+    line_wick_lc_config: LineWickLcConfig | None = None,
+    watch_entry_config: FlipWatchEntryConfig | None = None,
 ) -> pd.DataFrame:
     """Inspect one selected top-15 OR line per event with its tier TP/RR."""
     config_by_tier = {config.tier: config for config in tier_configs}
+    timed_config = timed_half_lc_config or TimedHalfLcConfig(None)
+    line_wick_config = line_wick_lc_config or LineWickLcConfig(None)
     rows: list[dict[str, Any]] = []
     total = len(frame)
     next_notice = pd.Timestamp(period_start) + pd.DateOffset(months=2)
@@ -960,10 +1398,31 @@ def inspect_tiered_paths(
             path_config=path_config,
             trade_combos=(combo,),
             next_count2_time=row.next_count2_time,
+            timed_half_lc_configs=(timed_config,),
+            line_wick_lc_configs=(line_wick_config,),
+            watch_entry_config=watch_entry_config,
         )
         output = {column: path.get(column) for column in PATH_EXPORT_COLUMNS}
         output.update({column: np.nan for column in OUTCOME_EXPORT_COLUMNS})
-        output.update(path["outcomes"].get(combo.combo_id, {}))
+        output.update(
+            {
+                "half_tp_trigger_fraction": timed_config.tp_fraction,
+                "timed_half_lc_config_id": timed_config.config_id,
+                "timed_half_lc_enabled": timed_config.enabled,
+                "timed_half_lc_trigger_minutes": (
+                    timed_config.trigger_minutes
+                ),
+                "timed_half_lc_fraction": timed_config.lc_fraction,
+                "line_wick_lc_config_id": line_wick_config.config_id,
+                "line_wick_lc_enabled": line_wick_config.enabled,
+                "line_wick_lc_width_a": line_wick_config.width_a,
+            }
+        )
+        output.update(
+            path["outcomes"].get(
+                overlay_outcome_key(combo, timed_config, line_wick_config), {}
+            )
+        )
         rows.append(output)
         while decision_time >= next_notice:
             _notice_progress(
@@ -996,6 +1455,852 @@ def inspect_tiered_paths(
     )
 
 
+def inspect_timed_half_lc_grid_paths(
+    frame: pd.DataFrame,
+    inspector: FlipPathInspector,
+    path_config: FlipPathConfig,
+    tier_configs: Iterable[TierExecutionConfig],
+    timed_configs: Iterable[TimedHalfLcConfig],
+    *,
+    pair: str,
+    phase: str,
+    period_start: dt.datetime,
+    progress_file: Path,
+    started: float,
+    notify: Notice | None,
+) -> pd.DataFrame:
+    """Inspect every frozen timed-stop overlay once per selected event."""
+    config_by_tier = {config.tier: config for config in tier_configs}
+    policies = tuple(timed_configs)
+    if not policies:
+        raise ValueError("timed half-LC grid cannot be empty")
+    source_positions: list[int] = []
+    rows: list[dict[str, Any]] = []
+    total = len(frame)
+    next_notice = pd.Timestamp(period_start) + pd.DateOffset(months=2)
+    for row_number, row in enumerate(frame.itertuples(index=False), start=1):
+        decision_time = pd.Timestamp(row.decision_time)
+        tier = str(row.signal_tier)
+        tier_config = config_by_tier.get(tier)
+        if tier_config is None:
+            raise ValueError(f"missing execution config for tier {tier}")
+        combo = tier_config.trade_combo
+        path = inspector.inspect(
+            decision_time=decision_time,
+            line_price=float(row.line_price),
+            order_direction=int(row.trade_direction),
+            average_range_pips=float(row.recent_m5_avg_range_pips),
+            path_config=path_config,
+            trade_combos=(combo,),
+            next_count2_time=row.next_count2_time,
+            timed_half_lc_configs=policies,
+        )
+        for policy in policies:
+            output = {column: path.get(column) for column in PATH_EXPORT_COLUMNS}
+            output.update({column: np.nan for column in OUTCOME_EXPORT_COLUMNS})
+            output.update(
+                {
+                    "half_tp_trigger_fraction": policy.tp_fraction,
+                    "timed_half_lc_config_id": policy.config_id,
+                    "timed_half_lc_enabled": policy.enabled,
+                    "timed_half_lc_trigger_minutes": policy.trigger_minutes,
+                    "timed_half_lc_fraction": policy.lc_fraction,
+                }
+            )
+            outcome = path.get("outcomes", {}).get(
+                timed_outcome_key(combo, policy)
+            )
+            if outcome is not None:
+                output.update(outcome)
+            elif path.get("order_filled"):
+                # Another policy from the same shared S5 inspection may have
+                # completed before a gap or period boundary.  Status and
+                # locking must remain policy-specific.
+                output["path_status"] = "incomplete_position_window"
+                output["position_path_complete"] = False
+            rows.append(output)
+            source_positions.append(row_number - 1)
+        while decision_time >= next_notice:
+            _notice_progress(
+                notify,
+                pair=pair,
+                phase=phase,
+                reached_time=next_notice,
+                current_row=row_number,
+                total_rows=total,
+                started=started,
+            )
+            next_notice += pd.DateOffset(months=2)
+        if row_number == 1 or row_number % 500 == 0:
+            write_progress(
+                progress_file,
+                pair=pair,
+                status="running",
+                phase=phase,
+                current_row=row_number,
+                total_rows=total,
+                current_time=decision_time,
+                started=started,
+            )
+    if not rows:
+        empty_paths = pd.DataFrame(
+            columns=(*PATH_EXPORT_COLUMNS, *OUTCOME_EXPORT_COLUMNS)
+        )
+        return pd.concat(
+            [frame.iloc[0:0].copy(), empty_paths], axis=1
+        )
+    sources = frame.iloc[source_positions].reset_index(drop=True)
+    outcomes = pd.DataFrame(
+        rows, columns=(*PATH_EXPORT_COLUMNS, *OUTCOME_EXPORT_COLUMNS)
+    ).reset_index(drop=True)
+    result = pd.concat([sources, outcomes], axis=1)
+    expected_rows = len(frame) * len(policies)
+    if len(result) != expected_rows:
+        raise RuntimeError("timed half-LC grid row-count invariant failed")
+    policy_counts = result["timed_half_lc_config_id"].value_counts()
+    if any(int(policy_counts.get(policy.config_id, 0)) != len(frame) for policy in policies):
+        raise RuntimeError("timed half-LC event universe differs by policy")
+    return result
+
+
+def inspect_line_wick_lc_grid_paths(
+    frame: pd.DataFrame,
+    inspector: FlipPathInspector,
+    path_config: FlipPathConfig,
+    tier_configs: Iterable[TierExecutionConfig],
+    line_wick_configs: Iterable[LineWickLcConfig],
+    *,
+    pair: str,
+    phase: str,
+    period_start: dt.datetime,
+    progress_file: Path,
+    started: float,
+    notify: Notice | None,
+) -> pd.DataFrame:
+    """Inspect every wick-cross stop width on one shared S5 path."""
+    config_by_tier = {config.tier: config for config in tier_configs}
+    policies = tuple(line_wick_configs)
+    if not policies:
+        raise ValueError("line-wick LC grid cannot be empty")
+    source_positions: list[int] = []
+    rows: list[dict[str, Any]] = []
+    total = len(frame)
+    next_notice = pd.Timestamp(period_start) + pd.DateOffset(months=2)
+    for row_number, row in enumerate(frame.itertuples(index=False), start=1):
+        decision_time = pd.Timestamp(row.decision_time)
+        tier = str(row.signal_tier)
+        tier_config = config_by_tier.get(tier)
+        if tier_config is None:
+            raise ValueError(f"missing execution config for tier {tier}")
+        combo = tier_config.trade_combo
+        path = inspector.inspect(
+            decision_time=decision_time,
+            line_price=float(row.line_price),
+            order_direction=int(row.trade_direction),
+            average_range_pips=float(row.recent_m5_avg_range_pips),
+            path_config=path_config,
+            trade_combos=(combo,),
+            next_count2_time=row.next_count2_time,
+            line_wick_lc_configs=policies,
+        )
+        for policy in policies:
+            output = {column: path.get(column) for column in PATH_EXPORT_COLUMNS}
+            output.update({column: np.nan for column in OUTCOME_EXPORT_COLUMNS})
+            output.update(
+                {
+                    "line_wick_lc_config_id": policy.config_id,
+                    "line_wick_lc_enabled": policy.enabled,
+                    "line_wick_lc_width_a": policy.width_a,
+                }
+            )
+            outcome = path.get("outcomes", {}).get(
+                line_wick_outcome_key(combo, policy)
+            )
+            if outcome is not None:
+                output.update(outcome)
+            elif path.get("order_filled"):
+                output["path_status"] = "incomplete_position_window"
+                output["position_path_complete"] = False
+            rows.append(output)
+            source_positions.append(row_number - 1)
+        while decision_time >= next_notice:
+            _notice_progress(
+                notify,
+                pair=pair,
+                phase=phase,
+                reached_time=next_notice,
+                current_row=row_number,
+                total_rows=total,
+                started=started,
+            )
+            next_notice += pd.DateOffset(months=2)
+        if row_number == 1 or row_number % 500 == 0:
+            write_progress(
+                progress_file,
+                pair=pair,
+                status="running",
+                phase=phase,
+                current_row=row_number,
+                total_rows=total,
+                current_time=decision_time,
+                started=started,
+            )
+    if not rows:
+        empty_paths = pd.DataFrame(
+            columns=(*PATH_EXPORT_COLUMNS, *OUTCOME_EXPORT_COLUMNS)
+        )
+        return pd.concat([frame.iloc[0:0].copy(), empty_paths], axis=1)
+    sources = frame.iloc[source_positions].reset_index(drop=True)
+    outcomes = pd.DataFrame(
+        rows, columns=(*PATH_EXPORT_COLUMNS, *OUTCOME_EXPORT_COLUMNS)
+    ).reset_index(drop=True)
+    result = pd.concat([sources, outcomes], axis=1)
+    expected_rows = len(frame) * len(policies)
+    if len(result) != expected_rows:
+        raise RuntimeError("line-wick LC grid row-count invariant failed")
+    policy_counts = result["line_wick_lc_config_id"].value_counts()
+    if any(
+        int(policy_counts.get(policy.config_id, 0)) != len(frame)
+        for policy in policies
+    ):
+        raise RuntimeError("line-wick LC event universe differs by policy")
+    return result
+
+
+def inspect_trade_combo_grid_paths(
+    frame: pd.DataFrame,
+    inspector: FlipPathInspector,
+    path_config: FlipPathConfig,
+    trade_combos: Iterable[TradeCombo],
+    *,
+    pair: str,
+    phase: str,
+    period_start: dt.datetime,
+    progress_file: Path,
+    started: float,
+    notify: Notice | None,
+) -> pd.DataFrame:
+    """Inspect every TP/LC candidate once per selected Top-15 event."""
+    combos = tuple(trade_combos)
+    source_positions: list[int] = []
+    rows: list[dict[str, Any]] = []
+    total = len(frame)
+    next_notice = pd.Timestamp(period_start) + pd.DateOffset(months=2)
+    for row_number, row in enumerate(frame.itertuples(index=False), start=1):
+        decision_time = pd.Timestamp(row.decision_time)
+        path = inspector.inspect(
+            decision_time=decision_time,
+            line_price=float(row.line_price),
+            order_direction=int(row.trade_direction),
+            average_range_pips=float(row.recent_m5_avg_range_pips),
+            path_config=path_config,
+            trade_combos=combos,
+            next_count2_time=row.next_count2_time,
+        )
+        for combo in combos:
+            output = {column: path.get(column) for column in PATH_EXPORT_COLUMNS}
+            output.update({column: np.nan for column in OUTCOME_EXPORT_COLUMNS})
+            output.update(path.get("outcomes", {}).get(combo.combo_id, {}))
+            output["grid_combo_id"] = combo.combo_id
+            output["grid_tp_a"] = combo.tp_a
+            output["grid_lc_a"] = combo.lc_a
+            output["grid_configured_rr"] = combo.configured_rr
+            rows.append(output)
+            source_positions.append(row_number - 1)
+        while decision_time >= next_notice:
+            _notice_progress(
+                notify,
+                pair=pair,
+                phase=phase,
+                reached_time=next_notice,
+                current_row=row_number,
+                total_rows=total,
+                started=started,
+            )
+            next_notice += pd.DateOffset(months=2)
+        if row_number == 1 or row_number % 500 == 0:
+            write_progress(
+                progress_file,
+                pair=pair,
+                status="running",
+                phase=phase,
+                current_row=row_number,
+                total_rows=total,
+                current_time=decision_time,
+                started=started,
+            )
+    if not rows:
+        return frame.iloc[0:0].copy()
+    sources = frame.iloc[source_positions].reset_index(drop=True)
+    outcomes = pd.DataFrame(rows).reset_index(drop=True)
+    return pd.concat([sources, outcomes], axis=1)
+
+
+def scan_tier_filter_lc_grid(
+    grid_paths: pd.DataFrame,
+    tier_configs: Iterable[TierExecutionConfig],
+    trade_combos: Iterable[TradeCombo],
+    range_filter_pips_values: Iterable[float],
+    *,
+    period_start: dt.datetime,
+    period_end: dt.datetime,
+) -> pd.DataFrame:
+    """Evaluate A-width and TP/LC grids inside each confidence tier."""
+    filters = tuple(sorted({float(value) for value in range_filter_pips_values}))
+    combos = tuple(trade_combos)
+    rows: list[dict[str, Any]] = []
+    for tier_config in tier_configs:
+        tier_paths = grid_paths[
+            grid_paths["signal_tier"].eq(tier_config.tier)
+        ]
+        for combo in combos:
+            combo_paths = tier_paths[
+                tier_paths["grid_combo_id"].eq(combo.combo_id)
+            ]
+            for filter_value in filters:
+                eligible = combo_paths.loc[
+                    range_filter_mask(combo_paths, filter_value)
+                ].copy()
+                trades, performance = replay_condition(
+                    eligible, PolicyCondition("ALL", "Tier range/LC grid")
+                )
+                rows.append(
+                    {
+                        "tier": tier_config.tier,
+                        "first_rank": tier_config.first_rank,
+                        "last_rank": tier_config.last_rank,
+                        "range_filter_fraction_a": RANGE_FILTER_FRACTION_A,
+                        "min_range_filter_pips": filter_value,
+                        "equivalent_minimum_a_pips": (
+                            filter_value / RANGE_FILTER_FRACTION_A
+                        ),
+                        "combo_id": combo.combo_id,
+                        "tp_a": combo.tp_a,
+                        "lc_a": combo.lc_a,
+                        "configured_rr": combo.configured_rr,
+                        **performance,
+                        **four_period_metrics(
+                            trades, period_start, period_end
+                        ),
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def scan_portfolio_tp_lc_grid(
+    grid_paths: pd.DataFrame,
+    tier_configs: Iterable[TierExecutionConfig],
+    trade_combos: Iterable[TradeCombo],
+) -> pd.DataFrame:
+    """Replay each TP/LC pair after freezing the train-selected tier filters."""
+    configs = tuple(tier_configs)
+    minimum_by_tier = {
+        config.tier: config.min_range_filter_pips for config in configs
+    }
+    rows: list[dict[str, Any]] = []
+    if grid_paths.empty:
+        return pd.DataFrame(
+            [
+                {
+                    "combo_id": combo.combo_id,
+                    "tp_a": combo.tp_a,
+                    "lc_a": combo.lc_a,
+                    "configured_rr": combo.configured_rr,
+                    **PerformanceAccumulator().row(),
+                }
+                for combo in trade_combos
+            ]
+        )
+    for combo in trade_combos:
+        combo_paths = grid_paths[
+            grid_paths["grid_combo_id"].eq(combo.combo_id)
+        ].copy()
+        minimum = combo_paths["signal_tier"].map(minimum_by_tier)
+        if minimum.isna().any():
+            raise ValueError("portfolio TP/LC grid contains an unknown tier")
+        eligible = combo_paths.loc[
+            pd.to_numeric(
+                combo_paths["available_range_filter_pips"], errors="coerce"
+            ).add(1e-12).ge(minimum)
+        ].copy()
+        _trades, performance = replay_condition(
+            eligible, PolicyCondition("ALL", "Portfolio TP/LC grid")
+        )
+        rows.append(
+            {
+                "combo_id": combo.combo_id,
+                "tp_a": combo.tp_a,
+                "lc_a": combo.lc_a,
+                "configured_rr": combo.configured_rr,
+                **performance,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _attach_baseline_trade_comparison(
+    all_trades: pd.DataFrame,
+    baseline_trades: pd.DataFrame,
+) -> pd.DataFrame:
+    """Attach all baseline comparison columns in one de-fragmenting concat."""
+    if baseline_trades.empty:
+        return all_trades
+    baseline_lookup = baseline_trades.set_index("event_id")
+    event_ids = all_trades["event_id"]
+    baseline_trade_result = event_ids.map(baseline_lookup["trade_result"])
+    baseline_result_pips = event_ids.map(
+        baseline_lookup["trade_result_pips"]
+    )
+    baseline_result_yen = event_ids.map(baseline_lookup["result_yen"])
+    baseline_exit_time = event_ids.map(baseline_lookup["exit_time"])
+    comparison_columns = pd.DataFrame(
+        {
+            "baseline_trade_result": baseline_trade_result,
+            "baseline_trade_result_pips": baseline_result_pips,
+            "baseline_result_yen": baseline_result_yen,
+            "baseline_exit_time": baseline_exit_time,
+            "delta_vs_baseline_result_pips": (
+                pd.to_numeric(
+                    all_trades["trade_result_pips"], errors="coerce"
+                )
+                - pd.to_numeric(baseline_result_pips, errors="coerce")
+            ),
+            "delta_vs_baseline_result_yen": (
+                pd.to_numeric(all_trades["result_yen"], errors="coerce")
+                - pd.to_numeric(baseline_result_yen, errors="coerce")
+            ),
+        },
+        index=all_trades.index,
+    )
+    return pd.concat(
+        [all_trades.copy(), comparison_columns],
+        axis=1,
+        copy=False,
+    )
+
+
+def scan_timed_half_lc_grid(
+    grid_paths: pd.DataFrame,
+    timed_configs: Iterable[TimedHalfLcConfig],
+    *,
+    period_start: dt.datetime,
+    period_end: dt.datetime,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Replay each timer independently so its earlier exits unlock events."""
+    policies = tuple(timed_configs)
+    rows: list[dict[str, Any]] = []
+    trade_frames: list[pd.DataFrame] = []
+    for policy_order, policy in enumerate(policies):
+        policy_paths = grid_paths[
+            grid_paths["timed_half_lc_config_id"].eq(policy.config_id)
+        ].copy()
+        trades, performance = replay_condition(
+            policy_paths,
+            PolicyCondition("ALL", f"Timed half-LC {policy.config_id}"),
+        )
+        trades["timed_half_lc_policy_order"] = policy_order
+        trade_frames.append(trades)
+        activated = (
+            trades.get("timed_half_lc_activated", pd.Series(False, index=trades.index))
+            .fillna(False)
+            .astype(bool)
+        )
+        timed_exits = (
+            trades.get("timed_half_lc_exit", pd.Series(False, index=trades.index))
+            .fillna(False)
+            .astype(bool)
+        )
+        open_exits = (
+            trades.get(
+                "timed_half_lc_exit_at_bar_open",
+                pd.Series(False, index=trades.index),
+            )
+            .fillna(False)
+            .astype(bool)
+        )
+        late_half_tp = (
+            trades.get(
+                "half_tp_reached_after_timed_activation",
+                pd.Series(False, index=trades.index),
+            )
+            .fillna(False)
+            .astype(bool)
+        )
+        counterfactual_late_half_tp = (
+            trades.get(
+                "counterfactual_half_tp_reached_after_timed_activation",
+                pd.Series(False, index=trades.index),
+            )
+            .fillna(False)
+            .astype(bool)
+        )
+        ambiguity_suppressed = (
+            trades.get(
+                "timed_half_lc_suppressed_by_fill_bar_ambiguity",
+                pd.Series(False, index=trades.index),
+            )
+            .fillna(False)
+            .astype(bool)
+        )
+        rows.append(
+            {
+                "timed_half_lc_policy_order": policy_order,
+                **policy.to_dict(),
+                **performance,
+                **four_period_metrics(trades, period_start, period_end),
+                "timed_half_lc_activation_count": int(activated.sum()),
+                "timed_half_lc_exit_count": int(timed_exits.sum()),
+                "timed_half_lc_open_exit_count": int(open_exits.sum()),
+                "late_half_tp_after_activation_count": int(late_half_tp.sum()),
+                "counterfactual_horizon_late_half_tp_count": int(
+                    counterfactual_late_half_tp.sum()
+                ),
+                "fill_bar_ambiguity_suppression_count": int(
+                    ambiguity_suppressed.sum()
+                ),
+                "full_lc_count": int(
+                    trades["trade_result"].isin(
+                        ("lc", "both_same_s5_lc_assumed")
+                    ).sum()
+                ),
+            }
+        )
+    summary = pd.DataFrame(rows)
+    if summary.empty or not summary["config_id"].eq("baseline").any():
+        raise ValueError("timed half-LC grid requires a baseline")
+    baseline = summary.loc[summary["config_id"].eq("baseline")].iloc[0]
+    for field in ("sum_yen", "sum_pips", "profit_factor_yen", "win_rate"):
+        summary[f"delta_vs_baseline_{field}"] = (
+            pd.to_numeric(summary[field], errors="coerce") - float(baseline[field])
+        )
+    all_trades = (
+        pd.concat(trade_frames, ignore_index=True)
+        if trade_frames
+        else grid_paths.iloc[0:0].copy()
+    )
+    baseline_trades = all_trades[
+        all_trades["timed_half_lc_config_id"].eq("baseline")
+    ].copy()
+    all_trades = _attach_baseline_trade_comparison(
+        all_trades,
+        baseline_trades,
+    )
+    return summary, all_trades
+
+
+def scan_line_wick_lc_grid(
+    grid_paths: pd.DataFrame,
+    line_wick_configs: Iterable[LineWickLcConfig],
+    *,
+    period_start: dt.datetime,
+    period_end: dt.datetime,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Replay each wick-cross width independently with lifecycle unlocking."""
+    policies = tuple(line_wick_configs)
+    rows: list[dict[str, Any]] = []
+    trade_frames: list[pd.DataFrame] = []
+    for policy_order, policy in enumerate(policies):
+        policy_paths = grid_paths[
+            grid_paths["line_wick_lc_config_id"].eq(policy.config_id)
+        ].copy()
+        trades, performance = replay_condition(
+            policy_paths,
+            PolicyCondition("ALL", f"Line-wick LC {policy.config_id}"),
+        )
+        trades["line_wick_lc_policy_order"] = policy_order
+        trade_frames.append(trades)
+        wick_exits = (
+            trades.get(
+                "line_wick_lc_exit", pd.Series(False, index=trades.index)
+            )
+            .fillna(False)
+            .astype(bool)
+        )
+        gap_exits = (
+            trades.get(
+                "line_wick_lc_exit_at_bar_open",
+                pd.Series(False, index=trades.index),
+            )
+            .fillna(False)
+            .astype(bool)
+        )
+        same_s5 = (
+            trades.get(
+                "line_wick_lc_same_s5_tp_assumed_first",
+                pd.Series(False, index=trades.index),
+            )
+            .fillna(False)
+            .astype(bool)
+        )
+        rows.append(
+            {
+                "line_wick_lc_policy_order": policy_order,
+                **policy.to_dict(),
+                **performance,
+                **four_period_metrics(trades, period_start, period_end),
+                "line_wick_lc_exit_count": int(wick_exits.sum()),
+                "line_wick_lc_gap_exit_count": int(gap_exits.sum()),
+                "line_wick_lc_same_s5_tp_assumed_first_count": int(
+                    same_s5.sum()
+                ),
+                "full_lc_count": int(
+                    trades["trade_result"].isin(
+                        ("lc", "both_same_s5_lc_assumed")
+                    ).sum()
+                ),
+            }
+        )
+    summary = pd.DataFrame(rows)
+    if summary.empty or not summary["config_id"].eq("baseline").any():
+        raise ValueError("line-wick LC grid requires a baseline")
+    baseline = summary.loc[summary["config_id"].eq("baseline")].iloc[0]
+    for field in ("sum_yen", "sum_pips", "profit_factor_yen", "win_rate"):
+        summary[f"delta_vs_baseline_{field}"] = (
+            pd.to_numeric(summary[field], errors="coerce")
+            - float(baseline[field])
+        )
+    all_trades = (
+        pd.concat(trade_frames, ignore_index=True)
+        if trade_frames
+        else grid_paths.iloc[0:0].copy()
+    )
+    baseline_trades = all_trades[
+        all_trades["line_wick_lc_config_id"].eq("baseline")
+    ].copy()
+    all_trades = _attach_baseline_trade_comparison(
+        all_trades,
+        baseline_trades,
+    )
+    return summary, all_trades
+
+
+def choose_line_wick_lc_policy(
+    summary: pd.DataFrame,
+    *,
+    minimum_trades: int = 30,
+    minimum_exits: int = 30,
+) -> pd.Series:
+    """Freeze one stable wick width on train only; otherwise use baseline."""
+    strict = summary.loc[
+        ~summary["config_id"].eq("baseline")
+        & summary["completed_trade_count"].ge(minimum_trades)
+        & summary["line_wick_lc_exit_count"].ge(minimum_exits)
+        & summary["sum_yen"].gt(0)
+        & summary["profit_factor_yen"].ge(1.1)
+        & summary["positive_period_count"].ge(3)
+        & summary["max_positive_period_profit_share"].le(0.60)
+        & summary["delta_vs_baseline_sum_yen"].gt(0)
+    ].copy()
+    if strict.empty:
+        baseline = summary.loc[summary["config_id"].eq("baseline")]
+        if len(baseline) != 1:
+            raise ValueError("line-wick LC baseline selection is ambiguous")
+        selected = baseline.iloc[0].copy()
+        selected["selection_stage"] = "baseline_no_strict_candidate"
+        return selected
+    selected = strict.sort_values(
+        [
+            "sum_yen",
+            "positive_period_count",
+            "profit_factor_yen",
+            "max_positive_period_profit_share",
+            "delta_vs_baseline_sum_yen",
+            "sum_pips",
+            "line_wick_lc_policy_order",
+        ],
+        ascending=[False, False, False, True, False, False, True],
+        kind="stable",
+    ).iloc[0].copy()
+    selected["selection_stage"] = "strict_stability"
+    return selected
+
+
+def choose_timed_half_lc_policy(
+    summary: pd.DataFrame,
+    *,
+    minimum_trades: int = 100,
+) -> pd.Series:
+    """Select only a stable train policy; otherwise preserve baseline."""
+    strict = summary.loc[
+        summary["completed_trade_count"].ge(minimum_trades)
+        & summary["sum_yen"].gt(0)
+        & summary["profit_factor_yen"].ge(1.1)
+        & summary["positive_period_count"].ge(3)
+        & summary["max_positive_period_profit_share"].le(0.60)
+    ].copy()
+    if strict.empty:
+        baseline = summary.loc[summary["config_id"].eq("baseline")]
+        if len(baseline) != 1:
+            raise ValueError("timed half-LC baseline selection is ambiguous")
+        selected = baseline.iloc[0].copy()
+        selected["selection_stage"] = "baseline_no_strict_candidate"
+        return selected
+    selected = strict.sort_values(
+        [
+            "sum_yen",
+            "positive_period_count",
+            "profit_factor_yen",
+            "max_positive_period_profit_share",
+            "sum_pips",
+            "timed_half_lc_policy_order",
+        ],
+        ascending=[False, False, False, True, False, True],
+        kind="stable",
+    ).iloc[0].copy()
+    selected["selection_stage"] = "strict_stability"
+    return selected
+
+
+def timed_half_lc_strict_mask(
+    summary: pd.DataFrame,
+    *,
+    minimum_trades: int = 30,
+    minimum_activations: int = 30,
+) -> pd.Series:
+    """Return the train-only eligibility mask for early-loss-cut policies."""
+    return (
+        ~summary["config_id"].eq("baseline")
+        & summary["completed_trade_count"].ge(minimum_trades)
+        & summary["timed_half_lc_activation_count"].ge(minimum_activations)
+        & summary["sum_yen"].gt(0)
+        & summary["profit_factor_yen"].ge(1.1)
+        & summary["positive_period_count"].ge(3)
+        & summary["max_positive_period_profit_share"].le(0.60)
+        & summary["delta_vs_baseline_sum_yen"].gt(0)
+    )
+
+
+def select_timed_half_lc_policies(
+    summary: pd.DataFrame,
+    trades: pd.DataFrame,
+    timed_configs: Iterable[TimedHalfLcConfig],
+    *,
+    minimum_trades: int = 30,
+    minimum_activations: int = 30,
+    limit: int = 5,
+    maximum_trigger_jaccard: float = 0.85,
+) -> tuple[tuple[TimedHalfLcConfig, ...], pd.DataFrame]:
+    """Select distinct stable policies using train data only.
+
+    Adjacent time/fraction settings can cut almost the same events.  After
+    strict performance filtering, retain the higher-ranked setting and drop a
+    later setting when its timed-exit event set has Jaccard overlap at or above
+    ``maximum_trigger_jaccard``.
+    """
+    if minimum_trades < 1 or minimum_activations < 1 or limit < 1:
+        raise ValueError("timed half-LC selection counts must be positive")
+    if not 0 <= maximum_trigger_jaccard <= 1:
+        raise ValueError("timed half-LC overlap threshold must be in [0, 1]")
+    policies = tuple(timed_configs)
+    policy_by_id = {policy.config_id: policy for policy in policies}
+    if len(policy_by_id) != len(policies):
+        raise ValueError("timed half-LC selection configs must be unique")
+    baseline = summary.loc[summary["config_id"].eq("baseline")]
+    if len(baseline) != 1 or "baseline" not in policy_by_id:
+        raise ValueError("timed half-LC selection requires one baseline")
+
+    strict = summary.loc[
+        timed_half_lc_strict_mask(
+            summary,
+            minimum_trades=minimum_trades,
+            minimum_activations=minimum_activations,
+        )
+    ].copy()
+    if strict.empty:
+        return (), strict
+    strict.sort_values(
+        [
+            "sum_yen",
+            "positive_period_count",
+            "profit_factor_yen",
+            "max_positive_period_profit_share",
+            "delta_vs_baseline_sum_yen",
+            "sum_pips",
+            "timed_half_lc_policy_order",
+        ],
+        ascending=[False, False, False, True, False, False, True],
+        inplace=True,
+        kind="stable",
+    )
+
+    timed_exit = trades.get(
+        "timed_half_lc_exit", pd.Series(False, index=trades.index)
+    ).fillna(False).astype(bool)
+    event_sets = {
+        config_id: set(
+            trades.loc[
+                trades["timed_half_lc_config_id"].eq(config_id) & timed_exit,
+                "event_id",
+            ].astype(str)
+        )
+        for config_id in strict["config_id"].astype(str)
+    }
+    selected_rows: list[pd.Series] = []
+    selected_sets: list[set[str]] = []
+    for _, row in strict.iterrows():
+        config_id = str(row["config_id"])
+        if config_id not in policy_by_id:
+            raise ValueError("strict timed half-LC row has no candidate config")
+        events = event_sets[config_id]
+        overlaps = []
+        for prior in selected_sets:
+            union = events | prior
+            overlaps.append(len(events & prior) / len(union) if union else 1.0)
+        maximum_overlap = max(overlaps, default=0.0)
+        if maximum_overlap + 1e-12 >= maximum_trigger_jaccard:
+            continue
+        selected = row.copy()
+        selected["selection_rank"] = len(selected_rows) + 1
+        selected["selection_stage"] = "strict_stable_distinct_train"
+        selected["maximum_trigger_jaccard_with_higher_rank"] = maximum_overlap
+        selected_rows.append(selected)
+        selected_sets.append(events)
+        if len(selected_rows) >= limit:
+            break
+
+    selected_frame = (
+        pd.DataFrame(selected_rows)
+        if selected_rows
+        else strict.iloc[0:0].copy()
+    )
+    selected_configs = tuple(
+        policy_by_id[str(row["config_id"])]
+        for _, row in selected_frame.iterrows()
+    )
+    return selected_configs, selected_frame
+
+
+def choose_tier_execution_configs(
+    summary: pd.DataFrame,
+    base_configs: Iterable[TierExecutionConfig],
+    *,
+    minimum_trades: int = 30,
+) -> tuple[tuple[TierExecutionConfig, ...], pd.DataFrame]:
+    selected_configs = []
+    selected_rows = []
+    for base_config in base_configs:
+        tier_summary = summary[summary["tier"].eq(base_config.tier)]
+        if tier_summary.empty:
+            raise ValueError(f"tier grid is empty for {base_config.tier}")
+        selected = choose_global_policy(
+            tier_summary, minimum_trades=minimum_trades
+        )
+        selected_configs.append(
+            TierExecutionConfig(
+                tier=base_config.tier,
+                first_rank=base_config.first_rank,
+                last_rank=base_config.last_rank,
+                tp_a=float(selected["tp_a"]),
+                rr=float(selected["configured_rr"]),
+                min_range_filter_pips=float(
+                    selected["min_range_filter_pips"]
+                ),
+            )
+        )
+        selected_rows.append(selected.to_dict())
+    return tuple(selected_configs), pd.DataFrame(selected_rows)
+
+
 def performance_from_frame(frame: pd.DataFrame, mask: np.ndarray) -> dict[str, Any]:
     selected = frame.loc[mask]
     candidate_count = len(selected)
@@ -1005,8 +2310,15 @@ def performance_from_frame(frame: pd.DataFrame, mask: np.ndarray) -> dict[str, A
         & pd.to_numeric(selected["trade_result_pips"], errors="coerce").notna()
     ].copy()
     trade_count = len(trades)
+    profit_lock_count = int(
+        trades["trade_result"].eq("profit_lock").sum()
+    )
     if trade_count:
         pips = pd.to_numeric(trades["trade_result_pips"], errors="coerce")
+        average = pd.to_numeric(
+            trades["recent_m5_avg_range_pips"], errors="coerce"
+        )
+        result_a = pips.div(average.where(average > 0))
         yen = pd.to_numeric(trades["result_yen"], errors="coerce")
         wins = pips > 0
         losses = pips < 0
@@ -1017,6 +2329,7 @@ def performance_from_frame(frame: pd.DataFrame, mask: np.ndarray) -> dict[str, A
         ).sum()
     else:
         pips = pd.Series(dtype=float)
+        result_a = pd.Series(dtype=float)
         yen = pd.Series(dtype=float)
         wins = pd.Series(dtype=bool)
         losses = pd.Series(dtype=bool)
@@ -1033,10 +2346,15 @@ def performance_from_frame(frame: pd.DataFrame, mask: np.ndarray) -> dict[str, A
         "order_fill_rate": fill_count / candidate_count if candidate_count else 0.0,
         "completed_trade_count": trade_count,
         "win_count": win_count,
+        "profit_lock_count": profit_lock_count,
+        "profit_lock_rate": (
+            profit_lock_count / trade_count if trade_count else 0.0
+        ),
         "win_rate": win_count / trade_count if trade_count else 0.0,
         "average_win_pips": float(pips[wins].mean()) if win_count else 0.0,
         "average_loss_pips": float(pips[losses].mean()) if loss_count else 0.0,
         "sum_pips": float(pips.sum()),
+        "sum_a": float(result_a.sum()),
         "gross_profit_yen": gross_profit,
         "gross_loss_yen": gross_loss,
         "sum_yen": float(yen.sum()),
@@ -1052,6 +2370,261 @@ def performance_from_frame(frame: pd.DataFrame, mask: np.ndarray) -> dict[str, A
         ),
         "worst_month_yen": float(month_yen.min()) if active_months else 0.0,
     }
+
+
+def line_holding_early_path_dataset(
+    paths: pd.DataFrame,
+    *,
+    phase: str,
+) -> pd.DataFrame:
+    """Normalize causal minute-1..5 LineHolding snapshots and final labels.
+
+    Snapshot columns are features known at ``checkpoint_time``.  Columns with
+    the ``final_`` prefix are labels known only after ``exit_effective_time``
+    and must never be used by an entry or earlier checkpoint decision.
+    """
+    identity_columns = (
+        "event_id",
+        "pair",
+        "decision_time",
+        "signal_tier",
+        "highest_matched_rank",
+        "matched_condition_ids",
+        "matched_condition_ranks",
+        "matched_condition_count",
+        "fc2_shape",
+        "fc2_candle_sequence",
+        "fc2_relative_candle_sequence",
+        "fc2_second_wick_A",
+        "fc2_second_close_pushback_A",
+        "fc2_second_body_to_first_ratio",
+        "line_price",
+        "line_total_strength",
+        "line_count",
+        "line_core_count",
+        "line_is_flipped",
+        "line_history_is_flipped",
+        "line_flip_count",
+        "signal_order_direction",
+        "order_direction",
+        "recent_m5_avg_range_pips",
+        "watch_breakout_distance_pips",
+        "watch_breakout_distance_a",
+        "fill_time",
+        "actual_entry_price",
+        "tp_a",
+        "lc_a",
+        "tp_pips",
+        "lc_pips",
+    )
+    snapshot_metrics = tuple(
+        metric for metric in EARLY_PATH_METRICS if metric != "checkpoint_time"
+    )
+    final_columns = (
+        "trade_result",
+        "trade_result_pips",
+        "result_r",
+        "result_yen",
+        "exit_time",
+        "exit_effective_time",
+        "minutes_from_fill_to_exit",
+        "minutes_to_original_tp",
+        "minutes_to_original_lc",
+        "max_favorable_pips",
+        "max_adverse_pips",
+        "exit_s5_opposite_extreme_censored",
+        "exit_execution_mode",
+        "actual_exit_price",
+    )
+    output_columns = (
+        "phase",
+        *identity_columns,
+        "elapsed_minute",
+        "checkpoint_time",
+        "snapshot_known_time",
+        *snapshot_metrics,
+        *(f"final_{column}" for column in final_columns),
+        "final_max_favorable_a",
+        "final_max_adverse_a",
+        "final_is_hard_lc",
+        "final_is_any_stop_exit",
+        "final_is_tp",
+        "final_is_profit",
+        "snapshot_fields_are_causal",
+        "final_fields_are_labels_only",
+    )
+    required_columns = {
+        "watch_order_name",
+        "path_status",
+        "event_id",
+        "pair",
+        "decision_time",
+        "recent_m5_avg_range_pips",
+        "fill_time",
+        "actual_entry_price",
+        "tp_a",
+        "lc_a",
+        "tp_pips",
+        "lc_pips",
+        *final_columns,
+        *(
+            f"early_m{minute}_{metric}"
+            for minute in EARLY_PATH_MINUTES
+            for metric in EARLY_PATH_METRICS
+        ),
+    }
+    missing_columns = sorted(required_columns.difference(paths.columns))
+    if missing_columns:
+        raise ValueError(
+            "LineHolding early-path source columns are incomplete: "
+            + ", ".join(missing_columns)
+        )
+    if paths.empty:
+        return pd.DataFrame(columns=output_columns)
+
+    names = paths.get(
+        "watch_order_name", pd.Series(index=paths.index, dtype="string")
+    ).astype("string")
+    statuses = paths.get(
+        "path_status", pd.Series(index=paths.index, dtype="string")
+    ).astype("string")
+    selected = paths.loc[
+        names.eq("FlipPredict_LineHolding") & statuses.eq("trade")
+    ]
+    rows: list[dict[str, Any]] = []
+    hard_lc_names = {"lc", "both_same_s5_lc_assumed"}
+    any_stop_names = hard_lc_names | {"timed_half_lc", "line_wick_lc"}
+    for source in selected.to_dict(orient="records"):
+        average_range = pd.to_numeric(
+            source.get("recent_m5_avg_range_pips"), errors="coerce"
+        )
+        result_name = str(source.get("trade_result") or "")
+        result_pips = pd.to_numeric(
+            source.get("trade_result_pips"), errors="coerce"
+        )
+        base = {column: source.get(column) for column in identity_columns}
+        final = {
+            f"final_{column}": source.get(column) for column in final_columns
+        }
+        for minute in EARLY_PATH_MINUTES:
+            prefix = f"early_m{minute}_"
+            checkpoint = source.get(prefix + "checkpoint_time", pd.NaT)
+            row = {
+                "phase": phase,
+                **base,
+                "elapsed_minute": minute,
+                "checkpoint_time": checkpoint,
+                "snapshot_known_time": checkpoint,
+                **{
+                    metric: source.get(prefix + metric)
+                    for metric in snapshot_metrics
+                },
+                **final,
+                "final_max_favorable_a": (
+                    pd.to_numeric(source.get("max_favorable_pips"), errors="coerce")
+                    / average_range
+                    if pd.notna(average_range) and average_range > 0
+                    else np.nan
+                ),
+                "final_max_adverse_a": (
+                    pd.to_numeric(source.get("max_adverse_pips"), errors="coerce")
+                    / average_range
+                    if pd.notna(average_range) and average_range > 0
+                    else np.nan
+                ),
+                "final_is_hard_lc": result_name in hard_lc_names,
+                "final_is_any_stop_exit": result_name in any_stop_names,
+                "final_is_tp": result_name == "tp",
+                "final_is_profit": bool(pd.notna(result_pips) and result_pips > 0),
+                "snapshot_fields_are_causal": True,
+                "final_fields_are_labels_only": True,
+            }
+            rows.append(row)
+    return pd.DataFrame(rows, columns=output_columns)
+
+
+def summarize_watch_entry_branches(
+    paths: pd.DataFrame,
+    trades: pd.DataFrame,
+) -> pd.DataFrame:
+    """Summarize the three watch-entry branches after portfolio lifecycle replay."""
+    names = (
+        "FlipPredict_LineHolding",
+        "FlipPredict_NearLineConsolidation",
+        "FlipPredict_Breakout",
+    )
+    rows: list[dict[str, Any]] = []
+    path_names = paths.get(
+        "watch_order_name", pd.Series(index=paths.index, dtype="string")
+    ).astype("string")
+    trade_names = trades.get(
+        "watch_order_name", pd.Series(index=trades.index, dtype="string")
+    ).astype("string")
+    for name in names:
+        classified = paths.loc[path_names.eq(name)]
+        classified_status = classified.get(
+            "path_status", pd.Series(index=classified.index, dtype="string")
+        ).astype("string")
+        selected = trades.loc[trade_names.eq(name)].copy()
+        pips = pd.to_numeric(
+            selected.get("trade_result_pips"), errors="coerce"
+        ).dropna()
+        yen = pd.to_numeric(selected.get("result_yen"), errors="coerce").dropna()
+        wins = pips[pips > 0]
+        losses = pips[pips < 0]
+        gross_profit = float(yen[yen > 0].sum())
+        gross_loss = float(-yen[yen < 0].sum())
+        rows.append(
+            {
+                "watch_order_name": name,
+                "classified_candidate_count": int(len(classified)),
+                "path_fill_count_before_lifecycle": int(
+                    classified["order_filled"].fillna(False).astype(bool).sum()
+                ),
+                "chase_filtered_count": int(
+                    classified_status.eq(
+                        "watch_line_holding_chase_filtered"
+                    ).sum()
+                ),
+                "entry_quote_or_gap_filtered_count": int(
+                    classified_status.isin(
+                        {
+                            "watch_line_holding_entry_quote_filtered",
+                            "watch_entry_gap_filtered",
+                        }
+                    ).sum()
+                ),
+                "pending_no_fill_count": int(
+                    classified_status.isin(
+                        {"watch_retest_no_fill", "watch_breakout_no_fill"}
+                    ).sum()
+                ),
+                "stop_fill_bar_adverse_censored_count": int(
+                    classified.get(
+                        "watch_stop_fill_bar_adverse_censored",
+                        pd.Series(False, index=classified.index),
+                    )
+                    .fillna(False)
+                    .astype(bool)
+                    .sum()
+                ),
+                "completed_trade_count": int(len(pips)),
+                "win_count": int(len(wins)),
+                "win_rate": float(len(wins) / len(pips)) if len(pips) else 0.0,
+                "average_win_pips": float(wins.mean()) if len(wins) else 0.0,
+                "average_loss_pips": float(losses.mean()) if len(losses) else 0.0,
+                "sum_pips": float(pips.sum()),
+                "gross_profit_yen": gross_profit,
+                "gross_loss_yen": gross_loss,
+                "sum_yen": float(yen.sum()),
+                "profit_factor_yen": (
+                    gross_profit / gross_loss
+                    if gross_loss
+                    else (math.inf if gross_profit else 0.0)
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def summarize_conditions(
@@ -1071,7 +2644,11 @@ def summarize_conditions(
     yen = pd.to_numeric(frame["result_yen"], errors="coerce").to_numpy(
         dtype=float
     )
+    average = pd.to_numeric(
+        frame["recent_m5_avg_range_pips"], errors="coerce"
+    ).to_numpy(dtype=float)
     trades = frame["path_status"].eq("trade").to_numpy() & np.isfinite(pips)
+    profit_locks = frame["trade_result"].eq("profit_lock").to_numpy()
     month_values = (
         pd.to_datetime(frame["fill_time"])
         .dt.strftime("%Y-%m")
@@ -1086,9 +2663,17 @@ def summarize_conditions(
         trade_count = int(trade_mask.sum())
         selected_pips = pips[trade_mask]
         selected_yen = yen[trade_mask]
+        selected_average = average[trade_mask]
+        selected_a = np.divide(
+            selected_pips,
+            selected_average,
+            out=np.zeros_like(selected_pips),
+            where=np.isfinite(selected_average) & (selected_average > 0),
+        )
         wins = selected_pips > 0
         losses = selected_pips < 0
         win_count = int(wins.sum())
+        profit_lock_count = int(np.count_nonzero(trade_mask & profit_locks))
         loss_count = int(losses.sum())
         gross_profit = float(selected_yen[selected_yen > 0].sum())
         gross_loss = float(-selected_yen[selected_yen < 0].sum())
@@ -1114,6 +2699,10 @@ def summarize_conditions(
             ),
             "completed_trade_count": trade_count,
             "win_count": win_count,
+            "profit_lock_count": profit_lock_count,
+            "profit_lock_rate": (
+                profit_lock_count / trade_count if trade_count else 0.0
+            ),
             "win_rate": win_count / trade_count if trade_count else 0.0,
             "average_win_pips": (
                 float(selected_pips[wins].mean()) if win_count else 0.0
@@ -1122,6 +2711,7 @@ def summarize_conditions(
                 float(selected_pips[losses].mean()) if loss_count else 0.0
             ),
             "sum_pips": float(selected_pips.sum()),
+            "sum_a": float(selected_a.sum()),
             "gross_profit_yen": gross_profit,
             "gross_loss_yen": gross_loss,
             "sum_yen": float(selected_yen.sum()),
@@ -1180,6 +2770,7 @@ def replay_condition(
     selected_lifecycle_count = 0
     replaced_before_fill = 0
     skipped_while_locked = 0
+    pending_order_lock_count = 0
     accumulator = PerformanceAccumulator()
     for _event_id, group in eligible.groupby("event_id", sort=False):
         event_count += 1
@@ -1195,6 +2786,16 @@ def replay_condition(
         if candidate.get("replaced_before_fill"):
             replaced_before_fill += 1
         if not candidate.get("order_filled"):
+            pending_end = pd.to_datetime(
+                candidate.get("watch_order_release_time"), errors="coerce"
+            )
+            if pd.isna(pending_end):
+                pending_end = pd.to_datetime(
+                    candidate.get("order_deadline"), errors="coerce"
+                )
+            if not pd.isna(pending_end) and pending_end > decision_time:
+                locked_until = pending_end
+                pending_order_lock_count += 1
             continue
         if candidate.get("path_status") != "trade":
             position_horizon_end = pd.to_datetime(
@@ -1206,10 +2807,18 @@ def replay_condition(
         exit_time = pd.to_datetime(candidate.get("exit_time"), errors="coerce")
         if pd.isna(exit_time):
             continue
-        locked_until = exit_time + pd.Timedelta(seconds=5)
+        exit_effective_time = pd.to_datetime(
+            candidate.get("exit_effective_time"), errors="coerce"
+        )
+        locked_until = (
+            exit_effective_time
+            if not pd.isna(exit_effective_time)
+            else exit_time + pd.Timedelta(seconds=5)
+        )
         accumulator.add_outcome(
             candidate,
             pd.Timestamp(candidate["fill_time"]).strftime("%Y-%m"),
+            average_range_pips=float(candidate["recent_m5_avg_range_pips"]),
         )
         trade_rows.append(candidate.to_dict())
     trades = pd.DataFrame(trade_rows)
@@ -1230,6 +2839,7 @@ def replay_condition(
             "selected_lifecycle_count": selected_lifecycle_count,
             "replaced_before_fill_count": replaced_before_fill,
             "skipped_while_locked_count": skipped_while_locked,
+            "pending_order_lock_count": pending_order_lock_count,
         }
     )
     return trades, performance
@@ -1265,9 +2875,12 @@ def monthly_summary(trades: pd.DataFrame) -> pd.DataFrame:
         "month",
         "trade_count",
         "win_count",
+        "profit_lock_count",
+        "profit_lock_rate",
         "win_rate",
         "average_win_pips",
         "sum_pips",
+        "sum_a",
         "gross_profit_yen",
         "gross_loss_yen",
         "sum_yen",
@@ -1279,6 +2892,7 @@ def monthly_summary(trades: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for month, group in work.groupby("month", sort=True):
         wins = group[group["trade_result_pips"] > 0]
+        profit_lock_count = int(group["trade_result"].eq("profit_lock").sum())
         profit = group.loc[group["result_yen"] > 0, "result_yen"].sum()
         loss = -group.loc[group["result_yen"] < 0, "result_yen"].sum()
         rows.append(
@@ -1286,11 +2900,29 @@ def monthly_summary(trades: pd.DataFrame) -> pd.DataFrame:
                 "month": month,
                 "trade_count": len(group),
                 "win_count": len(wins),
+                "profit_lock_count": profit_lock_count,
+                "profit_lock_rate": profit_lock_count / len(group),
                 "win_rate": len(wins) / len(group),
                 "average_win_pips": (
                     float(wins["trade_result_pips"].mean()) if len(wins) else 0.0
                 ),
                 "sum_pips": float(group["trade_result_pips"].sum()),
+                "sum_a": float(
+                    (
+                        pd.to_numeric(
+                            group["trade_result_pips"], errors="coerce"
+                        )
+                        / pd.to_numeric(
+                            group["recent_m5_avg_range_pips"], errors="coerce"
+                        ).where(
+                            pd.to_numeric(
+                                group["recent_m5_avg_range_pips"],
+                                errors="coerce",
+                            )
+                            > 0
+                        )
+                    ).sum()
+                ),
                 "gross_profit_yen": float(profit),
                 "gross_loss_yen": float(loss),
                 "sum_yen": float(group["result_yen"].sum()),
