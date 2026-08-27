@@ -13,6 +13,8 @@ import pandas as pd
 import test_win_point_usd_aud as win_point
 import tokens as tk
 from count2_flip_core import (
+    CONDITION_MINIMUM_POSITIVE_PERIODS,
+    CONDITION_MULTIPLE_TESTING_ALPHA,
     DEFAULT_LC_A_GRID,
     DEFAULT_MIN_TARGET_DISTANCE_PIPS,
     DEFAULT_PROFIT_LOCK_ENABLED,
@@ -24,6 +26,7 @@ from count2_flip_core import (
     EARLY_PATH_METRICS,
     EARLY_PATH_MINUTES,
     FLIP_VERSION,
+    MINIMUM_CONDITION_TRADES,
     RANGE_FILTER_FRACTION_A,
     STRETCH_PROFIT_LOCK_B,
     STRETCH_PROFIT_LOCK_TP_FRACTION,
@@ -41,7 +44,11 @@ from count2_flip_core import (
     default_path_configs,
     default_tier_execution_configs,
     default_trade_combos,
+    bucket_specs_for_pair,
     enumerate_conditions,
+    minimum_matched_conditions_for_pair,
+    minimum_tier_rr_for_pair,
+    risk_multiple_profit_lock_for_pair,
     serialize_path_config,
     serialize_trade_combo,
 )
@@ -49,6 +56,7 @@ from count2_flip_workflow import (
     archive_file,
     atomic_csv,
     atomic_json,
+    attach_bonferroni_diagnostics,
     candidate_source_path,
     choose_global_policy,
     choose_line_wick_lc_policy,
@@ -58,6 +66,7 @@ from count2_flip_workflow import (
     inspect_selected_paths,
     inspect_tiered_paths,
     inspect_line_wick_lc_grid_paths,
+    risk_multiple_profit_lock_inspectors,
     inspect_trade_combo_grid_paths,
     inspect_timed_half_lc_grid_paths,
     load_candidates,
@@ -241,6 +250,9 @@ def run_analysis(
         pair, train_start, train_end, output_dir
     )
     s5_cache = s5_cache or s5_source_path(pair, train_start, train_end, output_dir)
+    minimum_matched_conditions = minimum_matched_conditions_for_pair(pair)
+    minimum_tier_rr = minimum_tier_rr_for_pair(pair)
+    risk_multiple_profit_lock = risk_multiple_profit_lock_for_pair(pair)
     for key, path in paths.items():
         if key != "progress":
             archive_file(path)
@@ -412,11 +424,18 @@ def run_analysis(
     # lifecycle.  Counterfactual rank is not a safe pre-filter for that replay.
     shortlisted_conditions = conditions
     replay_summary, _ = rank_replay_conditions(
-        selected_paths, shortlisted_conditions, keep_details=False
+        selected_paths,
+        shortlisted_conditions,
+        keep_details=False,
+        period_start=train_start,
+        period_end=train_end,
+    )
+    replay_summary = attach_bonferroni_diagnostics(
+        replay_summary, len(shortlisted_conditions)
     )
     replay_summary.sort_values(
         [
-            "sum_yen",
+            "avg_yen_per_trade",
             "positive_month_rate",
             "profit_factor_yen",
             "sum_pips",
@@ -435,6 +454,8 @@ def run_analysis(
         replay_summary,
         base_tier_configs,
         limit=TOP_CONDITION_LIMIT,
+        minimum_trades=MINIMUM_CONDITION_TRADES,
+        minimum_positive_periods=CONDITION_MINIMUM_POSITIVE_PERIODS,
     )
     rank_by_condition = {
         item.condition.condition_id: item.rank for item in ranked_conditions
@@ -477,6 +498,7 @@ def run_analysis(
         candidates,
         ranked_conditions,
         base_tier_configs,
+        minimum_matched_conditions=minimum_matched_conditions,
     )
     grid_policy_paths = inspect_trade_combo_grid_paths(
         grid_policy_candidates,
@@ -508,6 +530,16 @@ def run_analysis(
         tier_range_lc_grid,
         base_tier_configs,
         minimum_trades=30,
+        minimum_rr=minimum_tier_rr,
+    )
+    # Tier RRs are only known now, so the R-based raised stop is built here
+    # and reused by every downstream pass that runs the frozen tier policy.
+    tier_profit_lock_inspectors = (
+        risk_multiple_profit_lock_inspectors(
+            path_inspector, tier_configs, risk_multiple_profit_lock
+        )
+        if risk_multiple_profit_lock is not None
+        else None
     )
     selected_keys = {
         (
@@ -531,6 +563,7 @@ def run_analysis(
         candidates,
         ranked_conditions,
         tier_configs,
+        minimum_matched_conditions=minimum_matched_conditions,
     )
     matrix_grid_paths = inspect_trade_combo_grid_paths(
         matrix_policy_candidates,
@@ -567,6 +600,7 @@ def run_analysis(
         candidates,
         ranked_conditions,
         tier_configs,
+        minimum_matched_conditions=minimum_matched_conditions,
     )
     line_wick_lc_configs = default_line_wick_lc_configs()
     line_wick_lc_paths = inspect_line_wick_lc_grid_paths(
@@ -581,6 +615,7 @@ def run_analysis(
         progress_file=paths["progress"],
         started=started,
         notify=None,
+        inspectors_by_tier=tier_profit_lock_inspectors,
     )
     atomic_csv(paths["line_wick_lc_paths"], line_wick_lc_paths)
     line_wick_lc_grid, line_wick_lc_train_trades = scan_line_wick_lc_grid(
@@ -899,6 +934,11 @@ def run_analysis(
                 "minimum_positive_four_periods": 3,
                 "maximum_single_positive_period_profit_share": 0.60,
                 "fallback_stage_is_exported": True,
+                "minimum_tier_configured_rr": minimum_tier_rr,
+                "minimum_tier_configured_rr_note": (
+                    "per-tier TP/LC cells below this reward/risk are dropped "
+                    "before selection; ignored when no cell clears it"
+                ),
             },
             "selected_ranking_filter_pips": ranking_range_filter_pips,
             "selected_ranking_tp_a": trade_combo.tp_a,
@@ -1183,17 +1223,75 @@ def run_analysis(
         },
         "top_condition_policy": {
             "operator": "OR",
+            "minimum_matched_conditions": minimum_matched_conditions,
+            "risk_multiple_profit_lock": (
+                risk_multiple_profit_lock.to_dict()
+                if risk_multiple_profit_lock is not None
+                else None
+            ),
+            "risk_multiple_profit_lock_tiers": sorted(
+                tier_profit_lock_inspectors or ()
+            ),
+            "risk_multiple_profit_lock_note": (
+                "raised stop in multiples of the trade's own risk: once the "
+                "trade reaches trigger_r it can no longer finish below "
+                "result_r.  Converted per tier into take-profit fractions, "
+                "since tiers pick different RR.  null disables it.  A tier "
+                "missing from risk_multiple_profit_lock_tiers ran unlocked "
+                "because its RR was at or below trigger_r, so the lock could "
+                "only have armed after the take-profit already closed it."
+            ),
+            "minimum_matched_conditions_note": (
+                "how many ranked conditions must agree before an event is "
+                "eligible; 1 is the plain OR.  Agreement behaves like "
+                "confidence on AUD_USD (OOS single-match events averaged "
+                "-14.1 yen, four-or-more averaged +22.1), so AUD_USD uses 3. "
+                "USD_JPY stays at 1 because 75% of its matches are "
+                "single-condition and a higher bar starves it."
+            ),
             "minimum_target_distance_pips": min_target_distance_pips,
             "target_distance_source": "decision_time distance_pips",
             "all_baseline_excluded": True,
-            "additional_top15_eligibility_filters": False,
+            "additional_top15_eligibility_filters": True,
+            "eligibility_filters": {
+                "minimum_trades": MINIMUM_CONDITION_TRADES,
+                "minimum_positive_periods": CONDITION_MINIMUM_POSITIVE_PERIODS,
+                "positive_periods_of": 4,
+                "note": (
+                    "per-trade ranking and a within-train four-quarter "
+                    "stability gate replace the prior unfiltered raw "
+                    "sum_yen ranking, which favored high-volume/low-edge "
+                    "conditions and had no train-internal stability check"
+                ),
+            },
             "ranking_order": [
-                "sum_yen_desc",
+                "avg_yen_per_trade_desc",
                 "positive_month_rate_desc",
                 "profit_factor_yen_desc",
                 "sum_pips_desc",
                 "condition_id_asc",
             ],
+            "multiple_testing_diagnostics": {
+                "num_candidates_tested": len(shortlisted_conditions),
+                "alpha": CONDITION_MULTIPLE_TESTING_ALPHA,
+                "method": "bonferroni_two_sided_z",
+                "enforced_as_hard_gate": False,
+                "note": (
+                    "yen_per_trade_z/bonferroni_z_threshold/"
+                    "clears_bonferroni_bar are reported per condition as "
+                    "diagnostics, not enforced — a strict Bonferroni bar "
+                    "over this many candidates can plausibly reject every "
+                    "candidate given this feature catalog's effect sizes"
+                ),
+            },
+            "feature_bucket_specs": {
+                name: {
+                    "source_column": spec.source_column,
+                    "edges": list(spec.edges),
+                    "labels": list(spec.labels),
+                }
+                for name, spec in bucket_specs_for_pair(pair).items()
+            },
             "tier_ranges": {
                 config.tier: [config.first_rank, config.last_rank]
                 for config in tier_configs

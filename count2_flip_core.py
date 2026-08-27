@@ -83,6 +83,128 @@ EARLY_PATH_METRICS = (
     "cumulative_line_cross_count",
 )
 TOP_CONDITION_LIMIT = 15
+# Selection gates for condition mining (guards against the sum_yen-volume
+# bias and the multiple-testing bias of exhaustively searching hundreds of
+# candidate conditions).  See ``select_top_ranked_conditions`` in
+# count2_flip_workflow.py.
+MINIMUM_CONDITION_TRADES = 30
+# How many of the ranked conditions must agree before an event is traded.
+# 1 is the plain OR (any single condition triggers).  Agreement behaves like
+# confidence: on AUD_USD's OOS year single-match events averaged -14.1 yen
+# while four-or-more averaged +22.1, and requiring three turned both AUD_USD
+# (-157 -> +271 yen) and EUR_USD (-256 -> +336) profitable.
+#
+# USD_JPY is set to three for consistency but is not expected to trade much:
+# 75% of its matches are single-condition and only 15 OOS events reach three.
+# Its problem is upstream -- its conditions barely overlap -- so treat a
+# USD_JPY result here as inconclusive rather than as a working policy.
+# See memo/flip_predict_todo.md.
+DEFAULT_MINIMUM_MATCHED_CONDITIONS = 1
+PAIR_MINIMUM_MATCHED_CONDITIONS: dict[str, int] = {
+    "AUD_USD": 3,
+    "EUR_USD": 3,
+    "USD_JPY": 3,
+}
+# Reward/risk floor applied when picking each tier's TP/LC cell.  Ranking by
+# sum_yen alone settles near RR 1.0, which leans on a high win rate; AUD_USD's
+# train grid shows TP 2.0A / LC 1.4A (RR 1.43) still wins 62.7% with PF 1.93,
+# so a floor buys durability at a modest cost in total yen.  0 disables it.
+#
+# 1.4 is the shared default for every pair.  A pair that needs a different
+# floor overrides it in PAIR_MINIMUM_TIER_RR; setting a pair to 0.0 there
+# disables the floor for that pair alone.  The floor is advisory: when no
+# TP/LC cell reaches it, selection falls back to the whole grid rather than
+# failing, so raising it can never leave a pair without a policy.
+DEFAULT_MINIMUM_TIER_RR = 1.4
+PAIR_MINIMUM_TIER_RR: dict[str, float] = {}
+
+
+def minimum_tier_rr_for_pair(pair: str | None) -> float:
+    """Return the reward/risk floor for ``pair`` (default: no floor)."""
+    if not pair:
+        return DEFAULT_MINIMUM_TIER_RR
+    return PAIR_MINIMUM_TIER_RR.get(
+        str(pair).upper(), DEFAULT_MINIMUM_TIER_RR
+    )
+
+
+@dataclass(frozen=True)
+class RiskMultipleProfitLock:
+    """Raise the stop to a fixed profit once the trade reaches a trigger.
+
+    Both levels are multiples of R, the trade's own loss-cut distance, so a
+    tier running RR 1.43 and one running RR 1.77 still lock the same real
+    profit.  With ``trigger_r=1.2`` and ``result_r=1.05`` a trade that runs
+    to +1.2R can no longer finish below +1.05R; it gives back 0.15R of the
+    high-water mark in exchange for removing the full-loss outcome.
+
+    The trade keeps its original take-profit, so the upside is unchanged --
+    this only removes the tail where a winner round-trips back into a loss.
+    """
+
+    trigger_r: float
+    result_r: float
+
+    def __post_init__(self) -> None:
+        values = (self.trigger_r, self.result_r)
+        if any(not math.isfinite(value) or value <= 0 for value in values):
+            raise ValueError("profit lock R multiples must be finite and positive")
+        if self.result_r >= self.trigger_r:
+            raise ValueError("locked profit must be below the trigger")
+
+    def fractions_for_rr(self, rr: float) -> tuple[float, float]:
+        """Convert the R multiples into fractions of a tier's take-profit.
+
+        ``rr`` is that tier's take-profit expressed in R, so dividing by it
+        rebases both levels onto the take-profit scale the path inspector
+        works in.  Raises when the trigger is not below the take-profit,
+        which would arm the lock only after the trade had already closed.
+        """
+        rr = float(rr)
+        if not math.isfinite(rr) or rr <= 0:
+            raise ValueError("tier RR must be finite and positive")
+        if self.trigger_r >= rr:
+            raise ValueError(
+                f"profit lock trigger {self.trigger_r}R is not below the "
+                f"take-profit at {rr}R, so it could never arm"
+            )
+        return self.trigger_r / rr, self.result_r / rr
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"trigger_r": self.trigger_r, "result_r": self.result_r}
+
+
+# Raised-stop policy in multiples of the trade's own risk, shared by every
+# pair: protect +1.05R once +1.2R trades, against the 1.4R take-profit.
+# Requires trigger_r below each tier's RR, which DEFAULT_MINIMUM_TIER_RR
+# (1.4) keeps true.  A pair overrides it in PAIR_RISK_MULTIPLE_PROFIT_LOCK;
+# mapping a pair to None there disables the raised stop for that pair alone.
+DEFAULT_RISK_MULTIPLE_PROFIT_LOCK = RiskMultipleProfitLock(
+    trigger_r=1.2, result_r=1.05
+)
+PAIR_RISK_MULTIPLE_PROFIT_LOCK: dict[str, RiskMultipleProfitLock | None] = {}
+
+
+def risk_multiple_profit_lock_for_pair(
+    pair: str | None,
+) -> RiskMultipleProfitLock | None:
+    """Return the raised-stop policy for ``pair``, or None to disable it."""
+    if not pair:
+        return DEFAULT_RISK_MULTIPLE_PROFIT_LOCK
+    return PAIR_RISK_MULTIPLE_PROFIT_LOCK.get(
+        str(pair).upper(), DEFAULT_RISK_MULTIPLE_PROFIT_LOCK
+    )
+
+
+def minimum_matched_conditions_for_pair(pair: str | None) -> int:
+    """Return the agreement threshold for ``pair`` (default: plain OR)."""
+    if not pair:
+        return DEFAULT_MINIMUM_MATCHED_CONDITIONS
+    return PAIR_MINIMUM_MATCHED_CONDITIONS.get(
+        str(pair).upper(), DEFAULT_MINIMUM_MATCHED_CONDITIONS
+    )
+CONDITION_MINIMUM_POSITIVE_PERIODS = 3
+CONDITION_MULTIPLE_TESTING_ALPHA = 0.05
 TIER_HIGH = "HIGH"
 TIER_MIDDLE = "MIDDLE"
 TIER_LOW = "LOW"
@@ -647,6 +769,199 @@ def default_trade_combos(min_rr: float = 1.0) -> tuple[TradeCombo, ...]:
         for lc_a in DEFAULT_LC_A_GRID
         if tp_a / lc_a + 1e-12 >= min_rr
     )
+
+
+@dataclass(frozen=True)
+class BucketSpec:
+    """Edges and labels that group one continuous column into buckets.
+
+    ``edges`` are ``pandas.cut`` bin boundaries (right-closed, with the
+    lowest interval inclusive), so a value equal to an edge falls into the
+    bucket *below* it.  ``labels`` must therefore have exactly one fewer
+    entry than ``edges``.
+    """
+
+    source_column: str
+    edges: tuple[float, ...]
+    labels: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.labels) != len(self.edges) - 1:
+            raise ValueError(
+                f"{self.source_column}: {len(self.edges)} edges need "
+                f"{len(self.edges) - 1} labels, got {len(self.labels)}"
+            )
+        if len(set(self.labels)) != len(self.labels):
+            raise ValueError(f"{self.source_column}: bucket labels must be unique")
+        if any(
+            not (left < right)
+            for left, right in zip(self.edges, self.edges[1:])
+        ):
+            raise ValueError(
+                f"{self.source_column}: bucket edges must strictly increase"
+            )
+
+
+# Bucket edges are tuned per pair because the same nominal strength means
+# different things across pairs -- e.g. line_average_strength sits exactly
+# at 5.0 for ~45% of AUD_USD candidates but ~63% of USD_JPY candidates.
+# Only continuous inputs whose distribution is pair-dependent live here;
+# categorical features (shape, session, direction) need no edges.
+DEFAULT_BUCKET_SPECS: dict[str, BucketSpec] = {
+    "f_distance_a": BucketSpec(
+        "distance_a",
+        (-np.inf, 0.5, 1.0, 2.0, 4.0, np.inf),
+        ("lt0p5", "0p5to1", "1to2", "2to4", "ge4"),
+    ),
+    "f_peaks_count": BucketSpec(
+        "line_count",
+        (-np.inf, 1, 2, 3, np.inf),
+        ("1", "2", "3", "4plus"),
+    ),
+    "f_core_peak": BucketSpec(
+        "line_core_count",
+        (-np.inf, 1, 2, np.inf),
+        ("1", "2", "3plus"),
+    ),
+    "f_line_average_strength": BucketSpec(
+        "line_average_strength",
+        (-np.inf, 2.49, 3.49, 4.99, 5.0, np.inf),
+        ("lt2p5", "2p5to3p4", "3p5to4p9", "eq5", "gt5"),
+    ),
+    "f_line_total_strength": BucketSpec(
+        "line_total_strength",
+        (-np.inf, 5, 9, 14, np.inf),
+        ("le5", "6to9", "10to14", "ge15"),
+    ),
+    "f_line_core_total_strength": BucketSpec(
+        "line_core_total_strength",
+        (-np.inf, 5, 10, np.inf),
+        ("le5", "6to10", "ge11"),
+    ),
+    # Share of the line's strength contributed by repeat-touch core peaks.
+    # "eq1" (every peak is core) is a genuine point mass at 54%/70%.
+    "f_line_core_strength_ratio": BucketSpec(
+        "line_core_strength_ratio",
+        (-np.inf, 0.6, 0.999, np.inf),
+        ("lt0p6", "0p6to0p99", "eq1"),
+    ),
+    # This line's strength against the median of the lines competing at the
+    # same event -- the best-spread strength feature on both pairs, because
+    # it rescales away the absolute point masses.
+    "f_line_relative_strength": BucketSpec(
+        "line_relative_total_strength",
+        (-np.inf, 0.999, 1.0, 1.5, np.inf),
+        ("lt1", "eq1", "1to1p5", "gt1p5"),
+    ),
+    # The line lookback window caps ages near ~300 minutes, so the earlier
+    # 60/240/1440 edges left "ge24h" almost empty (~1.8%) and dumped 57-60%
+    # of candidates into "1to4h".  These quartile-based edges hold for both
+    # AUD_USD and USD_JPY (no bucket above 27%), so they stay shared:
+    # identical edges keep condition ids meaning the same thing across pairs.
+    "f_line_age": BucketSpec(
+        "line_age_minutes",
+        (-np.inf, 60, 120, 200, 255, np.inf),
+        ("le1h", "1to2h", "2to3h", "3to4h", "gt4h"),
+    ),
+    # Roughly quartiles of the non-missing population.  "missing" (never
+    # flipped) is itself ~45-49% of candidates and is a meaningful bucket,
+    # not a gap to be filled.
+    "f_minutes_since_flip": BucketSpec(
+        "minutes_since_line_flip",
+        (-np.inf, 40, 85, 150, np.inf),
+        ("le40m", "41to85m", "86to150m", "gt150m"),
+    ),
+    "f_prior_retouch": BucketSpec(
+        "prior_retouch_count",
+        (-np.inf, 0, 1, 2, np.inf),
+        ("0", "1", "2", "3plus"),
+    ),
+    # peak_strength is effectively two-valued in practice (2 or 5; ~0.01%
+    # of candidates exceed 5).  The earlier le1/2/3/4to5/gt5 edges left
+    # "le1" and "3" permanently empty, so those buckets could never be
+    # enumerated as conditions and only inflated the candidate count.
+    "f_peak_strength": BucketSpec(
+        "peak_strength",
+        (-np.inf, 2, 5, np.inf),
+        ("le2", "3to5", "gt5"),
+    ),
+}
+
+# Per-pair overrides.  A pair listed here replaces only the named features;
+# everything else falls back to DEFAULT_BUCKET_SPECS.  Add a pair's entry
+# after measuring its own candidate distribution with
+# count2_flip_bucket_report.py -- do not copy another pair's edges without
+# checking.  Prefer a shared default when it holds for every pair: identical
+# edges keep a condition id meaning the same thing across pairs.
+#
+# Not every skew is fixable by re-bucketing.  line_core_count sits at 1 for
+# 76% (AUD_USD) / 82% (USD_JPY) of candidates and line_average_strength sits
+# at exactly 5.0 for 45% / 63%: those are genuine point masses in the source
+# data, and no edge placement can split a single repeated value.
+PAIR_BUCKET_OVERRIDES: dict[str, dict[str, BucketSpec]] = {
+    "AUD_USD": {},
+    "EUR_USD": {},
+    "USD_JPY": {
+        # USD_JPY concentrates harder at exactly 5.0 (63% vs AUD_USD's 45%),
+        # leaving only 29% below it.  The shared five-bucket split strands
+        # "lt2p5" at 2.4% here, so the two weakest buckets are merged.
+        "f_line_average_strength": BucketSpec(
+            "line_average_strength",
+            (-np.inf, 3.49, 4.99, 5.0, np.inf),
+            ("lt3p5", "3p5to4p9", "eq5", "gt5"),
+        ),
+    },
+}
+
+
+def bucket_specs_for_pair(pair: str | None) -> dict[str, BucketSpec]:
+    """Return the effective bucket specs for ``pair``.
+
+    Unknown or omitted pairs fall back to the shared defaults, so adding a
+    new pair never requires editing this module first.
+    """
+    specs = dict(DEFAULT_BUCKET_SPECS)
+    if pair:
+        specs.update(PAIR_BUCKET_OVERRIDES.get(str(pair).upper(), {}))
+    return specs
+
+
+def _inverse_normal_cdf_upper_tail(tail_probability: float) -> float:
+    """Return z such that P(Z > z) = tail_probability, for a standard normal Z.
+
+    Uses the Abramowitz & Stegun 26.2.23 rational approximation (accurate to
+    about 4.5e-4) so no external statistics dependency (e.g. scipy) is
+    required.  Only valid for ``0 < tail_probability <= 0.5``.
+    """
+    if not math.isfinite(tail_probability) or not 0 < tail_probability <= 0.5:
+        raise ValueError("tail probability must be in (0, 0.5]")
+    t = math.sqrt(-2.0 * math.log(tail_probability))
+    c0, c1, c2 = 2.515517, 0.802853, 0.010328
+    d1, d2, d3 = 1.432788, 0.189269, 0.001308
+    return t - (c0 + c1 * t + c2 * t * t) / (
+        1.0 + d1 * t + d2 * t * t + d3 * t * t * t
+    )
+
+
+def bonferroni_z_threshold(
+    num_candidates: int,
+    alpha: float = CONDITION_MULTIPLE_TESTING_ALPHA,
+) -> float:
+    """Two-sided per-comparison z critical value under a Bonferroni correction.
+
+    When ``num_candidates`` conditions are exhaustively tested for a
+    train-period edge, the chance of at least one showing an apparent edge by
+    pure luck grows with the number of candidates.  Bonferroni correction
+    keeps the family-wise false-positive rate at ``alpha`` by requiring each
+    individual candidate's two-sided test to clear ``alpha / num_candidates``
+    instead of the uncorrected ``alpha``.
+    """
+    if num_candidates < 1:
+        raise ValueError("num_candidates must be positive")
+    if not math.isfinite(alpha) or not 0 < alpha < 1:
+        raise ValueError("alpha must be in (0, 1)")
+    tail_probability = alpha / (2.0 * num_candidates)
+    return _inverse_normal_cdf_upper_tail(tail_probability)
 
 
 def expected_role(direction: int) -> str:
@@ -2472,9 +2787,20 @@ class FlipPathInspector:
         }
 
 
-def add_feature_buckets(frame: pd.DataFrame) -> pd.DataFrame:
-    """Create the finite, causal feature catalog used by exhaustive search."""
+def add_feature_buckets(
+    frame: pd.DataFrame,
+    pair: str | None = None,
+) -> pd.DataFrame:
+    """Create the finite, causal feature catalog used by exhaustive search.
+
+    ``pair`` selects that pair's bucket-edge overrides from
+    ``PAIR_BUCKET_OVERRIDES``; ``None`` (or an unlisted pair) uses
+    ``DEFAULT_BUCKET_SPECS`` unchanged.  Edges are configuration, not
+    behaviour: changing them changes only how continuous inputs are grouped
+    for the exhaustive condition search, never how a trade is executed.
+    """
     result = frame.copy()
+    specs = bucket_specs_for_pair(pair)
 
     def numeric(name: str) -> pd.Series:
         return pd.to_numeric(result.get(name), errors="coerce")
@@ -2484,6 +2810,11 @@ def add_feature_buckets(frame: pd.DataFrame) -> pd.DataFrame:
             numeric(name), bins=bins, labels=labels, include_lowest=True
         ).astype("string").fillna("missing")
 
+    def spec_cut(feature: str) -> pd.Series:
+        """Bucket a column using the (possibly pair-overridden) spec."""
+        spec = specs[feature]
+        return cut(spec.source_column, list(spec.edges), list(spec.labels))
+
     distance_rank = numeric("distance_rank")
     result["f_distance_rank"] = np.select(
         [distance_rank.eq(1), distance_rank.eq(2), distance_rank.eq(3)],
@@ -2492,29 +2823,29 @@ def add_feature_buckets(frame: pd.DataFrame) -> pd.DataFrame:
     )
     average = numeric("recent_m5_avg_range_pips").replace(0, np.nan)
     result["distance_a"] = numeric("distance_pips") / average
-    result["f_distance_a"] = cut(
-        "distance_a",
-        [-np.inf, 0.5, 1.0, 2.0, 4.0, np.inf],
-        ["lt0p5", "0p5to1", "1to2", "2to4", "ge4"],
+    result["f_distance_a"] = spec_cut("f_distance_a")
+    result["f_peaks_count"] = spec_cut("f_peaks_count")
+    result["f_core_peak"] = spec_cut("f_core_peak")
+    # Strength bucket edges come from the observed candidate distribution,
+    # not from round numbers.  The earlier edges (le1/1to2/2to3/gt3 and
+    # le3/4to6/7to10/gt10) collapsed most candidates into a single bucket --
+    # "gt3" held ~76% of AUD_USD candidates and "le3" held literally none --
+    # so line strength could not discriminate between events at all.
+    result["f_line_average_strength"] = spec_cut("f_line_average_strength")
+    result["f_line_total_strength"] = spec_cut("f_line_total_strength")
+    # Combined strength of only the core (repeat-touch) peaks, as opposed to
+    # every constituent peak.  Previously carried through the pipeline but
+    # never exposed as a searchable feature.
+    result["f_line_core_total_strength"] = spec_cut(
+        "f_line_core_total_strength"
     )
-    result["f_peaks_count"] = cut(
-        "line_count", [-np.inf, 1, 2, 3, np.inf], ["1", "2", "3", "4plus"]
-    )
-    result["f_core_peak"] = cut(
-        "line_core_count",
-        [-np.inf, 1, 2, np.inf],
-        ["1", "2", "3plus"],
-    )
-    result["f_line_average_strength"] = cut(
-        "line_average_strength",
-        [-np.inf, 1.0, 2.0, 3.0, np.inf],
-        ["le1", "1to2", "2to3", "gt3"],
-    )
-    result["f_line_total_strength"] = cut(
-        "line_total_strength",
-        [-np.inf, 3, 6, 10, np.inf],
-        ["le3", "4to6", "7to10", "gt10"],
-    )
+    # Derived ratios computed by load_candidates.  Guarded like
+    # f_minutes_since_flip so callers that predate them still work.
+    for feature in ("f_line_core_strength_ratio", "f_line_relative_strength"):
+        if specs[feature].source_column in result.columns:
+            result[feature] = spec_cut(feature)
+        else:
+            result[feature] = "missing"
     # This is the original structural flip judgement from
     # LineStrengthCal.line_each_analysis().  Do not substitute the separate
     # completed-close role-history fields here: those describe another
@@ -2537,21 +2868,19 @@ def add_feature_buckets(frame: pd.DataFrame) -> pd.DataFrame:
     result["f_history_flipped"] = result.get(
         "line_history_is_flipped", False
     ).map(_as_bool).map({True: "yes", False: "no"})
-    result["f_line_age"] = cut(
-        "line_age_minutes",
-        [-np.inf, 60, 240, 1440, np.inf],
-        ["lt1h", "1to4h", "4to24h", "ge24h"],
-    )
-    result["f_prior_retouch"] = cut(
-        "prior_retouch_count",
-        [-np.inf, 0, 1, 2, np.inf],
-        ["0", "1", "2", "3plus"],
-    )
-    result["f_peak_strength"] = cut(
-        "peak_strength",
-        [-np.inf, 1, 2, 3, 5, np.inf],
-        ["le1", "2", "3", "4to5", "gt5"],
-    )
+    result["f_line_age"] = spec_cut("f_line_age")
+    # Recency of the line's most recent resistance/support role flip.
+    # "missing" means line_flip_count == 0 (never flipped) -- a distinct,
+    # meaningful bucket, not the same as a flip that happened long ago.
+    # Guarded (rather than assumed-present like the other source columns)
+    # because other callers of add_feature_buckets (e.g. the live EUR/USD
+    # service) predate this feature and may not populate the column.
+    if "minutes_since_line_flip" in result.columns:
+        result["f_minutes_since_flip"] = spec_cut("f_minutes_since_flip")
+    else:
+        result["f_minutes_since_flip"] = "missing"
+    result["f_prior_retouch"] = spec_cut("f_prior_retouch")
+    result["f_peak_strength"] = spec_cut("f_peak_strength")
     direction = numeric("peak_direction").fillna(0)
     rsi = numeric("rsi_1")
     oriented_rsi = direction * (rsi - 50.0)
@@ -2594,10 +2923,14 @@ FEATURE_FIELDS = (
     "f_core_peak",
     "f_line_average_strength",
     "f_line_total_strength",
+    "f_line_core_total_strength",
+    "f_line_core_strength_ratio",
+    "f_line_relative_strength",
     "f_flip_flag",
     "f_prior_flip_count",
     "f_history_flipped",
     "f_line_age",
+    "f_minutes_since_flip",
     "f_prior_retouch",
     "f_peak_strength",
     "f_oriented_rsi",
@@ -2628,8 +2961,28 @@ FEATURE_INTERACTION_PAIRS = (
     ("f_peaks_count", "f_history_flipped"),
     ("f_core_peak", "f_flip_flag"),
     ("f_core_peak", "f_history_flipped"),
+    ("f_core_peak", "f_line_core_total_strength"),
+    ("f_line_core_total_strength", "f_line_total_strength"),
+    ("f_line_core_total_strength", "f_distance_a"),
+    ("f_line_core_total_strength", "f_history_flipped"),
+    ("f_line_core_strength_ratio", "f_core_peak"),
+    ("f_line_core_strength_ratio", "f_distance_a"),
+    ("f_line_core_strength_ratio", "f_history_flipped"),
+    ("f_line_relative_strength", "f_distance_rank"),
+    ("f_line_relative_strength", "f_distance_a"),
+    ("f_line_relative_strength", "f_core_peak"),
+    ("f_line_relative_strength", "f_line_core_strength_ratio"),
+    ("f_line_relative_strength", "f_history_flipped"),
+    ("f_line_relative_strength", "f_minutes_since_flip"),
+    ("f_line_average_strength", "f_distance_a"),
+    ("f_line_average_strength", "f_history_flipped"),
+    ("f_line_total_strength", "f_distance_a"),
+    ("f_minutes_since_flip", "f_line_core_total_strength"),
     ("f_prior_flip_count", "f_prior_retouch"),
     ("f_line_age", "f_prior_retouch"),
+    ("f_minutes_since_flip", "f_core_peak"),
+    ("f_minutes_since_flip", "f_distance_a"),
+    ("f_minutes_since_flip", "f_oriented_rsi"),
     ("f_fc2_shape", "f_distance_a"),
     ("f_fc2_shape", "f_peaks_count"),
     ("f_fc2_shape", "f_core_peak"),

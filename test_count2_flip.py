@@ -13,17 +13,28 @@ import pandas as pd
 
 import fGeneric as gene
 from count2_flip_core import (
+    CONDITION_MINIMUM_POSITIVE_PERIODS,
+    DEFAULT_BUCKET_SPECS,
+    FEATURE_FIELDS,
+    MINIMUM_CONDITION_TRADES,
+    PAIR_BUCKET_OVERRIDES,
+    PAIR_MINIMUM_TIER_RR,
+    PAIR_RISK_MULTIPLE_PROFIT_LOCK,
+    BucketSpec,
     FlipPathConfig,
     FlipPathInspector,
     FlipWatchEntryConfig,
     LineWickLcConfig,
     PolicyCondition,
     RankedPolicyCondition,
+    RiskMultipleProfitLock,
     TierExecutionConfig,
     TimedHalfLcConfig,
     TradeCombo,
     _is_expected_market_closed_gap,
     add_feature_buckets,
+    bonferroni_z_threshold,
+    bucket_specs_for_pair,
     classify_flip_watch_entry,
     condition_mask,
     default_timed_half_lc_configs,
@@ -31,11 +42,16 @@ from count2_flip_core import (
     default_tier_execution_configs,
     effective_trade_widths,
     enumerate_conditions,
+    minimum_matched_conditions_for_pair,
+    minimum_tier_rr_for_pair,
+    risk_multiple_profit_lock_for_pair,
     validate_causal_candidate,
 )
 from count2_flip_pipeline import parse_args
 from count2_flip_workflow import (
     atomic_json,
+    attach_bonferroni_diagnostics,
+    choose_global_policy,
     choose_timed_half_lc_policy,
     choose_line_wick_lc_policy,
     inspect_line_wick_lc_grid_paths,
@@ -43,6 +59,8 @@ from count2_flip_workflow import (
     line_holding_early_path_dataset,
     load_candidates,
     range_filter_mask,
+    rank_replay_conditions,
+    risk_multiple_profit_lock_inspectors,
     replay_condition,
     scan_global_grid,
     scan_timed_half_lc_grid,
@@ -1023,8 +1041,9 @@ class FeatureAndReplayTest(unittest.TestCase):
                 "recent_m5_avg_range_pips": [2.0, 2.0, 2.0],
                 "line_count": [2, 3, 2],
                 "line_core_count": [1, 2, 1],
-                "line_average_strength": [2.0, 2.5, 1.0],
+                "line_average_strength": [5.0, 2.5, 1.0],
                 "line_total_strength": [4, 8, 2],
+                "line_core_total_strength": [5, 10, 15],
                 "line_is_flipped": [True, False, True],
                 "line_flip_count": [0, 1, 0],
                 "line_history_is_flipped": [False, True, False],
@@ -1282,6 +1301,364 @@ class FeatureAndReplayTest(unittest.TestCase):
                     end=dt.datetime(2025, 2, 1),
                 )
 
+    def _valid_causal_row(self, **overrides):
+        row = {column: 0 for column in SOURCE_COLUMNS}
+        row.update(
+            {
+                "event_id": "e1",
+                "pair": "USD_JPY",
+                "decision_time": "2025-01-06 09:05:00",
+                "next_count2_time": "2025-01-06 09:10:00",
+                "counterfactual_candidates": True,
+                "target_valid": True,
+                "target_source_last_time": "2025-01-06 09:00:00",
+                "recent_m5_avg_range_pips": 4.0,
+                "peak_count": 2,
+                "peak_direction": 1,
+                "trade_direction": -1,
+                "fc2_valid": True,
+                "fc2_source_last_time": "2025-01-06 09:00:00",
+                "h1_pair_source_last_time": "2025-01-06 08:00:00",
+                "line_price": 150.0,
+                "distance_rank": 1,
+                "distance_pips": 2.0,
+                "line_newest_source_time": "2025-01-06 08:55:00",
+                "line_latest_touch_time": "2025-01-06 08:55:00",
+                # line_latest_constituent_peak_direction = sign(-1) = -1,
+                # which must equal -peak_direction (-1) to pass the
+                # resistance/support role-flip eligibility filter.
+                "line_source_directions": "-1",
+                "line_latest_flip_time": "2025-01-06 08:00:00",
+            }
+        )
+        row.update(overrides)
+        return row
+
+    def test_loader_computes_minutes_since_line_flip(self):
+        row = self._valid_causal_row()
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "candidates.csv"
+            pd.DataFrame([row]).to_csv(source, index=False)
+            loaded = load_candidates(
+                source,
+                pair="USD_JPY",
+                start=dt.datetime(2025, 1, 1),
+                end=dt.datetime(2025, 2, 1),
+            )
+        self.assertEqual(len(loaded), 1)
+        # decision_time 09:05 minus line_latest_flip_time 08:00 = 65 minutes.
+        self.assertAlmostEqual(
+            loaded.iloc[0]["minutes_since_line_flip"], 65.0
+        )
+        self.assertEqual(loaded.iloc[0]["f_minutes_since_flip"], "41to85m")
+
+    def test_loader_treats_never_flipped_line_as_missing_bucket(self):
+        row = self._valid_causal_row(line_latest_flip_time="")
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "candidates.csv"
+            pd.DataFrame([row]).to_csv(source, index=False)
+            loaded = load_candidates(
+                source,
+                pair="USD_JPY",
+                start=dt.datetime(2025, 1, 1),
+                end=dt.datetime(2025, 2, 1),
+            )
+        self.assertEqual(len(loaded), 1)
+        self.assertTrue(pd.isna(loaded.iloc[0]["minutes_since_line_flip"]))
+        self.assertEqual(loaded.iloc[0]["f_minutes_since_flip"], "missing")
+
+    def test_loader_rejects_future_line_flip_time(self):
+        row = self._valid_causal_row(
+            line_latest_flip_time="2025-01-06 09:10:00"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "candidates.csv"
+            pd.DataFrame([row]).to_csv(source, index=False)
+            with self.assertRaisesRegex(ValueError, "future feature"):
+                load_candidates(
+                    source,
+                    pair="USD_JPY",
+                    start=dt.datetime(2025, 1, 1),
+                    end=dt.datetime(2025, 2, 1),
+                )
+
+    def test_strength_buckets_split_on_observed_distribution(self):
+        # The old edges (le1/1to2/2to3/gt3) put ~76% of real AUD_USD
+        # candidates in one bucket; the point mass at exactly 5.0 now gets
+        # its own bucket so strength can actually discriminate.
+        frame = add_feature_buckets(self.feature_frame())
+        self.assertEqual(
+            frame["f_line_average_strength"].tolist(),
+            ["eq5", "2p5to3p4", "lt2p5"],
+        )
+        self.assertEqual(
+            frame["f_line_total_strength"].tolist(),
+            ["le5", "6to9", "le5"],
+        )
+
+    def test_core_total_strength_is_a_searchable_feature(self):
+        frame = add_feature_buckets(self.feature_frame())
+        self.assertEqual(
+            frame["f_line_core_total_strength"].tolist(),
+            ["le5", "6to10", "ge11"],
+        )
+        conditions = enumerate_conditions(frame, minimum_candidates=1)
+        ids = {item.condition_id for item in conditions}
+        self.assertIn("f_line_core_total_strength=le5", ids)
+
+    def test_pair_bucket_overrides_change_only_the_named_feature(self):
+        override = BucketSpec(
+            "line_average_strength",
+            (-np.inf, 3.0, np.inf),
+            ("weak", "strong"),
+        )
+        with patch.dict(
+            PAIR_BUCKET_OVERRIDES,
+            {"AUD_USD": {"f_line_average_strength": override}},
+            clear=False,
+        ):
+            specs = bucket_specs_for_pair("AUD_USD")
+            self.assertEqual(specs["f_line_average_strength"], override)
+            # Unlisted features still come from the shared defaults.
+            self.assertEqual(
+                specs["f_line_total_strength"],
+                DEFAULT_BUCKET_SPECS["f_line_total_strength"],
+            )
+            frame = add_feature_buckets(self.feature_frame(), pair="AUD_USD")
+            self.assertEqual(
+                frame["f_line_average_strength"].tolist(),
+                ["strong", "weak", "weak"],
+            )
+            # A different pair is unaffected by AUD_USD's override and keeps
+            # its own shipped override (USD_JPY merges the two weakest
+            # average-strength buckets).
+            other = add_feature_buckets(self.feature_frame(), pair="USD_JPY")
+            self.assertEqual(
+                other["f_line_average_strength"].tolist(),
+                ["eq5", "lt3p5", "lt3p5"],
+            )
+            # ...and a pair with no override at all keeps the defaults.
+            plain = add_feature_buckets(self.feature_frame(), pair="EUR_USD")
+            self.assertEqual(
+                plain["f_line_average_strength"].tolist(),
+                ["eq5", "2p5to3p4", "lt2p5"],
+            )
+
+    def test_derived_strength_ratios_are_computed_and_bucketed(self):
+        # Two lines competing at one event: strengths 5 and 20 -> median
+        # 12.5, so relative strengths are 0.4 and 1.6.  Core shares are
+        # 5/5 = 1.0 (every peak is core) and 5/20 = 0.25.
+        rows = [
+            self._valid_causal_row(
+                event_id="e1",
+                line_price=150.0,
+                line_total_strength=5,
+                line_core_total_strength=5,
+            ),
+            self._valid_causal_row(
+                event_id="e1",
+                line_price=150.5,
+                distance_rank=2,
+                line_total_strength=20,
+                line_core_total_strength=5,
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "candidates.csv"
+            pd.DataFrame(rows).to_csv(source, index=False)
+            loaded = load_candidates(
+                source,
+                pair="USD_JPY",
+                start=dt.datetime(2025, 1, 1),
+                end=dt.datetime(2025, 2, 1),
+            )
+        self.assertEqual(len(loaded), 2)
+        loaded = loaded.sort_values("line_total_strength").reset_index(drop=True)
+        self.assertAlmostEqual(loaded.loc[0, "line_relative_total_strength"], 0.4)
+        self.assertAlmostEqual(loaded.loc[1, "line_relative_total_strength"], 1.6)
+        self.assertAlmostEqual(loaded.loc[0, "line_core_strength_ratio"], 1.0)
+        self.assertAlmostEqual(loaded.loc[1, "line_core_strength_ratio"], 0.25)
+        self.assertEqual(
+            loaded["f_line_relative_strength"].tolist(), ["lt1", "gt1p5"]
+        )
+        self.assertEqual(
+            loaded["f_line_core_strength_ratio"].tolist(), ["eq1", "lt0p6"]
+        )
+
+    def test_derived_ratio_features_fall_back_when_columns_absent(self):
+        frame = add_feature_buckets(self.feature_frame())
+        self.assertEqual(
+            frame["f_line_core_strength_ratio"].tolist(), ["missing"] * 3
+        )
+        self.assertEqual(
+            frame["f_line_relative_strength"].tolist(), ["missing"] * 3
+        )
+
+    def test_shipped_usd_jpy_override_merges_weak_strength_buckets(self):
+        # USD_JPY concentrates at exactly 5.0 far harder than AUD_USD, so it
+        # ships a four-bucket average-strength split rather than five.
+        usd_jpy = bucket_specs_for_pair("USD_JPY")["f_line_average_strength"]
+        default = DEFAULT_BUCKET_SPECS["f_line_average_strength"]
+        self.assertNotEqual(usd_jpy, default)
+        self.assertEqual(usd_jpy.labels, ("lt3p5", "3p5to4p9", "eq5", "gt5"))
+        # Pairs without an override for this feature keep the default.
+        self.assertEqual(
+            bucket_specs_for_pair("AUD_USD")["f_line_average_strength"],
+            default,
+        )
+
+    def test_risk_multiple_lock_converts_r_levels_per_tier_rr(self):
+        policy = RiskMultipleProfitLock(trigger_r=1.2, result_r=1.05)
+        # A tier whose take-profit is 1.4R: the trigger sits at 1.2/1.4 of
+        # take-profit and the locked result at 1.05/1.4.
+        trigger, result = policy.fractions_for_rr(1.4)
+        self.assertAlmostEqual(trigger, 1.2 / 1.4)
+        self.assertAlmostEqual(result, 1.05 / 1.4)
+        # A wider-RR tier locks the same real profit at a smaller fraction.
+        wide_trigger, wide_result = policy.fractions_for_rr(2.0)
+        self.assertAlmostEqual(wide_trigger, 0.6)
+        self.assertAlmostEqual(wide_result, 0.525)
+        self.assertLess(wide_trigger, trigger)
+        # Both tiers still lock 1.05R in real terms.
+        self.assertAlmostEqual(wide_result * 2.0, 1.05)
+        self.assertAlmostEqual(result * 1.4, 1.05)
+
+    def test_risk_multiple_lock_rejects_unreachable_or_invalid_levels(self):
+        with self.assertRaisesRegex(ValueError, "below the trigger"):
+            RiskMultipleProfitLock(trigger_r=1.0, result_r=1.0)
+        with self.assertRaises(ValueError):
+            RiskMultipleProfitLock(trigger_r=-1.0, result_r=0.5)
+        policy = RiskMultipleProfitLock(trigger_r=1.2, result_r=1.05)
+        # A take-profit at or below the trigger could never arm the lock.
+        with self.assertRaisesRegex(ValueError, "could never arm"):
+            policy.fractions_for_rr(1.2)
+        with self.assertRaises(ValueError):
+            policy.fractions_for_rr(0.0)
+
+    def test_risk_multiple_lock_defaults_to_every_pair(self):
+        for pair in ("AUD_USD", "USD_JPY", "EUR_USD", "GBP_JPY", None):
+            with self.subTest(pair=pair):
+                policy = risk_multiple_profit_lock_for_pair(pair)
+                self.assertIsNotNone(policy)
+                self.assertAlmostEqual(policy.trigger_r, 1.2)
+                self.assertAlmostEqual(policy.result_r, 1.05)
+        # A pair can still opt out, or take its own levels, without
+        # touching the shared default.
+        with patch.dict(
+            PAIR_RISK_MULTIPLE_PROFIT_LOCK, {"USD_JPY": None}, clear=False
+        ):
+            self.assertIsNone(risk_multiple_profit_lock_for_pair("USD_JPY"))
+            self.assertIsNotNone(risk_multiple_profit_lock_for_pair("AUD_USD"))
+
+    def test_minimum_tier_rr_defaults_to_every_pair(self):
+        for pair in ("AUD_USD", "USD_JPY", "EUR_USD", "GBP_JPY", None):
+            with self.subTest(pair=pair):
+                self.assertAlmostEqual(minimum_tier_rr_for_pair(pair), 1.4)
+        with patch.dict(PAIR_MINIMUM_TIER_RR, {"USD_JPY": 0.0}, clear=False):
+            self.assertAlmostEqual(minimum_tier_rr_for_pair("USD_JPY"), 0.0)
+            self.assertAlmostEqual(minimum_tier_rr_for_pair("AUD_USD"), 1.4)
+
+    def test_lock_skips_tiers_whose_rr_cannot_arm_it(self):
+        # The RR floor is advisory, so a tier can end up below the trigger.
+        # That tier must run unlocked instead of failing the whole run.
+        base = make_inspector(base_s5_rows(price=149.98))
+        policy = RiskMultipleProfitLock(trigger_r=1.2, result_r=1.05)
+        configs = (
+            TierExecutionConfig("HIGH", 1, 5, 1.7, 1.5),
+            TierExecutionConfig("MIDDLE", 6, 10, 1.0, 1.0),
+        )
+        inspectors = risk_multiple_profit_lock_inspectors(
+            base, configs, policy
+        )
+        self.assertIn("HIGH", inspectors)
+        self.assertNotIn("MIDDLE", inspectors)
+        self.assertTrue(inspectors["HIGH"].profit_lock_enabled)
+
+    def test_minimum_tier_rr_lookup_is_case_insensitive(self):
+        self.assertAlmostEqual(minimum_tier_rr_for_pair("aud_usd"), 1.4)
+        self.assertAlmostEqual(
+            minimum_tier_rr_for_pair("aud_usd"),
+            minimum_tier_rr_for_pair("AUD_USD"),
+        )
+
+    def test_rr_floor_prefers_higher_rr_cell_but_never_empties_the_grid(self):
+        # Two cells: the RR 1.0 cell has more yen, the RR 1.5 cell less.
+        # Without a floor the yen ranking wins; with one, RR wins.
+        summary = pd.DataFrame(
+            {
+                "tp_a": [1.4, 1.5],
+                "lc_a": [1.4, 1.0],
+                "configured_rr": [1.0, 1.5],
+                "completed_trade_count": [60, 60],
+                "sum_yen": [900.0, 700.0],
+                "sum_pips": [90.0, 70.0],
+                "profit_factor_yen": [2.0, 1.6],
+                "positive_period_count": [4, 4],
+                "max_positive_period_profit_share": [0.3, 0.3],
+                "min_range_filter_pips": [1.5, 1.5],
+            }
+        )
+        no_floor = choose_global_policy(summary, minimum_trades=30)
+        self.assertAlmostEqual(no_floor["configured_rr"], 1.0)
+        with_floor = choose_global_policy(
+            summary, minimum_trades=30, minimum_rr=1.4
+        )
+        self.assertAlmostEqual(with_floor["configured_rr"], 1.5)
+        # An unreachable floor is ignored rather than raising, so a pair
+        # whose grid cannot reach the target still gets a policy.
+        unreachable = choose_global_policy(
+            summary, minimum_trades=30, minimum_rr=9.0
+        )
+        self.assertAlmostEqual(unreachable["configured_rr"], 1.0)
+
+    def test_minimum_matched_conditions_is_per_pair(self):
+        # The three studied pairs require agreement; anything else, and the
+        # unnamed default, stay on the plain OR.
+        for pair in ("AUD_USD", "EUR_USD", "USD_JPY"):
+            with self.subTest(pair=pair):
+                self.assertEqual(minimum_matched_conditions_for_pair(pair), 3)
+        self.assertEqual(minimum_matched_conditions_for_pair("GBP_JPY"), 1)
+        self.assertEqual(minimum_matched_conditions_for_pair(None), 1)
+        self.assertEqual(minimum_matched_conditions_for_pair("aud_usd"), 3)
+
+    def test_unknown_pair_falls_back_to_default_buckets(self):
+        self.assertEqual(bucket_specs_for_pair(None), DEFAULT_BUCKET_SPECS)
+        self.assertEqual(
+            bucket_specs_for_pair("GBP_JPY"), DEFAULT_BUCKET_SPECS
+        )
+        # Pair lookup is case-insensitive.
+        self.assertEqual(
+            bucket_specs_for_pair("aud_usd"), bucket_specs_for_pair("AUD_USD")
+        )
+
+    def test_bucket_spec_rejects_inconsistent_configuration(self):
+        with self.assertRaisesRegex(ValueError, "labels"):
+            BucketSpec("x", (-np.inf, 1.0, np.inf), ("only_one",))
+        with self.assertRaisesRegex(ValueError, "unique"):
+            BucketSpec("x", (-np.inf, 1.0, np.inf), ("same", "same"))
+        with self.assertRaisesRegex(ValueError, "increase"):
+            BucketSpec("x", (-np.inf, 2.0, 1.0), ("a", "b"))
+
+    def test_every_default_bucket_spec_is_internally_consistent(self):
+        # BucketSpec.__post_init__ validates on construction, so simply
+        # rebuilding each default proves the shipped configuration is sane.
+        for name, spec in DEFAULT_BUCKET_SPECS.items():
+            with self.subTest(feature=name):
+                rebuilt = BucketSpec(
+                    spec.source_column, spec.edges, spec.labels
+                )
+                self.assertEqual(rebuilt, spec)
+                self.assertIn(name, FEATURE_FIELDS)
+
+    def test_add_feature_buckets_tolerates_missing_flip_recency_column(self):
+        # Callers that predate this feature (e.g. the live EUR/USD service)
+        # may not populate minutes_since_line_flip at all; this must not
+        # raise, and should fall back to the "missing" bucket.
+        frame = add_feature_buckets(self.feature_frame())
+        self.assertEqual(
+            frame["f_minutes_since_flip"].tolist(), ["missing"] * 3
+        )
+
     def test_open_exit_unlocks_event_at_same_effective_timestamp(self):
         frame = pd.DataFrame(
             {
@@ -1314,6 +1691,143 @@ class FeatureAndReplayTest(unittest.TestCase):
         )
         self.assertEqual(trades["event_id"].tolist(), ["a", "b"])
         self.assertEqual(summary["completed_trade_count"], 2)
+
+    def test_performance_row_reports_per_trade_average_and_z_score(self):
+        frame = pd.DataFrame(
+            {
+                "event_id": ["a", "b"],
+                "decision_time": pd.to_datetime(
+                    ["2025-01-06 09:00", "2025-01-06 09:05"]
+                ),
+                "distance_rank": [1, 1],
+                "distance_pips": [2.0, 2.0],
+                "line_price": [150.0, 150.1],
+                "recent_m5_avg_range_pips": [2.0, 2.0],
+                "order_filled": [True, True],
+                "path_status": ["trade", "trade"],
+                "fill_time": pd.to_datetime(
+                    ["2025-01-06 09:00", "2025-01-06 09:05"]
+                ),
+                "exit_time": pd.to_datetime(
+                    ["2025-01-06 09:05", "2025-01-06 09:06"]
+                ),
+                "exit_effective_time": pd.to_datetime(
+                    ["2025-01-06 09:05:00", "2025-01-06 09:06:05"]
+                ),
+                "trade_result": ["tp", "tp"],
+                "trade_result_pips": [1.0, 3.0],
+                # yen = [10, 30]: mean 20, sample std sqrt(200)=~14.142,
+                # standard error 14.142/sqrt(2)=10.0, z = 20/10 = 2.0.
+                "result_yen": [10.0, 30.0],
+            }
+        )
+        _, summary = replay_condition(frame, PolicyCondition("ALL", "all"))
+        self.assertAlmostEqual(summary["avg_yen_per_trade"], 20.0)
+        self.assertAlmostEqual(
+            summary["yen_per_trade_sample_std"], (200.0) ** 0.5
+        )
+        self.assertAlmostEqual(summary["yen_per_trade_standard_error"], 10.0)
+        self.assertAlmostEqual(summary["yen_per_trade_z"], 2.0)
+
+    def test_rank_replay_conditions_populates_period_stability_when_bounds_given(
+        self,
+    ):
+        # Four trades, one per calendar quarter of a one-year period, all
+        # profitable -> positive_period_count should be 4 once period
+        # bounds are supplied; omitting them should leave it uncomputed.
+        frame = pd.DataFrame(
+            {
+                "event_id": ["a", "b", "c", "d"],
+                "decision_time": pd.to_datetime(
+                    [
+                        "2025-02-01 09:00",
+                        "2025-05-01 09:00",
+                        "2025-08-01 09:00",
+                        "2025-11-01 09:00",
+                    ]
+                ),
+                "distance_rank": [1, 1, 1, 1],
+                "distance_pips": [2.0, 2.0, 2.0, 2.0],
+                "line_price": [150.0, 150.1, 150.2, 150.3],
+                "recent_m5_avg_range_pips": [2.0, 2.0, 2.0, 2.0],
+                "order_filled": [True, True, True, True],
+                "path_status": ["trade"] * 4,
+                "fill_time": pd.to_datetime(
+                    [
+                        "2025-02-01 09:00",
+                        "2025-05-01 09:00",
+                        "2025-08-01 09:00",
+                        "2025-11-01 09:00",
+                    ]
+                ),
+                "exit_time": pd.to_datetime(
+                    [
+                        "2025-02-01 09:05",
+                        "2025-05-01 09:05",
+                        "2025-08-01 09:05",
+                        "2025-11-01 09:05",
+                    ]
+                ),
+                "exit_effective_time": pd.to_datetime(
+                    [
+                        "2025-02-01 09:05:00",
+                        "2025-05-01 09:05:00",
+                        "2025-08-01 09:05:00",
+                        "2025-11-01 09:05:00",
+                    ]
+                ),
+                "trade_result": ["tp"] * 4,
+                "trade_result_pips": [1.0, 1.0, 1.0, 1.0],
+                "result_yen": [25.0, 25.0, 25.0, 25.0],
+            }
+        )
+        condition = PolicyCondition("ALL", "all")
+        without_bounds, _ = rank_replay_conditions(
+            frame, [condition], keep_details=False
+        )
+        self.assertEqual(
+            int(without_bounds["positive_period_count"].iloc[0]), 0
+        )
+        with_bounds, _ = rank_replay_conditions(
+            frame,
+            [condition],
+            keep_details=False,
+            period_start=dt.datetime(2025, 1, 1),
+            period_end=dt.datetime(2026, 1, 1),
+        )
+        self.assertEqual(int(with_bounds["positive_period_count"].iloc[0]), 4)
+
+    def test_attach_bonferroni_diagnostics_flags_conditions_clearing_the_bar(
+        self,
+    ):
+        frame = pd.DataFrame(
+            {
+                "condition_id": ["easy", "borderline"],
+                "yen_per_trade_z": [10.0, 0.5],
+            }
+        )
+        result = attach_bonferroni_diagnostics(frame, num_candidates=200)
+        expected_threshold = bonferroni_z_threshold(200)
+        self.assertAlmostEqual(
+            result["bonferroni_z_threshold"].iloc[0], expected_threshold
+        )
+        self.assertTrue(bool(result["clears_bonferroni_bar"].iloc[0]))
+        self.assertFalse(bool(result["clears_bonferroni_bar"].iloc[1]))
+
+    def test_bonferroni_z_threshold_matches_known_two_sided_values(self):
+        # A single candidate at alpha=0.05 is the uncorrected two-sided
+        # 97.5th percentile, the familiar z ~= 1.96.
+        self.assertAlmostEqual(
+            bonferroni_z_threshold(1, alpha=0.05), 1.959964, delta=0.001
+        )
+        # More candidates -> a stricter (larger) critical value, since each
+        # individual test must clear a smaller per-comparison alpha.
+        self.assertGreater(
+            bonferroni_z_threshold(200, alpha=0.05),
+            bonferroni_z_threshold(1, alpha=0.05),
+        )
+        with self.assertRaises(ValueError):
+            bonferroni_z_threshold(0)
 
 
 class Top15TierPolicyTest(unittest.TestCase):
@@ -1536,7 +2050,7 @@ class Top15TierPolicyTest(unittest.TestCase):
         self.assertAlmostEqual(lc_pips, 3.5)
         self.assertAlmostEqual(tp_pips / lc_pips, 1.5, delta=0.02)
 
-    def test_raw_top15_excludes_all_without_profit_or_trade_gates(self):
+    def test_top15_excludes_all_and_ranks_by_avg_yen_per_trade(self):
         rows = [
             {
                 "condition_id": "ALL",
@@ -1545,13 +2059,68 @@ class Top15TierPolicyTest(unittest.TestCase):
                     PolicyCondition("ALL", "all").to_dict()
                 ),
                 "sum_yen": 99999.0,
+                "avg_yen_per_trade": 999.0,
                 "positive_month_rate": 1.0,
                 "profit_factor_yen": 99.0,
                 "sum_pips": 999.0,
                 "completed_trade_count": 999,
-            }
+                "positive_period_count": 4,
+            },
+            {
+                # Huge sum_yen from sheer trade volume but a mediocre
+                # per-trade edge: must not outrank the C01..C15 pool below.
+                "condition_id": "HIGH_VOLUME_LOW_EDGE",
+                "condition_label": "high volume low edge",
+                "condition_json": json.dumps(
+                    PolicyCondition(
+                        "HIGH_VOLUME_LOW_EDGE", "x", (("f_test", "vol"),)
+                    ).to_dict()
+                ),
+                "sum_yen": 5000.0,
+                "avg_yen_per_trade": 0.5,
+                "positive_month_rate": 0.5,
+                "profit_factor_yen": 1.05,
+                "sum_pips": 100.0,
+                "completed_trade_count": 1000,
+                "positive_period_count": 4,
+            },
+            {
+                # Excellent per-trade average, but too few trades to trust.
+                "condition_id": "TOO_FEW_TRADES",
+                "condition_label": "too few trades",
+                "condition_json": json.dumps(
+                    PolicyCondition(
+                        "TOO_FEW_TRADES", "x", (("f_test", "few"),)
+                    ).to_dict()
+                ),
+                "sum_yen": 500.0,
+                "avg_yen_per_trade": 500.0,
+                "positive_month_rate": 1.0,
+                "profit_factor_yen": 9.0,
+                "sum_pips": 50.0,
+                "completed_trade_count": MINIMUM_CONDITION_TRADES - 1,
+                "positive_period_count": 4,
+            },
+            {
+                # Enough trades, but not stable across the four train
+                # quarters -- must be excluded despite a strong average.
+                "condition_id": "UNSTABLE_PERIODS",
+                "condition_label": "unstable periods",
+                "condition_json": json.dumps(
+                    PolicyCondition(
+                        "UNSTABLE_PERIODS", "x", (("f_test", "unstable"),)
+                    ).to_dict()
+                ),
+                "sum_yen": 900.0,
+                "avg_yen_per_trade": 30.0,
+                "positive_month_rate": 0.8,
+                "profit_factor_yen": 2.0,
+                "sum_pips": 90.0,
+                "completed_trade_count": MINIMUM_CONDITION_TRADES,
+                "positive_period_count": CONDITION_MINIMUM_POSITIVE_PERIODS - 1,
+            },
         ]
-        for number in range(1, 17):
+        for number in range(1, 16):
             condition = PolicyCondition(
                 f"C{number:02d}",
                 f"condition {number:02d}",
@@ -1562,11 +2131,17 @@ class Top15TierPolicyTest(unittest.TestCase):
                     "condition_id": condition.condition_id,
                     "condition_label": condition.label,
                     "condition_json": json.dumps(condition.to_dict()),
-                    "sum_yen": float(17 - number),
-                    "positive_month_rate": 0.0,
-                    "profit_factor_yen": 0.2,
-                    "sum_pips": -float(number),
-                    "completed_trade_count": 1,
+                    # Deliberately opposite order from avg_yen_per_trade, so
+                    # a sum_yen-based sort would rank these C01..C15 in
+                    # reverse -- only an avg_yen_per_trade sort recovers the
+                    # C01..C15 order asserted below.
+                    "sum_yen": float(number),
+                    "avg_yen_per_trade": float(16 - number),
+                    "positive_month_rate": 0.6,
+                    "profit_factor_yen": 1.5,
+                    "sum_pips": float(number),
+                    "completed_trade_count": MINIMUM_CONDITION_TRADES + number,
+                    "positive_period_count": CONDITION_MINIMUM_POSITIVE_PERIODS,
                 }
             )
         selected = select_top_ranked_conditions(
@@ -1585,6 +2160,50 @@ class Top15TierPolicyTest(unittest.TestCase):
             {**selected[0].to_dict(), "train_lifecycle_performance": {"sum_yen": 1}}
         )
         self.assertEqual(restored, selected[0])
+
+    def test_top15_raises_when_too_few_conditions_clear_the_gates(self):
+        rows = [
+            {
+                "condition_id": "ALL",
+                "condition_label": "all",
+                "condition_json": json.dumps(
+                    PolicyCondition("ALL", "all").to_dict()
+                ),
+                "sum_yen": 99999.0,
+                "avg_yen_per_trade": 999.0,
+                "positive_month_rate": 1.0,
+                "profit_factor_yen": 99.0,
+                "sum_pips": 999.0,
+                "completed_trade_count": 999,
+                "positive_period_count": 4,
+            }
+        ]
+        for number in range(1, 6):
+            condition = PolicyCondition(
+                f"C{number:02d}",
+                f"condition {number:02d}",
+                (("f_test", f"v{number:02d}"),),
+            )
+            rows.append(
+                {
+                    "condition_id": condition.condition_id,
+                    "condition_label": condition.label,
+                    "condition_json": json.dumps(condition.to_dict()),
+                    "sum_yen": float(number),
+                    "avg_yen_per_trade": float(number),
+                    "positive_month_rate": 0.6,
+                    "profit_factor_yen": 1.5,
+                    "sum_pips": float(number),
+                    # Too few trades: none of these five should clear the
+                    # minimum_trades gate, leaving fewer than limit=15.
+                    "completed_trade_count": MINIMUM_CONDITION_TRADES - 1,
+                    "positive_period_count": CONDITION_MINIMUM_POSITIVE_PERIODS,
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "top-15 policy requires"):
+            select_top_ranked_conditions(
+                pd.DataFrame(rows), default_tier_execution_configs(), limit=15
+            )
 
     def test_or_policy_deduplicates_event_and_prefers_tier_then_distance(self):
         configs = (
@@ -1650,6 +2269,65 @@ class Top15TierPolicyTest(unittest.TestCase):
             "policy_line_selection",
         ):
             self.assertIn(column, empty.columns)
+
+    def test_agreement_threshold_keeps_only_multi_condition_events(self):
+        # Same fixture as the OR test above: e3 matches two conditions while
+        # e1/e2 match one, so a threshold of 2 must keep only e3.
+        configs = (
+            TierExecutionConfig("HIGH", 1, 1, 1.7, 1.5),
+            TierExecutionConfig("MIDDLE", 2, 2, 1.7, 1.5),
+            TierExecutionConfig("LOW", 3, 3, 1.7, 1.5),
+        )
+        ranked = (
+            RankedPolicyCondition(
+                1, "HIGH", PolicyCondition("high", "high", (("f_high", "yes"),))
+            ),
+            RankedPolicyCondition(
+                2,
+                "MIDDLE",
+                PolicyCondition("middle", "middle", (("f_middle", "yes"),)),
+            ),
+            RankedPolicyCondition(
+                3, "LOW", PolicyCondition("low", "low", (("f_low", "yes"),))
+            ),
+        )
+        frame = pd.DataFrame(
+            {
+                "event_id": ["e1", "e2", "e3"],
+                "decision_time": pd.to_datetime(
+                    [
+                        "2025-01-06 09:00",
+                        "2025-01-06 09:05",
+                        "2025-01-06 09:10",
+                    ]
+                ),
+                "distance_rank": [1, 1, 1],
+                "distance_pips": [1.0, 1.0, 1.0],
+                "line_price": [150.0, 150.1, 150.2],
+                "recent_m5_avg_range_pips": [8.0, 8.0, 8.0],
+                "f_high": ["yes", "no", "yes"],
+                "f_middle": ["no", "no", "yes"],
+                "f_low": ["no", "yes", "no"],
+            }
+        )
+        plain_or = select_top_condition_policy_candidates(frame, ranked, configs)
+        self.assertEqual(plain_or["event_id"].tolist(), ["e1", "e2", "e3"])
+        agreed = select_top_condition_policy_candidates(
+            frame, ranked, configs, minimum_matched_conditions=2
+        )
+        self.assertEqual(agreed["event_id"].tolist(), ["e3"])
+        self.assertEqual(
+            agreed["minimum_matched_conditions"].tolist(), [2]
+        )
+        # A threshold no event can reach yields an empty, well-formed frame.
+        none_left = select_top_condition_policy_candidates(
+            frame, ranked, configs, minimum_matched_conditions=3
+        )
+        self.assertTrue(none_left.empty)
+        with self.assertRaises(ValueError):
+            select_top_condition_policy_candidates(
+                frame, ranked, configs, minimum_matched_conditions=0
+            )
 
     def test_each_tier_rr_is_independently_editable(self):
         configs = (

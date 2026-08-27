@@ -16,6 +16,7 @@ import test_win_point_usd_aud as win_point
 import tokens as tk
 from count2_flip_analysis import analysis_output_paths
 from count2_flip_core import (
+    RiskMultipleProfitLock,
     EARLY_PATH_METRICS,
     EARLY_PATH_MINUTES,
     FLIP_VERSION,
@@ -34,6 +35,7 @@ from count2_flip_core import (
     TimedHalfLcConfig,
 )
 from count2_flip_workflow import (
+    risk_multiple_profit_lock_inspectors,
     archive_file,
     atomic_csv,
     atomic_json,
@@ -832,8 +834,18 @@ def run_fixed_replay(
     expected_top_count = int(artifact["top_condition_limit"])
     if len(ranked_conditions) != expected_top_count:
         raise ValueError("frozen top-condition count does not match artifact")
+    # Read the agreement threshold back from the frozen artifact rather than
+    # recomputing it, so replay reproduces the policy that was actually
+    # selected on train even if the per-pair table changes afterwards.
+    # Artifacts written before this setting existed default to the plain OR.
+    minimum_matched_conditions = int(
+        artifact["top_condition_policy"].get("minimum_matched_conditions", 1)
+    )
     policy_candidates = select_top_condition_policy_candidates(
-        candidates, ranked_conditions, tier_configs
+        candidates,
+        ranked_conditions,
+        tier_configs,
+        minimum_matched_conditions=minimum_matched_conditions,
     )
     watch_entry_paths = inspect_tiered_paths(
         policy_candidates,
@@ -970,6 +982,23 @@ def run_fixed_replay(
         if policy_monthly_frames
         else pd.DataFrame()
     )
+    # Rebuild the raised stop from the frozen artifact so replay reproduces
+    # the exact policy train selected, rather than today's per-pair table.
+    frozen_lock = artifact["top_condition_policy"].get(
+        "risk_multiple_profit_lock"
+    )
+    tier_profit_lock_inspectors = (
+        risk_multiple_profit_lock_inspectors(
+            path_inspector,
+            tier_configs,
+            RiskMultipleProfitLock(
+                trigger_r=float(frozen_lock["trigger_r"]),
+                result_r=float(frozen_lock["result_r"]),
+            ),
+        )
+        if frozen_lock
+        else None
+    )
     line_wick_paths = inspect_line_wick_lc_grid_paths(
         policy_candidates,
         path_inspector,
@@ -982,6 +1011,7 @@ def run_fixed_replay(
         progress_file=progress_file,
         started=started,
         notify=notifier,
+        inspectors_by_tier=tier_profit_lock_inspectors,
     )
     oos_line_wick_lc_grid, oos_line_wick_lc_trades = (
         scan_line_wick_lc_grid(

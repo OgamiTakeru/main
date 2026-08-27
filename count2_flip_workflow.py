@@ -19,10 +19,13 @@ import pandas as pd
 import fGeneric as gene
 import tokens as tk
 from count2_flip_core import (
+    CONDITION_MINIMUM_POSITIVE_PERIODS,
+    CONDITION_MULTIPLE_TESTING_ALPHA,
     EARLY_PATH_METRICS,
     EARLY_PATH_MINUTES,
     FEATURE_FIELDS,
     FLIP_VERSION,
+    MINIMUM_CONDITION_TRADES,
     RANGE_FILTER_FRACTION_A,
     STRETCH_PROFIT_LOCK_TP_FRACTION,
     STRETCH_PROFIT_TARGET_B,
@@ -33,10 +36,12 @@ from count2_flip_core import (
     LineWickLcConfig,
     PolicyCondition,
     RankedPolicyCondition,
+    RiskMultipleProfitLock,
     TierExecutionConfig,
     TimedHalfLcConfig,
     TradeCombo,
     add_feature_buckets,
+    bonferroni_z_threshold,
     condition_mask,
     expected_role,
     line_wick_outcome_key,
@@ -95,6 +100,7 @@ SOURCE_COLUMNS = {
     "line_history_is_flipped",
     "line_flip_count",
     "line_latest_touch_time",
+    "line_latest_flip_time",
     "line_age_minutes",
     "prior_retouch_count",
     "minutes_since_prior_retouch",
@@ -401,6 +407,7 @@ def load_candidates(
             ("h1_pair_source_last_time", pd.Timedelta(hours=1)),
             ("line_newest_source_time", pd.Timedelta(minutes=5)),
             ("line_latest_touch_time", pd.Timedelta(minutes=5)),
+            ("line_latest_flip_time", pd.Timedelta(minutes=5)),
         )
         required_causal_columns = {
             "target_source_last_time",
@@ -432,6 +439,17 @@ def load_candidates(
                 raise ValueError(
                     f"future feature in {source.name}: {bad.to_dict()}"
                 )
+        # Recency of the line's most recent resistance/support role flip.
+        # Missing (never flipped, line_flip_count == 0) is preserved as NaN
+        # here and becomes the "missing" bucket in add_feature_buckets --
+        # distinct from, and not to be confused with, a flip that merely
+        # happened a long time ago.
+        flip_time = pd.to_datetime(
+            work["line_latest_flip_time"], format="mixed", errors="coerce"
+        )
+        work["minutes_since_line_flip"] = (
+            (decision - flip_time).dt.total_seconds() / 60.0
+        )
         frames.append(work)
         if max_rows is not None and rows_read >= max_rows:
             break
@@ -445,6 +463,27 @@ def load_candidates(
         kind="stable",
     )
     result.reset_index(drop=True, inplace=True)
+    # Derived strength metrics.  Absolute strength columns are dominated by
+    # point masses (line_core_count is 1 for 76-82% of candidates), so these
+    # ask different questions that the raw columns cannot express.
+    core_strength = pd.to_numeric(
+        result["line_core_total_strength"], errors="coerce"
+    )
+    total_strength = pd.to_numeric(
+        result["line_total_strength"], errors="coerce"
+    ).replace(0, np.nan)
+    # What share of this line's strength comes from repeat-touch core peaks
+    # rather than incidental ones?  1.0 means every constituent peak is core.
+    result["line_core_strength_ratio"] = core_strength / total_strength
+    # How strong is this line compared with the other lines competing at the
+    # same event?  Cross-sectional within one decision, so it stays causal:
+    # every line in the group is already known at that decision_time.
+    event_median = result.groupby("event_id")["line_total_strength"].transform(
+        "median"
+    )
+    result["line_relative_total_strength"] = total_strength / pd.to_numeric(
+        event_median, errors="coerce"
+    ).replace(0, np.nan)
     result["source_role"] = [
         expected_role(value)
         for value in result["line_latest_constituent_peak_direction"]
@@ -452,7 +491,7 @@ def load_candidates(
     result["predicted_role"] = [
         expected_role(value) for value in result["peak_direction"]
     ]
-    return add_feature_buckets(result)
+    return add_feature_buckets(result, pair=pair)
 
 
 def load_path_inspector(
@@ -522,6 +561,46 @@ def stretch_profit_lock_tier_configs(
     return tuple(configs)
 
 
+def risk_multiple_profit_lock_inspectors(
+    base: FlipPathInspector,
+    tier_configs: Iterable[TierExecutionConfig],
+    policy: RiskMultipleProfitLock,
+) -> dict[str, FlipPathInspector]:
+    """Clone ``base`` once per tier with that tier's raised-stop fractions.
+
+    The path inspector expresses the lock as fractions of take-profit, but
+    the policy is written in R.  Tiers pick their own RR, so the same R
+    levels land on different fractions and each tier needs its own clone.
+    Cloning per tier (not per trade) keeps the one-off gap indexing cheap.
+    """
+    inspectors: dict[str, FlipPathInspector] = {}
+    for config in tier_configs:
+        if policy.trigger_r >= config.rr:
+            # The RR floor is advisory: when no TP/LC cell reaches it, a tier
+            # can end up with an RR at or below the trigger, where the lock
+            # could only arm after the take-profit had already closed the
+            # trade.  Leave that tier unlocked rather than failing the run;
+            # the caller records which tiers actually received the lock.
+            continue
+        trigger_fraction, result_fraction = policy.fractions_for_rr(config.rr)
+        inspectors[config.tier] = FlipPathInspector(
+            base.inspector,
+            base.pair,
+            period_end_exclusive=base.period_end,
+            spread_pips=base.spread_pips,
+            position_horizon_minutes=base.position_horizon_minutes,
+            min_width_pips=base.min_width_pips,
+            risk_yen=base.risk_yen,
+            profit_lock_enabled=True,
+            profit_lock_min_tp_pips=base.min_width_pips,
+            profit_lock_trigger_tp_fraction=trigger_fraction,
+            # Ignored while the event-relative result fraction is present.
+            profit_lock_result_pips=1.0,
+            profit_lock_result_tp_fraction=result_fraction,
+        )
+    return inspectors
+
+
 def stretch_profit_lock_inspector(
     base: FlipPathInspector,
 ) -> FlipPathInspector:
@@ -560,6 +639,7 @@ class PerformanceAccumulator:
         self.sum_pips = 0.0
         self.sum_a = 0.0
         self.sum_yen = 0.0
+        self.sum_yen_sq = 0.0
         self.gross_profit_yen = 0.0
         self.gross_loss_yen = 0.0
         self.month_yen: dict[str, float] = defaultdict(float)
@@ -586,6 +666,7 @@ class PerformanceAccumulator:
             if math.isfinite(average) and average > 0:
                 self.sum_a += pips / average
         self.sum_yen += yen
+        self.sum_yen_sq += yen * yen
         self.month_yen[month] += yen
         if period_index is not None:
             self.period_yen[int(period_index)] += yen
@@ -609,6 +690,25 @@ class PerformanceAccumulator:
         ]
         positive_period_values = [value for value in period_values if value > 0]
         positive_period_profit = sum(positive_period_values)
+        avg_yen_per_trade = self.sum_yen / self.trades if self.trades else 0.0
+        if self.trades > 1:
+            yen_variance = max(
+                0.0,
+                (self.sum_yen_sq - self.trades * avg_yen_per_trade ** 2)
+                / (self.trades - 1),
+            )
+            yen_per_trade_sample_std = math.sqrt(yen_variance)
+            yen_per_trade_standard_error = yen_per_trade_sample_std / math.sqrt(
+                self.trades
+            )
+        else:
+            yen_per_trade_sample_std = 0.0
+            yen_per_trade_standard_error = 0.0
+        yen_per_trade_z = (
+            avg_yen_per_trade / yen_per_trade_standard_error
+            if yen_per_trade_standard_error > 0
+            else 0.0
+        )
         return {
             "candidate_count": self.candidates,
             "order_fill_count": self.fills,
@@ -635,6 +735,10 @@ class PerformanceAccumulator:
             "gross_profit_yen": self.gross_profit_yen,
             "gross_loss_yen": self.gross_loss_yen,
             "sum_yen": self.sum_yen,
+            "avg_yen_per_trade": avg_yen_per_trade,
+            "yen_per_trade_sample_std": yen_per_trade_sample_std,
+            "yen_per_trade_standard_error": yen_per_trade_standard_error,
+            "yen_per_trade_z": yen_per_trade_z,
             "profit_factor_yen": (
                 self.gross_profit_yen / self.gross_loss_yen
                 if self.gross_loss_yen
@@ -965,7 +1069,25 @@ def choose_global_policy(
     summary: pd.DataFrame,
     *,
     minimum_trades: int = 100,
+    minimum_rr: float = 0.0,
 ) -> pd.Series:
+    """Pick one TP/LC cell, preferring stability then total yen.
+
+    ``minimum_rr`` drops cells whose configured reward/risk falls below the
+    floor before any stage runs.  Ranking by ``sum_yen`` alone tends to
+    settle near RR 1.0, which needs a high win rate to stay profitable; a
+    floor buys a wider TP relative to LC at some cost in total yen.  If no
+    cell clears the floor it is ignored rather than failing, so a pair whose
+    grid cannot reach the requested RR still gets a policy.
+    """
+    if minimum_rr > 0 and "configured_rr" in summary.columns:
+        above_floor = summary.loc[
+            pd.to_numeric(summary["configured_rr"], errors="coerce")
+            .add(1e-12)
+            .ge(minimum_rr)
+        ]
+        if not above_floor.empty:
+            summary = above_floor
     stages = (
         (
             "strict_stability",
@@ -1226,15 +1348,56 @@ def select_top_ranked_conditions(
     tier_configs: Iterable[TierExecutionConfig],
     *,
     limit: int = 15,
+    minimum_trades: int = MINIMUM_CONDITION_TRADES,
+    minimum_positive_periods: int = CONDITION_MINIMUM_POSITIVE_PERIODS,
 ) -> tuple[RankedPolicyCondition, ...]:
-    """Freeze the raw top-N lifecycle rules, excluding the ALL baseline."""
+    """Freeze the top-N lifecycle rules by per-trade edge, excluding ALL.
+
+    Two gates guard against biases from exhaustively searching hundreds of
+    candidate conditions on one train period:
+
+    - ``minimum_trades``: a condition needs at least this many completed
+      train trades before its average is trusted — a condition with a
+      handful of trades and a large total is not a signal, it is noise.
+    - ``minimum_positive_periods``: requires ``positive_period_count`` (the
+      train period split into four equal chronological quarters, see
+      ``four_period_metrics``) already populated on ``summary`` by calling
+      ``rank_replay_conditions(..., period_start=..., period_end=...)``.
+      This mirrors the same within-train stability bar already used for
+      TP/LC tier selection; condition mining previously had no analogous
+      check at all. If the column is absent this gate is skipped.
+
+    Ranking is by ``avg_yen_per_trade`` (per-trade expected value), not raw
+    ``sum_yen`` — sorting by total otherwise lets a condition with many
+    mediocre trades outrank a condition with fewer excellent trades purely
+    on volume.
+
+    ``yen_per_trade_z``/``bonferroni_z_threshold`` are available on
+    ``summary`` as multiple-testing diagnostics but are intentionally not
+    enforced as a hard gate here — see ``count2_flip_core.bonferroni_z_threshold``.
+    """
     if limit < 1:
         raise ValueError("top condition limit must be positive")
+    if minimum_trades < 1:
+        raise ValueError("minimum_trades must be positive")
+    if minimum_positive_periods < 0:
+        raise ValueError("minimum_positive_periods must be non-negative")
     configs = tuple(tier_configs)
     ranked = summary[~summary["condition_id"].eq("ALL")].copy()
+    ranked = ranked[
+        pd.to_numeric(ranked["completed_trade_count"], errors="coerce")
+        .fillna(0)
+        .ge(minimum_trades)
+    ]
+    if "positive_period_count" in ranked.columns:
+        ranked = ranked[
+            pd.to_numeric(ranked["positive_period_count"], errors="coerce")
+            .fillna(0)
+            .ge(minimum_positive_periods)
+        ]
     ranked.sort_values(
         [
-            "sum_yen",
+            "avg_yen_per_trade",
             "positive_month_rate",
             "profit_factor_yen",
             "sum_pips",
@@ -1247,7 +1410,10 @@ def select_top_ranked_conditions(
     ranked.drop_duplicates("condition_id", keep="first", inplace=True)
     if len(ranked) < limit:
         raise ValueError(
-            f"top-{limit} policy requires {limit} distinct non-ALL conditions"
+            f"top-{limit} policy requires {limit} distinct non-ALL conditions "
+            f"clearing minimum_trades={minimum_trades}/"
+            f"minimum_positive_periods={minimum_positive_periods} "
+            f"(only {len(ranked)} cleared)"
         )
     selected = []
     for rank, (_, row) in enumerate(ranked.head(limit).iterrows(), start=1):
@@ -1261,12 +1427,51 @@ def select_top_ranked_conditions(
     return tuple(selected)
 
 
+def attach_bonferroni_diagnostics(
+    frame: pd.DataFrame,
+    num_candidates: int,
+    *,
+    alpha: float = CONDITION_MULTIPLE_TESTING_ALPHA,
+) -> pd.DataFrame:
+    """Report (without filtering on) each condition's multiple-testing bar.
+
+    ``num_candidates`` should be the total number of distinct conditions that
+    were exhaustively searched (e.g. ``len(enumerate_conditions(...))``), not
+    just the number surviving other gates — the correction must reflect how
+    many independent chances there were to find an apparent edge by luck.
+    """
+    result = frame.copy()
+    threshold = bonferroni_z_threshold(num_candidates, alpha=alpha)
+    result["bonferroni_num_candidates"] = num_candidates
+    result["bonferroni_alpha"] = alpha
+    result["bonferroni_z_threshold"] = threshold
+    result["clears_bonferroni_bar"] = (
+        pd.to_numeric(result.get("yen_per_trade_z"), errors="coerce")
+        .abs()
+        .ge(threshold)
+    )
+    return result
+
+
 def select_top_condition_policy_candidates(
     frame: pd.DataFrame,
     ranked_conditions: Iterable[RankedPolicyCondition],
     tier_configs: Iterable[TierExecutionConfig],
+    *,
+    minimum_matched_conditions: int = 1,
 ) -> pd.DataFrame:
-    """Apply the frozen top-condition OR and choose one line per FC2 event."""
+    """Apply the frozen top-condition OR and choose one line per FC2 event.
+
+    ``minimum_matched_conditions`` requires that many of the ranked
+    conditions to agree before an event is eligible.  The default of 1 is
+    the plain OR: any single condition triggers.  Raising it treats
+    agreement as confidence -- on AUD_USD's OOS year, events matching one
+    condition averaged -14.1 yen while events matching four or more
+    averaged +22.1, so a threshold of 3 kept roughly the same total profit
+    as cutting to the top three ranks while placing more orders.
+    """
+    if minimum_matched_conditions < 1:
+        raise ValueError("minimum_matched_conditions must be positive")
     conditions = tuple(sorted(ranked_conditions, key=lambda item: item.rank))
     configs = tuple(tier_configs)
     if not conditions:
@@ -1306,7 +1511,10 @@ def select_top_condition_policy_candidates(
         tier_for_rank(values[0], configs) if values else pd.NA
         for values in matched_ranks
     ]
-    result["top15_or_triggered"] = result["matched_condition_count"].gt(0)
+    result["minimum_matched_conditions"] = minimum_matched_conditions
+    result["top15_or_triggered"] = result["matched_condition_count"].ge(
+        minimum_matched_conditions
+    )
     result["tier_tp_a"] = result["signal_tier"].map(
         {tier: config.tp_a for tier, config in config_by_tier.items()}
     )
@@ -1375,8 +1583,14 @@ def inspect_tiered_paths(
     timed_half_lc_config: TimedHalfLcConfig | None = None,
     line_wick_lc_config: LineWickLcConfig | None = None,
     watch_entry_config: FlipWatchEntryConfig | None = None,
+    inspectors_by_tier: Mapping[str, FlipPathInspector] | None = None,
 ) -> pd.DataFrame:
-    """Inspect one selected top-15 OR line per event with its tier TP/RR."""
+    """Inspect one selected top-15 OR line per event with its tier TP/RR.
+
+    ``inspectors_by_tier`` overrides ``inspector`` per tier, which the
+    R-based raised stop needs because its fractions depend on each tier's
+    RR.  Tiers absent from the mapping fall back to ``inspector``.
+    """
     config_by_tier = {config.tier: config for config in tier_configs}
     timed_config = timed_half_lc_config or TimedHalfLcConfig(None)
     line_wick_config = line_wick_lc_config or LineWickLcConfig(None)
@@ -1390,7 +1604,12 @@ def inspect_tiered_paths(
         if config is None:
             raise ValueError(f"missing execution config for tier {tier}")
         combo = config.trade_combo
-        path = inspector.inspect(
+        tier_inspector = (
+            inspectors_by_tier.get(tier, inspector)
+            if inspectors_by_tier
+            else inspector
+        )
+        path = tier_inspector.inspect(
             decision_time=decision_time,
             line_price=float(row.line_price),
             order_direction=int(row.trade_direction),
@@ -1576,8 +1795,13 @@ def inspect_line_wick_lc_grid_paths(
     progress_file: Path,
     started: float,
     notify: Notice | None,
+    inspectors_by_tier: Mapping[str, FlipPathInspector] | None = None,
 ) -> pd.DataFrame:
-    """Inspect every wick-cross stop width on one shared S5 path."""
+    """Inspect every wick-cross stop width on one shared S5 path.
+
+    ``inspectors_by_tier`` overrides ``inspector`` per tier so the R-based
+    raised stop, whose fractions depend on each tier's RR, applies here too.
+    """
     config_by_tier = {config.tier: config for config in tier_configs}
     policies = tuple(line_wick_configs)
     if not policies:
@@ -1593,7 +1817,12 @@ def inspect_line_wick_lc_grid_paths(
         if tier_config is None:
             raise ValueError(f"missing execution config for tier {tier}")
         combo = tier_config.trade_combo
-        path = inspector.inspect(
+        tier_inspector = (
+            inspectors_by_tier.get(tier, inspector)
+            if inspectors_by_tier
+            else inspector
+        )
+        path = tier_inspector.inspect(
             decision_time=decision_time,
             line_price=float(row.line_price),
             order_direction=int(row.trade_direction),
@@ -2275,6 +2504,7 @@ def choose_tier_execution_configs(
     base_configs: Iterable[TierExecutionConfig],
     *,
     minimum_trades: int = 30,
+    minimum_rr: float = 0.0,
 ) -> tuple[tuple[TierExecutionConfig, ...], pd.DataFrame]:
     selected_configs = []
     selected_rows = []
@@ -2283,7 +2513,9 @@ def choose_tier_execution_configs(
         if tier_summary.empty:
             raise ValueError(f"tier grid is empty for {base_config.tier}")
         selected = choose_global_policy(
-            tier_summary, minimum_trades=minimum_trades
+            tier_summary,
+            minimum_trades=minimum_trades,
+            minimum_rr=minimum_rr,
         )
         selected_configs.append(
             TierExecutionConfig(
@@ -2850,13 +3082,29 @@ def rank_replay_conditions(
     conditions: Iterable[PolicyCondition],
     *,
     keep_details: bool = True,
+    period_start: dt.datetime | None = None,
+    period_end: dt.datetime | None = None,
 ) -> tuple[pd.DataFrame, dict[str, tuple[pd.DataFrame, dict[str, Any]]]]:
+    """Replay each candidate condition on its own eligible lifecycle.
+
+    When ``period_start``/``period_end`` are given, each condition's
+    four-period stability (``positive_period_count`` etc., see
+    ``four_period_metrics``) is computed over that span exactly like the
+    TP/LC tier grid already does — condition mining otherwise has no
+    within-train stability check at all.
+    """
     rows = []
     details: dict[str, tuple[pd.DataFrame, dict[str, Any]]] = {}
+    compute_periods = period_start is not None and period_end is not None
     for condition in conditions:
         trades, performance = replay_condition(frame, condition)
         if keep_details:
             details[condition.condition_id] = (trades, performance)
+        if compute_periods:
+            performance = {
+                **performance,
+                **four_period_metrics(trades, period_start, period_end),
+            }
         rows.append(
             {
                 "condition_id": condition.condition_id,

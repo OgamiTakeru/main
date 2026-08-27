@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-26 06:27 JST
+# 最新更新日時: 2026-08-27 00:15 JST
 """EUR/USD ``flip_predict_v19`` LineHolding live execution service.
 
 This module is intentionally independent from ``main_exe``.  It never resets
@@ -24,9 +24,11 @@ import numpy as np
 import pandas as pd
 
 import classOanda
+import fFlipPredictPolicy as flip_policy
 from count2_flip_core import (
     FlipWatchEntryConfig,
     RankedPolicyCondition,
+    RiskMultipleProfitLock,
     TierExecutionConfig,
     _is_expected_market_closed_gap,
     add_feature_buckets,
@@ -57,13 +59,26 @@ import send_notice as notice
 import tokens as tk
 
 
-PAIR_NAME = "EUR_USD"
+# The pair, and every policy value that depends on it, is selected at startup
+# by bind_policy() from an artifact whose SHA-256 was approved after its
+# out-of-sample year was reviewed.  These start unset so that importing this
+# module can never reach an order path with a half-configured policy: every
+# read below goes through a module global that bind_policy() rebinds.
+PAIR_NAME: str = ""
+OWNER_TAG: str = ""
 USD_JPY_NAME = "USD_JPY"
-OWNER_TAG = "flip_predict_eur"
-POLICY_VERSION = "flip_predict_v19"
-SOURCE_ARTIFACT_SHA256 = (
-    "CBBC7C97FA11C41E1FDDBE6F61574EF7ACB315DADECC41363CB197141CEB48A8"
-)
+POLICY_VERSION = flip_policy.POLICY_VERSION
+ACTIVE_POLICY: flip_policy.LivePairPolicy | None = None
+SOURCE_ARTIFACT_SHA256: str = ""
+RANKED_CONDITIONS: tuple[RankedPolicyCondition, ...] = ()
+TIER_CONFIGS: tuple[TierExecutionConfig, ...] = ()
+TIER_BY_NAME: dict[str, TierExecutionConfig] = {}
+WATCH_CONFIG: FlipWatchEntryConfig | None = None
+MINIMUM_MATCHED_CONDITIONS: int = 0
+PROFIT_LOCK: RiskMultipleProfitLock | None = None
+POLICY_FINGERPRINT: str = ""
+
+
 STATE_SCHEMA_VERSION = 1
 TIME_FORMAT = "%Y/%m/%d %H:%M:%S"
 UTC = dt.timezone.utc
@@ -77,7 +92,8 @@ MIN_WIDTH_PIPS = 1.6
 RISK_YEN = 50.0
 MAX_UNITS = 5000
 MAX_MARKET_SLIPPAGE_PIPS = 0.5
-QUOTE_MAX_AGE_SECONDS = 15.0
+ANALYSIS_QUOTE_MAX_AGE_SECONDS = 60.0
+ORDER_QUOTE_MAX_AGE_SECONDS = 15.0
 READY_MAX_AGE_SECONDS = 10.0
 BROKER_POLL_SECONDS = 10.0
 S5_POLL_SECONDS = 4.0
@@ -92,285 +108,50 @@ LIFECYCLE_ERROR_REASONS = frozenset(
 )
 
 RUNTIME_DIR = Path(__file__).resolve().parent / "runtime_state"
-STATE_PATH = RUNTIME_DIR / "flip_predict_eur_usd_v19.json"
-LOCK_PATH = RUNTIME_DIR / "flip_predict_eur_usd_v19.lock"
+# Bound by bind_policy() to the active pair's own files, so two pairs never
+# share state or contend for the same single-instance lock.
+STATE_PATH: Path | None = None
+LOCK_PATH: Path | None = None
 
 
-SELECTED_TOP_CONDITIONS = (
-    {
-        "rank": 1,
-        "tier": "HIGH",
-        "condition": {
-            "condition_id": "f_fc2_shape=REJECTION&f_oriented_rsi=against",
-            "label": "f_fc2_shape=REJECTION&f_oriented_rsi=against",
-            "clauses": [
-                {"field": "f_fc2_shape", "value": "REJECTION"},
-                {"field": "f_oriented_rsi", "value": "against"},
-            ],
-        },
-    },
-    {
-        "rank": 2,
-        "tier": "HIGH",
-        "condition": {
-            "condition_id": "f_session=new_york&f_fc2_shape=REJECTION",
-            "label": "f_session=new_york&f_fc2_shape=REJECTION",
-            "clauses": [
-                {"field": "f_session", "value": "new_york"},
-                {"field": "f_fc2_shape", "value": "REJECTION"},
-            ],
-        },
-    },
-    {
-        "rank": 3,
-        "tier": "HIGH",
-        "condition": {
-            "condition_id": "f_h1_shape=CONTINUATION&f_oriented_rsi=against",
-            "label": "f_h1_shape=CONTINUATION&f_oriented_rsi=against",
-            "clauses": [
-                {"field": "f_h1_shape", "value": "CONTINUATION"},
-                {"field": "f_oriented_rsi", "value": "against"},
-            ],
-        },
-    },
-    {
-        "rank": 4,
-        "tier": "HIGH",
-        "condition": {
-            "condition_id": "f_h1_shape=ENGULFING",
-            "label": "f_h1_shape=ENGULFING",
-            "clauses": [{"field": "f_h1_shape", "value": "ENGULFING"}],
-        },
-    },
-    {
-        "rank": 5,
-        "tier": "HIGH",
-        "condition": {
-            "condition_id": "f_direction=up",
-            "label": "f_direction=up",
-            "clauses": [{"field": "f_direction", "value": "up"}],
-        },
-    },
-    {
-        "rank": 6,
-        "tier": "MIDDLE",
-        "condition": {
-            "condition_id": "f_h1_stair_relation=opposed&f_h1_shape=ENGULFING",
-            "label": "f_h1_stair_relation=opposed&f_h1_shape=ENGULFING",
-            "clauses": [
-                {"field": "f_h1_stair_relation", "value": "opposed"},
-                {"field": "f_h1_shape", "value": "ENGULFING"},
-            ],
-        },
-    },
-    {
-        "rank": 7,
-        "tier": "MIDDLE",
-        "condition": {
-            "condition_id": "f_session=new_york",
-            "label": "f_session=new_york",
-            "clauses": [{"field": "f_session", "value": "new_york"}],
-        },
-    },
-    {
-        "rank": 8,
-        "tier": "MIDDLE",
-        "condition": {
-            "condition_id": "f_prior_flip_count=1&f_prior_retouch=3plus",
-            "label": "f_prior_flip_count=1&f_prior_retouch=3plus",
-            "clauses": [
-                {"field": "f_prior_flip_count", "value": "1"},
-                {"field": "f_prior_retouch", "value": "3plus"},
-            ],
-        },
-    },
-    {
-        "rank": 9,
-        "tier": "MIDDLE",
-        "condition": {
-            "condition_id": (
-                "f_fc2_relative_candle_sequence=AGAINST_WITH&"
-                "f_fc2_second_wick_a=0p50to0p74"
-            ),
-            "label": (
-                "f_fc2_relative_candle_sequence=AGAINST_WITH&"
-                "f_fc2_second_wick_a=0p50to0p74"
-            ),
-            "clauses": [
-                {
-                    "field": "f_fc2_relative_candle_sequence",
-                    "value": "AGAINST_WITH",
-                },
-                {"field": "f_fc2_second_wick_a", "value": "0p50to0p74"},
-            ],
-        },
-    },
-    {
-        "rank": 10,
-        "tier": "MIDDLE",
-        "condition": {
-            "condition_id": (
-                "f_fc2_second_wick_a=0p50to0p74&"
-                "f_fc2_second_pushback_a=0p50to0p74"
-            ),
-            "label": (
-                "f_fc2_second_wick_a=0p50to0p74&"
-                "f_fc2_second_pushback_a=0p50to0p74"
-            ),
-            "clauses": [
-                {"field": "f_fc2_second_wick_a", "value": "0p50to0p74"},
-                {
-                    "field": "f_fc2_second_pushback_a",
-                    "value": "0p50to0p74",
-                },
-            ],
-        },
-    },
-    {
-        "rank": 11,
-        "tier": "LOW",
-        "condition": {
-            "condition_id": "f_distance_rank=4plus&f_core_peak=1",
-            "label": "f_distance_rank=4plus&f_core_peak=1",
-            "clauses": [
-                {"field": "f_distance_rank", "value": "4plus"},
-                {"field": "f_core_peak", "value": "1"},
-            ],
-        },
-    },
-    {
-        "rank": 12,
-        "tier": "LOW",
-        "condition": {
-            "condition_id": "f_direction=up&f_fc2_shape=REJECTION",
-            "label": "f_direction=up&f_fc2_shape=REJECTION",
-            "clauses": [
-                {"field": "f_direction", "value": "up"},
-                {"field": "f_fc2_shape", "value": "REJECTION"},
-            ],
-        },
-    },
-    {
-        "rank": 13,
-        "tier": "LOW",
-        "condition": {
-            "condition_id": "f_h1_stair_relation=aligned",
-            "label": "f_h1_stair_relation=aligned",
-            "clauses": [
-                {"field": "f_h1_stair_relation", "value": "aligned"}
-            ],
-        },
-    },
-    {
-        "rank": 14,
-        "tier": "LOW",
-        "condition": {
-            "condition_id": (
-                "f_m5_stair_relation=aligned&f_h1_stair_relation=aligned"
-            ),
-            "label": (
-                "f_m5_stair_relation=aligned&f_h1_stair_relation=aligned"
-            ),
-            "clauses": [
-                {"field": "f_m5_stair_relation", "value": "aligned"},
-                {"field": "f_h1_stair_relation", "value": "aligned"},
-            ],
-        },
-    },
-    {
-        "rank": 15,
-        "tier": "LOW",
-        "condition": {
-            "condition_id": "f_line_age=1to4h&f_prior_retouch=3plus",
-            "label": "f_line_age=1to4h&f_prior_retouch=3plus",
-            "clauses": [
-                {"field": "f_line_age", "value": "1to4h"},
-                {"field": "f_prior_retouch", "value": "3plus"},
-            ],
-        },
-    },
-)
+def bind_policy(pair: str) -> flip_policy.LivePairPolicy:
+    """Load ``pair``'s approved policy and make it this process's policy.
 
-TIER_EXECUTION_SPECS = (
-    {
-        "tier": "HIGH",
-        "first_rank": 1,
-        "last_rank": 5,
-        "tp_a": 2.0,
-        "rr": 2.0 / 1.7,
-        "min_range_filter_pips": 1.5,
-    },
-    {
-        "tier": "MIDDLE",
-        "first_rank": 6,
-        "last_rank": 10,
-        "tp_a": 2.0,
-        "rr": 2.0 / 1.25,
-        "min_range_filter_pips": 1.5,
-    },
-    {
-        "tier": "LOW",
-        "first_rank": 11,
-        "last_rank": 15,
-        "tp_a": 1.2,
-        "rr": 1.2,
-        "min_range_filter_pips": 1.5,
-    },
-)
-
-WATCH_SPEC = {
-    "observation_seconds": 60,
-    "line_holding_max_breakout_a": 0.1,
-    "line_holding_max_chase_a": 0.3,
-    "near_line_max_breakout_a": 1.0,
-    "breakout_continuation_a": 0.05,
-    "max_entry_gap_a": 0.1,
-}
-
-POLICY_SNAPSHOT = {
-    "version": POLICY_VERSION,
-    "pair": PAIR_NAME,
-    "source_artifact_sha256": SOURCE_ARTIFACT_SHA256,
-    "top_conditions": SELECTED_TOP_CONDITIONS,
-    "tier_execution": TIER_EXECUTION_SPECS,
-    "watch": WATCH_SPEC,
-    "line_holding_only": True,
-    "order_wait_minutes": ORDER_WAIT_MINUTES,
-    "replace_on_next_fc2": False,
-    "position_horizon_minutes": POSITION_HORIZON_MINUTES,
-    "fixed_touch_spread_pips": FIXED_TOUCH_SPREAD_PIPS,
-    "minimum_target_distance_pips": MIN_TARGET_DISTANCE_PIPS,
-    "minimum_width_pips": MIN_WIDTH_PIPS,
-    "risk_yen": RISK_YEN,
-    "profit_lock": False,
-    "timed_half_lc": False,
-    "line_wick_lc": False,
-}
-POLICY_FINGERPRINT = hashlib.sha256(
-    json.dumps(
-        POLICY_SNAPSHOT,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-).hexdigest()
-
-RANKED_CONDITIONS = tuple(
-    RankedPolicyCondition.from_dict(item) for item in SELECTED_TOP_CONDITIONS
-)
-TIER_CONFIGS = tuple(
-    TierExecutionConfig.from_dict(item) for item in TIER_EXECUTION_SPECS
-)
-TIER_BY_NAME = {item.tier: item for item in TIER_CONFIGS}
-WATCH_CONFIG = FlipWatchEntryConfig.from_dict(WATCH_SPEC)
+    Called once by run_live() before the broker is touched.  Raises for any
+    pair that has not been approved, so an untested pair cannot reach the
+    order path even by a typo in the launcher.
+    """
+    global PAIR_NAME, OWNER_TAG, ACTIVE_POLICY, SOURCE_ARTIFACT_SHA256
+    global RANKED_CONDITIONS, TIER_CONFIGS, TIER_BY_NAME, WATCH_CONFIG
+    global MINIMUM_MATCHED_CONDITIONS, PROFIT_LOCK, POLICY_FINGERPRINT
+    global STATE_PATH, LOCK_PATH
+    policy = flip_policy.live_policy(pair)
+    PAIR_NAME = policy.pair
+    OWNER_TAG = policy.owner_tag
+    ACTIVE_POLICY = policy
+    SOURCE_ARTIFACT_SHA256 = policy.artifact_sha256
+    RANKED_CONDITIONS = policy.ranked_conditions
+    TIER_CONFIGS = policy.tier_configs
+    TIER_BY_NAME = policy.tier_by_name
+    WATCH_CONFIG = policy.watch_config
+    MINIMUM_MATCHED_CONDITIONS = policy.minimum_matched_conditions
+    PROFIT_LOCK = policy.profit_lock
+    POLICY_FINGERPRINT = policy.fingerprint()
+    STATE_PATH = RUNTIME_DIR / policy.state_filename
+    LOCK_PATH = RUNTIME_DIR / f"{Path(policy.state_filename).stem}.lock"
+    return policy
 
 
 class LiveDataError(RuntimeError):
     """A fail-closed market-data or broker-state error."""
 
 
-class SpreadTooWideError(LiveDataError):
-    """An expected execution constraint, not an analysis-data failure."""
+class QuoteNotReadyError(LiveDataError):
+    """An expected temporary quote condition, not an analysis-data failure."""
+
+
+class SpreadTooWideError(QuoteNotReadyError):
+    """The executable spread is temporarily above the configured limit."""
 
 
 def _utc_now() -> dt.datetime:
@@ -387,7 +168,7 @@ def _parse_utc(value: Any) -> dt.datetime:
         parsed = parsed.tz_localize("UTC")
     else:
         parsed = parsed.tz_convert("UTC")
-    return parsed.to_pydatetime()
+    return parsed.floor("us").to_pydatetime()
 
 
 def _utc_iso(value: dt.datetime) -> str:
@@ -634,6 +415,8 @@ def _fresh_quote(
     oa: classOanda.Oanda,
     instrument: str,
     now: dt.datetime | None = None,
+    *,
+    max_age_seconds: float = ORDER_QUOTE_MAX_AGE_SECONDS,
 ) -> dict[str, Any]:
     result = oa.NowPrice_exe(instrument)
     if result.get("error") != 0:
@@ -642,7 +425,7 @@ def _fresh_quote(
     if quote.get("instrument") != instrument:
         raise LiveDataError(f"{instrument} pricing instrument mismatch")
     if quote.get("tradeable") is not True:
-        raise LiveDataError(f"{instrument} is not tradeable")
+        raise QuoteNotReadyError(f"{instrument} is not tradeable")
     bid = float(quote.get("raw_bid"))
     ask = float(quote.get("raw_ask"))
     if not math.isfinite(bid) or not math.isfinite(ask) or ask < bid:
@@ -655,9 +438,15 @@ def _fresh_quote(
         )
     quote_time = _parse_utc(quote.get("time"))
     current = now or _utc_now()
-    age = (current - quote_time).total_seconds()
-    if age < -2.0 or age > QUOTE_MAX_AGE_SECONDS:
-        raise LiveDataError(f"{instrument} quote age is {age:.1f}s")
+    raw_age = (current - quote_time).total_seconds()
+    # Broker and local clocks can differ by a few seconds in production.
+    # A quote stamped ahead of the local clock is still current, so treat its
+    # freshness age as zero and continue without raising or notifying.
+    age = max(0.0, raw_age)
+    if age > max_age_seconds:
+        raise QuoteNotReadyError(
+            f"{instrument} quote age is {age:.1f}s (limit {max_age_seconds:.0f}s)"
+        )
     quote["quote_time_utc"] = quote_time
     quote["spread_pips"] = spread_pips
     return quote
@@ -903,11 +692,12 @@ def build_live_signal(
     frame = frame[target_distance_filter_mask(frame, MIN_TARGET_DISTANCE_PIPS)].copy()
     if frame.empty:
         return None
-    featured = add_feature_buckets(frame)
+    featured = add_feature_buckets(frame, pair=PAIR_NAME)
     selected = select_top_condition_policy_candidates(
         featured,
         RANKED_CONDITIONS,
         TIER_CONFIGS,
+        minimum_matched_conditions=MINIMUM_MATCHED_CONDITIONS,
     )
     if selected.empty:
         return None
@@ -1158,10 +948,18 @@ class FlipPredictEurLive:
                 )
 
     def ensure_exact_protection(self) -> None:
+        """Pin the broker's TP/SL to the exact widths this trade was sized for.
+
+        Must not run once the stop has been raised into profit: this method
+        rebuilds the stop from the original ``lc_pips``, which would push a
+        raised stop back down to the full-loss level and undo the lock.
+        """
         active = self.state.get("active") or {}
         if active.get("phase") != "POSITION_OPEN":
             return
         if active.get("protection_exact") is True:
+            return
+        if active.get("stop_raised"):
             return
         required = ("trade_id", "fill_price", "tp_pips", "lc_pips", "order_direction")
         if any(active.get(name) is None for name in required):
@@ -1285,6 +1083,130 @@ class FlipPredictEurLive:
             f"OANDA open time: {open_time.isoformat()}",
         )
 
+    def maybe_raise_stop(self, frame: pd.DataFrame, now: dt.datetime) -> None:
+        """Move the stop to +result_r once the trade has traded +trigger_r.
+
+        R is the trade's own loss-cut distance, so this locks the same real
+        profit regardless of which tier's RR the trade is running.  The
+        take-profit is left untouched: this only removes the tail where a
+        trade that was already well in profit round-trips into a full loss.
+
+        The arming test uses completed S5 bars, matching the backtest, and
+        the trade is re-read from the broker before and after the change so
+        a stop is never moved on a trade this service does not own.
+        """
+        active = self.state.get("active") or {}
+        if active.get("phase") != "POSITION_OPEN":
+            return
+        if active.get("stop_raised"):
+            return
+        policy = ACTIVE_POLICY
+        if policy is None or policy.profit_lock is None:
+            return
+        tier = str(active.get("signal_tier") or "")
+        if not policy.locks_tier(tier):
+            return
+        required = ("trade_id", "fill_price", "tp_pips", "lc_pips", "order_direction")
+        if any(active.get(name) is None for name in required):
+            return
+        previous_attempt = active.get("stop_raise_last_attempt_at_utc")
+        if previous_attempt and (
+            now - _parse_utc(previous_attempt)
+        ).total_seconds() < 15:
+            return
+
+        lock = policy.profit_lock
+        pair = gene.currency_pair(PAIR_NAME)
+        direction = int(active["order_direction"])
+        fill_price = float(active["fill_price"])
+        lc_pips = float(active["lc_pips"])
+        trigger_pips = lc_pips * lock.trigger_r
+        locked_pips = lc_pips * lock.result_r
+        trigger_price = fill_price + direction * pair.pips_to_price(trigger_pips)
+
+        # Arm only on completed bars whose favourable extreme reached the
+        # trigger, so a wick that is still forming cannot arm it early.
+        if frame.empty:
+            return
+        open_raw = active.get("open_time_utc")
+        if not open_raw:
+            return
+        since_open = frame[
+            frame["time_utc"] >= pd.Timestamp(_parse_utc(open_raw))
+        ]
+        if since_open.empty:
+            return
+        reached = (
+            since_open["high"].max() >= trigger_price
+            if direction == 1
+            else since_open["low"].min() <= trigger_price
+        )
+        if not reached:
+            return
+
+        trade_id = str(active["trade_id"])
+        if _owned_open_trade_details(self.oa, trade_id) is None:
+            return
+        stop_price = pair.round_price(
+            fill_price + direction * pair.pips_to_price(locked_pips)
+        )
+        tp_price = pair.round_price(
+            fill_price + direction * pair.pips_to_price(float(active["tp_pips"]))
+        )
+        active["stop_raise_last_attempt_at_utc"] = _utc_iso(now)
+        self.save()
+        result = self.oa.TradeCRCDO_exe(
+            trade_id,
+            {
+                "takeProfit": {"price": tp_price, "timeInForce": "GTC"},
+                "stopLoss": {"price": stop_price, "timeInForce": "GTC"},
+            },
+            instrument=PAIR_NAME,
+        )
+        if result.get("error") != 0:
+            self.notifier.send(
+                "raised stop failed",
+                f"trade id: {trade_id}",
+                "the original stop remains in place; will retry",
+                throttle_key="stop_raise_failed",
+                throttle_seconds=60,
+            )
+            return
+        confirmed = _owned_open_trade_details(self.oa, trade_id)
+        if confirmed is None:
+            return
+        stop_loss = confirmed.get("stopLossOrder")
+        confirmed_stop = (
+            float(stop_loss.get("price"))
+            if isinstance(stop_loss, Mapping) and stop_loss.get("price") is not None
+            else math.nan
+        )
+        price_tolerance = 0.5 * (10.0 ** -pair.round_keta)
+        if (
+            not math.isfinite(confirmed_stop)
+            or abs(confirmed_stop - stop_price) > price_tolerance
+        ):
+            self.notifier.send(
+                "raised stop not confirmed",
+                f"trade id: {trade_id}",
+                f"requested {stop_price}, broker reports {confirmed_stop}",
+                throttle_key="stop_raise_unconfirmed",
+                throttle_seconds=60,
+            )
+            return
+        active["stop_raised"] = True
+        active["stop_raised_at_utc"] = _utc_iso(now)
+        active["stop_raised_price"] = stop_price
+        active["stop_raised_locked_pips"] = locked_pips
+        self.save()
+        self.notifier.send(
+            "stop raised into profit",
+            f"trade id: {trade_id}",
+            f"tier {tier}: +{lock.trigger_r:g}R traded, "
+            f"now protecting +{lock.result_r:g}R",
+            f"stop moved to {stop_price} ({locked_pips:.2f}p from fill)",
+        )
+
     def process_pending_touch(self, frame: pd.DataFrame, now: dt.datetime) -> None:
         active = self.state.get("active") or {}
         decision = _parse_utc(active["decision_time_utc"])
@@ -1382,9 +1304,11 @@ class FlipPredictEurLive:
         if active.get("phase") != "READY":
             return
         if now > _parse_utc(active["release_deadline_utc"]):
-            spread_detail = active.get("release_spread_wait_detail")
-            if spread_detail:
-                self.finish_active("spread_too_wide_at_release", str(spread_detail))
+            quote_detail = active.get("release_quote_wait_detail") or active.get(
+                "release_spread_wait_detail"
+            )
+            if quote_detail:
+                self.finish_active("quote_not_ready_at_release", str(quote_detail))
             else:
                 self.finish_active("line_holding_release_stale")
             return
@@ -1398,12 +1322,13 @@ class FlipPredictEurLive:
         try:
             usd_jpy_quote = _fresh_quote(self.oa, USD_JPY_NAME)
             quote = _fresh_quote(self.oa, PAIR_NAME)
-        except SpreadTooWideError as error:
+        except QuoteNotReadyError as error:
             detail = str(error)
-            if active.get("release_spread_wait_detail") != detail:
-                active["release_spread_wait_detail"] = detail
+            if not active.get("release_quote_wait_detail"):
+                active["release_quote_wait_detail"] = detail
                 self.save()
             return
+        active.pop("release_quote_wait_detail", None)
         active.pop("release_spread_wait_detail", None)
         usd_jpy_rate = (
             float(usd_jpy_quote["raw_bid"])
@@ -1540,7 +1465,15 @@ class FlipPredictEurLive:
         if phase == "READY":
             self.submit_ready(now)
             return
-        if phase not in {"PENDING_TOUCH", "OBSERVING"}:
+        if phase not in {"PENDING_TOUCH", "OBSERVING", "POSITION_OPEN"}:
+            return
+        if phase == "POSITION_OPEN" and (
+            ACTIVE_POLICY is None
+            or ACTIVE_POLICY.profit_lock is None
+            or active.get("stop_raised")
+        ):
+            # Nothing left to watch for: without a raised-stop policy, or
+            # once it has already fired, an open position needs no S5 feed.
             return
         monotonic_now = time.monotonic()
         if monotonic_now - self.last_s5_poll < S5_POLL_SECONDS:
@@ -1554,6 +1487,8 @@ class FlipPredictEurLive:
             self.process_observation(frame, now)
             if (self.state.get("active") or {}).get("phase") == "READY":
                 self.submit_ready(now)
+        elif phase == "POSITION_OPEN":
+            self.maybe_raise_stop(frame, now)
 
     def consider_new_signal(self, now: dt.datetime) -> None:
         if self.state.get("active") is not None:
@@ -1569,8 +1504,12 @@ class FlipPredictEurLive:
         if self.state.get("last_decision_time_utc") == decision_key:
             return
         try:
-            _fresh_quote(self.oa, PAIR_NAME)
-        except SpreadTooWideError:
+            _fresh_quote(
+                self.oa,
+                PAIR_NAME,
+                max_age_seconds=ANALYSIS_QUOTE_MAX_AGE_SECONDS,
+            )
+        except QuoteNotReadyError:
             return
         try:
             signal = build_live_signal(self.oa, decision_utc)
@@ -1617,7 +1556,8 @@ class FlipPredictEurLive:
             f"policy: {POLICY_VERSION} / LineHolding only",
             "risk: 50 yen; one EUR/USD lifecycle at a time",
             "manual/unowned EUR/USD resources are ignored and never modified; OPEN_ONLY is active",
-            "wide live spreads silently pause new-signal analysis and order release",
+            "analysis accepts quotes up to 60s old; order release requires 15s freshness",
+            "wide/older/untradeable live quotes silently pause the applicable stage",
         )
         while True:
             try:
@@ -1645,8 +1585,14 @@ def _validate_live_tokens() -> None:
         raise RuntimeError("tokens.access_tokenl is empty")
 
 
-def run_live() -> None:
-    """Start the explicitly authorized EUR/USD live loop."""
+def run_live(pair: str) -> None:
+    """Start the live loop for one explicitly approved pair.
+
+    The policy is bound first: an unapproved pair, or an artifact whose
+    SHA-256 no longer matches the approved one, raises here -- before the
+    broker is contacted and before any state file is touched.
+    """
+    policy = bind_policy(pair)
     gene.set_current_pair(PAIR_NAME)
     notifier = LiveNotifier()
     store = StateStore(STATE_PATH)
@@ -1655,6 +1601,19 @@ def run_live() -> None:
         state = store.load()
         _validate_live_tokens()
         oa = classOanda.Oanda(tk.accountIDl2, tk.access_tokenl, tk.environmentl)
+        notifier.send(
+            f"{PAIR_NAME} flip_predict live start",
+            f"policy: {POLICY_VERSION}",
+            f"artifact sha256: {SOURCE_ARTIFACT_SHA256}",
+            f"policy fingerprint: {POLICY_FINGERPRINT}",
+            f"agreement threshold: {MINIMUM_MATCHED_CONDITIONS} conditions",
+            (
+                f"raised stop: +{policy.profit_lock.result_r:g}R once "
+                f"+{policy.profit_lock.trigger_r:g}R trades"
+                if policy.profit_lock
+                else "raised stop: disabled"
+            ),
+        )
         service = FlipPredictEurLive(oa, store, notifier, state)
         try:
             service.run()
