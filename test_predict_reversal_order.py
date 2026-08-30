@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-29 15:38 JST
+
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -257,8 +259,14 @@ class PredictReversalTargetTest(unittest.TestCase):
         coordinator = LineOrderCoordinator.__new__(LineOrderCoordinator)
         coordinator.pair = "USD_JPY"
         coordinator.p = gene.currency_pair("USD_JPY")
+        completed_df_r = frame[
+            pd.to_datetime(frame["time_jp_dt"]) + pd.Timedelta(minutes=5)
+            <= pd.Timestamp("2026-08-02 12:02:00")
+        ].sort_values("time_jp_dt", ascending=False).reset_index(drop=True)
         coordinator.analysis = SimpleNamespace(
-            candle_analysis_all=SimpleNamespace(d5_df_r=frame)
+            candle_analysis_all=SimpleNamespace(
+                m5_completed_df_r=completed_df_r
+            )
         )
         return coordinator
 

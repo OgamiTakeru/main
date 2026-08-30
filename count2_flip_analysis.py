@@ -46,6 +46,7 @@ from count2_flip_core import (
     default_trade_combos,
     bucket_specs_for_pair,
     enumerate_conditions,
+    excluded_feature_fields_for_pair,
     minimum_matched_conditions_for_pair,
     minimum_tier_rr_for_pair,
     risk_multiple_profit_lock_for_pair,
@@ -408,9 +409,11 @@ def run_analysis(
         # notices.  This second deterministic pass must not duplicate them.
         notify=None,
     )
+    excluded_fields = excluded_feature_fields_for_pair(pair)
     conditions = enumerate_conditions(
         selected_paths,
         minimum_candidates=minimum_condition_candidates,
+        excluded_fields=excluded_fields,
     )
     condition_summary = summarize_conditions(selected_paths, conditions)
     condition_summary.sort_values(
@@ -1284,6 +1287,7 @@ def run_analysis(
                     "candidate given this feature catalog's effect sizes"
                 ),
             },
+            "excluded_feature_fields": list(excluded_fields),
             "feature_bucket_specs": {
                 name: {
                     "source_column": spec.source_column,

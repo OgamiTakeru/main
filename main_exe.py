@@ -1,8 +1,12 @@
-# 最新更新日時: 2026-08-26 06:31 JST
-"""USD/JPY live launcher and shared legacy execution loop."""
+# 最新更新日時: 2026-08-30 13:44 JST
+"""USD/JPY live launcher and shared execution loop.
+
+EUR/USD・AUD/USDと同じく、解析の有効条件はfAnalysis_order_Main、
+Flip注文はfFlipOrder、注文管理はclassPositionControlへ委譲する。
+"""
 
 # True: OANDA通信・実発注を有効化 / False: 接続せず終了
-LIVE = False
+LIVE = True
 
 import threading  # 定時実行用
 import time
@@ -18,8 +22,8 @@ import fGeneric as f
 import fAnalysis_order_Main as am
 import classCandleAnalysis as ca
 import classPositionControl as classPositionControl
-import classStrategyRegime
 import copy
+
 
 class main():
     def __init__(self, pair_info=None):
@@ -62,10 +66,6 @@ class main():
         # ■■■処理の開始
         # ■ポジションクラスの生成
         self.positions_control_class = classPositionControl.position_control(True, self.pair)  # ポジションリストの用意
-        self.strategy_regime = classStrategyRegime.StrategyRegime(
-            self.pair,
-            mode="live",
-        )
         # self.positions_control_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
         self.positions_control_class.reset_all_position()
         self.positions_control_class.catch_up_position_and_del_order()
@@ -210,42 +210,51 @@ class main():
         """
         5分に一度行わる処理
         """
+        # データ取得や各解析が長引いても、全て同じ5分境界で判断する。
+        analysis_started_utc = datetime.datetime.now(datetime.timezone.utc)
+        decision_time_utc = analysis_started_utc.replace(second=0, microsecond=0)
         print("■■■■■■5分ごと調査■■■■", self.now, self.past_time_from_latest_mode1_exe)  # 表示用（実行時）
         self.positions_control_class.refresh_startup_safety_state()
 
         # ■処理
         if self.first_exe:
-            # 初回は、manageで取得したデータで実行する
-            pass
+            # 初回も含め、全解析をmode1冒頭で固定した同じ判断時刻へ揃える。
+            self.candleAnalysisClass = ca.candleAnalysis(
+                self.base_oa,
+                self.pair,
+                0,
+                decision_time=decision_time_utc,
+            )
         else:
-            self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, self.pair, 0)  # Watchingがある場合、キャンドルを先にやる
+            self.candleAnalysisClass = ca.candleAnalysis(
+                self.base_oa,
+                self.pair,
+                0,
+                decision_time=decision_time_utc,
+            )  # Watchingがある場合、キャンドルを先にやる
             self.positions_control_class.all_update_information(self.candleAnalysisClass)  # positionの更新
             # self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, self.pair, 0)  # 現在時刻（０）でデータ取得　←もともとupdateの後にキャンドル
             # self.get_df_data()  # データの取得
 
         # ■調査実行
+        # 解析の選択・注文集約・PositionControlへの登録はwrap側が管理する。
         analysis_result_instance = am.wrap_all_analysis(
             self.candleAnalysisClass,
             self.positions_control_class,
             "live",
-            strategy_regime=self.strategy_regime,
+            analysis_time_utc=analysis_started_utc,
+            decision_time_utc=decision_time_utc,
         )
-        # ■ オーダー発行
-        if not analysis_result_instance.take_position_flag:
+        exe_res = analysis_result_instance.position_control_result
+        if not exe_res:
             # 発注がない場合は、終了 (ポケ除け的な部分）
             pass
         else:
-            # オーダーを登録＆発行する
-            exe_res = self.positions_control_class.order_class_add(analysis_result_instance.exe_order_classes)
-            if exe_res == 0:
-                pass
-                # tk.line_send(" オーダー発行せず　or 失敗　main 175")
-            else:
-                notice.line_send("★★★オーダー発行", self.trade_num, "回目: ", " 　　　", exe_res,
-                             ", 現在価格(微古):", self.now_price_mid, "スプレッド", str(self.pair_info.price_to_pips(self.now_spread)) + "p",
-                             "直前の結果:", classPosition.order_information.before_latest_plu, ",開始時間",
-                             self.start_time_str)  # , "memo", classPosition.)
-                self.trade_num = self.trade_num + 1
+            notice.line_send("★★★オーダー発行", self.trade_num, "回目: ", " 　　　", exe_res,
+                         ", 現在価格(微古):", self.now_price_mid, "スプレッド", str(self.pair_info.price_to_pips(self.now_spread)) + "p",
+                         "直前の結果:", classPosition.order_information.before_latest_plu, ",開始時間",
+                         self.start_time_str)  # , "memo", classPosition.)
+            self.trade_num = self.trade_num + 1
 
         # ■最終実行時刻の更新
         self.latest_exe_time = datetime.datetime.now().replace(microsecond=0)  # 最終実行時刻を取得しておく
@@ -361,10 +370,7 @@ class main():
             print("■■■初回", self.exe_mode)  # 表示用（実行時）
             notice.line_send("start")
 
-            # 現時刻を使う
-            self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, self.pair, 0)  # 現在時刻（０）でデータ取得
-            # 指定時刻を使う
-            # self.candleAnalysisClass = ca.candleAnalysis(self.base_oa, self.pair, datetime.datetime(2025, 9, 1, 8, 5, 6))
+            # CandleAnalysis生成も含め、判断時刻はmode1内で一度だけ固定する。
             self.mode1()
 
             # 強制オーダーを入れる場合は、以下コメントイン

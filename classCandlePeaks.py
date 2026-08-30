@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-29 15:38 JST
+
 import datetime
 from datetime import datetime
 from datetime import timedelta
@@ -13,7 +15,17 @@ import copy
 
 class PeaksClass:
 
-    def __init__(self, original_df_r, granularity, current_price, pair=None):
+    def __init__(
+            self,
+            original_df_r,
+            granularity,
+            current_price,
+            pair=None,
+            *,
+            completed_df_r=None,
+            decision_time,
+            source_granularity=None,
+    ):
         """
         処理解説
         make_peakでdf_rの直近一つのブロック（Peakと呼ぶ。同方向へローソクが進む範囲のこと。）を取得する。
@@ -110,7 +122,9 @@ class PeaksClass:
 
         # ■■解析結果の保持変数
         # 基本となるデータフレーム
-        self.df_r_original = None  # 直近の時刻が[0]となるデータフレーム。API取得のデータとは逆順
+        self.original_df_r = None  # 0行目を含み、直近時刻が上の取得データ
+        self.completed_df_r = None  # 判断時刻までに完成した足だけ（直近時刻が上）
+        self.analysis_df_r = None  # completed_df_rを解析本数に限定したもの
         # ピーク情報
         self.peaks_original = []  # 計算されたピークで、一番ベーシックなもの（DataFrameがない）
         self.peaks_original_with_df = []  # 要素にdataとdataFrameを持つ。SKipは結合させたりでめんどいのでやらない。
@@ -131,14 +145,38 @@ class PeaksClass:
 
         # ■実処理
         # (1)ピークスの算出
-        self.df_r_original = original_df_r
+        self.decision_time = self.normalize_decision_time(decision_time)
+        self.source_granularity = (
+            source_granularity
+            if source_granularity is not None
+            else granularity
+        )
+        self.original_df_r = self.normalize_original_df_r(
+            original_df_r,
+            self.decision_time,
+        )
+        if completed_df_r is None:
+            self.completed_df_r = self.select_completed_df_r(
+                self.original_df_r,
+                self.decision_time,
+                self.source_granularity,
+            )
+        else:
+            self.completed_df_r = self.normalize_df_r(
+                completed_df_r,
+                "completed_df_r",
+            )
+        self.validate_completed_df_r(
+            self.completed_df_r,
+            self.decision_time,
+            self.source_granularity,
+        )
+        self.analysis_df_r = self.completed_df_r.iloc[
+            :self.analysis_num
+        ].copy()
 
-        self.df_r = original_df_r[1:]  # df_rは先頭は省く（数秒分の足のため）
-        self.df_r_copy = copy.deepcopy(self.df_r)
-        self.df_r = self.df_r[:self.analysis_num]  # 直近4.5時間分(55足分)のデータフレームにする
-
-        temp_res = self.make_peaks(self.df_r)  # 一番感度のいいPeaks。引数は書くとするなら。self.df_r。
-        self.peaks_original = temp_res['peaks']  # self.make_peaks(self.df_r)  # 一番感度のいいPeaks。引数は書くとするなら。self.df_r。
+        temp_res = self.make_peaks(self.analysis_df_r)
+        self.peaks_original = temp_res['peaks']
 
         # たまに起きる謎のエラー対応
         if len(self.peaks_original) <= 2:
@@ -152,11 +190,15 @@ class PeaksClass:
         self.gap_price_and_latest_turn_peak_abs = abs(self.current_price - self.latest_peak_price)
 
         # (3) 時間の取得
-        time_obj = pd.to_datetime(original_df_r.iloc[0]['time_jp'], format='%Y/%m/%d %H:%M:%S')
+        time_obj = (
+            self.decision_time
+            if self.decision_time is not None
+            else pd.to_datetime(self.original_df_r.iloc[0]['time_jp'])
+        )
         self.time_hour = time_obj.hour
 
-        # nowから5時間前
-        border_time = datetime.now() - timedelta(hours=1)
+        # 判断時刻から1時間前。検証時に実時刻を参照しない。
+        border_time = time_obj - timedelta(hours=1)
         # 抽出
         self.peaks_latest = [
             d for d in self.peaks_original
@@ -164,15 +206,153 @@ class PeaksClass:
         ]
 
 
+    @staticmethod
+    def normalize_decision_time(value):
+        if value is None:
+            raise ValueError("decision_time is required")
+        stamp = pd.Timestamp(value)
+        if pd.isna(stamp):
+            raise ValueError("decision_time is invalid")
+        if stamp.tzinfo is not None:
+            stamp = stamp.tz_convert("Asia/Tokyo").tz_localize(None)
+        return stamp.floor("s")
+
+    @staticmethod
+    def frame_times(df_r):
+        time_column = (
+            "time_jp_dt"
+            if "time_jp_dt" in df_r.columns
+            else "time_jp"
+        )
+        if time_column not in df_r.columns:
+            raise ValueError("candle DataFrame has no time column")
+        times = pd.to_datetime(df_r[time_column], errors="coerce")
+        if times.isna().any():
+            raise ValueError("candle DataFrame contains an invalid time")
+        if getattr(times.dt, "tz", None) is not None:
+            times = times.dt.tz_convert("Asia/Tokyo").dt.tz_localize(None)
+        return times
+
+    @classmethod
+    def normalize_df_r(cls, df_r, label):
+        if not isinstance(df_r, pd.DataFrame) or df_r.empty:
+            raise ValueError(label + " is empty")
+        normalized_df_r = df_r.copy()
+        price_columns = ["open", "close", "high", "low"]
+        missing = set(price_columns) - set(normalized_df_r.columns)
+        if missing:
+            raise ValueError(
+                label + " missing: " + ", ".join(sorted(missing))
+            )
+        normalized_df_r[price_columns] = normalized_df_r[
+            price_columns
+        ].apply(pd.to_numeric, errors="coerce")
+        if not np.isfinite(
+                normalized_df_r[price_columns].to_numpy(dtype=float)
+        ).all():
+            raise ValueError(label + " contains invalid OHLC")
+        normalized_df_r["_peaks_time"] = cls.frame_times(normalized_df_r)
+        normalized_df_r.sort_values(
+            "_peaks_time",
+            ascending=False,
+            kind="stable",
+            inplace=True,
+        )
+        if normalized_df_r["_peaks_time"].duplicated().any():
+            raise ValueError(label + " contains duplicate times")
+        normalized_df_r["time_jp_dt"] = normalized_df_r["_peaks_time"]
+        normalized_df_r["time_jp"] = normalized_df_r[
+            "_peaks_time"
+        ].dt.strftime("%Y/%m/%d %H:%M:%S")
+        normalized_df_r.drop(columns="_peaks_time", inplace=True)
+        normalized_df_r.reset_index(drop=True, inplace=True)
+        return normalized_df_r
+
+    @classmethod
+    def normalize_original_df_r(cls, original_df_r, decision_time):
+        normalized_df_r = cls.normalize_df_r(
+            original_df_r,
+            "original_df_r",
+        )
+        normalized_df_r = normalized_df_r[
+            normalized_df_r["time_jp_dt"] <= decision_time
+        ].copy()
+        if normalized_df_r.empty:
+            raise ValueError("original_df_r has no candle at decision_time")
+        normalized_df_r.reset_index(drop=True, inplace=True)
+        return normalized_df_r
+
+    @staticmethod
+    def granularity_duration(granularity):
+        durations = {
+            "S5": pd.Timedelta(seconds=5),
+            "M5": pd.Timedelta(minutes=5),
+            "M30": pd.Timedelta(minutes=30),
+            "H1": pd.Timedelta(hours=1),
+        }
+        try:
+            return durations[str(granularity).upper()]
+        except KeyError as error:
+            raise ValueError(
+                "unsupported granularity: " + str(granularity)
+            ) from error
+
+    @classmethod
+    def select_completed_df_r(cls, original_df_r, decision_time, granularity):
+        completed_df_r = cls.normalize_df_r(original_df_r, "original_df_r")
+        completion_column = next(
+            (
+                name
+                for name in ("is_complete", "complete")
+                if name in completed_df_r.columns
+            ),
+            None,
+        )
+        if completion_column is not None:
+            completed_df_r = completed_df_r[
+                completed_df_r[completion_column].eq(True)
+            ].copy()
+        duration = cls.granularity_duration(granularity)
+        completed_df_r = completed_df_r[
+            completed_df_r["time_jp_dt"] + duration <= decision_time
+        ].copy()
+        if completed_df_r.empty:
+            raise ValueError("no candle is completed by decision_time")
+        completed_df_r.reset_index(drop=True, inplace=True)
+        return completed_df_r
+
+    @classmethod
+    def validate_completed_df_r(
+            cls,
+            completed_df_r,
+            decision_time,
+            granularity,
+    ):
+        duration = cls.granularity_duration(granularity)
+        times = cls.frame_times(completed_df_r)
+        if (times + duration > decision_time).any():
+            raise ValueError("completed_df_r contains an incomplete candle")
+        completion_column = next(
+            (
+                name
+                for name in ("is_complete", "complete")
+                if name in completed_df_r.columns
+            ),
+            None,
+        )
+        if (
+                completion_column is not None
+                and not completed_df_r[completion_column].eq(True).all()
+        ):
+            raise ValueError("completed_df_r contains a false completion flag")
+
     def make_peak(self, df_r):
         """
         渡された範囲で、何連続で同方向に進んでいるかを検証する
         :param df_r: 直近が上側（日付降順/リバース）のデータを利用
         :return: Dict形式のデータを返伽
         """
-        # コピーウォーニングのための入れ替え
         data_df = df_r  # メモリ削減のため.copy()は削除
-        temp = self.df_r_original  # Warning回避のため（staticにしろって言われるから）
         # 返却値を設定
         ans_dic = {
             "latest_time_jp": 0,  # これがpeakの時刻
@@ -237,7 +417,6 @@ class PeaksClass:
             else:
                 break  # 連続が途切れた場合、ループを抜ける
         # ■対象のDFを取得し、情報を格納していく
-        self.df_r_copy = self.df_r_copy[counter:]
         ans_df = data_df[0:counter + 1]  # 同方向が続いてる範囲のデータを取得する
         ans_other_df = data_df[counter:]  # 残りのデータ
         # print("DATAの範囲の検討")

@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-29 19:28 JST
+
 import copy
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,7 +16,6 @@ import fMoveSizeInspection as ms
 import fCommonFunction as cf
 import fMoveSizeInspection as ms
 import fPeakInspection as pi
-import classCandleAnalysis as cpk
 from datetime import datetime, timedelta
 from datetime import datetime
 import classOrderCreate as OCreate
@@ -22,14 +23,16 @@ import classPosition
 import bisect
 
 
-def wrap_predict_turn_inspection_test(df_r):
+def wrap_predict_turn_inspection_test(candle_analysis_class):
     """
     クラスをたくさん用いがケース
     args[0]は必ずdf_rであることで、必須。
     args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
     """
-    # peaksの算出
-    peaks_class = cpk.PeaksClass(df_r)
+    # CandleAnalysisの因果contextで時間境界を確定済みの共通Peaksを使う。
+    peaks_class = (
+        candle_analysis_class.require_basic_analysis().m5_peaks_class
+    )
     #
     flag_and_orders = {
         "take_position_flag": False,
@@ -57,7 +60,7 @@ def wrap_predict_turn_inspection(peaks_class):
     args[1]は、本番の場合、過去の決済履歴のマイナスの大きさでTPが変わるかを検討したいため、オーダークラスを受け取る
     """
     # peaksの算出
-    # peaks_class = cpk.PeaksClass(df_r)
+    # peaks_classはCandleAnalysisから渡された完成足ベースの共通Peaks。
     #
     flag_and_orders = {
         "take_position_flag": False,
@@ -293,8 +296,10 @@ def order_make_dir0_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         "tp": tp,
         "lc": lc,
         'priority': 3,
-        "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
-        "decision_price": peaks_class.df_r_original.iloc[1]['close'],
+        "decision_time": peaks_class.decision_time.strftime(
+            "%Y/%m/%d %H:%M:%S"
+        ),
+        "decision_price": peaks_class.analysis_df_r.iloc[0]['close'],
         "order_timeout_min": 20,
         "lc_change_type": lc_change,
         "units": units,
@@ -381,8 +386,10 @@ def order_make_dir1_s(peaks_class, comment, target_num, margin, margin_dir, tp, 
         "tp": tp,
         "lc": lc,
         'priority': 3,
-        "decision_time": peaks_class.df_r_original.iloc[0]['time_jp'],
-        "decision_price": peaks_class.df_r_original.iloc[1]['close'],
+        "decision_time": peaks_class.decision_time.strftime(
+            "%Y/%m/%d %H:%M:%S"
+        ),
+        "decision_price": peaks_class.analysis_df_r.iloc[0]['close'],
         "order_timeout_min": 20,
         "lc_change_type": lc_change,
         "units": units,

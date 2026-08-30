@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-08-29 20:40 JST
 """Replay fixed prior-two-year FC2 Top15 policies on the following year.
 
 This module is intentionally inspection-only.  It reads the completed ranking
@@ -43,6 +44,9 @@ import pandas as pd
 
 import fGeneric as gene
 import fLineAnalysis as line_analysis
+from fCandleDataQuality import (
+    is_expected_annual_holiday_closure_gap as _is_expected_annual_holiday_closure_gap,
+)
 import test_win_point_usd_aud as win_point
 import tokens as tk
 from count2_target_grid_search import (
@@ -859,68 +863,6 @@ def _order_timeout_min(intent: Intent) -> int:
 
 def _close_quote(mid_price: float, direction: int, half_spread_price: float) -> float:
     return mid_price - half_spread_price if direction == 1 else mid_price + half_spread_price
-
-
-def _is_expected_annual_holiday_closure_gap(
-    previous_time: pd.Timestamp,
-    next_time: pd.Timestamp,
-) -> bool:
-    """Recognize only Christmas/New-Year closures, including weekend joins.
-
-    OANDA's regular-hours mask covers daily pauses and weekends, but not the
-    full-day holiday extension.  When Christmas or New Year falls next to a
-    weekend, one observed no-quote interval can span several calendar days.
-    Keep this deliberately narrow: both edges must be at the New York
-    rollover, every intervening weekday must be the holiday (or its observed
-    weekday), and the total gap cannot exceed four days.
-    """
-    previous_jst = pd.Timestamp(previous_time)
-    next_jst = pd.Timestamp(next_time)
-    if previous_jst.tzinfo is None:
-        previous_jst = previous_jst.tz_localize("Asia/Tokyo")
-    else:
-        previous_jst = previous_jst.tz_convert("Asia/Tokyo")
-    if next_jst.tzinfo is None:
-        next_jst = next_jst.tz_localize("Asia/Tokyo")
-    else:
-        next_jst = next_jst.tz_convert("Asia/Tokyo")
-
-    previous_ny = previous_jst.tz_convert("America/New_York")
-    next_ny = next_jst.tz_convert("America/New_York")
-    gap = next_ny - previous_ny
-    if gap < pd.Timedelta(hours=12) or gap > pd.Timedelta(hours=96):
-        return False
-
-    rollover_start = dt.time(16, 30)
-    rollover_end = dt.time(17, 30)
-    if not (
-        rollover_start <= previous_ny.time() <= rollover_end
-        and rollover_start <= next_ny.time() <= rollover_end
-    ):
-        return False
-
-    def is_holiday(day: dt.date) -> bool:
-        if (day.month, day.day) in {(1, 1), (12, 25)}:
-            return True
-        # Saturday holidays are observed on Friday; Sunday holidays on Monday.
-        if day.weekday() == 4:
-            following = day + dt.timedelta(days=1)
-            return (following.month, following.day) in {(1, 1), (12, 25)}
-        if day.weekday() == 0:
-            previous = day - dt.timedelta(days=1)
-            return (previous.month, previous.day) in {(1, 1), (12, 25)}
-        return False
-
-    day = previous_ny.date() + dt.timedelta(days=1)
-    final_day = next_ny.date()
-    holiday_seen = False
-    while day <= final_day:
-        holiday = is_holiday(day)
-        holiday_seen = holiday_seen or holiday
-        if day.weekday() < 5 and not holiday:
-            return False
-        day += dt.timedelta(days=1)
-    return holiday_seen
 
 
 def _is_expected_no_quote_interval(

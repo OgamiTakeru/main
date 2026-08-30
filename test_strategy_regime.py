@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-29 15:38 JST
+
 import datetime
 import tempfile
 import unittest
@@ -14,7 +16,16 @@ from fLineStrategyUsdJpy import LineStrategyProfileUsdJpy
 
 class CandleStub:
     def __init__(self, rows):
-        self.h1_df_r = pd.DataFrame(rows)
+        completed_df_r = pd.DataFrame(rows).copy()
+        completed_df_r["_sort_time"] = pd.to_datetime(
+            completed_df_r["time_jp"],
+            errors="raise",
+        )
+        self.h1_completed_df_r = completed_df_r.sort_values(
+            "_sort_time",
+            ascending=False,
+            kind="stable",
+        ).drop(columns="_sort_time").reset_index(drop=True)
 
 
 class StrategyRegimeTest(unittest.TestCase):

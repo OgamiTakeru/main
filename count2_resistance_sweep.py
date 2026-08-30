@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-08-29 20:40 JST
 """Count-2 resistance-line exhaustive validation.
 
 At every M5 decision point where the newest peak has count == 2, this module
@@ -28,13 +29,16 @@ import numpy as np
 import pandas as pd
 
 import classOanda
+from classCandleAnalysis import candleAnalysis as CandleAnalysis
 from classCandlePeaks import PeaksClass
+from fCandleDataQuality import (
+    is_expected_market_closed_gap as candle_gap_is_expected_closed,
+    oanda_coverage_open_mask,
+)
 import fGeneric as gene
 from fFootCountShape import (
     attach_line_wick_context,
     flatten_foot_count2_shape,
-    foot_count2_shape_context,
-    latest_two_candle_shape_context,
 )
 import send_notice as notice
 from fLineAnalysis import (
@@ -257,7 +261,7 @@ def _nearest_oanda_open_time(
         market_times = candidates.tz_localize("Asia/Tokyo")
     else:
         market_times = candidates.tz_convert("Asia/Tokyo")
-    market_open = classOanda._oanda_market_open_mask(market_times)
+    market_open = oanda_coverage_open_mask(market_times)
     open_positions = np.flatnonzero(market_open)
     if open_positions.size <= open_offset:
         raise RuntimeError("OANDA market-open timestamp not found within 4 days")
@@ -661,66 +665,50 @@ def select_ahead_lines(
     return selected
 
 
-def _decision_snapshot(
-    completed: pd.DataFrame,
-    decision_time: pd.Timestamp,
-    current_price: float,
-) -> pd.DataFrame:
-    history_desc = completed.iloc[::-1].reset_index(drop=True)
-    dummy = history_desc.iloc[0].copy()
-    dummy["time_jp"] = decision_time.strftime(TIME_FORMAT)
-    dummy["time_jp_dt"] = decision_time
-    for column in (
-        "open",
-        "close",
-        "high",
-        "low",
-        "inner_high",
-        "inner_low",
-        "mid_outer",
-        "middle_price",
-        "middle_price_wick",
-    ):
-        if column in dummy:
-            dummy[column] = current_price
-    for column in (
-        "body",
-        "body_abs",
-        "moves",
-        "highlow",
-        "up_rod",
-        "low_rod",
-    ):
-        if column in dummy:
-            dummy[column] = 0.0
-    if "direction" in dummy:
-        dummy["direction"] = 0
-    return pd.concat(
-        [pd.DataFrame([dummy]), history_desc],
-        ignore_index=True,
-    )
-
-
 def rebuild_candidates_at(
     m5: pd.DataFrame,
     index: int,
     pair_name: str,
     h1: pd.DataFrame | None = None,
     h1_stair_cache: dict[pd.Timestamp, dict[str, Any]] | None = None,
+    decision_context: Any | None = None,
 ) -> dict[str, Any]:
     """Recreate peak and line state from rows strictly before ``index``."""
     pair = gene.currency_pair(pair_name)
-    decision_time = pd.Timestamp(m5.iloc[index]["time_jp_dt"])
-    completed = m5.iloc[max(0, index - PEAK_HISTORY_BARS) : index].copy()
-    if len(completed) < LINE_HISTORY_BARS + 1:
-        raise ValueError("insufficient_m5_for_line_rebuild")
-    if (completed["time_jp_dt"] >= decision_time).any():
-        raise ValueError("future_m5_in_line_snapshot")
-    current_price = float(completed.iloc[-1]["close"])
-    snapshot = _decision_snapshot(completed, decision_time, current_price)
+    requested_decision_time = pd.Timestamp(m5.iloc[index]["time_jp_dt"])
+    if decision_context is None:
+        source_completed = m5.iloc[
+            max(0, index - PEAK_HISTORY_BARS) : index
+        ].copy()
+        if len(source_completed) < LINE_HISTORY_BARS + 1:
+            raise ValueError("insufficient_m5_for_line_rebuild")
+        if (source_completed["time_jp_dt"] >= requested_decision_time).any():
+            raise ValueError("future_m5_in_line_snapshot")
+        source_price = float(source_completed.iloc[-1]["close"])
+        decision_context = CandleAnalysis.build_decision_context_from_frames(
+            pair_name,
+            requested_decision_time,
+            source_completed,
+            h1,
+            current_price=source_price,
+            current_price_source="inspection_m5",
+            mode="inspection",
+            require_complete_flags=False,
+            m5_history=PEAK_HISTORY_BARS,
+            h1_history=H1_HISTORY_BARS,
+            peaks_class_factory=PeaksClass,
+        )
+    context_pair = str(getattr(decision_context, "pair_name", "")).upper()
+    if context_pair != str(pair_name).upper():
+        raise ValueError("decision_context_pair_mismatch")
+    decision_time = pd.Timestamp(decision_context.decision_time)
+    if decision_time != requested_decision_time:
+        raise ValueError("decision_context_time_mismatch")
 
-    with contextlib.redirect_stdout(io.StringIO()):
-        peaks = PeaksClass(snapshot, "M5", current_price, pair=pair)
+    m5_completed_df_r = decision_context.m5_completed_df_r
+    completed = m5_completed_df_r.iloc[::-1].reset_index(drop=True)
+    current_price = float(decision_context.current_price)
+    peaks = decision_context.m5_peaks_class
     if not peaks.peaks_original:
         raise ValueError("no_peak")
     newest_peak = peaks.peaks_original[0]
@@ -731,67 +719,44 @@ def rebuild_candidates_at(
         )
     peak_direction = int(newest_peak["direction"])
 
-    if h1 is None:
-        h1_snapshot = snapshot
-        h1_peaks = peaks
+    h1_completed_df_r = decision_context.h1_completed_df_r
+    h1_peaks = decision_context.h1_peaks_class
+    if h1_completed_df_r is None:
         h1_cache_key = None
         h1_stair_context = None
-        completed_h1 = None
     else:
-        completed_h1_end = int(
-            h1["time_jp_dt"].searchsorted(
-                decision_time - pd.Timedelta(hours=1),
-                side="right",
-            )
-        )
-        completed_h1 = h1.iloc[
-            max(0, completed_h1_end - H1_HISTORY_BARS) : completed_h1_end
-        ].copy()
-        if len(completed_h1) < 60:
+        if len(h1_completed_df_r) < 60:
             raise ValueError("insufficient_h1_for_stair_rebuild")
         if (
-            completed_h1["time_jp_dt"] + pd.Timedelta(hours=1)
+            h1_completed_df_r["time_jp_dt"] + pd.Timedelta(hours=1)
             > decision_time
         ).any():
             raise ValueError("future_h1_in_stair_snapshot")
         h1_cache_key = pd.Timestamp(
-            completed_h1.iloc[-1]["time_jp_dt"]
+            h1_completed_df_r.iloc[0]["time_jp_dt"]
         )
         h1_stair_context = (
             h1_stair_cache.get(h1_cache_key)
             if h1_stair_cache is not None
             else None
         )
-        if h1_stair_context is None:
-            h1_snapshot = _decision_snapshot(
-                completed_h1,
-                decision_time,
-                current_price,
-            )
-            with contextlib.redirect_stdout(io.StringIO()):
-                h1_peaks = PeaksClass(
-                    h1_snapshot,
-                    "H1",
-                    current_price,
-                    pair=pair,
-                )
-        else:
-            # M5 line rebuilding does not read H1 state.  These placeholders
-            # keep the analysis namespace compatible while the causal H1
-            # stair result is reused for the same latest completed H1 candle.
-            h1_snapshot = snapshot
-            h1_peaks = peaks
 
     analysis = SimpleNamespace(
         pair=pair_name,
+        basic_analysis=decision_context,
+        require_basic_analysis=lambda: decision_context,
         current_price=current_price,
-        d5_df_r=snapshot,
+        decision_time=decision_time,
+        m5_original_df_r=decision_context.m5_original_df_r,
+        m5_completed_df_r=m5_completed_df_r,
         peaks_class=peaks,
         candle_meta_class=None,
-        h1_df_r=h1_snapshot,
+        h1_original_df_r=decision_context.h1_original_df_r,
+        h1_completed_df_r=h1_completed_df_r,
         peaks_class_hour=h1_peaks,
         candle_meta_class_hour=None,
-        d30_df_r=snapshot,
+        m30_original_df_r=decision_context.m5_original_df_r,
+        m30_completed_df_r=m5_completed_df_r,
         peaks_class_m30=peaks,
         candle_meta_class_m30=None,
     )
@@ -805,7 +770,7 @@ def rebuild_candidates_at(
     stair_context = detect_m5_stair_trend(
         peaks.peaks_original,
         pair,
-        snapshot.iloc[1:],
+        m5_completed_df_r,
         min_impulse_foot_count=getattr(
             profile,
             "predict_reversal_m5_stair_min_impulse_foot_count",
@@ -859,7 +824,7 @@ def rebuild_candidates_at(
         h1_stair_context = detect_h1_stair_trend(
             h1_peaks.peaks_original,
             pair,
-            h1_snapshot.iloc[1:],
+            h1_completed_df_r,
             min_impulse_foot_count=getattr(
                 profile,
                 "predict_reversal_h1_stair_min_impulse_foot_count",
@@ -911,13 +876,7 @@ def rebuild_candidates_at(
         )
         if h1_stair_cache is not None and h1_cache_key is not None:
             h1_stair_cache[h1_cache_key] = h1_stair_context
-    h1_pair_shape = latest_two_candle_shape_context(
-        completed_h1,
-        decision_time,
-        pair,
-        direction=peak_direction,
-        timeframe_minutes=60,
-    )
+    h1_pair_shape = decision_context.h1_shape_for_direction(peak_direction)
     candidates = select_ahead_lines(
         peak_direction,
         current_price,
@@ -929,27 +888,7 @@ def rebuild_candidates_at(
     for candidate in candidates:
         candidate["m5_stair_context"] = stair_context
         candidate["h1_stair_context"] = h1_stair_context
-    completed_desc = completed.sort_values(
-        "time_jp_dt",
-        ascending=False,
-    ).reset_index(drop=True)
-    rsi_info = {
-        "rsi_1": (
-            completed_desc.iloc[0].get("RSI")
-            if len(completed_desc) >= 1
-            else None
-        ),
-        "rsi_2": (
-            completed_desc.iloc[1].get("RSI")
-            if len(completed_desc) >= 2
-            else None
-        ),
-        "rsi_3": (
-            completed_desc.iloc[2].get("RSI")
-            if len(completed_desc) >= 3
-            else None
-        ),
-    }
+    rsi_info = dict(decision_context.rsi_info)
     return {
         "decision_time": decision_time,
         "current_price": current_price,
@@ -963,6 +902,10 @@ def rebuild_candidates_at(
         "stair_context": stair_context,
         "h1_stair_context": h1_stair_context,
         "h1_pair_shape_context": h1_pair_shape,
+        "m5_foot_count2_shape_context": (
+            decision_context.m5_foot_count2_shape
+        ),
+        "decision_context": decision_context,
     }
 
 
@@ -1159,29 +1102,9 @@ class LimitPathInspector:
         next_time: pd.Timestamp,
     ) -> bool:
         """Accept a gap only when every missing S5 is a known market closure."""
-        previous_jst = pd.Timestamp(previous_time)
-        next_jst = pd.Timestamp(next_time)
-        if previous_jst.tzinfo is None:
-            previous_jst = previous_jst.tz_localize("Asia/Tokyo")
-        else:
-            previous_jst = previous_jst.tz_convert("Asia/Tokyo")
-        if next_jst.tzinfo is None:
-            next_jst = next_jst.tz_localize("Asia/Tokyo")
-        else:
-            next_jst = next_jst.tz_convert("Asia/Tokyo")
-        gap = next_jst - previous_jst
-        step = pd.Timedelta(seconds=S5_SECONDS)
-        if gap <= step or gap > pd.Timedelta(days=4):
-            return False
-        missing_times = pd.date_range(
-            start=previous_jst + step,
-            end=next_jst - step,
-            freq=step,
-        )
-        if not len(missing_times):
-            return False
-        return not bool(
-            classOanda._oanda_market_open_mask(missing_times).any()
+        return candle_gap_is_expected_closed(
+            pd.Timestamp(previous_time),
+            pd.Timestamp(next_time),
         )
 
     @staticmethod
@@ -2363,13 +2286,10 @@ def run_sweep(
             continue
 
         peak = rebuilt["newest_peak"]
-        fc2_shape = foot_count2_shape_context(
-            rebuilt["completed_history"],
+        fc2_shape = rebuilt["decision_context"].shape_for_peak(
             peak,
-            decision_time,
-            pair,
+            "M5",
             average_range_pips=target["recent_m5_avg_range_pips"],
-            timeframe_minutes=5,
         )
         if not fc2_shape.get("valid"):
             event_rows.append(

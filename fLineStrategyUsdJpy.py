@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-08-29 19:25 JST
 """Line strategy classes for USD_JPY."""
 
 import math
@@ -1635,13 +1636,10 @@ class LineStrategyProfileUsdJpy:
             str(signal_direction) + ":" + str(signal_time)
         )
 
-        candle_analysis = getattr(
-            getattr(coordinator, "analysis", None),
-            "candle_analysis_all",
-            None,
-        )
+        analysis = getattr(coordinator, "analysis", None)
+        basic_analysis = getattr(analysis, "basic_analysis", None)
         fc2_shape = foot_count2_shape_context(
-            getattr(candle_analysis, "d5_df_r", None),
+            getattr(basic_analysis, "m5_completed_df_r", None),
             latest_peak_info,
             grouped_lines["decision_time"],
             coordinator.p,
@@ -2458,19 +2456,18 @@ class LineStrategyProfileUsdJpy:
             }
 
         analysis = getattr(coordinator, "analysis", None)
-        peaks_class = getattr(analysis, "peaks_class", None)
+        basic_analysis = getattr(analysis, "basic_analysis", None)
+        peaks_class = getattr(basic_analysis, "m5_peaks_class", None)
         peaks = getattr(peaks_class, "peaks_original", None)
-        candle_analysis = getattr(analysis, "candle_analysis_all", None)
-        m5_frame = getattr(candle_analysis, "d5_df_r", None)
-        completed_m5 = (
-            m5_frame.iloc[1:]
-            if m5_frame is not None and not m5_frame.empty
-            else None
+        m5_completed_df_r = getattr(
+            basic_analysis,
+            "m5_completed_df_r",
+            None,
         )
         return detect_m5_stair_trend(
             peaks,
             self.pair,
-            completed_m5,
+            m5_completed_df_r,
             min_impulse_foot_count=(
                 self.predict_reversal_m5_stair_min_impulse_foot_count
             ),
@@ -2511,19 +2508,18 @@ class LineStrategyProfileUsdJpy:
             }
 
         analysis = getattr(coordinator, "analysis", None)
-        candle_analysis = getattr(analysis, "candle_analysis_all", None)
-        peaks_class = getattr(candle_analysis, "peaks_class_hour", None)
+        basic_analysis = getattr(analysis, "basic_analysis", None)
+        peaks_class = getattr(basic_analysis, "h1_peaks_class", None)
         peaks = getattr(peaks_class, "peaks_original", None)
-        h1_frame = getattr(candle_analysis, "h1_df_r", None)
-        completed_h1 = (
-            h1_frame.iloc[1:]
-            if h1_frame is not None and not h1_frame.empty
-            else None
+        h1_completed_df_r = getattr(
+            basic_analysis,
+            "h1_completed_df_r",
+            None,
         )
         return detect_h1_stair_trend(
             peaks,
             self.pair,
-            completed_h1,
+            h1_completed_df_r,
             min_impulse_foot_count=(
                 self.predict_reversal_h1_stair_min_impulse_foot_count
             ),

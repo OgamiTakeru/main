@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-29 15:38 JST
+
 import copy
 
 import fPeakInspection as p  # とりあえずの関数集
@@ -788,10 +790,10 @@ def tilt_cal(peaks, target_direction):
     return merge_line_tilt_info
 
 
-def judge_flag_figure(peaks, target_direction, df_r):
+def judge_flag_figure(peaks, target_direction, completed_df_r):
     """
     フラッグ形状かどうかを判定する。
-    df_r:調査用のデータフレーム
+    completed_df_r: 調査用の完成足データフレーム（実時刻降順）
     peaks:元となるピークス。
     target_direction: この方向のピーク群が斜め上がり傾向になっているかを検証する（Upperが水平でLowerを検証したい場合、ここはー１が渡される）
     返り値は、成立しているかどうかのBoolean
@@ -819,7 +821,9 @@ def judge_flag_figure(peaks, target_direction, df_r):
     if tilt_line_info['tilt_line_level'] > 0:
         # ■■ひとつ前の足
         print(s6, "ひとつ前の足で成立を確認（斜面）")
-        fixed_information_prev = cf.information_fix({"df_r": df_r[1:]})  # DFとPeaksが必ず返却される
+        fixed_information_prev = cf.information_fix(
+            {"df_r": completed_df_r[1:]}
+        )  # 最新完成足を1本外し、ひとつ前の判断状態を再構築する
         peaks_prev = fixed_information_prev['peaks']
         tilt_ans_prev = tilt_cal(peaks_prev, target_direction * -1)
         if tilt_ans_prev['tilt_line_level'] > 0 and (target_direction == peaks_prev[0]['direction']):
@@ -886,14 +890,14 @@ def analysis(peaksclass):
 
     # ■■情報の整理と取得（関数の頭には必須）
     peaks_class = peaksclass
-    target_df = peaksclass.df_r_original
+    target_completed_df_r = peaksclass.completed_df_r
     peaks = peaks_class.skipped_peaks
     # fixed_information = cf.information_fix(dic_args)  # DFとPeaksが必ず返却される
     # target_df = fixed_information['df_r']
     # peaks = fixed_information['peaks']
     target_dir = peaks[0]['direction']  # Lineの方向 予測ではLatest。値が1の場合UpperLine（＝上値抵抗）
     grid = dependence_search_grid  # 調査の細かさ
-    now_time = target_df.iloc[0]['time_jp']
+    now_time = peaks_class.decision_time.strftime("%Y/%m/%d %H:%M:%S")
 
     # ■動きの幅を検討する
     same_price_range = 0.03
@@ -933,7 +937,7 @@ def analysis(peaksclass):
             'line_base_direction': target_dir,
             'latest_direction': peaks[0]['direction'],
             'latest_time_in_df': peaks[0]['time'],
-            'decision_price': target_df.iloc[0]['close']
+            'decision_price': peaks_class.current_price
         }
         # 同一価格情報を取得し、フラッグ成立有無の確認　（各価格（格子状に）で抵抗ラインの候補を探す）
         print(s4, " ＊＊＊", target_price)
@@ -946,7 +950,11 @@ def analysis(peaksclass):
             # 傾きの検証を行う（Flag形状）
             strength_info = same_price_info['strength_info']  # コード短縮のための置換
             if strength_info['line_on_num'] >= 2 and strength_info['line_strength'] >= 0.9:
-                flag_info = judge_flag_figure(peaks, peaks[0]['direction'], target_df)
+                flag_info = judge_flag_figure(
+                    peaks,
+                    peaks[0]['direction'],
+                    target_completed_df_r,
+                )
                 if flag_info['tilt_line_level'] > 0:
                     print(s6, "★Flag成立のためオーダーのもとの生成")
                     flag_flag = True  # フラッグ成立
@@ -1045,10 +1053,10 @@ def main_flag(peaks_class):
     # peaks = peak_inspection.change_peaks_with_hard_skip(peaks)
     print("Flagてｓｔ")
     peaks = peaks_class.skipped_peaks
-    df_r = peaks_class.df_r_original
+    completed_df_r = peaks_class.completed_df_r
     s = "   "
 
-    latest_candle_size = peaks_class.df_r_original.iloc[1]['highlow']
+    latest_candle_size = peaks_class.completed_df_r.iloc[0]['highlow']
     # ■調査を実施する■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     # ■■実行しない条件の場合、実行を終了する
     if peaks[0]['count'] != 2:  #  not(2 <= peaks[0]['count'] < 4):
@@ -1134,7 +1142,7 @@ def main_flag(peaks_class):
                 # LCRangeが許容範囲内の場合、そのまま利用
                 lc_price = temp_lc_price
                 print(s6, "そのままのLCを利用する", lc_price)
-            main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
+            main_order_base = cf.order_base(completed_df_r.iloc[0]['close'], completed_df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
             # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
             # main_order_base['lc'] = flag_info['strength_info']['lc_price']  # 0.06 ←0.06は結構本命  # 0.09  # LCは広め　　  # 入れる側の文字は　LCのみ
             main_order_base['target'] = target_price
@@ -1194,7 +1202,7 @@ def main_flag(peaks_class):
                           peaks[0]['peak'])
                     target_price = peaks[0]['peak'] + 0.035
 
-            main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
+            main_order_base = cf.order_base(completed_df_r.iloc[0]['close'], completed_df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
             # main_order_base['target'] = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
             main_order_base['target'] = target_price  # river価格＋マージン0.027
             main_order_base['lc'] = lc_price_counter  # ←悪くなさそうだが、広すぎる？
@@ -1249,7 +1257,7 @@ def main_flag(peaks_class):
                 # LCRangeが許容範囲内の場合、そのまま利用
                 lc_price = temp_lc_price
                 print(s6, "そのままのLCを利用する", lc_price)
-            main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
+            main_order_base = cf.order_base(completed_df_r.iloc[0]['close'], completed_df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
             # main_order_base['target'] = target_price + (0.035 * flag_info['line_base_info']['line_base_direction'])  # 0.05
             # main_order_base['lc'] = flag_info['strength_info']['lc_price']  # 0.06 ←0.06は結構本命  # 0.09  # LCは広め　　  # 入れる側の文字は　LCのみ
             main_order_base['target'] = target_price
@@ -1309,7 +1317,7 @@ def main_flag(peaks_class):
                           peaks[0]['peak'])
                     target_price = peaks[0]['peak'] + 0.035
 
-            main_order_base = cf.order_base(df_r.iloc[0]['close'], df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
+            main_order_base = cf.order_base(completed_df_r.iloc[0]['close'], completed_df_r.iloc[0]['time_jp'])  # tpはLCChange任せのため、Baseのまま
             # main_order_base['target'] = peaks[1]['peak'] - (0.035 * flag_info['line_base_info']['line_base_direction'])  # river価格＋マージン0.027
             main_order_base['target'] = target_price  # river価格＋マージン0.027
             main_order_base['lc'] = dependence_lc_range_max_c

@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-29 20:40 JST
+
 import datetime
 import math
 from pathlib import Path
@@ -9,11 +11,16 @@ import classCandleAnalysis as ca
 import classOanda
 import classStrategyRegime
 import fAnalysis_order_Main as am
+import fCandleDataQuality as candle_quality
 import fGeneric as gene
 import fLineAnalysis as ti
 import tokens as tk
 import send_notice as notice
 from fStairTrend import STAIR_CONTEXT_FIELDS
+
+
+M5_PREHISTORY_CALENDAR_HOURS = 24 * 7
+H1_PREHISTORY_CALENDAR_HOURS = 24 * 21
 
 
 class Inspection:
@@ -56,16 +63,18 @@ class Inspection:
         self.gl_s5_csv_path = s5_data_path
 
         self.gl_d5_df = pd.DataFrame()
-        self.gl_d5_df_r = pd.DataFrame()
         self.gl_s5_df = pd.DataFrame()
         self.gl_h1_df = pd.DataFrame()
-        self.gl_h1_df_r = pd.DataFrame()
         self.gl_m30_df = pd.DataFrame()
-        self.gl_m30_df_r = pd.DataFrame()
         self.h1_analysis_cache = None
         self.m30_analysis_cache = None
         self.result_df = pd.DataFrame()
         self.results = []
+        self.data_not_ready_skips = 0
+        self.data_shortage_skips = 0
+        self.data_integrity_errors = 0
+        self.other_inspection_errors = 0
+        self.inspection_errors = []
         self.strategy_regime = classStrategyRegime.StrategyRegime(
             self.pair,
             mode="inspection",
@@ -103,14 +112,11 @@ class Inspection:
 
     def load_existing_data(self):
         self.gl_d5_df = pd.read_csv(self.gl_main_csv_path, sep=",", encoding="utf-8")
-        self.gl_d5_df_r = self.gl_d5_df.sort_index(ascending=False)
 
         self.gl_h1_df = pd.read_csv(self.gl_h1_csv_path, sep=",", encoding="utf-8")
-        self.gl_h1_df_r = self.gl_h1_df.sort_index(ascending=False)
 
         if self.gl_m30_csv_path:
             self.gl_m30_df = pd.read_csv(self.gl_m30_csv_path, sep=",", encoding="utf-8")
-            self.gl_m30_df_r = self.gl_m30_df.sort_index(ascending=False)
 
         if self.gl_s5_csv_path:
             self.gl_s5_df = pd.read_csv(self.gl_s5_csv_path, sep=",", encoding="utf-8")
@@ -125,16 +131,13 @@ class Inspection:
             return False
 
         self.gl_h1_df = pd.read_csv(paths["h1"], sep=",", encoding="utf-8")
-        self.gl_h1_df_r = self.gl_h1_df.sort_index(ascending=False)
 
         self.gl_d5_df = pd.read_csv(paths["m5"], sep=",", encoding="utf-8")
-        self.gl_d5_df_r = self.gl_d5_df.sort_index(ascending=False)
 
         self.gl_s5_df = pd.read_csv(paths["s5"], sep=",", encoding="utf-8")
 
         if paths["m30"].exists():
             self.gl_m30_df = pd.read_csv(paths["m30"], sep=",", encoding="utf-8")
-            self.gl_m30_df_r = self.gl_m30_df.sort_index(ascending=False)
 
         print("Loaded cached inspection data:", paths["h1"].parent)
         return True
@@ -162,7 +165,6 @@ class Inspection:
             end_time=fetch_to,
         )
         self.gl_d5_df = data_response["data"]
-        self.gl_d5_df_r = self.gl_d5_df.sort_index(ascending=False)
         notice.line_send("検証データ取得", self.pair, "M5", len(self.gl_d5_df), "rows")
 
         h1_fetch_from = self.required_h1_data_from()
@@ -178,7 +180,6 @@ class Inspection:
             end_time=fetch_to,
         )
         self.gl_h1_df = data_response["data"]
-        self.gl_h1_df_r = self.gl_h1_df.sort_index(ascending=False)
         notice.line_send("検証データ取得", self.pair, "H1", len(self.gl_h1_df), "rows")
 
         m30_rows = math.ceil(total_seconds / (30 * 60)) + 5
@@ -192,7 +193,6 @@ class Inspection:
             end_time=fetch_to,
         )
         self.gl_m30_df = data_response["data"]
-        self.gl_m30_df_r = self.gl_m30_df.sort_index(ascending=False)
         notice.line_send("検証データ取得", self.pair, "M30", len(self.gl_m30_df), "rows")
 
         s5_rows = math.ceil(total_seconds / 5) + 5
@@ -300,11 +300,27 @@ class Inspection:
             try:
                 self.inspect_one_time(target_time)
             except Exception as e:
+                if isinstance(e, candle_quality.CandleHistoryIntegrityError):
+                    self.data_integrity_errors += 1
+                else:
+                    self.other_inspection_errors += 1
+                self.inspection_errors.append(
+                    {
+                        "target_time": target_time,
+                        "error_type": type(e).__name__,
+                        "error": str(e),
+                    }
+                )
                 print("Inspection error:", target_time, e)
             self.send_progress_notice_if_needed(i + 1, len(target_times), target_time)
 
         self.result_df = pd.DataFrame(self.results)
         print("Inspection result rows:", len(self.result_df))
+        print("Inspection data-quality summary")
+        print("- data-not-ready skips:", self.data_not_ready_skips)
+        print("- data-shortage skips:", self.data_shortage_skips)
+        print("- data-integrity errors:", self.data_integrity_errors)
+        print("- other inspection errors:", self.other_inspection_errors)
         self.save_result_data()
         self.print_tp_last_touch_winrate_summary()
         self.print_elapsed_time()
@@ -449,35 +465,35 @@ class Inspection:
         return target_times
 
     def inspect_one_time(self, target_time):
-        analysis_h1_df_r = self.slice_past_df_r(
+        analysis_h1_original_df_r = self.slice_original_df_r(
             self.gl_h1_df,
             target_time,
             250,
         )
-        analysis_m30_df_r = self.slice_past_df_r(
+        analysis_m30_original_df_r = self.slice_original_df_r(
             self.gl_m30_df if not self.gl_m30_df.empty else self.gl_h1_df,
             target_time,
             (self.anaN * 2) + 1,
         )
-        analysis_m5_df_r = self.slice_past_df_r(
+        analysis_m5_original_df_r = self.slice_original_df_r(
             self.gl_d5_df,
             target_time,
-            (self.anaN * 12) + 1,
+            max((self.anaN * 12) + 1, ca.M5_ANALYSIS_BARS + 1),
         )
         self.validate_analysis_boundary(
-            analysis_m5_df_r,
+            analysis_m5_original_df_r,
             target_time,
             datetime.timedelta(minutes=5),
             "M5",
         )
         self.validate_analysis_boundary(
-            analysis_h1_df_r,
+            analysis_h1_original_df_r,
             target_time,
             datetime.timedelta(hours=1),
             "H1",
         )
         self.validate_analysis_boundary(
-            analysis_m30_df_r,
+            analysis_m30_original_df_r,
             target_time,
             (
                 datetime.timedelta(minutes=30)
@@ -486,29 +502,49 @@ class Inspection:
             ),
             "M30",
         )
+        analysis_m5_completed_df_r = ca.candleAnalysis.select_completed_df_r(
+            analysis_m5_original_df_r,
+            target_time,
+            datetime.timedelta(minutes=5),
+        )
+        analysis_h1_completed_df_r = ca.candleAnalysis.select_completed_df_r(
+            analysis_h1_original_df_r,
+            target_time,
+            datetime.timedelta(hours=1),
+        )
+        m30_duration = (
+            datetime.timedelta(minutes=30)
+            if not self.gl_m30_df.empty
+            else datetime.timedelta(hours=1)
+        )
+        analysis_m30_completed_df_r = ca.candleAnalysis.select_completed_df_r(
+            analysis_m30_original_df_r,
+            target_time,
+            m30_duration,
+        )
         inspection_s5_df = self.slice_inspection_s5_df(target_time)
         print(
             "  M5 df:",
-            analysis_m5_df_r.iloc[0]["time_jp"] if len(analysis_m5_df_r) else None,
+            analysis_m5_original_df_r.iloc[0]["time_jp"] if len(analysis_m5_original_df_r) else None,
             "-",
-            analysis_m5_df_r.iloc[-1]["time_jp"] if len(analysis_m5_df_r) else None,
-            len(analysis_m5_df_r),
+            analysis_m5_original_df_r.iloc[-1]["time_jp"] if len(analysis_m5_original_df_r) else None,
+            len(analysis_m5_original_df_r),
             "rows",
         )
         print(
             "  H1 df:",
-            analysis_h1_df_r.iloc[0]["time_jp"] if len(analysis_h1_df_r) else None,
+            analysis_h1_original_df_r.iloc[0]["time_jp"] if len(analysis_h1_original_df_r) else None,
             "-",
-            analysis_h1_df_r.iloc[-1]["time_jp"] if len(analysis_h1_df_r) else None,
-            len(analysis_h1_df_r),
+            analysis_h1_original_df_r.iloc[-1]["time_jp"] if len(analysis_h1_original_df_r) else None,
+            len(analysis_h1_original_df_r),
             "rows",
         )
         print(
             "  M30 df:",
-            analysis_m30_df_r.iloc[0]["time_jp"] if len(analysis_m30_df_r) else None,
+            analysis_m30_original_df_r.iloc[0]["time_jp"] if len(analysis_m30_original_df_r) else None,
             "-",
-            analysis_m30_df_r.iloc[-1]["time_jp"] if len(analysis_m30_df_r) else None,
-            len(analysis_m30_df_r),
+            analysis_m30_original_df_r.iloc[-1]["time_jp"] if len(analysis_m30_original_df_r) else None,
+            len(analysis_m30_original_df_r),
             "rows",
         )
         print(
@@ -520,13 +556,25 @@ class Inspection:
             "rows",
         )
 
-        if len(analysis_h1_df_r) < self.anaN or len(inspection_s5_df) == 0:
-            print("Skip by shortage:", target_time, len(analysis_h1_df_r), len(inspection_s5_df))
+        if (
+                len(analysis_h1_completed_df_r) < self.anaN
+                or len(inspection_s5_df) == 0
+        ):
+            self.data_shortage_skips += 1
+            print(
+                "Skip by shortage:",
+                target_time,
+                len(analysis_h1_completed_df_r),
+                len(inspection_s5_df),
+            )
             return
 
-        current_price = self.current_price_at(target_time, analysis_m5_df_r)
-        h1_cache_key = self.analysis_cache_key(analysis_h1_df_r)
-        m30_cache_key = self.analysis_cache_key(analysis_m30_df_r)
+        current_price, current_price_source = self.current_price_at(
+            target_time,
+            analysis_m5_original_df_r,
+        )
+        h1_cache_key = self.analysis_cache_key(analysis_h1_completed_df_r)
+        m30_cache_key = self.analysis_cache_key(analysis_m30_completed_df_r)
         h1_cached_analysis = self.cached_analysis_value(
             self.h1_analysis_cache,
             h1_cache_key,
@@ -539,30 +587,36 @@ class Inspection:
             self.oa,
             self.pair,
             target_time_jp=target_time,
-            m5_df_r=analysis_m5_df_r,
-            h1_df_r=analysis_h1_df_r,
-            m30_df_r=analysis_m30_df_r,
-            s5_df_r=None,
+            m5_original_df_r=analysis_m5_original_df_r,
+            h1_original_df_r=analysis_h1_original_df_r,
+            m30_original_df_r=analysis_m30_original_df_r,
+            s5_original_df_r=None,
             current_price=current_price,
+            current_price_source=current_price_source,
             h1_analysis_cache=h1_cached_analysis,
             m30_analysis_cache=m30_cached_analysis,
         )
-        if h1_cached_analysis is None:
-            self.h1_analysis_cache = (
-                h1_cache_key,
-                (
-                    candle_analysis_class.peaks_class_hour,
-                    candle_analysis_class.candle_meta_class_hour,
-                ),
-            )
-        if m30_cached_analysis is None:
-            self.m30_analysis_cache = (
-                m30_cache_key,
-                (
-                    candle_analysis_class.peaks_class_m30,
-                    candle_analysis_class.candle_meta_class_m30,
-                ),
-            )
+        if (
+                candle_analysis_class.basic_analysis is None
+                and candle_analysis_class.decision_context_not_ready
+        ):
+            self.data_not_ready_skips += 1
+            return
+        basic_analysis = candle_analysis_class.require_basic_analysis()
+        self.h1_analysis_cache = (
+            h1_cache_key,
+            (
+                basic_analysis.h1_peaks_class,
+                candle_analysis_class.candle_meta_class_hour,
+            ),
+        )
+        self.m30_analysis_cache = (
+            m30_cache_key,
+            (
+                candle_analysis_class.peaks_class_m30,
+                candle_analysis_class.candle_meta_class_m30,
+            ),
+        )
         analysis_result = am.wrap_all_analysis(
             candle_analysis_class,
             None,
@@ -579,7 +633,10 @@ class Inspection:
             return
 
         lines = self.extract_lines(analysis_result)
-        rsi_info = self.build_rsi_info(analysis_m5_df_r, analysis_h1_df_r)
+        rsi_info = self.build_rsi_info(
+            basic_analysis.m5_completed_df_r,
+            basic_analysis.h1_completed_df_r,
+        )
         for line_side, line in lines:
             if not ti.MainAnalysis.is_h1_line_limit_order_target(line_side, line):
                 continue
@@ -1544,16 +1601,16 @@ class Inspection:
         return lines
 
     @staticmethod
-    def build_rsi_info(df_r, h1_df_r=None):
+    def build_rsi_info(m5_completed_df_r, h1_completed_df_r=None):
         upper_border = 67.5
         lower_border = 30
         h1_info = Inspection.build_prefixed_rsi_info(
-            h1_df_r,
+            h1_completed_df_r,
             "h1",
             upper_border,
             lower_border,
         )
-        if len(df_r) <= 3 or "RSI" not in df_r.columns:
+        if len(m5_completed_df_r) < 3 or "RSI" not in m5_completed_df_r.columns:
             return {
                 "rsi_1": None,
                 "rsi_2": None,
@@ -1568,9 +1625,9 @@ class Inspection:
                 **h1_info,
             }
 
-        f_low = df_r.iloc[1]
-        s_low = df_r.iloc[2]
-        t_low = df_r.iloc[3]
+        f_low = m5_completed_df_r.iloc[0]
+        s_low = m5_completed_df_r.iloc[1]
+        t_low = m5_completed_df_r.iloc[2]
         rsi_1 = f_low.get("RSI")
         return {
             "rsi_1": rsi_1,
@@ -1587,7 +1644,12 @@ class Inspection:
         }
 
     @staticmethod
-    def build_prefixed_rsi_info(df_r, prefix, upper_border, lower_border):
+    def build_prefixed_rsi_info(
+            completed_df_r,
+            prefix,
+            upper_border,
+            lower_border,
+    ):
         info = {
             f"{prefix}_rsi_1": None,
             f"{prefix}_rsi_2": None,
@@ -1598,12 +1660,16 @@ class Inspection:
             f"{prefix}_rsi_is_high": None,
             f"{prefix}_rsi_is_low": None,
         }
-        if df_r is None or len(df_r) <= 3 or "RSI" not in df_r.columns:
+        if (
+                completed_df_r is None
+                or len(completed_df_r) < 3
+                or "RSI" not in completed_df_r.columns
+        ):
             return info
 
-        f_low = df_r.iloc[1]
-        s_low = df_r.iloc[2]
-        t_low = df_r.iloc[3]
+        f_low = completed_df_r.iloc[0]
+        s_low = completed_df_r.iloc[1]
+        t_low = completed_df_r.iloc[2]
         rsi_1 = f_low.get("RSI")
         info.update({
             f"{prefix}_rsi_1": rsi_1,
@@ -1742,7 +1808,9 @@ class Inspection:
         return "none", None, None
 
     def required_data_range(self):
-        data_from = self.start_time - datetime.timedelta(hours=self.anaN)
+        data_from = self.start_time - datetime.timedelta(
+            hours=max(self.anaN, M5_PREHISTORY_CALENDAR_HOURS)
+        )
         inspection_seconds = max(self.insN - 1, 0) * 5
         data_to_by_inspection = self.end_time + datetime.timedelta(seconds=inspection_seconds)
         now = datetime.datetime.now().replace(microsecond=0)
@@ -1750,44 +1818,60 @@ class Inspection:
         return data_from, data_to
 
     def required_h1_data_from(self):
-        return self.start_time - datetime.timedelta(hours=max(self.anaN, 250))
+        return self.start_time - datetime.timedelta(
+            hours=max(self.anaN, H1_PREHISTORY_CALENDAR_HOURS)
+        )
 
     @staticmethod
-    def slice_past_df_r(df, target_time, row_count=None):
+    def slice_original_df_r(df, target_time, row_count=None):
         if df is None or df.empty:
             return pd.DataFrame()
         end_index = int(df["time_jp_dt"].searchsorted(target_time, side="right"))
         start_index = 0 if row_count is None else max(0, end_index - row_count)
         return df.iloc[start_index:end_index].iloc[::-1].reset_index(drop=True)
 
-    def current_price_at(self, target_time, analysis_m5_df_r):
+    def current_price_at(self, target_time, analysis_m5_original_df_r):
         if self.gl_s5_df is not None and not self.gl_s5_df.empty:
-            completed_s5_open_time = target_time - datetime.timedelta(seconds=5)
-            end_index = int(
-                self.gl_s5_df["time_jp_dt"].searchsorted(
-                    completed_s5_open_time,
-                    side="right",
-                )
+            s5_price = ca.candleAnalysis.latest_completed_close(
+                self.gl_s5_df,
+                target_time,
+                datetime.timedelta(seconds=5),
             )
-            if end_index > 0:
-                return self.gl_s5_df.iloc[end_index - 1]["close"]
-        return analysis_m5_df_r.iloc[0]["close"]
+            if s5_price is not None:
+                return s5_price, "inspection_s5"
+        m5_price = ca.candleAnalysis.latest_completed_close(
+            analysis_m5_original_df_r,
+            target_time,
+            datetime.timedelta(minutes=5),
+        )
+        if m5_price is None:
+            raise ValueError("no completed candle for inspection current price")
+        return m5_price, "inspection_m5"
 
     @staticmethod
-    def validate_analysis_boundary(df_r, target_time, candle_duration, label):
-        if df_r is None or len(df_r) < 2:
+    def validate_analysis_boundary(
+            original_df_r,
+            target_time,
+            candle_duration,
+            label,
+    ):
+        if original_df_r is None or original_df_r.empty:
             return
-        forming_open_time = df_r.iloc[0]["time_jp_dt"]
-        latest_analysis_open_time = df_r.iloc[1]["time_jp_dt"]
-        if forming_open_time > target_time:
+        original_times = ca.candleAnalysis._frame_times(original_df_r)
+        decision_time = ca.candleAnalysis.normalize_decision_time(target_time)
+        if (original_times > decision_time).any():
             raise ValueError(
-                label + " forming candle starts after target_time: "
-                + str(forming_open_time)
+                label + " original_df_r contains a future candle"
             )
-        if latest_analysis_open_time + candle_duration > target_time:
+        completed_df_r = ca.candleAnalysis.select_completed_df_r(
+            original_df_r,
+            decision_time,
+            candle_duration,
+        )
+        completed_times = ca.candleAnalysis._frame_times(completed_df_r)
+        if (completed_times + candle_duration > decision_time).any():
             raise ValueError(
-                label + " analysis contains incomplete candle: "
-                + str(latest_analysis_open_time)
+                label + " completed_df_r contains an incomplete candle"
             )
 
     def slice_inspection_s5_df(self, target_time):

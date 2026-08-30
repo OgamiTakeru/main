@@ -15,7 +15,9 @@ import fGeneric as gene
 from count2_flip_core import (
     CONDITION_MINIMUM_POSITIVE_PERIODS,
     DEFAULT_BUCKET_SPECS,
+    FC2_SHAPE_FEATURE_FIELDS,
     FEATURE_FIELDS,
+    PAIR_EXCLUDED_FEATURE_FIELDS,
     MINIMUM_CONDITION_TRADES,
     PAIR_BUCKET_OVERRIDES,
     PAIR_MINIMUM_TIER_RR,
@@ -42,6 +44,7 @@ from count2_flip_core import (
     default_tier_execution_configs,
     effective_trade_widths,
     enumerate_conditions,
+    excluded_feature_fields_for_pair,
     minimum_matched_conditions_for_pair,
     minimum_tier_rr_for_pair,
     risk_multiple_profit_lock_for_pair,
@@ -1062,6 +1065,47 @@ class FeatureAndReplayTest(unittest.TestCase):
                 "h1_stair_observed_direction": [0, -1, 1],
             }
         )
+
+    def test_excluded_fields_disappear_from_the_search(self):
+        # 除外した特徴量は、単独でも組み合わせでも候補に出ない。
+        frame = add_feature_buckets(self.feature_frame())
+        full = enumerate_conditions(frame, minimum_candidates=1)
+        trimmed = enumerate_conditions(
+            frame, minimum_candidates=1, excluded_fields=("f_fc2_shape",)
+        )
+        self.assertTrue(
+            any("f_fc2_shape" in c.condition_id for c in full),
+            "除外前は候補に含まれているはず",
+        )
+        self.assertFalse(
+            any("f_fc2_shape" in c.condition_id for c in trimmed)
+        )
+        # 他の特徴量は残る（ALL も含めて減っただけであること）。
+        self.assertLess(len(trimmed), len(full))
+        self.assertTrue(
+            any(c.condition_id.startswith("f_distance_rank=") for c in trimmed)
+        )
+
+    def test_excluded_fields_are_per_pair(self):
+        # 現在はどのペアも除外しない（USD_JPY で外したら悪化したため）。
+        for pair in ("USD_JPY", "AUD_USD", "EUR_USD", None):
+            with self.subTest(pair=pair):
+                self.assertEqual(excluded_feature_fields_for_pair(pair), ())
+        # ペア単位で切り替えられる仕組み自体は残す。
+        with patch.dict(
+            PAIR_EXCLUDED_FEATURE_FIELDS,
+            {"USD_JPY": FC2_SHAPE_FEATURE_FIELDS},
+            clear=False,
+        ):
+            self.assertEqual(
+                excluded_feature_fields_for_pair("USD_JPY"),
+                FC2_SHAPE_FEATURE_FIELDS,
+            )
+            self.assertEqual(
+                excluded_feature_fields_for_pair("usd_jpy"),
+                FC2_SHAPE_FEATURE_FIELDS,
+            )
+            self.assertEqual(excluded_feature_fields_for_pair("AUD_USD"), ())
 
     def test_feature_conditions_are_replayable(self):
         frame = add_feature_buckets(self.feature_frame())

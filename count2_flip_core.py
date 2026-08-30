@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-25 14:59 JST
+# 最新更新日時: 2026-08-29 20:40 JST
 """First-touch rejection helpers for ``flip_predict``.
 
 The causal foot-count-2 snapshot registers a line in its direction of travel.
@@ -12,7 +12,6 @@ Fill and trade fields are labels and are never policy inputs.
 
 from __future__ import annotations
 
-import datetime as dt
 import math
 from dataclasses import asdict, dataclass
 from typing import Any, Iterable, Mapping
@@ -22,6 +21,10 @@ import pandas as pd
 
 import fGeneric as gene
 from count2_resistance_sweep import LimitPathInspector, S5_SECONDS
+from fCandleDataQuality import (
+    is_expected_annual_holiday_closure_gap as _is_expected_annual_holiday_closure_gap,
+    is_expected_market_closed_gap as _is_expected_market_closed_gap,
+)
 from fFootCountShape import add_foot_count2_search_buckets
 
 
@@ -117,6 +120,40 @@ PAIR_MINIMUM_MATCHED_CONDITIONS: dict[str, int] = {
 # failing, so raising it can never leave a pair without a policy.
 DEFAULT_MINIMUM_TIER_RR = 1.4
 PAIR_MINIMUM_TIER_RR: dict[str, float] = {}
+
+
+# 直近ローソクの形を表す特徴量。ライン自体の性質（過去どう扱われてきたか）
+# とは見ているものが違うので、切り分けて比べられるようにまとめてある。
+#
+# 形が効かないという意味ではない。人の判断の痕跡である以上、法則がある期待は
+# もっともで、EUR_USD では上位に入っている。ただ USD_JPY は上位がここに偏り、
+# train は良いが OOS で崩れる（PF 1.72 -> 0.86）。形が崩れているのか、
+# そのペアでは何を使っても崩れるのかを切り分けるために使う。
+FC2_SHAPE_FEATURE_FIELDS = (
+    "f_fc2_shape",
+    "f_fc2_relative_candle_sequence",
+    "f_fc2_second_wick_a",
+    "f_fc2_second_body_ratio",
+    "f_fc2_second_pushback_a",
+)
+
+
+# 条件探索から外す特徴量を、ペアごとに指定する。空なら全て使う。
+# USD_JPY で形状系を外した検証を回すなら、ここに
+# FC2_SHAPE_FEATURE_FIELDS を入れて比べる。
+# 2026-08-28 の実測: USD_JPY で形状系を外すと、train ですら PF 1.72 -> 1.03、
+# OOS は -71円 -> -1408円 と悪化した。外したことで条件が粗くなり（trade 数が
+# 19 -> 252 に激増）、絞り込みが効かなくなったため。USD_JPY では形状系こそが
+# 唯一効いている絞り込み手段で、ライン構造系だけでは機能する条件が無い。
+# よって現在はどのペアも除外しない。
+PAIR_EXCLUDED_FEATURE_FIELDS: dict[str, tuple[str, ...]] = {}
+
+
+def excluded_feature_fields_for_pair(pair: str | None) -> tuple[str, ...]:
+    """そのペアで条件探索から外す特徴量（既定は無し）。"""
+    if not pair:
+        return ()
+    return PAIR_EXCLUDED_FEATURE_FIELDS.get(str(pair).upper(), ())
 
 
 def minimum_tier_rr_for_pair(pair: str | None) -> float:
@@ -234,70 +271,6 @@ DEFAULT_TIER_RR = {
     TIER_MIDDLE: 1.5,
     TIER_LOW: 1.5,
 }
-
-
-def _is_expected_annual_holiday_closure_gap(
-    previous_time: pd.Timestamp,
-    next_time: pd.Timestamp,
-) -> bool:
-    """Recognize only Christmas/New-Year closures joined to weekends."""
-    previous_jst = pd.Timestamp(previous_time)
-    next_jst = pd.Timestamp(next_time)
-    if previous_jst.tzinfo is None:
-        previous_jst = previous_jst.tz_localize("Asia/Tokyo")
-    else:
-        previous_jst = previous_jst.tz_convert("Asia/Tokyo")
-    if next_jst.tzinfo is None:
-        next_jst = next_jst.tz_localize("Asia/Tokyo")
-    else:
-        next_jst = next_jst.tz_convert("Asia/Tokyo")
-
-    previous_ny = previous_jst.tz_convert("America/New_York")
-    next_ny = next_jst.tz_convert("America/New_York")
-    gap = next_ny - previous_ny
-    if gap < pd.Timedelta(hours=12) or gap > pd.Timedelta(hours=96):
-        return False
-    rollover_start = dt.time(16, 30)
-    rollover_end = dt.time(17, 30)
-    if not (
-        rollover_start <= previous_ny.time() <= rollover_end
-        and rollover_start <= next_ny.time() <= rollover_end
-    ):
-        return False
-
-    def is_holiday(day: dt.date) -> bool:
-        if (day.month, day.day) in {(1, 1), (12, 25)}:
-            return True
-        if day.weekday() == 4:
-            following = day + dt.timedelta(days=1)
-            return (following.month, following.day) in {(1, 1), (12, 25)}
-        if day.weekday() == 0:
-            previous = day - dt.timedelta(days=1)
-            return (previous.month, previous.day) in {(1, 1), (12, 25)}
-        return False
-
-    day = previous_ny.date() + dt.timedelta(days=1)
-    final_day = next_ny.date()
-    holiday_seen = False
-    while day <= final_day:
-        holiday = is_holiday(day)
-        holiday_seen = holiday_seen or holiday
-        if day.weekday() < 5 and not holiday:
-            return False
-        day += dt.timedelta(days=1)
-    return holiday_seen
-
-
-def _is_expected_market_closed_gap(
-    previous_time: pd.Timestamp,
-    next_time: pd.Timestamp,
-) -> bool:
-    return bool(
-        LimitPathInspector._is_expected_market_closed_gap(
-            pd.Timestamp(previous_time), pd.Timestamp(next_time)
-        )
-        or _is_expected_annual_holiday_closure_gap(previous_time, next_time)
-    )
 
 
 @dataclass(frozen=True)
@@ -3004,10 +2977,18 @@ def enumerate_conditions(
     frame: pd.DataFrame,
     *,
     minimum_candidates: int = 100,
+    excluded_fields: Iterable[str] = (),
 ) -> list[PolicyCondition]:
-    """Exhaust every observed value and every cross-field value pair."""
+    """Exhaust every observed value and every cross-field value pair.
+
+    ``excluded_fields`` に挙げた特徴量は、単独でも組み合わせでも候補に
+    しない。どの系統が効いているかを切り分けるために使う。
+    """
+    excluded = frozenset(excluded_fields)
     conditions = [PolicyCondition("ALL", "All eligible flip_predict lines")]
     for field in FEATURE_FIELDS:
+        if field in excluded:
+            continue
         counts = frame[field].astype(str).value_counts(dropna=False)
         for value, count in counts.items():
             if int(count) < minimum_candidates:
@@ -3017,6 +2998,8 @@ def enumerate_conditions(
                 PolicyCondition(condition_id, condition_id, ((field, str(value)),))
             )
     for left, right in FEATURE_INTERACTION_PAIRS:
+        if left in excluded or right in excluded:
+            continue
         counts = (
             frame.groupby([left, right], dropna=False)
             .size()

@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-25 22:05 JST
+# 最新更新日時: 2026-08-29 20:40 JST
 import copy
 import datetime  # 日付関係
 import json
@@ -17,6 +17,7 @@ from oandapyV20.endpoints.pricing import PricingInfo
 from oandapyV20.endpoints.trades import TradeCRCDO, TradeDetails, TradeClose, OpenTrades
 import oandapyV20.endpoints.transactions as trans
 import fGeneric as gene
+from fCandleDataQuality import oanda_market_open_mask
 
 import tokens as tk  # エラーをLINEするため。。
 import send_notice as notice
@@ -59,26 +60,7 @@ def _oanda_daily_break_mask(times):
 
 def _oanda_market_open_mask(times):
     """Return whether each S5 timestamp is inside regular OANDA FX hours."""
-    local = times.tz_convert("America/New_York")
-    weekday = local.weekday
-    seconds = local.hour * 3600 + local.minute * 60 + local.second
-    daily_pause_start = 16 * 3600 + 59 * 60
-    daily_pause_end = 17 * 3600 + 5 * 60
-    monday_to_thursday = weekday < 4
-    friday = weekday == 4
-    sunday = weekday == 6
-    return np.asarray(
-        (
-            monday_to_thursday
-            & ~(
-                (seconds >= daily_pause_start)
-                & (seconds < daily_pause_end)
-            )
-        )
-        | (friday & (seconds < daily_pause_start))
-        | (sunday & (seconds >= daily_pause_end)),
-        dtype=bool,
-    )
+    return oanda_market_open_mask(times)
 
 
 def fill_s5_no_tick_candles(
@@ -472,6 +454,8 @@ class Oanda:
             data_df = pd.DataFrame(res_json['candles'])  # Jsonの一部(candles)をDataframeに変換
             data_df['time_jp'] = data_df.apply(lambda x: iso_to_jstdt(x, 'time'), axis=1)  # 日本時刻の表示
             data_df = self._complete_s5_no_tick_rows(data_df, params)
+            # add_basic_data は OANDA の complete 列を削除するため、解析共有用に残す。
+            data_df['is_complete'] = data_df['complete'].eq(True)
             data_df = add_basic_data(data_df, gene.currency_pair(instrument))  # 【関数/必須】基本項目を追加する
             data_df = add_rsi(data_df)
             data_df = add_bb_data(data_df, gene.currency_pair(instrument))
@@ -555,6 +539,8 @@ class Oanda:
         if candles.empty:
             raise ValueError("指定期間内にローソクがありません")
         # 解析用の列を追加する（不要列の削除も含む）
+        # add_basic_data は OANDA の complete 列を削除するため、解析共有用に残す。
+        candles['is_complete'] = candles['complete'].eq(True)
         data_df = add_basic_data(candles, gene.currency_pair(pair))  # 【関数/必須】基本項目を追加する
         data_df = add_rsi(data_df)
         # data_df = add_ema_data(data_df)
@@ -697,12 +683,17 @@ class Oanda:
             return e_info
 
     # (7)オーダーを全てキャンセル
-    def OrderCancel_All_exe(self):
+    def OrderCancel_All_exe(self, pair=None):
         """
-        現在発行している、「新規にポジションを取るための注文」を全てキャンセルする。
+        現在発行している、「新規にポジションを取るための注文」をキャンセルする。
         すでに所持しているポジションへのロスカ、利確、トレールの注文はキャンセルされない。
         (各ポジションのロスカや利確注文は削除しない（TPとLCを指値時に設定した場合、ポジションと同時にTP/LCオーダーが入る。）
         APIで「新規ポジションを取るための注文」はtypeがLimitかStopとなっており、それで上記を判定している）
+
+        :param pair: 通貨ペア名を渡すと、その通貨の注文だけを対象にする。
+                     省略した場合は口座全体（従来どおりの挙動）。
+                     通貨ごとにプロセスを分けて動かす場合、片方の再起動で
+                     もう片方の注文まで消さないために指定する。
         :return:
         """
         open_df_dic = self.OrdersPending_exe()
@@ -712,6 +703,12 @@ class Oanda:
             return open_df_dic
         else:
             open_df = open_df_dic['data']
+            if pair is not None:
+                if 'instrument' not in open_df.columns:
+                    # 対象を絞れないなら、他の通貨まで消さないよう何もしない。
+                    print("  instrument列が無いためキャンセルを見送り:", pair)
+                    return close_df
+                open_df = open_df[open_df['instrument'] == pair]
             for index, row in open_df.iterrows():
                 # たまに変わるため注意。23年１月現在、利確ロスカ注文はtype = STOP_LOSS TAKE_PROFIT
                 # 新規ポジション取得は、逆張りの場合、MARKET_IF_TOUCHED
@@ -941,12 +938,15 @@ class Oanda:
             return e_info
 
     # (11)オーダーの一覧（新規トレード待ちのみ）を取得
-    def OrdersWaitPending_exe(self):
+    def OrdersWaitPending_exe(self, pair=None):
         """
         注文の一覧を取得。
         ただし、新規にポジションを取得するための注文(typeがLimitかStopの物)のみ。
         typeがそれ以外の場合、ロスカット注文や利確注文の為、削除しない。
         ＜参考＞「新規のポジションを取得するための注文」は、APIではtypeがLimitかStopとなっている
+
+        :param pair: 通貨ペア名を渡すと、その通貨の注文だけを返す。
+                     省略した場合は口座全体（従来どおりの挙動）。
         :return:
         """
         start_time = datetime.datetime.now().replace(microsecond=0)  # エラー頻発の為、ログ
@@ -971,6 +971,12 @@ class Oanda:
                         # typeが利確やロスカ、トレール注文の場合は一覧には乗せない
                         del_target.append(index)  # 消す対象をリスト化
                 res_df.drop(index=del_target, inplace=True)  # 不要な行を削除（IMITとSTOPのみが対象）
+                if pair is not None:
+                    if 'instrument' not in res_df.columns:
+                        # 絞れないなら、他通貨を含んだ一覧を「その通貨の結果」
+                        # として返さない。判定側が誤らないよう空で返す。
+                        return {"data": res_df.iloc[0:0], "error": 0}
+                    res_df = res_df[res_df['instrument'] == pair]
                 return {"data": res_df, "error": 0}
 
         except Exception as e:

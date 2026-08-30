@@ -1,12 +1,10 @@
-# 最新更新日時: 2026-08-27 JST
+# 最新更新日時: 2026-08-30 13:17:58 JST
 """Frozen per-pair live policies for ``flip_predict``, loaded from artifacts.
 
-The live service must trade exactly the policy that was selected on train and
-verified on the following out-of-sample year -- never a hand-typed variant of
-it.  Each policy here is therefore read from its analysis artifact at import
-time and checked against the SHA-256 that was recorded when the policy was
-approved, so editing the artifact, or pointing at a newer one, fails loudly
-instead of silently changing what the account trades.
+Conditions, ranks and watch behavior are read from the train/OOS artifact and
+checked against its approved SHA-256.  Any deliberate live-only TP/LC override
+is declared explicitly in ``LIVE_TRADE_WIDTHS_A`` and is included in the
+policy fingerprint, so it cannot change silently.
 
 To adopt a newly verified artifact: rerun the analysis, confirm the
 out-of-sample result, then update that pair's ``artifact_sha256`` below.
@@ -35,6 +33,17 @@ TRAIN_START = dt.datetime(2023, 7, 30)
 TRAIN_END = dt.datetime(2025, 7, 30)
 OOS_START = dt.datetime(2025, 7, 30)
 OOS_END = dt.datetime(2026, 7, 30)
+
+# 本番注文だけに適用する通貨別のA倍率。条件・監視方法は検証済み
+# アーティファクトから読み、USD_JPYの利確・損切り幅だけを固定する。
+LIVE_TRADE_WIDTHS_A: dict[str, tuple[float, float]] = {
+    # pair: (TP A, LC A)
+    "USD_JPY": (1.2, 1.0),
+}
+
+# USD_JPYはTP=1.2Rなので、共通の+1.2R到達後LC引き上げはTPと同時になる。
+# 到達前に働かない処理を持たせず、指定されたTP/LCだけで管理する。
+LIVE_PROFIT_LOCK_DISABLED_PAIRS = frozenset({"USD_JPY"})
 
 
 def artifact_path(pair: str, folder: Path | None = None) -> Path:
@@ -138,6 +147,24 @@ def load_pair_policy(
         RankedPolicyCondition.from_dict(item)
         for item in artifact["selected_top_conditions"]
     )
+    tier_configs = tuple(
+        TierExecutionConfig.from_dict(item)
+        for item in artifact["tier_execution_configs"]
+    )
+    width_override = LIVE_TRADE_WIDTHS_A.get(pair)
+    if width_override is not None:
+        tp_a, lc_a = width_override
+        tier_configs = tuple(
+            TierExecutionConfig(
+                tier=config.tier,
+                first_rank=config.first_rank,
+                last_rank=config.last_rank,
+                tp_a=tp_a,
+                rr=tp_a / lc_a,
+                min_range_filter_pips=config.min_range_filter_pips,
+            )
+            for config in tier_configs
+        )
     expected_count = int(artifact["top_condition_limit"])
     if len(ranked) != expected_count:
         raise ValueError(
@@ -150,10 +177,7 @@ def load_pair_policy(
         state_filename=state_filename,
         artifact_sha256=artifact_sha256.upper(),
         ranked_conditions=ranked,
-        tier_configs=tuple(
-            TierExecutionConfig.from_dict(item)
-            for item in artifact["tier_execution_configs"]
-        ),
+        tier_configs=tier_configs,
         watch_config=FlipWatchEntryConfig.from_dict(
             artifact["execution"]["watch_entry"]
         ),
@@ -165,11 +189,13 @@ def load_pair_policy(
                 trigger_r=float(lock_spec["trigger_r"]),
                 result_r=float(lock_spec["result_r"]),
             )
-            if lock_spec
+            if lock_spec and pair not in LIVE_PROFIT_LOCK_DISABLED_PAIRS
             else None
         ),
         profit_lock_tiers=frozenset(
-            top_policy.get("risk_multiple_profit_lock_tiers") or ()
+            ()
+            if pair in LIVE_PROFIT_LOCK_DISABLED_PAIRS
+            else top_policy.get("risk_multiple_profit_lock_tiers") or ()
         ),
     )
 
@@ -180,10 +206,16 @@ def load_pair_policy(
 #   EUR_USD  OOS n=50  win 50.0%  PF 1.10  +121 yen
 #   AUD_USD  OOS n=51  win 52.9%  PF 1.25  +271 yen
 #
-# USD_JPY is deliberately absent: its conditions barely overlap, so the
-# agreement threshold leaves it with almost no trades.  See
-# memo/flip_predict_todo.md before adding it.
+# USD_JPYは条件一致数3以上の既存v19アーティファクトを使い、2026-08-30の
+# 運用指定により注文幅だけTP=1.2A / LC=1.0Aへ固定する。
 APPROVED_PAIRS: dict[str, dict[str, str]] = {
+    "USD_JPY": {
+        "owner_tag": "flip_predict_usd",
+        "state_filename": "flip_predict_usd_jpy_v19.json",
+        "artifact_sha256": (
+            "FC084A81A081DBA95D13D2C2908D6D7B0C9896CB6F7B1DF4B3AA79EE3CBF1B5A"
+        ),
+    },
     "EUR_USD": {
         "owner_tag": "flip_predict_eur",
         "state_filename": "flip_predict_eur_usd_v19.json",

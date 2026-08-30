@@ -25,12 +25,33 @@ class OpposingPositionPolicy:
             **self.PAIR_OVERRIDES.get(pair, {}),
         }
 
+    @staticmethod
+    def _owner_tag(trade):
+        """建玉に付いている所有タグを読む（無ければ None）。"""
+        extensions = trade.get("clientExtensions")
+        if not isinstance(extensions, dict):
+            return None
+        tag = extensions.get("tag")
+        return str(tag) if tag is not None else None
+
+    @classmethod
+    def is_protected(cls, trade):
+        """所有タグ付きの建玉は、他の注文の都合で触ってはいけない。
+
+        タグ付きの建玉は、それを出した解析が自分の決済条件（利確・損切り・
+        保有時間）で最後まで面倒を見る前提で建てられている。別の注文の
+        逆ポジ判定でここを決済すると、その前提が崩れる。両建てのまま
+        並走させ、決済は持ち主に任せる。
+        """
+        return cls._owner_tag(trade) is not None
+
     def evaluate(self, order_plan, open_trades):
         direction = self._sign(order_plan.get("direction"))
         opposite = [
             trade for trade in open_trades
             if trade.get("instrument") == self.pair
             and self._sign(trade.get("currentUnits")) == -direction
+            and not self.is_protected(trade)
         ]
         if not opposite:
             return self._decision("allow", "no_opposite_position", [])

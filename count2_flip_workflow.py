@@ -2988,7 +2988,20 @@ def summarize_conditions(
 def replay_condition(
     frame: pd.DataFrame,
     condition: PolicyCondition,
+    *,
+    one_at_a_time: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """条件に合うイベントを、実際のライフサイクル順に再生する。
+
+    ``one_at_a_time`` が True（既定）なら、待機中または保有中の一件が
+    片付くまで後続のシグナルを見送る。これは flip 専用サービスが自分の
+    状態だけを見ていた頃の挙動で、これまでの検証成績はすべてこの前提で
+    出ている。
+
+    False にすると見送りをやめ、発生したシグナルをすべて取る。ポジションを
+    スロットで管理するようになり同時保有が可能になったため、その場合の
+    成績を測るための切り替え。実運用と検証を揃えるにはこちらを使う。
+    """
     mask = condition_mask(frame, condition)
     eligible = frame.loc[mask].copy()
     eligible.sort_values(
@@ -3007,7 +3020,11 @@ def replay_condition(
     for _event_id, group in eligible.groupby("event_id", sort=False):
         event_count += 1
         decision_time = pd.Timestamp(group.iloc[0]["decision_time"])
-        if not pd.isna(locked_until) and decision_time < locked_until:
+        if (
+            one_at_a_time
+            and not pd.isna(locked_until)
+            and decision_time < locked_until
+        ):
             skipped_while_locked += 1
             continue
         candidate = group.sort_values(

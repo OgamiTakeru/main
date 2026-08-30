@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-29 19:28 JST
+
 import copy
 
 import fGeneric as gene
@@ -264,7 +266,7 @@ class LineOrderCoordinator:
             return None
 
         candle_analysis = getattr(self.analysis, "candle_analysis_all", None)
-        frame = getattr(candle_analysis, "d5_df_r", None)
+        frame = getattr(candle_analysis, "m5_completed_df_r", None)
         if frame is None or frame.empty:
             return None
         time_column = (
@@ -346,7 +348,7 @@ class LineOrderCoordinator:
     ):
         """Attach the effective last line reach using completed M5 only."""
         candle_analysis = getattr(self.analysis, "candle_analysis_all", None)
-        frame = getattr(candle_analysis, "d5_df_r", None)
+        frame = getattr(candle_analysis, "m5_completed_df_r", None)
         for candidate in candidates:
             candidate.update(
                 predict_reversal_last_reach_context(
@@ -1230,8 +1232,12 @@ class LineOrderCoordinator:
         order_plan["tp_touch_history_coverage_minutes"] = None
 
         candle_analysis = getattr(self.analysis, "candle_analysis_all", None)
-        h1_df_r = getattr(candle_analysis, "h1_df_r", None)
-        if h1_df_r is None or h1_df_r.empty:
+        h1_completed_df_r = getattr(
+            candle_analysis,
+            "h1_completed_df_r",
+            None,
+        )
+        if h1_completed_df_r is None or h1_completed_df_r.empty:
             return
 
         try:
@@ -1243,7 +1249,7 @@ class LineOrderCoordinator:
         if direction not in (-1, 1):
             return
 
-        candles = h1_df_r.copy()
+        candles = h1_completed_df_r.copy()
         if "time_jp_dt" in candles.columns:
             candle_times = pd.to_datetime(candles["time_jp_dt"], errors="coerce")
         elif "time_jp" in candles.columns:
@@ -1619,14 +1625,7 @@ class MainAnalysis:
         print(" ■メインアナリシス", mode)
 
         # ■■■基本情報の取得
-        if mode == "live":
-            from_i = 0
-            self.mode = "live"
-            from_i_price = 0  #
-        else:
-            from_i = 1
-            self.mode = "inspection"
-            from_i_price = 1
+        self.mode = mode
         self.position_control_class = position_control_class
         self.line_send_exe = this_file_line_send
         self.line_send_mes = ""
@@ -1635,20 +1634,23 @@ class MainAnalysis:
         self.oa = candle_analysis.base_oa
 
         self.candle_analysis_all = candle_analysis
+        self.basic_analysis = candle_analysis.require_basic_analysis()
 
         self.ca5 = candle_analysis.candle_meta_class  # peaks以外の部分。cal_move_ave関数を使う用
-        self.peaks_class = candle_analysis.peaks_class  # peaks_classだけを抽出
-        self.df_r_m5 = candle_analysis.d5_df_r[1:]  # 5分足はひとつ前ので固定！！（Liveでも）
+        self.peaks_class = self.basic_analysis.m5_peaks_class
+        self.m5_completed_df_r = self.basic_analysis.m5_completed_df_r
 
         self.ca60 = candle_analysis.candle_meta_class_hour
-        self.peaks_class_hour = candle_analysis.peaks_class_hour
-        self.df_r_h1 = candle_analysis.h1_df_r[from_i:]
+        self.peaks_class_hour = self.basic_analysis.h1_peaks_class
+        self.h1_completed_df_r = self.basic_analysis.h1_completed_df_r
 
         self.ca30 = candle_analysis.candle_meta_class_m30
         self.peaks_class_m30 = candle_analysis.peaks_class_m30
-        self.df_r_m30 = candle_analysis.d30_df_r[from_i:]
+        self.m30_completed_df_r = candle_analysis.m30_completed_df_r
 
-        self.current_time = candle_analysis.d5_df_r.iloc[0]['time_jp']  # 5分足で判断(0行目を利用）
+        self.current_time = pd.Timestamp(
+            candle_analysis.decision_time
+        ).strftime("%Y/%m/%d %H:%M:%S")
         self.current_price = candle_analysis.current_price  # candleAnalysisからとる（本番の場合はAPIで最新、解析の場合はclose価格)
         self.mode = mode  # 検証かどうか
         self.pair = getattr(candle_analysis, "pair", "USD_JPY")
@@ -2241,12 +2243,12 @@ class MainAnalysis:
             f"{prefix}_rsi_is_high": None,
             f"{prefix}_rsi_is_low": None,
         }
-        if df_r is None or len(df_r) <= 3 or "RSI" not in df_r.columns:
+        if df_r is None or len(df_r) < 3 or "RSI" not in df_r.columns:
             return keys
 
-        f_low = df_r.iloc[1]
-        s_low = df_r.iloc[2]
-        t_low = df_r.iloc[3]
+        f_low = df_r.iloc[0]
+        s_low = df_r.iloc[1]
+        t_low = df_r.iloc[2]
         rsi_1 = f_low.get("RSI")
         keys.update({
             f"{prefix}_rsi_1": rsi_1,
@@ -2271,13 +2273,12 @@ class MainAnalysis:
         global gl_previous_bb_h1_class
 
         s = self.s
-        df_r = self.df_r_m5  # 場合によって0が消されているdf_r
-        candle_analysis = self.candle_analysis_all
+        m5_completed_df_r = self.m5_completed_df_r
         peaks = self.peaks_class.peaks_original
         peaks_skip = self.peaks_class.skipped_peaks_hard
         mode = self.mode
         # 変数化（BB）
-        df_h1_row = candle_analysis.h1_df_r.iloc[0]
+        df_h1_row = self.h1_completed_df_r.iloc[0]
         bb_h1_class = self.bb_h1_class
         bb_m5_class = self.bb_m5_class
 
@@ -2361,12 +2362,12 @@ class MainAnalysis:
             # ５分足の場合
             peaks_class = self.peaks_class
             peaks = self.peaks_class.peaks_original
-            df = self.peaks_class.df_r_original  # これは
+            completed_df_r = self.m5_completed_df_r
         else:
             # 30分足の場合
             peaks_class = self.peaks_class_m30
             peaks = self.peaks_class_m30.peaks_original  # self.peaks_class.peaks_original
-            df = self.peaks_class_m30.df_r_original  # self.peaks_class.df_r_original  # これは
+            completed_df_r = self.peaks_class_m30.completed_df_r
 
             # ３０分足の場合は、３０分に１回実行
             dt = datetime.strptime(self.current_time, '%Y/%m/%d %H:%M:%S')
@@ -2382,10 +2383,10 @@ class MainAnalysis:
         # ■RSI
         upper_border = 67.5
         lower_border = 30
-        # print(df[['time_jp', 'RSI']].head(15))
-        f_low = df.iloc[1]
-        s_low = df.iloc[2]  # ひとつ前の足
-        t_low = df.iloc[3]  # ふたつ前の足
+        # print(completed_df_r[['time_jp', 'RSI']].head(15))
+        f_low = completed_df_r.iloc[0]
+        s_low = completed_df_r.iloc[1]
+        t_low = completed_df_r.iloc[2]
         print("    RSI", f_low['time_jp'], f_low['RSI'], "-", s_low['time_jp'],s_low['RSI'] )
         if f_low['RSI'] >= upper_border and s_low['RSI'] >= upper_border:
             print("    2個連続でRSI越えている")
@@ -2426,7 +2427,7 @@ class MainAnalysis:
         }
         rsi_info.update(self.build_timeframe_rsi_info(
             "h1",
-            self.candle_analysis_all.h1_df_r,
+            self.h1_completed_df_r,
             upper_border,
             lower_border,
         ))
@@ -2437,13 +2438,10 @@ class MainAnalysis:
             line_class_h1_l,
             line_class_h1_s,
             current_price,
-            df.iloc[0]['time_jp'],
+            self.current_time,
             rsi_info,
         )
         result = self.compare_lines(line_class_h1_l, line_class_h1_s, threshold=0.5)
-        peaks_h1 = self.candle_analysis_all.peaks_class_hour.peaks_original
-        # gene.print_peaks(peaks_h1)
-
         # ■RSI と Line 総強度による追加判定
         order_pattern = 0
 
@@ -2604,13 +2602,7 @@ class LineStrengthCal:
         print("  ")
         print("  抵抗線計算クラス 時間範囲(足数)", time_before_foot_count, "足", foot)
         # ■■■基本情報の取得
-        mode = "live"
-        if mode == "live":
-            from_i = 0
-            self.mode = "live"
-        else:
-            from_i = 1
-            self.mode = "inspection"
+        self.mode = getattr(candle_analysis_class, "analysis_mode", "live")
         self.s = "     "
         self.foot = foot
         self.max_line_price_gap_pips = None
@@ -2618,50 +2610,53 @@ class LineStrengthCal:
         self.p = gene.currency_pair(self.pair)
         self.candle_analysis_class = candle_analysis_class  # ローソク情報の全て
         self.time_before_foot_count = time_before_foot_count
+        self.basic_analysis = candle_analysis_class.require_basic_analysis()
 
         # 各足でのローソク情報
         self.candle_meta_m5 = candle_analysis_class.candle_meta_class  # peaks以外の部分。cal_move_ave関数を使う用
-        self.peaks_class_m5 = candle_analysis_class.peaks_class  # peaks_classだけを抽出
+        self.peaks_class_m5 = self.basic_analysis.m5_peaks_class
         self.peaks_m5 = self.peaks_class_m5.peaks_original
-        self.df_r_m5 = candle_analysis_class.d5_df_r[1:]  # 5分足はひとつ前ので固定！！（Liveでも）
+        self.m5_completed_df_r = self.basic_analysis.m5_completed_df_r
 
         self.candle_meta_h1 = candle_analysis_class.candle_meta_class_hour
-        self.peaks_class_h1 = candle_analysis_class.peaks_class_hour
-        self.peaks_h1 = candle_analysis_class.peaks_class_hour.peaks_original
-        self.df_r_h1 = candle_analysis_class.h1_df_r[from_i:]
+        self.peaks_class_h1 = self.basic_analysis.h1_peaks_class
+        self.peaks_h1 = self.peaks_class_h1.peaks_original
+        self.h1_completed_df_r = self.basic_analysis.h1_completed_df_r
 
         self.candle_meta_m30 = candle_analysis_class.candle_meta_class_m30
         self.peaks_class_m30 = candle_analysis_class.peaks_class_m30
         self.peaks_m30 = candle_analysis_class.peaks_class_m30.peaks_original
-        self.df_r_m30 = candle_analysis_class.d30_df_r[from_i:]
+        self.m30_completed_df_r = candle_analysis_class.m30_completed_df_r
 
 
         # この関数で使う基本を入れておく
         if foot == "m5":
             self.peaks_class = self.peaks_class_m5
             self.peaks = self.peaks_m5
-            self.df_r = self.df_r_m5
+            self.analysis_df_r = self.m5_completed_df_r
             self.threshold = 1
             self.max_line_price_gap_pips = 2
         elif foot == "h1":
             self.peaks_class = self.peaks_class_h1
             self.peaks = self.peaks_h1
-            self.df_r = self.df_r_h1
+            self.analysis_df_r = self.h1_completed_df_r
             self.threshold = 2.5
         elif foot == "m30":
             self.peaks_class = self.peaks_class_m30
             self.peaks = self.peaks_m30
-            self.df_r = self.df_r_m30
+            self.analysis_df_r = self.m30_completed_df_r
             self.threshold = 3
 
         self.min_line_peak_strength = 2
-        self.current_time = candle_analysis_class.d5_df_r.iloc[0]['time_jp']  # 5分足で判断(0行目を利用）
+        self.current_time = pd.Timestamp(
+            candle_analysis_class.decision_time
+        ).strftime("%Y/%m/%d %H:%M:%S")
         self.current_price = candle_analysis_class.current_price  # candleAnalysisからとる（本番の場合はAPIで最新、解析の場合はclose価格)
         self.latest_peak_dir = self.peaks[0]['direction']
 
         # lines_wrap_up関数で算出する変数
         self.filtered_peaks = []  # 指定の時間までのピークス
-        self.filterd_df = None  # 指定の時間までのDF
+        self.filtered_df_r = None  # 指定の時間までの逆順DF
         self.upper_lines = []
         self.lower_lines = []
         self.tp_lines = []
@@ -2753,7 +2748,12 @@ class LineStrengthCal:
         line["line_single_role_last_touch_time"] = None
         line["line_single_role_last_touch_elapsed_minutes"] = None
         line["line_single_role_last_touch_bars"] = None
-        if not peaks or not line_price or self.df_r is None or self.df_r.empty:
+        if (
+                not peaks
+                or not line_price
+                or self.analysis_df_r is None
+                or self.analysis_df_r.empty
+        ):
             return
 
         time_format = "%Y/%m/%d %H:%M:%S"
@@ -2774,7 +2774,7 @@ class LineStrengthCal:
             1,
         )
 
-        candles = self.df_r.copy()
+        candles = self.analysis_df_r.copy()
         candle_times = pd.to_datetime(candles["time_jp"], format=time_format)
         candles = candles.assign(line_event_time=candle_times)
         candles = candles[
@@ -2834,14 +2834,14 @@ class LineStrengthCal:
         # 例えば、ラインの近さと、直近の価格の動きから、どのラインが効いているかを分析してみる
         # 直近の価格の動きは、例えば、直近の数本のローソク足の高値と安値から見てみる
         print("    LINES分析")
-        df_filterd = self.filterd_df
+        filtered_df_r = self.filtered_df_r
         all_lines = self.all_lines
 
         # peaksの中で最高値、最低を取得する
-        self.max_inner_high = df_filterd['inner_high'].max()
-        self.max_highest = df_filterd['high'].max()
-        self.min_inner_low = df_filterd['inner_low'].min()
-        self.min_lowest = df_filterd['low'].min()
+        self.max_inner_high = filtered_df_r['inner_high'].max()
+        self.max_highest = filtered_df_r['high'].max()
+        self.min_inner_low = filtered_df_r['inner_low'].min()
+        self.min_lowest = filtered_df_r['low'].min()
         self.df_high_low_range = self.p.price_to_pips(self.max_highest - self.min_lowest)  # 価格で計算後、pipsで保存する
         print("     最高値", self.max_inner_high, "(", self.max_highest, ")", "最低値", self.min_inner_low, "(", self.min_lowest, ")")
  
@@ -2926,9 +2926,15 @@ class LineStrengthCal:
             threshold = self.threshold
         
         # ★Peaksを絞り込み(指定の直近の足数でフィルタ。土日挟むと時間指定がおかしくなるので足数。足数から時間を算出)
-        df_filterd = self.df_r[0:time_before_foot_count]
-        oldest_time = datetime.strptime(df_filterd.iloc[-1]['time_jp'], "%Y/%m/%d %H:%M:%S")
-        current_time = datetime.strptime(self.df_r.iloc[0]['time_jp'], "%Y/%m/%d %H:%M:%S")
+        filtered_df_r = self.analysis_df_r[0:time_before_foot_count]
+        oldest_time = datetime.strptime(
+            filtered_df_r.iloc[-1]['time_jp'],
+            "%Y/%m/%d %H:%M:%S",
+        )
+        current_time = datetime.strptime(
+            self.analysis_df_r.iloc[0]['time_jp'],
+            "%Y/%m/%d %H:%M:%S",
+        )
         time_diff = (current_time - oldest_time).total_seconds() / 3600  # 時間差を時間単位で計算
         border_time = datetime.strptime(self.current_time, '%Y/%m/%d %H:%M:%S') - timedelta(hours=time_diff)  # peakを算出するための
         peaks = [  # peakを時間で絞る（絶対必要）
@@ -2951,7 +2957,7 @@ class LineStrengthCal:
         ]
         print("    Line peak strength filter", self.min_line_peak_strength, peaks_before_strength_filter, "->", len(peaks))
         self.filtered_peaks = peaks
-        self.filterd_df = df_filterd
+        self.filtered_df_r = filtered_df_r
 
         # ラインの処理
         print("    Line探索の基準価格",base_price, "直近ピーク方向", self.latest_peak_dir, "時間最後", border_time, "time_DIFF", time_diff)

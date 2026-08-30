@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-29 15:38 JST
+
 import datetime as dt
 import tempfile
 import unittest
@@ -355,14 +357,30 @@ class FutureLeakGuardTest(unittest.TestCase):
         captured = []
 
         class FakePeaks:
-            def __init__(self, snapshot, granularity, current_price, pair=None):
-                captured.append(snapshot.copy())
+            def __init__(
+                    self,
+                    original_df_r,
+                    granularity,
+                    current_price,
+                    pair=None,
+                    *,
+                    completed_df_r,
+                    decision_time,
+            ):
+                captured.append(
+                    {
+                        "original_df_r": original_df_r.copy(),
+                        "completed_df_r": completed_df_r.copy(),
+                        "decision_time": pd.Timestamp(decision_time),
+                    }
+                )
+                self.analysis_df_r = completed_df_r.copy()
                 self.peaks_original = [
                     {
                         "count": 2,
                         "direction": 1,
-                        "latest_time_jp": snapshot.iloc[1]["time_jp"],
-                        "oldest_time_jp": snapshot.iloc[2]["time_jp"],
+                        "latest_time_jp": completed_df_r.iloc[0]["time_jp"],
+                        "oldest_time_jp": completed_df_r.iloc[1]["time_jp"],
                         "peak": current_price,
                         "latest_body_peak_price": current_price,
                         "peak_strength": 5,
@@ -406,14 +424,19 @@ class FutureLeakGuardTest(unittest.TestCase):
             second_result["candidates"][0]["line_price"],
         )
         decision_time = first.iloc[180]["time_jp_dt"]
-        for snapshot in captured:
-            self.assertEqual(snapshot.iloc[0]["time_jp_dt"], decision_time)
+        for frames in captured:
+            self.assertEqual(frames["decision_time"], decision_time)
+            original_df_r = frames["original_df_r"]
+            completed_df_r = frames["completed_df_r"]
             self.assertTrue(
-                (snapshot.iloc[1:]["time_jp_dt"] < decision_time).all()
+                (original_df_r["time_jp_dt"] < decision_time).all()
+            )
+            self.assertTrue(
+                (completed_df_r["time_jp_dt"] < decision_time).all()
             )
             self.assertFalse(
                 np.isclose(
-                    pd.to_numeric(snapshot.iloc[1:]["close"]),
+                    pd.to_numeric(completed_df_r["close"]),
                     9.0,
                 ).any()
             )

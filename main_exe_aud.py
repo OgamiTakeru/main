@@ -1,14 +1,16 @@
-# 最新更新日時: 2026-08-27 JST
-"""Explicit launcher for AUD/USD flip_predict live operation.
+# 最新更新日時: 2026-08-29 12:43 JST
+"""Explicit launcher for AUD/USD live operation.
 
-Repointed from main_exe's line-order strategy to flip_predict on 2026-08-27,
-so this pair now places orders from the flip analysis alone.
+2026-08-27: flip 専用サービス（fFlipPredictLive.run_live）から main_exe へ移行。
+flip が生んだオーダーも classPositionControl のスロットで管理されるようになり、
+通貨ごとの保有数を一元的に数えられる。解析の有効モードと実行条件は
+fAnalysis_order_Main.py の解析登録表で管理する。
 """
 
 from __future__ import annotations
 
 # True: OANDA通信・実発注を有効化 / False: 接続せず終了
-LIVE = False
+LIVE = True
 
 PAIR = "AUD_USD"
 
@@ -21,11 +23,10 @@ def main() -> None:
         )
     # Import after the LIVE guard so LIVE=False cannot create
     # an OANDA client or perform any broker/Discord communication.
-    from fFlipPredictLive import run_live
+    from main_exe import run
 
-    # The pair is named here, not taken from the command line, so which
-    # account trades is decided by which launcher is run.
-    run_live(PAIR)
+    # 通貨はここで名指しする（実行するファイルで対象口座が決まる）。
+    run(PAIR, live=LIVE)
 
 
 if __name__ == "__main__":

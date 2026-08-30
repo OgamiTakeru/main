@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-30 11:07:14 JST
+
 import datetime
 from datetime import timedelta
 
@@ -15,7 +17,56 @@ import pandas as pd
 from collections import deque  # 最大10個の情報を持つためのもの。
 import copy
 
-# from test_loop import get_instances_of_class
+# 出自(origin)ごとの「オーダー発行前の見張り方」の登録先。
+#
+# classPosition はポジションを監視する責務だけを持ち、どの解析が生んだ注文かは
+# 解釈しない。ただし待機中の見張り方は解析ごとに違うため、その解析を実装した
+# モジュールが自分でここへ登録し、classPosition は登録された関数を呼ぶだけにする。
+# こうすることで「ポジションは全てスロットで管理する」を保ちながら、解析固有の
+# ロジックはその解析の名前が付いたファイルに残せる。
+#
+# ハンドラの形: handler(position, candle_analysis_class) -> int
+#   発注まで進めた場合は position.waiting_order を False にすること
+#   （発注済みかどうかは戻り値ではなくこのフラグで判断される）
+ORIGIN_WATCH_HANDLERS = {}
+# 出自ごとの「スロットを使い回すときの掃除」の登録先。
+ORIGIN_STATE_CLEANERS = {}
+# 所有タグ -> 出自 の対応。再起動時、OANDA に残ったタグから出自を復元する
+# ために使う。出自を実装した側が register_origin_owner_tag で登録する。
+ORIGIN_BY_OWNER_TAG = {}
+
+
+def register_origin_owner_tag(owner_tag, origin):
+    """所有タグと出自の対応を登録する（再起動時の復元に使う）。"""
+    if not owner_tag or not origin:
+        raise ValueError("owner_tag と origin は空にできません")
+    existing = ORIGIN_BY_OWNER_TAG.get(owner_tag)
+    if existing is not None and existing != origin:
+        raise ValueError(
+            f"owner_tag '{owner_tag}' が別の origin に二重登録されました"
+        )
+    ORIGIN_BY_OWNER_TAG[owner_tag] = origin
+
+
+def is_flip_owner_tag(tag):
+    """登録済みの所有タグかどうか。"""
+    return bool(tag) and tag in ORIGIN_BY_OWNER_TAG
+
+
+def register_origin_watch_handler(origin, handler, state_cleaner=None):
+    """出自 origin の待機ハンドラを登録する（同じ名前の二重登録は拒否）。
+
+    state_cleaner を渡すと、スロットの reset() 時にその出自の一時状態を
+    捨てるために呼ばれる。動的に持たせた状態が次の注文へ漏れるのを防ぐ。
+    """
+    if not origin:
+        raise ValueError("origin は空にできません")
+    existing = ORIGIN_WATCH_HANDLERS.get(origin)
+    if existing is not None and existing is not handler:
+        raise ValueError(f"origin '{origin}' のハンドラが二重登録されました")
+    ORIGIN_WATCH_HANDLERS[origin] = handler
+    if state_cleaner is not None:
+        ORIGIN_STATE_CLEANERS[origin] = state_cleaner
 
 
 class order_information:
@@ -218,6 +269,11 @@ class order_information:
         self.ca = None  # CandleAnalysisの格納
         self.send_line_exe = True  # いるか不明（Trueの場合は一部の情報についてLINE送信頻度増）
         self.memo = ""
+        # このポジションを生んだ解析の名前。classPositionはこの値の意味を解釈せず、
+        # 「固有処理を持つ側へ委譲するか」の判断にだけ使う。空なら従来の汎用扱い。
+        self.origin = ""
+        # 自分が発行した建玉だけを触るための識別子（OANDAのclientExtensionsタグ）。
+        self.owner_tag = ""
         self.trigger_class = None
         self.close_consider_done = False
         self.close_consider_done2 = False
@@ -226,6 +282,7 @@ class order_information:
     def reset(self):
         # 情報の完全リセット（テンプレートに戻す）
         # print("    ●●●●OrderClassリセット●●●●")
+        self.clear_origin_state()
         self.name = ""
         self.refresh_at = datetime.datetime.now()
         self.name_ymdhms = ""
@@ -344,6 +401,11 @@ class order_information:
         self.update_information_error_o_id_num = 0
 
         self.memo = ""
+        # このポジションを生んだ解析の名前。classPositionはこの値の意味を解釈せず、
+        # 「固有処理を持つ側へ委譲するか」の判断にだけ使う。空なら従来の汎用扱い。
+        self.origin = ""
+        # 自分が発行した建玉だけを触るための識別子（OANDAのclientExtensionsタグ）。
+        self.owner_tag = ""
 
         # 調査結果も保有する
         self.ca = None  # CandleAnalysisの格納
@@ -522,7 +584,10 @@ class order_information:
             self.move_ave60 = round(self.candle_analysis_class.candle_meta_class_hour.cal_move_ave(1), self.u)
             # print("オーダーのキャンドル情報追加", self.move_ave5, self.move_ave60)
             self.current_price = self.candle_analysis_class.current_price
-            peaks = self.candle_analysis_class.peaks_class.peaks_original
+            basic_analysis = (
+                self.candle_analysis_class.require_basic_analysis()
+            )
+            peaks = basic_analysis.m5_peaks_class.peaks_original
             self.current_price_by_candle = peaks[0]['latest_body_peak_price']
         else:
             print("オーダーにcandle_analysis_classがない！ よって現在価格等も０")
@@ -553,6 +618,10 @@ class order_information:
 
         if "memo" in plan:
             self.memo = plan['memo']
+
+        # 出自と所有タグ（省略時は従来どおりの汎用オーダー）
+        self.origin = str(plan.get('origin') or "")
+        self.owner_tag = str(plan.get('owner_tag') or "")
 
         if "trigger_class" in plan:
             self.trigger_class = plan['trigger_class']
@@ -1166,6 +1235,34 @@ class order_information:
         pivot_str = "\n".join(lines)
         print(pivot_str)
 
+    def trade_is_still_open_after_failed_close(self):
+        """決済APIが失敗したあと、建玉がまだ残っているかを確かめる。
+
+        判定できないときは True（残っている扱い）を返す。スロットを一つ
+        余分に抱えるほうが、実在する建玉を監視対象から外すより安全なため。
+        次の巡回でまた確認され、決済済みなら状態更新で解放される。
+        """
+        if not self.t_id or self.t_id == -1:
+            return False
+        try:
+            detail = self.oa.TradeDetails_exe(self.t_id)
+        except Exception as error:
+            print("  建玉の実在確認で例外:", type(error).__name__, error)
+            return True
+        if detail.get("error") != 0:
+            print("  建玉の実在確認に失敗。残っている前提で維持:", self.t_id)
+            return True
+        state = (detail.get("data", {}).get("trade", {}) or {}).get("state")
+        if state == "OPEN":
+            notice.line_send(
+                "決済失敗（建玉は残存）",
+                f"name: {self.name}",
+                f"trade id: {self.t_id}",
+                "スロットを維持し、次の巡回で再試行する",
+            )
+            return True
+        return False
+
     def close_trade(self, units=None):
         # ポジションをクローズする関数 (情報のリセットは行わなず、Lifeの変更のみ）
         # クローズ後は、AfterCloseFunctionに移行し、情報の送信等を行う
@@ -1175,13 +1272,23 @@ class order_information:
 
         # 全ポジション解除の場合
         if units is None:
-            self.life_set(False)  # LIFEフラグの変更は、APIがエラーでも実行する
-            self.t_state = "CLOSED"
-
             close_res = self.oa.TradeClose_exe(self.t_id, None)  # ★クローズを実行
-            if close_res['error'] == -1:  # APIエラーの場合終了。ただし、
+            if close_res['error'] == -1:
+                # 決済が通ったのか、応答だけ失われたのか、この結果からは
+                # 区別できない。先に life を下ろすと、実際には残っている建玉を
+                # 誰も見なくなる（時間決済も呼ばれない）。逆に必ず life を
+                # 維持すると、決済済みの建玉でスロットが埋まり続ける。
+                # どちらの事故も避けるため、建玉の実在を確認してから決める。
                 self.send_line("  ★ポジション解消ミスNone＠close_position", self.name, self.t_id, self.signed_pips_text(self.t_pl_pips))
+                if self.trade_is_still_open_after_failed_close():
+                    # まだ残っている。life を維持し、次の巡回で再試行させる。
+                    return 0
+                # 決済は成立していた（または建玉が確認できない）ので下ろす。
+                self.life_set(False)
+                self.t_state = "CLOSED"
                 return 0
+            self.life_set(False)
+            self.t_state = "CLOSED"
             # self.send_line("  ポジション解消指示", self.name, self.t_id, self.t_price_diff)
             self.after_close_trade_function()
 
@@ -1190,9 +1297,13 @@ class order_information:
             if float(units) > abs(float(self.t_current_units)):
                 # 部分解消が失敗しそうなオーダーになっている場合
                 self.send_line("    指定されたCloseUnits大（Error)⇒全解除, units", ">", abs(float(self.t_current_units)))
-                self.life_set(False)  # ★大事　全解除の場合、APIがエラーでもLIFEフラグは取り下げる
-                self.t_state = "CLOSED"
                 close_res = self.oa.TradeClose_exe(self.t_id, None)  # ★オーダーを実行
+                if close_res['error'] == -1:
+                    # 全解除と同じ理由で、建玉の実在を確かめてから決める。
+                    if self.trade_is_still_open_after_failed_close():
+                        return 0
+                self.life_set(False)
+                self.t_state = "CLOSED"
                 return 0
             else:
                 # 部分解消が正常に実行できる注文数の場合
@@ -1383,6 +1494,41 @@ class order_information:
                     linkage_class.linkage_lc_change(new_lc_price)
                     self.linkage_done_func()
 
+    def trade_timeout_hard_close(self):
+        """出自が要求する保有上限を過ぎた建玉を、時間で閉じる。
+
+        flip は 60 分で必ず手仕舞う前提で検証しており、その時間切れ決済が
+        成績の中核を占める（OOS 実測: EUR_USD は時間切れ 9 件で +118 円、
+        全体 +121 円のほぼ全て。AUD_USD も 13 件で +140 円）。TP/SL まで
+        持ち続けると、この形が失われる。
+
+        既存の汎用オーダーの挙動は変えたくないので、出自を持つ注文だけを
+        対象にする（origin が空なら従来どおり何もしない）。
+        """
+        if not self.origin:
+            return False
+        if self.t_state != "OPEN":
+            return False
+        try:
+            limit_sec = float(self.trade_timeout_min) * 60.0
+            elapsed_sec = float(self.t_time_past_sec)
+        except (TypeError, ValueError):
+            return False
+        if limit_sec <= 0 or elapsed_sec < limit_sec:
+            return False
+        last_attempt = getattr(self, "hard_close_last_attempt_sec", None)
+        if last_attempt is not None and elapsed_sec - last_attempt < 30:
+            return False
+        self.hard_close_last_attempt_sec = elapsed_sec
+        print("  保有時間切れで決済:", self.name, round(elapsed_sec / 60.0, 1), "分")
+        notice.line_send(
+            "保有時間切れで決済",
+            f"name: {self.name}",
+            f"経過: {round(elapsed_sec / 60.0, 1)}分 / 上限 {self.trade_timeout_min}分",
+        )
+        self.close_trade(None)
+        return True
+
     def order_update_and_close(self):
         order_latest = self.o_json
         # 情報の更新
@@ -1468,6 +1614,7 @@ class order_information:
 
         if trade_latest['state'] == "OPEN":
             self.trade_timeout_profit_lock()
+            self.trade_timeout_hard_close()
 
         # クローズの場合はクローズ処理を実施
         if trade_latest['state'] == "CLOSED":
@@ -1649,9 +1796,9 @@ class order_information:
             else:
                 self.current_price = temp_current_price['data']['ask']
         # df空の価格の場合
-        # peaks_class = candle_analysis_class.peaks_class
-        # now_price = candle_analysis_class.s5_df_r.iloc[0]['open']
-        # now_time = candle_analysis_class.s5_df_r.iloc[0]['time_jp']
+        # peaks_class = candle_analysis_class.require_basic_analysis().m5_peaks_class
+        # now_price = candle_analysis_class.s5_original_df_r.iloc[0]['open']
+        # now_time = candle_analysis_class.s5_original_df_r.iloc[0]['time_jp']
         # print("現在価格の比較 API:", self.current_price, "df_price", now_price, "現在の時刻(API)", datetime.datetime.now(),
         # "現在の時刻df", now_time)
 
@@ -1832,9 +1979,9 @@ class order_information:
             else:
                 self.current_price = temp_current_price['data']['ask']
         # df空の価格の場合
-        # peaks_class = candle_analysis_class.peaks_class
-        # now_price = candle_analysis_class.s5_df_r.iloc[0]['open']
-        # now_time = candle_analysis_class.s5_df_r.iloc[0]['time_jp']
+        # peaks_class = candle_analysis_class.require_basic_analysis().m5_peaks_class
+        # now_price = candle_analysis_class.s5_original_df_r.iloc[0]['open']
+        # now_time = candle_analysis_class.s5_original_df_r.iloc[0]['time_jp']
         # print("現在価格の比較 API:", self.current_price, "df_price", now_price, "現在の時刻(API)", datetime.datetime.now(),
         # "現在の時刻df", now_time)
 
@@ -2022,21 +2169,88 @@ class order_information:
         return {"order_name": self.name, "order_id": order_res['order_id'],
                 "name_ymdhms": self.name_ymdhms, "order_result": order_res['order_result']}
 
+    def clear_origin_state(self):
+        """出自ごとの一時状態を捨てる（スロット再利用で前回が残らないように）。
+
+        委譲先が position へ動的に持たせた作業用の状態は、このクラスからは
+        中身が分からない。掃除の仕方だけをハンドラ側に持たせて呼び出す。
+        """
+        for cleaner in ORIGIN_STATE_CLEANERS.values():
+            try:
+                cleaner(self)
+            except Exception as error:  # 掃除の失敗でリセット全体を止めない
+                print("origin状態の掃除で例外:", type(error).__name__, error)
+
+    def watching_for_position_by_origin(self, candle_analysis_class):
+        """出自ごとの待機処理へ委譲する（このクラスは中身を知らない）。
+
+        委譲先が見つからない場合は待機を続けるだけで、勝手に発注はしない。
+
+        待機のタイムアウトはここで面倒を見る。既存の order_timeout
+        （order_update_and_close 内）はブローカーに出ている注文が対象で、
+        まだ発注していない待機状態には届かない。放置するとスロットが
+        永久に埋まるため、この経路で明示的に開放する。
+        """
+        if self.watching_for_position_done:
+            return 0
+        if self.waiting_order_expired():
+            self.close_waiting_order("待機タイムアウト")
+            return 0
+        handler = ORIGIN_WATCH_HANDLERS.get(self.origin)
+        if handler is None:
+            # 未登録の出自。黙って発注しないほうが安全なので待機のまま置く。
+            return 0
+        return handler(self, candle_analysis_class)
+
+    def waiting_order_expired(self):
+        """待機のまま order_timeout_min を過ぎたか。"""
+        if not self.waiting_order or not self.order_register_time:
+            return False
+        try:
+            limit_sec = float(self.order_timeout_min) * 60.0
+        except (TypeError, ValueError):
+            return False
+        if limit_sec <= 0:
+            return False
+        elapsed = (
+            datetime.datetime.now() - self.order_register_time
+        ).total_seconds()
+        return elapsed > limit_sec
+
+    def close_waiting_order(self, reason):
+        """未発注のまま終える。ブローカーには何も出ていないので取消は不要。"""
+        print("  待機オーダー開放:", self.name, reason)
+        notice.line_send(
+            "待機オーダー開放",
+            f"name: {self.name}",
+            f"理由: {reason}",
+            f"待機上限: {self.order_timeout_min}分",
+        )
+        self.waiting_order = False
+        self.watching_for_position_done = True
+        self.life_set(False)
+
     def watching_for_position(self, candle_analysis_class):
         """
         規定価格を●秒間越えていら、正式にオーダーが発行される仕組み.
         一瞬だけひっかけるような動きでのロスを防止したい。特に、「順張りを目指す場合」
         すでにPlanがorder_registorにて登録されている状態が必要
         ★逆張りは向いていないかも・・？（タッチがうれしいから）
+
+        出自を持つオーダー（origin）は、待機中の見張り方がそれぞれ異なるため、
+        その解析を実装している側へ委譲する。委譲先が発注まで進めたかどうかは
+        戻り値ではなく self.waiting_order の状態で判断する（既存の発注経路と同じ）。
         """
         # print("   新機構のテスト", self.o_state)
+        if self.origin:
+            return self.watching_for_position_by_origin(candle_analysis_class)
         if self.o_state != "Watching" or self.watching_for_position_done:  # 足数×〇分足×秒
             # 実行しない条件は、既に実行済み　または、NotOpen
             return 0
 
         # ■【共通処理】現在価格等の更新
-        # peaks_class = candle_analysis_class.peaks_class
-        # now_price = candle_analysis_class.peaks_class.df_r_original.iloc[0]['open']
+        # peaks_class = candle_analysis_class.require_basic_analysis().m5_peaks_class
+        # now_price = peaks_class.original_df_r.iloc[0]['open']
         now_time = datetime.datetime.now()
         o_dir = self.plan_json['direction']
         if o_dir == 1:
@@ -2596,19 +2810,20 @@ class order_information:
             # lc_Change_Candle実行フラグない場合はやらない
             return 0
 
-        # 利用するピーククラスを選択
+        # 利用するピーククラスを因果contextから選択
+        basic_analysis = candle_analysis_class.require_basic_analysis()
         if self.lc_change_candle_foot == "M5":
             # print("       5分足でのCandleLcChange")
-            peaks_class = candle_analysis_class.peaks_class
-            df_r = candle_analysis_class.peaks_class.df_r_original[:5]  # 直近のデータフレームの最初の5行
+            peaks_class = basic_analysis.m5_peaks_class
+            completed_df_r = basic_analysis.m5_completed_df_r[:5]
         elif self.lc_change_candle_foot == "H1":
             # print("       1時間足でのCandleLcChange")
-            peaks_class = candle_analysis_class.peaks_class_hour
-            df_r = candle_analysis_class.peaks_class_hour.df_r_original[:5]  # 直近のデータフレームの最初の5行
+            peaks_class = basic_analysis.h1_peaks_class
+            completed_df_r = basic_analysis.h1_completed_df_r[:5]
         else:
             # print("       (その他）5分足でのCandleLcChange")
-            peaks_class = candle_analysis_class.peaks_class
-            df_r = candle_analysis_class.peaks_class.df_r_original[:5]  # 直近のデータフレームの最初の5行
+            peaks_class = basic_analysis.m5_peaks_class
+            completed_df_r = basic_analysis.m5_completed_df_r[:5]
 
         # 現在時刻や使うデータを取得する
         gl_now = datetime.datetime.now().replace(microsecond=0)  # 現在の時刻を取得
@@ -2626,24 +2841,24 @@ class order_information:
         # peakを算出し、peaks[0]がカウント２以上ある場合のみ、self.latest_df.iloc[-2]['low']を参照するケースに変更(25/5/17)
         peaks = peaks_class.peaks_original
         # print("CANDLE:" ,self.name)
-        # print("CANDLE LC:", df_r.iloc[soeji]['low'])
+        # print("CANDLE LC:", completed_df_r.iloc[soeji]['low'])
         # print("CANDLE LC::", peaks[0]['latest_time_jp'], peaks[0]['count'])
 
         # 直近のピークが3カウント以上の場合、かつ、ポジションと同じ方向（利益が増える方向）時に実行（ひとつ前のキャンドルを参照するため）
-        soeji = 1
+        soeji = 0
         if peaks[0]['count'] >= 3 and peaks[0]['direction'] == self.plan_json['direction']:
-            # df_r.iloc[1]['low']の-2が選択できる状態であれば、実行する
+            # completed_df_r.iloc[1]['low']の-2が選択できる状態であれば、実行する
             if self.plan_json['direction'] > 0:
                 # 買い方向の場合、ひとつ前のローソクのLowの値をLC価格に
-                lc_price_temp = float(df_r.iloc[soeji]['low']) - order_information.add_margin
+                lc_price_temp = float(completed_df_r.iloc[soeji]['low']) - order_information.add_margin
             else:
                 # 売り方向の場合、ひとつ前のローソクのHighの値をLC価格に
-                lc_price_temp = float(df_r.iloc[soeji]['high']) + order_information.add_margin
+                lc_price_temp = float(completed_df_r.iloc[soeji]['high']) + order_information.add_margin
             # print("LCChangeCandle用DF ")
-            # print("0", df_r.iloc[0]['time_jp'])
-            # print("1", df_r.iloc[1]['time_jp'])
-            # print("-1", df_r.iloc[-1]['time_jp'])
-            # print("LCcandleChangeにて、直近peakカウント:", peaks[0]['count'], "変更基準ローソク時間:", df_r.iloc[soeji]['time_jp'], self.name)
+            # print("0", completed_df_r.iloc[0]['time_jp'])
+            # print("1", completed_df_r.iloc[1]['time_jp'])
+            # print("-1", completed_df_r.iloc[-1]['time_jp'])
+            # print("LCcandleChangeにて、直近peakカウント:", peaks[0]['count'], "変更基準ローソク時間:", completed_df_r.iloc[soeji]['time_jp'], self.name)
         else:
             # self.latest_df.iloc[soeji]['low']は逆張りの時におかしくなる
             # print("LCcandleChange中断　直近peakカウント:", peaks[0]['count'], "間違えたローソク時間:", self.latest_df.iloc[-2]['time_jp'])
@@ -2703,8 +2918,8 @@ class order_information:
                            "新LC価格⇒", new_lc_price,
                            "保証", self.pips_text(lc_range), "約定価格", self.t_execution_price,
                            "予定価格", self.plan_json['target_price'],  # )
-                           "参考にされた時間", df_r.iloc[soeji]['time_jp'], "添え字", soeji,
-                           "オープン:", df_r.iloc[soeji]['open'], "クローズ:", df_r.iloc[soeji]['close'])
+                           "参考にされた時間", completed_df_r.iloc[soeji]['time_jp'], "添え字", soeji,
+                           "オープン:", completed_df_r.iloc[soeji]['open'], "クローズ:", completed_df_r.iloc[soeji]['close'])
         # LC Priceの入れ替え
         self.plan_json['lc_price'] = new_lc_price
 
@@ -2754,6 +2969,14 @@ class order_information:
             (json.get('clientExtensions') or {}).get('tag', '')
         )
         is_managed_profit_lock = trade_tag == "managed_profit_lock"
+        # 出自と所有タグを OANDA 側のタグから復元する。プロセスを止めると
+        # メモリ上の origin は消えるが、タグは建玉に残っている。これを読まないと
+        # 再起動後に flip の建玉が「出自不明」となり、保有時間による決済も、
+        # 他の注文から触られない保護も、同時に持たない制限も全て外れる。
+        self.owner_tag = trade_tag if is_flip_owner_tag(trade_tag) else ""
+        self.origin = ORIGIN_BY_OWNER_TAG.get(self.owner_tag, "")
+        self.plan_json['origin'] = self.origin
+        self.plan_json['owner_tag'] = self.owner_tag
         self.allow_followup_order = (
             allow_followup_order if is_managed_profit_lock else None
         )

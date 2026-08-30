@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-29 15:38 JST
+
 import datetime
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
 import classOanda as oanda_class
@@ -55,9 +57,8 @@ def main():
         gl_candleAnalysisClass = ca.candleAnalysis(oa, gl_pair, target_time_jp=gl_target_time)
         # df = oa.InstrumentsCandles_exe("USD_JPY", param)  # 時間指定
     # データの成型と表示
-    df = gl_candleAnalysisClass.d5_df_r  # data部のみを取得
-    df.to_csv(tk.folder_path + gl_pair + '_main_analysis_original_data.csv', index=False, encoding="utf-8")  # 直近保存用
-    df_r = df.sort_index(ascending=False)  # 逆順に並び替え（直近が上側に来るように）
+    original_df_r = gl_candleAnalysisClass.m5_original_df_r
+    original_df_r.to_csv(tk.folder_path + gl_pair + '_main_analysis_original_data.csv', index=False, encoding="utf-8")  # 直近保存用
     # print("全", len(df_r), "行(test用表示↓")
     # print(df_r.head(2))
     # print(df_r.tail(2))

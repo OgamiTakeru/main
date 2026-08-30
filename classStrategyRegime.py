@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-29 15:38 JST
+
 from pathlib import Path
 
 import pandas as pd
@@ -235,10 +237,14 @@ class StrategyRegime:
     def _market_summary(self, candle_analysis, decision_dt):
         if candle_analysis is None or decision_dt is None:
             return self._empty_market_summary()
-        h1_df_r = getattr(candle_analysis, "h1_df_r", None)
-        if h1_df_r is None or h1_df_r.empty:
+        h1_completed_df_r = getattr(
+            candle_analysis,
+            "h1_completed_df_r",
+            None,
+        )
+        if h1_completed_df_r is None or h1_completed_df_r.empty:
             return self._empty_market_summary()
-        frame = h1_df_r.copy()
+        frame = h1_completed_df_r.copy()
         time_column = "time_jp_dt" if "time_jp_dt" in frame.columns else "time_jp"
         if time_column not in frame.columns:
             return self._empty_market_summary()

@@ -1,6 +1,7 @@
+<!-- 最新更新日時: 2026-08-29 12:43 JST -->
 # flip_predict 検討メモ・TODO
 
-最終更新: 2026-08-26
+最終更新: 2026-08-29
 
 ## 次のタスク：USD_JPY をどうするか（未着手）
 
@@ -166,3 +167,56 @@ AUD_USD の rank1 だった `f_line_core_strength_ratio` は USD_JPY の上位15
   → 計画書 `~/.claude/plans/flip-2023-2025-2025-2026-jaunty-cosmos.md` に詳細あり。
 - 3条件以上の組み合わせ探索（現在は最大2条件）。
 - 連続値の閾値そのものを探索対象にする（現在はバケット境界が固定）。
+
+
+---
+
+# 解析クラス構成のレビュー（2026-08-29）
+
+## 目指している構成（実現済み）
+
+```
+main_exe（キック・ループ）
+  └─ candleAnalysis を1回生成（M5/H1/M30 のピーク計算込み）
+       └─ wrap_all_analysis（取りまとめ）
+            ├─ MainAnalysis        … ライン戦略
+            ├─ wrap_flip_analysis  … flip
+            └─ 今後：ダブルトップ等をここに追加
+```
+
+`self.ca` を各解析に渡す形。M5/H1 の再取得は廃止済み。
+
+## 懸念1（ピーク計算の共有）— 解決済み
+
+当初 flip は `rebuild_candidates_at` でピークとラインを独自に再計算しており、
+「candleAnalysis でピークを作って使い回す」という設計から外れていた。
+
+`CandleDecisionContext`（classCandleAnalysis.py:33）の導入で解決。
+全戦略が共有する 1 つの因果スナップショットとして、ピーク
+（`m5_peaks_class` / `h1_peaks_class`）・形状（`m5_foot_count2_shape`）・
+RSI をまとめて保持する。
+
+良くできている点:
+- `rebuild_candidates_at` は `decision_context` が無ければ従来どおり自分で
+  組み立てる。**研究パイプラインは変わらず動き、検証との一致が壊れない**
+- `decision_context_pair_mismatch` / `_time_mismatch` で、違うペア・違う時刻の
+  コンテキストが渡されたら例外にする
+- 共有コンテキストの A レンジと `target_parameters` の独自計算を
+  `math.isclose` で突き合わせ、ズレを実行時に検出する
+
+## 残っている懸念（タスク）
+
+### 懸念2: ローソク形状解析の置き場所（解決済み: 2026-08-29）
+`fFootCountShape.py` は純粋な計算部品として残し、呼び出し・判断時刻・完成足・
+Peaksとの関連付け・結果保持は `CandleAnalysis` に集約した。flipはfc2形状を
+直接計算せず、共有された `CandleDecisionContext` の結果を使う。
+
+### 懸念3: 解析を追加するたび main_exe も触る必要がある（解決済み: 2026-08-29）
+`fAnalysis_order_Main.py` に `ANALYSIS_REGISTRY` を設け、解析の有効モード、
+実行条件、runnerを集約した。`main_exe` は共通時刻と `CandleAnalysis` を渡して
+`wrap_all_analysis` を呼ぶだけで、解析名・解析別フラグ・flip固有時刻を持たない。
+
+### 懸念4: 例外処理が解析ごとに個別
+`wrap_flip_analysis` は try/except で囲まれているが、`MainAnalysis` は
+囲まれていない。ライン戦略が例外を出すとループ全体が止まる。
+取りまとめ層（`wrap_all_inspections`）で共通に処理する方が安全。

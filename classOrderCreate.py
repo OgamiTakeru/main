@@ -29,6 +29,8 @@ class Order:
         self.trade_timeout_min_base = 240
         self.order_timeout_min_base = 60
         self.lc_change_base = 3  # ベースは０（LCchangeなし）
+        self.origin = ""
+        self.owner_tag = ""
         # 判定に利用する、初期値
         self.u = self.pair_info.round_keta  # round時の有効桁数
         self.dependence_tp_lc_margin_pips = 1
@@ -64,6 +66,13 @@ class Order:
         self.linkage_order_classes = []
         self.lc_change_candle_type = ""
         self.memo = ""
+        # どの解析が生んだ注文かを残す。classPositionはこの値の中身を解釈せず、
+        # 「自分の担当外なら固有処理を持つ側に委譲する」判断にだけ使う。
+        # 空文字なら従来どおりの汎用オーダー。
+        self.origin = ""
+        # 自分が発行した建玉だけを触る運用のための識別子（OANDAのclientExtensions
+        # タグに対応）。origin と対で使う。
+        self.owner_tag = ""
 
         # 色々な情報を受け取っていれば、それを取得する(ただし、エラー防止のため、インスタンス変数で明示的に損z内を示す）
         self.candle_analysis = None
@@ -117,6 +126,15 @@ class Order:
             self.data["order"]["tradeClientExtensions"] = {
                 "tag": "managed_profit_lock",
             }
+        if self.owner_tag:
+            # 自分が出した注文・建玉だけを後から識別できるようにする。
+            # プラン辞書に持つだけでは実際のAPI注文に付かないので、ここで
+            # OANDA の clientExtensions として送る。上の managed_profit_lock
+            # とは条件が別なので、owner_tag があるときは上書きする。
+            self.data["order"]["clientExtensions"] = {"tag": self.owner_tag}
+            self.data["order"]["tradeClientExtensions"] = {"tag": self.owner_tag}
+            # 既存建玉を相殺せず、必ず新規建玉として開く。
+            self.data["order"]["positionFill"] = "OPEN_ONLY"
         # ■ポジション管理用含めた情報
         self.exe_order_plan = {
             "decision_time": self.decision_time,
@@ -145,7 +163,9 @@ class Order:
             "lc_change": self.lc_change,
             "move_ave": self.move_ave,  # 参考情報だが追加（無いとLineSendでエラーになるが、オーダーには影響ない）
             "candle_lc_change_type": "5M",  # lc_changeで利用する足,
-            "memo": self.memo
+            "memo": self.memo,
+            "origin": self.origin,
+            "owner_tag": self.owner_tag
         }
 
         # クラスにある情報を明示しておく（混乱防止用で、冗長な書き方）
@@ -172,6 +192,8 @@ class Order:
         self.trade_timeout_min_base = 240
         self.order_timeout_min_base = 60
         self.lc_change_base = 3  # ベースは０（LCchangeなし）
+        self.origin = ""
+        self.owner_tag = ""
         # 判定に利用する、初期値
         self.u = self.pair_info.round_keta  # round時の有効桁数
         self.dependence_tp_lc_margin_pips = 1
@@ -483,6 +505,10 @@ class Order:
             self.memo = order_json['memo']
         else:
             self.memo = ""
+
+        # 出自と所有タグ（省略時は従来どおりの汎用オーダー）
+        self.origin = str(order_json.get('origin') or "")
+        self.owner_tag = str(order_json.get('owner_tag') or "")
 
         # ref(無いと、検証の時にエラーになる)
         if "ref" in order_json:

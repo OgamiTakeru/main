@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-27 00:15 JST
+# 最新更新日時: 2026-08-29 21:21 JST
 """EUR/USD ``flip_predict_v19`` LineHolding live execution service.
 
 This module is intentionally independent from ``main_exe``.  It never resets
@@ -24,13 +24,14 @@ import numpy as np
 import pandas as pd
 
 import classOanda
+from classCandleAnalysis import candleAnalysis as CandleAnalysis
+import fCandleDataQuality as candle_quality
 import fFlipPredictPolicy as flip_policy
 from count2_flip_core import (
     FlipWatchEntryConfig,
     RankedPolicyCondition,
     RiskMultipleProfitLock,
     TierExecutionConfig,
-    _is_expected_market_closed_gap,
     add_feature_buckets,
     classify_flip_watch_entry,
     effective_trade_widths,
@@ -53,7 +54,6 @@ import fGeneric as gene
 from fFootCountShape import (
     attach_line_wick_context,
     flatten_foot_count2_shape,
-    foot_count2_shape_context,
 )
 import send_notice as notice
 import tokens as tk
@@ -144,6 +144,14 @@ def bind_policy(pair: str) -> flip_policy.LivePairPolicy:
 
 class LiveDataError(RuntimeError):
     """A fail-closed market-data or broker-state error."""
+
+
+class LiveDataIntegrityError(LiveDataError):
+    """Completed candle history is corrupt or causally inconsistent."""
+
+
+class LiveDataNotReady(LiveDataError):
+    """A normal live publication delay, not a future-data violation."""
 
 
 class QuoteNotReadyError(LiveDataError):
@@ -503,30 +511,88 @@ def _prepare_completed_frame(
     return prepare_m5(processed)
 
 
+def _decision_context(
+    decision_utc: dt.datetime,
+) -> tuple[dt.datetime, pd.Timestamp]:
+    """Validate one M5 boundary and return UTC-aware/JST-naive forms."""
+    try:
+        stamp = pd.Timestamp(decision_utc)
+    except (TypeError, ValueError) as error:
+        raise LiveDataError("decision time is invalid") from error
+    if pd.isna(stamp) or stamp.tzinfo is None:
+        raise LiveDataError("decision time must be timezone-aware")
+    stamp = stamp.tz_convert("UTC")
+    if stamp != stamp.floor("5min"):
+        raise LiveDataError("decision time must be an exact M5 boundary")
+    normalized_utc = stamp.to_pydatetime()
+    decision_jst = stamp.tz_convert(JST).tz_localize(None)
+    return normalized_utc, decision_jst
+
+
 def _assert_history_coverage(
     frame: pd.DataFrame,
     count: int,
     timeframe: pd.Timedelta,
     name: str,
+    *,
+    expected_end: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
-    if len(frame) < count:
-        raise LiveDataError(f"insufficient {name} history: {len(frame)}/{count}")
-    selected = frame.tail(count).copy()
-    times = [pd.Timestamp(value) for value in selected["time_jp_dt"]]
-    for previous, following in zip(times, times[1:]):
-        difference = following - previous
-        if difference == timeframe:
-            continue
-        # Candle timestamps are interval starts.  Test only the uncovered span;
-        # the preceding candle itself may contain valid trading time.
-        previous_covered_end = previous + timeframe - pd.Timedelta(seconds=5)
-        if (
-            difference <= timeframe
-            or difference % timeframe != pd.Timedelta(0)
-            or not _is_expected_market_closed_gap(previous_covered_end, following)
-        ):
-            raise LiveDataError(f"unknown gap in required {name} history")
-    return selected.reset_index(drop=True)
+    try:
+        return candle_quality.validate_history_coverage(
+            frame,
+            count,
+            timeframe,
+            name,
+            expected_end=expected_end,
+        )
+    except candle_quality.CandleHistoryIntegrityError as error:
+        raise LiveDataIntegrityError(str(error)) from error
+    except candle_quality.CandleHistoryError as error:
+        raise LiveDataError(str(error)) from error
+
+
+def _assert_latest_m5_boundary(
+    frame: pd.DataFrame,
+    decision_jst: pd.Timestamp,
+) -> None:
+    try:
+        candle_quality.validate_latest_boundary(
+            frame,
+            pd.Timestamp(decision_jst).floor("5min"),
+            pd.Timedelta(minutes=5),
+            "M5",
+            allow_stale_missing=True,
+        )
+    except candle_quality.CandleHistoryNotReady as error:
+        raise LiveDataNotReady(str(error)) from error
+    except candle_quality.CandleHistoryIntegrityError as error:
+        raise LiveDataIntegrityError(str(error)) from error
+    except candle_quality.CandleHistoryError as error:
+        raise LiveDataError(str(error)) from error
+    except (KeyError, TypeError, ValueError) as error:
+        raise LiveDataError(str(error)) from error
+
+
+def _assert_latest_h1_boundary(
+    frame: pd.DataFrame,
+    decision_jst: pd.Timestamp,
+) -> None:
+    """Reject a stale H1 unless every uncovered minute is a known closure."""
+    try:
+        candle_quality.validate_latest_boundary(
+            frame,
+            pd.Timestamp(decision_jst).floor("h"),
+            pd.Timedelta(hours=1),
+            "H1",
+            allow_known_closure=True,
+            allow_stale_missing=True,
+        )
+    except candle_quality.CandleHistoryNotReady as error:
+        raise LiveDataNotReady(str(error)) from error
+    except candle_quality.CandleHistoryIntegrityError as error:
+        raise LiveDataIntegrityError(str(error)) from error
+    except candle_quality.CandleHistoryError as error:
+        raise LiveDataError(str(error)) from error
 
 
 def _marker_row(frame: pd.DataFrame, decision_jst: pd.Timestamp) -> pd.DataFrame:
@@ -559,6 +625,7 @@ def _candidate_rows(
     m5: pd.DataFrame,
     h1: pd.DataFrame,
     decision_jst: pd.Timestamp,
+    decision_context: Any | None = None,
 ) -> list[dict[str, Any]]:
     pair = gene.currency_pair(PAIR_NAME)
     marker_frame = _marker_row(m5, decision_jst)
@@ -578,17 +645,35 @@ def _candidate_rows(
         index,
         PAIR_NAME,
         h1=h1,
+        decision_context=decision_context,
     )
     peak = rebuilt["newest_peak"]
     peak_direction = int(peak.get("direction") or 0)
-    fc2_shape = foot_count2_shape_context(
-        rebuilt["completed_history"],
-        peak,
-        decision_jst,
-        pair,
-        average_range_pips=target["recent_m5_avg_range_pips"],
-        timeframe_minutes=5,
-    )
+    if decision_context is not None:
+        fc2_shape = decision_context.m5_foot_count2_shape
+        context_a = fc2_shape.get("a_range_pips")
+        target_a = target.get("recent_m5_avg_range_pips")
+        if (
+                context_a is not None
+                and target_a is not None
+                and not math.isclose(
+                    float(context_a),
+                    float(target_a),
+                    rel_tol=1e-12,
+                    abs_tol=1e-12,
+                )
+        ):
+            fc2_shape = decision_context.shape_for_peak(
+                peak,
+                "M5",
+                average_range_pips=float(target_a),
+            )
+    else:
+        fc2_shape = rebuilt["decision_context"].shape_for_peak(
+            peak,
+            "M5",
+            average_range_pips=target["recent_m5_avg_range_pips"],
+        )
     if not fc2_shape.get("valid"):
         raise LiveDataError(f"FC2 shape invalid: {fc2_shape.get('reason')}")
     h1_shape = rebuilt["h1_pair_shape_context"]
@@ -666,21 +751,36 @@ def _candidate_rows(
     return rows
 
 
-def build_live_signal(
-    oa: classOanda.Oanda,
+def _build_signal_from_prepared_frames(
+    m5: pd.DataFrame,
+    h1: pd.DataFrame,
     decision_utc: dt.datetime,
+    decision_jst: pd.Timestamp,
+    decision_context: Any | None = None,
 ) -> dict[str, Any] | None:
-    decision_jst = pd.Timestamp(decision_utc).tz_convert("Asia/Tokyo").tz_localize(None)
-    raw_m5 = _fetch_raw_candles(oa, "M5", 350)
-    raw_h1 = _fetch_raw_candles(oa, "H1", 300)
-    m5 = _prepare_completed_frame(raw_m5, decision_utc, pd.Timedelta(minutes=5))
-    h1 = _prepare_completed_frame(raw_h1, decision_utc, pd.Timedelta(hours=1))
-    if pd.Timestamp(m5.iloc[-1]["time_jp_dt"]) + pd.Timedelta(minutes=5) != decision_jst:
-        raise LiveDataError("latest completed M5 does not end at the decision boundary")
-    m5 = _assert_history_coverage(m5, 180, pd.Timedelta(minutes=5), "M5")
-    h1 = _assert_history_coverage(h1, 240, pd.Timedelta(hours=1), "H1")
+    m5 = _assert_history_coverage(
+        m5,
+        180,
+        pd.Timedelta(minutes=5),
+        "M5",
+        expected_end=pd.Timestamp(decision_jst).floor("5min"),
+    )
+    _assert_latest_m5_boundary(m5, decision_jst)
+    h1 = _assert_history_coverage(
+        h1,
+        240,
+        pd.Timedelta(hours=1),
+        "H1",
+        expected_end=pd.Timestamp(decision_jst).floor("h"),
+    )
+    _assert_latest_h1_boundary(h1, decision_jst)
     try:
-        rows = _candidate_rows(m5, h1, decision_jst)
+        rows = _candidate_rows(
+            m5,
+            h1,
+            decision_jst,
+            decision_context=decision_context,
+        )
     except ValueError as error:
         normal_prefixes = ("no_peak", "count2_prefilter_mismatch")
         if str(error).startswith(normal_prefixes):
@@ -755,6 +855,114 @@ def build_live_signal(
         "risk_yen": RISK_YEN,
         "created_at_utc": _utc_iso(_utc_now()),
     }
+
+
+def build_live_signal(
+    oa: classOanda.Oanda,
+    decision_utc: dt.datetime,
+) -> dict[str, Any] | None:
+    """Build a signal through the standalone OANDA candle-fetching path."""
+    decision_utc, decision_jst = _decision_context(decision_utc)
+    raw_m5 = _fetch_raw_candles(oa, "M5", 350)
+    raw_h1 = _fetch_raw_candles(oa, "H1", 300)
+    m5 = _prepare_completed_frame(raw_m5, decision_utc, pd.Timedelta(minutes=5))
+    h1 = _prepare_completed_frame(raw_h1, decision_utc, pd.Timedelta(hours=1))
+    try:
+        price_response = oa.NowPrice_exe(PAIR_NAME)
+        live_price = float(price_response["data"]["mid"])
+        if price_response.get("error") != 0 or not math.isfinite(live_price):
+            raise ValueError("live quote is unavailable")
+        price_source = "live_quote"
+    except Exception:
+        live_price = float(m5.iloc[-1]["close"])
+        price_source = "live_m5"
+    try:
+        decision_context = CandleAnalysis.build_decision_context_from_frames(
+            PAIR_NAME,
+            decision_jst,
+            m5,
+            h1,
+            current_price=live_price,
+            current_price_source=price_source,
+            mode="live",
+            require_complete_flags=False,
+        )
+    except candle_quality.CandleHistoryNotReady as error:
+        raise LiveDataNotReady(str(error)) from error
+    except candle_quality.CandleHistoryIntegrityError as error:
+        raise LiveDataIntegrityError(str(error)) from error
+    except candle_quality.CandleHistoryError as error:
+        raise LiveDataError(str(error)) from error
+    except (KeyError, TypeError, ValueError) as error:
+        raise LiveDataError(str(error)) from error
+    return _build_signal_from_prepared_frames(
+        m5,
+        h1,
+        decision_utc,
+        decision_jst,
+        decision_context=decision_context,
+    )
+
+
+def build_signal_from_candle_analysis(
+    candle_analysis_class: Any,
+    decision_utc: dt.datetime,
+) -> dict[str, Any] | None:
+    """Build a signal from the shared CandleAnalysis M5/H1 snapshot."""
+    if ACTIVE_POLICY is None or not PAIR_NAME:
+        raise LiveDataError("flip policy must be bound before analysis")
+    if candle_analysis_class is None:
+        raise LiveDataError("CandleAnalysis is required")
+    analysis_pair = str(getattr(candle_analysis_class, "pair", "")).upper()
+    if analysis_pair != PAIR_NAME:
+        raise LiveDataError(
+            f"CandleAnalysis pair mismatch: {analysis_pair or '(missing)'}/{PAIR_NAME}"
+        )
+
+    decision_utc, decision_jst = _decision_context(decision_utc)
+    decision_context = getattr(candle_analysis_class, "basic_analysis", None)
+    if decision_context is None:
+        reason = getattr(
+            candle_analysis_class,
+            "decision_context_error",
+            "common candle analysis is unavailable",
+        )
+        if getattr(candle_analysis_class, "decision_context_not_ready", False):
+            raise LiveDataNotReady(str(reason))
+        error_type = getattr(
+            candle_analysis_class,
+            "decision_context_error_type",
+            None,
+        )
+        if (
+                isinstance(error_type, type)
+                and issubclass(
+                    error_type,
+                    candle_quality.CandleHistoryIntegrityError,
+                )
+        ):
+            raise LiveDataIntegrityError(str(reason))
+        raise LiveDataError(str(reason))
+    if pd.Timestamp(decision_context.decision_time) != decision_jst:
+        raise LiveDataError(
+            "CandleAnalysis decision time mismatch: "
+            f"{decision_context.decision_time}/{decision_jst}"
+        )
+    if decision_context.h1_completed_df_r is None:
+        raise LiveDataNotReady("CandleAnalysis H1 context is unavailable")
+    if not getattr(decision_context, "data_quality_validated", False):
+        raise LiveDataIntegrityError(
+            "CandleAnalysis data quality is not validated"
+        )
+    m5 = decision_context.m5_completed_df_r.iloc[::-1].reset_index(drop=True)
+    h1 = decision_context.h1_completed_df_r.iloc[::-1].reset_index(drop=True)
+    return _build_signal_from_prepared_frames(
+        m5,
+        h1,
+        decision_utc,
+        decision_jst,
+        decision_context=decision_context,
+    )
 
 
 def _normalize_s5(raw: pd.DataFrame) -> pd.DataFrame:
@@ -1513,6 +1721,9 @@ class FlipPredictEurLive:
             return
         try:
             signal = build_live_signal(self.oa, decision_utc)
+        except LiveDataNotReady:
+            # Keep last_decision unset so the next live loop retries quietly.
+            return
         except ValueError as error:
             if str(error).startswith(("no_peak", "count2_prefilter_mismatch")):
                 self.state["last_decision_time_utc"] = decision_key
