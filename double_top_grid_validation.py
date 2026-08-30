@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-30 16:12 JST
+# 最新更新日時: 2026-08-30 17:44 JST
 """DoubleTopの因果的な総当たり探索と翌年固定リプレイ。
 
 形成判断には判断時刻までに完成したM5だけを使う。S5は判断後の結果付けに
@@ -8,10 +8,8 @@
 
 from __future__ import annotations
 
-import contextlib
 import datetime as dt
 import gc
-import io
 import json
 import math
 import time
@@ -23,9 +21,15 @@ import numpy as np
 import pandas as pd
 
 import fGeneric as gene
+import fDoubleTopCore as double_top_core
+import f_ダブルトップ as live_double_top
 import send_notice as notice
 import tokens as tk
-from classCandlePeaks import PeaksClass
+from classCandleAnalysis import (
+    H1_ANALYSIS_BARS,
+    M5_ANALYSIS_BARS,
+    candleAnalysis,
+)
 from count2_target_grid_search import _load_typed_s5_inspector
 from fCandleDataQuality import (
     analysis_missing_bar_stats,
@@ -33,10 +37,11 @@ from fCandleDataQuality import (
 )
 
 
-VERSION = "double_top_grid_v1"
+VERSION = "double_top_grid_v2"
 TIME_FORMAT = "%Y/%m/%d %H:%M:%S"
-M5_HISTORY_BARS = 180
-RISK_YEN = 50.0
+M5_HISTORY_BARS = M5_ANALYSIS_BARS
+H1_HISTORY_BARS = H1_ANALYSIS_BARS
+RISK_YEN = float(live_double_top.LIVE_TRIAL_POLICY_V1.risk_yen)
 SPREAD_PIPS = 0.8
 MAX_MISSING_RATIO = 0.50
 NORMAL_PRIORITY_SLOT_COUNT = 6
@@ -52,6 +57,21 @@ MIN_INTERACTION_EVENTS = 20
 TP_HEIGHT_MULTIPLIERS = (0.50, 0.75, 1.00, 1.25, 1.50)
 STOP_BUFFER_PIPS = (0.0, 1.0, 2.0, 3.0, 5.0)
 TRADE_TIMEOUT_MINUTES = (60, 120, 240, 480)
+
+# 高速走査の候補母集団だけを決める固定条件。本番ポリシーとは完全に分離する。
+GRID_DISCOVERY_POLICY_V1 = double_top_core.DoubleTopPolicyV1(
+    policy_id="grid_discovery_v1",
+    min_top_foot_count=0,
+    min_height_pips=3.0,
+    max_height_pips=120.0,
+    min_t1_t2_minutes=10.0,
+    max_t1_t2_minutes=1440.0,
+    base_top_tolerance_pips=None,
+    top_tolerance_height_ratio=None,
+    max_top_gap_pips=30.0,
+    max_top_gap_ratio=0.75,
+    neckline_break_buffer_pips=0.0,
+)
 
 CORE_INTERACTION_FAMILIES = (
     "both_top_foot_min",
@@ -216,7 +236,7 @@ def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
 
 def _archive_residual_temp_and_logs(output_dir: Path) -> list[str]:
     archived: list[str] = []
-    patterns = (f"{VERSION}*.tmp", f"{VERSION}*.log")
+    patterns = ("double_top_grid_v*.tmp", "double_top_grid_v*.log")
     for pattern in patterns:
         for path in output_dir.glob(pattern):
             destination = _archive_existing(path)
@@ -579,38 +599,31 @@ def generate_events(
         if tuple(peak["direction"] for peak in peaks) != (-1, 1, -1, 1):
             continue
         diagnostics["sequence_matches"] += 1
-        neckline_price = float(neckline["peak"])
         break_close = float(closes[index])
         previous_close = float(closes[index - 1])
+        neckline_price = double_top_core.peak_price_v1(neckline)
         if not (break_close < neckline_price <= previous_close):
             continue
         diagnostics["cross_matches"] += 1
+        candidate = double_top_core.detect_candidate_v1(
+            peaks,
+            m5.iloc[index],
+            m5.iloc[index - 1],
+            pair,
+            GRID_DISCOVERY_POLICY_V1,
+        )
+        if candidate is None:
+            diagnostics["broad_filter_skips"] += 1
+            continue
 
-        t1_price = float(t1["peak"])
-        t2_price = float(t2["peak"])
-        if neckline_price >= min(t1_price, t2_price):
-            diagnostics["broad_filter_skips"] += 1
-            continue
-        top_reference = (t1_price + t2_price) / 2.0
-        height_price = top_reference - neckline_price
-        height_pips = float(pair.price_to_pips(height_price))
-        top_gap_pips = float(pair.price_to_pips(abs(t1_price - t2_price)))
-        top_gap_ratio = top_gap_pips / height_pips if height_pips > 0 else math.inf
-        formation_minutes = (
-            pd.Timestamp(t2["latest_time"])
-            - pd.Timestamp(t1["latest_time"])
-        ).total_seconds() / 60.0
-        t2_break_minutes = (
-            pd.Timestamp(times[index]) - pd.Timestamp(t2["latest_time"])
-        ).total_seconds() / 60.0
-        if not (
-            3.0 <= height_pips <= 120.0
-            and 10.0 <= formation_minutes <= 1440.0
-            and top_gap_pips <= 30.0
-            and top_gap_ratio <= 0.75
-        ):
-            diagnostics["broad_filter_skips"] += 1
-            continue
+        t1_price = candidate.t1_price
+        t2_price = candidate.t2_price
+        neckline_price = candidate.neckline_price
+        height_pips = candidate.height_pips
+        top_gap_pips = candidate.top_gap_pips
+        top_gap_ratio = candidate.top_gap_ratio
+        formation_minutes = candidate.t1_t2_minutes
+        t2_break_minutes = candidate.t2_break_minutes
 
         history_floor = index - M5_HISTORY_BARS + 1
         history_times = [pd.Timestamp(value) for value in times[history_floor:index + 1]]
@@ -630,9 +643,7 @@ def generate_events(
         if recent_average_range_pips <= 0:
             diagnostics["broad_filter_skips"] += 1
             continue
-        break_depth_pips = float(
-            pair.price_to_pips(neckline_price - break_close)
-        )
+        break_depth_pips = candidate.break_depth_pips
         break_body_pips = float(pair.price_to_pips(body_abs[index]))
         height_a = height_pips / recent_average_range_pips
         break_body_a = break_body_pips / recent_average_range_pips
@@ -643,11 +654,11 @@ def generate_events(
             top_relation = "T2_HIGHER"
         else:
             top_relation = "T2_EQUAL"
-        break_time = pd.Timestamp(times[index])
+        break_time = candidate.break_time
         event_id = (
-            f"{pair_name}:{pd.Timestamp(t1['latest_time']):%Y%m%d%H%M}:"
-            f"{pd.Timestamp(neckline['latest_time']):%Y%m%d%H%M}:"
-            f"{pd.Timestamp(t2['latest_time']):%Y%m%d%H%M}:"
+            f"{pair_name}:{candidate.t1_time:%Y%m%d%H%M}:"
+            f"{candidate.neckline_time:%Y%m%d%H%M}:"
+            f"{candidate.t2_time:%Y%m%d%H%M}:"
             f"{break_time:%Y%m%d%H%M}"
         )
         row = {
@@ -656,29 +667,32 @@ def generate_events(
             "source_row_index": index,
             "decision_time": decision_time,
             "break_time": break_time,
-            "t1_time": pd.Timestamp(t1["latest_time"]),
-            "neckline_time": pd.Timestamp(neckline["latest_time"]),
-            "t2_time": pd.Timestamp(t2["latest_time"]),
+            "core_version": candidate.core_version,
+            "discovery_policy_id": GRID_DISCOVERY_POLICY_V1.policy_id,
+            "t1_time": candidate.t1_time,
+            "neckline_time": candidate.neckline_time,
+            "t2_time": candidate.t2_time,
             "t1_price": t1_price,
             "neckline_price": neckline_price,
             "t2_price": t2_price,
             "break_open": float(opens[index]),
             "break_close": break_close,
             "previous_close": previous_close,
-            "t1_foot_count": int(t1["count"]),
-            "t2_foot_count": int(t2["count"]),
-            "both_top_foot_min": min(int(t1["count"]), int(t2["count"])),
-            "decline_foot_count": int(decline["count"]),
-            "neckline_foot_count": int(neckline["count"]),
+            "t1_foot_count": candidate.t1_foot_count,
+            "t2_foot_count": candidate.t2_foot_count,
+            "both_top_foot_min": min(
+                candidate.t1_foot_count,
+                candidate.t2_foot_count,
+            ),
+            "decline_foot_count": candidate.decline_foot_count,
+            "neckline_foot_count": candidate.neckline_foot_count,
+            "height_price": candidate.height_price,
             "height_pips": height_pips,
             "top_gap_pips": top_gap_pips,
             "top_gap_ratio": top_gap_ratio,
             "formation_minutes": formation_minutes,
             "t2_break_minutes": t2_break_minutes,
-            "neckline_t2_minutes": (
-                pd.Timestamp(t2["latest_time"])
-                - pd.Timestamp(neckline["latest_time"])
-            ).total_seconds() / 60.0,
+            "neckline_t2_minutes": candidate.neckline_t2_minutes,
             "break_depth_pips": break_depth_pips,
             "break_body_pips": break_body_pips,
             "break_body_a": break_body_a,
@@ -711,65 +725,160 @@ def generate_events(
     return frame, diagnostics
 
 
-def validate_peak_equivalence(
+def validate_production_context_equivalence(
     pair_name: str,
     m5: pd.DataFrame,
+    h1: pd.DataFrame,
     events: pd.DataFrame,
     sample_count: int = 30,
-) -> dict[str, int]:
-    """高速イベント生成の先頭4ピークが本番PeaksClassと一致するか検査する。"""
+) -> dict[str, Any]:
+    """候補だけ正式CandleAnalysis contextへ通し、本番v1と照合する。"""
     if events.empty:
-        return {"checked": 0, "mismatches": 0}
+        return {
+            "checked": 0,
+            "mismatches": 0,
+            "core_version": double_top_core.CORE_VERSION_V1,
+        }
     pair = gene.currency_pair(pair_name)
+    h1_times = h1["time_jp_dt"].to_numpy(dtype="datetime64[ns]", copy=False)
+    eligible_positions = []
+    for position, decision_value in enumerate(events["decision_time"]):
+        latest_h1_start = np.datetime64(
+            pd.Timestamp(decision_value) - pd.Timedelta(hours=1),
+            "ns",
+        )
+        completed_h1_count = int(
+            np.searchsorted(h1_times, latest_h1_start, side="right")
+        )
+        if completed_h1_count >= H1_HISTORY_BARS:
+            eligible_positions.append(position)
+    if not eligible_positions:
+        raise ValueError("本番context照合に必要なH1履歴がありません")
     sample_positions = np.unique(
-        np.linspace(0, len(events) - 1, min(sample_count, len(events)), dtype=int)
+        np.linspace(
+            0,
+            len(eligible_positions) - 1,
+            min(sample_count, len(eligible_positions)),
+            dtype=int,
+        )
     )
     checked = 0
-    for event_position in sample_positions:
-        event = events.iloc[int(event_position)]
-        index = int(event["source_row_index"])
+    numeric_fields = {
+        "t1_price": "t1_price",
+        "neckline_price": "neckline_price",
+        "t2_price": "t2_price",
+        "break_close": "break_close",
+        "previous_close": "previous_close",
+        "height_price": "height_price",
+        "height_pips": "height_pips",
+        "top_gap_pips": "top_gap_pips",
+        "top_gap_ratio": "top_gap_ratio",
+        "t1_t2_minutes": "formation_minutes",
+        "t2_break_minutes": "t2_break_minutes",
+        "break_depth_pips": "break_depth_pips",
+    }
+    count_fields = (
+        "t1_foot_count",
+        "neckline_foot_count",
+        "t2_foot_count",
+        "decline_foot_count",
+    )
+    time_fields = ("t1_time", "neckline_time", "t2_time", "break_time")
+    for sample_position in sample_positions:
+        event_position = eligible_positions[int(sample_position)]
+        event = events.iloc[event_position]
         decision_time = pd.Timestamp(event["decision_time"])
-        completed_df_r = m5.iloc[
-            index - M5_HISTORY_BARS + 1:index + 1
-        ].iloc[::-1].copy().reset_index(drop=True)
+        m5_index = int(event["source_row_index"])
+        m5_context_frame = m5.iloc[
+            m5_index - M5_HISTORY_BARS + 1:m5_index + 1
+        ]
+        latest_h1_start = np.datetime64(
+            decision_time - pd.Timedelta(hours=1),
+            "ns",
+        )
+        h1_end = int(np.searchsorted(h1_times, latest_h1_start, side="right"))
+        h1_context_frame = h1.iloc[
+            h1_end - H1_HISTORY_BARS:h1_end
+        ]
+        context = candleAnalysis.build_decision_context_from_frames(
+            pair_name,
+            decision_time,
+            m5_context_frame,
+            h1_context_frame,
+            current_price=float(event["break_close"]),
+            current_price_source="latest_completed_m5_close",
+            mode="inspection",
+            require_complete_flags=False,
+            m5_history=M5_HISTORY_BARS,
+            h1_history=H1_HISTORY_BARS,
+        )
         if (
-            completed_df_r["time_jp_dt"] + pd.Timedelta(minutes=5)
+            context.m5_completed_df_r["time_jp_dt"] + pd.Timedelta(minutes=5)
             > decision_time
         ).any():
-            raise ValueError("未来のM5がピーク同値検査へ混入しました")
-        with contextlib.redirect_stdout(io.StringIO()):
-            peaks_class = PeaksClass(
-                completed_df_r,
-                "M5",
-                float(event["break_close"]),
-                pair,
-                completed_df_r=completed_df_r,
-                decision_time=decision_time,
-            )
-        actual = peaks_class.peaks_original[:4]
-        expected = (
-            ("decline_foot_count", -1, event["break_time"], None),
-            ("t2_foot_count", 1, event["t2_time"], event["t2_price"]),
-            ("neckline_foot_count", -1, event["neckline_time"], event["neckline_price"]),
-            ("t1_foot_count", 1, event["t1_time"], event["t1_price"]),
+            raise ValueError("未来のM5が本番context照合へ混入しました")
+        if (
+            context.h1_completed_df_r["time_jp_dt"] + pd.Timedelta(hours=1)
+            > decision_time
+        ).any():
+            raise ValueError("未来のH1が本番context照合へ混入しました")
+        actual = live_double_top.detect_candidate(
+            context,
+            GRID_DISCOVERY_POLICY_V1,
         )
-        if len(actual) < 4:
-            raise ValueError("本番PeaksClassのピークが4件未満です")
-        for peak, (count_field, direction, peak_time, peak_price) in zip(actual, expected):
-            if int(peak["direction"]) != direction:
-                raise ValueError("高速ピークと本番PeaksClassの方向が不一致です")
-            if int(peak["count"]) != int(event[count_field]):
-                raise ValueError("高速ピークと本番PeaksClassのfoot countが不一致です")
-            if pd.Timestamp(peak["latest_time_jp"]) != pd.Timestamp(peak_time):
-                raise ValueError("高速ピークと本番PeaksClassの時刻が不一致です")
-            if peak_price is not None and not math.isclose(
-                float(peak["peak"]),
-                float(peak_price),
+        if actual is None:
+            raise ValueError("高速候補を本番DoubleTop v1が再現できません")
+        for field in time_fields:
+            if pd.Timestamp(getattr(actual, field)) != pd.Timestamp(event[field]):
+                raise ValueError("高速候補と本番contextの時刻が不一致: " + field)
+        for field in count_fields:
+            if int(getattr(actual, field)) != int(event[field]):
+                raise ValueError("高速候補と本番contextのfoot countが不一致: " + field)
+        for candidate_field, event_field in numeric_fields.items():
+            if not math.isclose(
+                float(getattr(actual, candidate_field)),
+                float(event[event_field]),
+                rel_tol=1e-9,
                 abs_tol=pair.pip_value / 10,
             ):
-                raise ValueError("高速ピークと本番PeaksClassの価格が不一致です")
+                raise ValueError(
+                    "高速候補と本番contextの数値が不一致: "
+                    + candidate_field
+                )
         checked += 1
-    return {"checked": checked, "mismatches": 0}
+    return {
+        "checked": checked,
+        "mismatches": 0,
+        "core_version": double_top_core.CORE_VERSION_V1,
+        "context_builder": "CandleAnalysis.build_decision_context_from_frames",
+        "production_detector": "f_ダブルトップ.detect_candidate",
+    }
+
+
+def _execution_combo_id(
+        tp_height_multiplier: float,
+        stop_buffer_pips: float,
+        trade_timeout_minutes: int,
+) -> str:
+    return (
+        f"TP{float(tp_height_multiplier):g}H_"
+        f"LCtop{float(stop_buffer_pips):g}p_"
+        f"T{int(trade_timeout_minutes)}m"
+    )
+
+
+def live_trial_execution_combo() -> ExecutionCombo:
+    policy = live_double_top.LIVE_TRIAL_POLICY_V1
+    return ExecutionCombo(
+        combo_id=_execution_combo_id(
+            policy.target_height_multiplier,
+            policy.stop_buffer_pips,
+            policy.trade_timeout_min,
+        ),
+        tp_height_multiplier=float(policy.target_height_multiplier),
+        stop_buffer_pips=float(policy.stop_buffer_pips),
+        trade_timeout_minutes=int(policy.trade_timeout_min),
+    )
 
 
 def execution_combos() -> list[ExecutionCombo]:
@@ -779,9 +888,10 @@ def execution_combos() -> list[ExecutionCombo]:
             for timeout in TRADE_TIMEOUT_MINUTES:
                 combos.append(
                     ExecutionCombo(
-                        combo_id=(
-                            f"TP{tp_multiplier:g}H_"
-                            f"LCtop{stop_buffer:g}p_T{timeout}m"
+                        combo_id=_execution_combo_id(
+                            tp_multiplier,
+                            stop_buffer,
+                            timeout,
                         ),
                         tp_height_multiplier=float(tp_multiplier),
                         stop_buffer_pips=float(stop_buffer),
@@ -869,17 +979,11 @@ def _condition_mask(frame: pd.DataFrame, spec: ConditionSpec) -> np.ndarray:
     if spec.operator == "all":
         return np.ones(len(frame), dtype=bool)
     if spec.operator == "current_policy":
-        tolerance = np.maximum(
-            3.0,
-            pd.to_numeric(frame["height_pips"], errors="coerce").to_numpy(dtype=float) * 0.20,
-        )
-        return np.asarray(
-            frame["t1_foot_count"].ge(2)
-            & frame["t2_foot_count"].ge(2)
-            & frame["height_pips"].between(6.0, 60.0, inclusive="both")
-            & frame["formation_minutes"].between(15.0, 360.0, inclusive="both")
-            & frame["top_gap_pips"].le(tolerance),
-            dtype=bool,
+        pair_name = str(frame.iloc[0]["pair"])
+        return double_top_core.frame_policy_mask_v1(
+            frame,
+            gene.currency_pair(pair_name),
+            live_double_top.LIVE_TRIAL_POLICY_V1,
         )
     if spec.components:
         raise ValueError("interaction mask requires component masks")
@@ -1068,17 +1172,22 @@ class MarketPathInspector:
             ]
 
         entry = float(prepared.entry_price)
-        height_price = self.pair.pips_to_price(float(event["height_pips"]))
+        height_price = float(event["height_price"])
         targets = {
-            multiplier: self.pair.round_price(
-                float(event["neckline_price"]) - height_price * multiplier
+            multiplier: double_top_core.target_price_v1(
+                self.pair,
+                float(event["neckline_price"]),
+                height_price,
+                multiplier,
             )
             for multiplier in {combo.tp_height_multiplier for combo in combos}
         }
         stops = {
-            buffer_pips: self.pair.round_price(
-                max(float(event["t1_price"]), float(event["t2_price"]))
-                + self.pair.pips_to_price(buffer_pips)
+            buffer_pips: double_top_core.stop_price_v1(
+                self.pair,
+                float(event["t1_price"]),
+                float(event["t2_price"]),
+                buffer_pips,
             )
             for buffer_pips in {combo.stop_buffer_pips for combo in combos}
         }
@@ -1596,12 +1705,7 @@ def current_policy_replay(
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     baseline_spec = _spec_lookup(specs)["CURRENT_TRIAL_V1"]
     mask = _condition_mask(events, baseline_spec)
-    baseline_combo = ExecutionCombo(
-        "TP1H_LCtop1p_T240m",
-        1.0,
-        1.0,
-        240,
-    )
+    baseline_combo = live_trial_execution_combo()
     policy_frame = pd.DataFrame(
         [
             {
@@ -1691,7 +1795,12 @@ def run_pair(
         )
         if train_events.empty:
             raise ValueError(f"{pair_name}の探索期間にDoubleTop候補がありません")
-        peak_check = validate_peak_equivalence(pair_name, train_m5, train_events)
+        train_context_check = validate_production_context_equivalence(
+            pair_name,
+            train_m5,
+            train_h1,
+            train_events,
+        )
         _atomic_csv(paths["train_events"], train_events)
 
         combos = execution_combos()
@@ -1731,12 +1840,18 @@ def run_pair(
         )
         if oos_events.empty:
             raise ValueError(f"{pair_name}のリプレイ期間にDoubleTop候補がありません")
-        oos_peak_check = validate_peak_equivalence(pair_name, oos_m5, oos_events)
+        oos_context_check = validate_production_context_equivalence(
+            pair_name,
+            oos_m5,
+            oos_h1,
+            oos_events,
+        )
         _atomic_csv(paths["oos_events"], oos_events)
 
+        live_combo = live_trial_execution_combo()
         needed_combo_ids = list(dict.fromkeys(
             list(top15["combo_id"].astype(str))
-            + ["TP1H_LCtop1p_T240m"]
+            + [live_combo.combo_id]
         ))
         combo_lookup = {combo.combo_id: combo for combo in combos}
         oos_combos = [combo_lookup[combo_id] for combo_id in needed_combo_ids]
@@ -1779,6 +1894,16 @@ def run_pair(
         summary = {
             "version": VERSION,
             "pair": pair_name,
+            "shared_logic": {
+                "core_version": double_top_core.CORE_VERSION_V1,
+                "discovery_policy_id": GRID_DISCOVERY_POLICY_V1.policy_id,
+                "live_policy_id": live_double_top.LIVE_TRIAL_POLICY_V1.policy_id,
+                "production_imports_validation": False,
+                "fast_peak_scan": "candidate discovery only",
+                "formal_context_audit": (
+                    "CandleAnalysis.build_decision_context_from_frames"
+                ),
+            },
             "periods": {
                 "train_start": train_start,
                 "train_end_exclusive": train_end,
@@ -1791,8 +1916,8 @@ def run_pair(
                 "outcome_data": "S5 at or after decision only",
                 "train_oos_overlap": False,
                 "period_end_outcomes": "excluded when unresolved before end",
-                "peak_equivalence_train": peak_check,
-                "peak_equivalence_oos": oos_peak_check,
+                "production_context_equivalence_train": train_context_check,
+                "production_context_equivalence_oos": oos_context_check,
             },
             "missing_policy": {
                 "unknown_missing_ratio_reject_at": MAX_MISSING_RATIO,
