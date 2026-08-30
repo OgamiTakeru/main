@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-30 16:24 JST
+# 最新更新日時: 2026-08-30 17:53 JST
 
 import unittest
 from unittest.mock import patch
@@ -58,6 +58,28 @@ class InspectionNoticeMarkTest(unittest.TestCase):
                             expected_mark + " @everyone "
                         )
                     )
+
+    @patch("send_notice.requests.post")
+    def test_all_pairs_completion_uses_combined_mark(self, post):
+        with patch.object(
+            send_notice.tk,
+            "WEBHOOK_URL_inspection",
+            "inspection-webhook",
+            create=True,
+        ):
+            send_notice.send_inspection_notice(
+                "【DoubleTop全通貨検証完了】",
+                "- USD_JPY: 完了",
+                "- EUR_USD: 完了",
+                "- AUD_USD: 完了",
+            )
+
+        payload = post.call_args.kwargs["json"]
+        self.assertTrue(
+            payload["content"].startswith(
+                "●◽️⭐︎●◽️⭐︎ @everyone "
+            )
+        )
 
     @patch("send_notice.requests.post")
     def test_non_inspection_notice_does_not_get_pair_mark(self, post):

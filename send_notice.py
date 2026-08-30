@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-30 16:24 JST
+# 最新更新日時: 2026-08-30 17:53 JST
 import datetime
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -19,6 +19,7 @@ INSPECTION_NOTICE_MARKS = {
 }
 INSPECTION_NOTICE_MARK_COUNT = 2
 INSPECTION_COMPLETE_MARK_COUNT = 5
+ALL_PAIRS_INSPECTION_COMPLETE_MARK = "●◽️⭐︎●◽️⭐︎"
 
 
 def is_live_notice_message(message):
@@ -55,6 +56,11 @@ def notice_pair(message=""):
 
 
 def inspection_notice_mark(message):
+    if (
+            "全通貨" in message
+            and ("完了" in message or "終了" in message)
+    ):
+        return ALL_PAIRS_INSPECTION_COMPLETE_MARK
     for pair, mark in INSPECTION_NOTICE_MARKS.items():
         if pair in message:
             mark_count = (
