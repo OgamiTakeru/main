@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-30 13:44 JST
+# 最新更新日時: 2026-08-30 15:42 JST
 
 import datetime
 from dataclasses import dataclass
@@ -18,6 +18,7 @@ class AnalysisRegistration:
     enabled_modes: tuple
     runner_method: str
     due_method: str = ""
+    live_order_mode: str = "execute"
 
 
 # 解析を追加するときは、解析固有のrunnerを用意してここへ登録する。
@@ -36,12 +37,18 @@ ANALYSIS_REGISTRY = (
     ),
     AnalysisRegistration(
         name="double_top",
+        # 本番データで解析・注文組み立てまでは行うが、実発注はしない。
         enabled_modes=("inspection", "live"),
         runner_method="wrap_double_top_analysis",
         due_method="double_top_analysis_is_due",
+        live_order_mode="trial",
     ),
 )
 
+_ANALYSIS_REGISTRATION_BY_NAME = {
+    registration.name: registration
+    for registration in ANALYSIS_REGISTRY
+}
 _LIVE_LINE_REGIME_CACHE = {}
 
 
@@ -73,6 +80,7 @@ class wrap_all_analysis():
         self.regime_snapshot = None
         self.flip_order_classes = []
         self.double_top_order_classes = []
+        self.trial_order_classes = []
         self.position_control_result = None
 
         # 実行
@@ -84,6 +92,10 @@ class wrap_all_analysis():
         for exe_order_class in self.exe_order_classes:
             print("-", exe_order_class.exe_order_plan['name'])
             print("  ", exe_order_class.exe_order_plan)
+        print("trial注文（組み立てのみ・発注しない）")
+        for trial_order_class in self.trial_order_classes:
+            print("-", trial_order_class.exe_order_plan['name'])
+            print("  ", trial_order_class.exe_order_plan)
 
     def orders_add_this_class(self, order_classes):
         """
@@ -105,6 +117,61 @@ class wrap_all_analysis():
         else:
             self.exe_order_classes.append(order_classes)
         # self.exe_order_classes.extend(order_class)
+
+    def orders_add_from_analysis(self, analysis_name, order_classes):
+        """解析ごとの本番注文モードに従い、実発注用とtrial用を分離する。"""
+        if not order_classes:
+            return
+        registration = _ANALYSIS_REGISTRATION_BY_NAME[analysis_name]
+        if (
+                self.mode == "live"
+                and registration.live_order_mode == "trial"
+        ):
+            self.orders_add_trial_this_class(
+                analysis_name,
+                order_classes,
+            )
+            return
+        if registration.live_order_mode not in ("execute", "trial"):
+            raise ValueError(
+                analysis_name + " has an invalid live_order_mode"
+            )
+        self.orders_add_this_class(order_classes)
+
+    def orders_add_trial_this_class(self, analysis_name, order_classes):
+        """注文を発注不能にしてtrial専用リストへ隔離する。"""
+        classes = (
+            list(order_classes)
+            if isinstance(order_classes, (list, tuple))
+            else [order_classes]
+        )
+        for order_class in classes:
+            order_class.order_permission = False
+            order_class.order_json["order_permission"] = False
+            order_class.exe_order_plan["order_permission"] = False
+            order_class.exe_order_plan["execution_mode"] = "trial"
+        self.trial_order_classes.extend(classes)
+        self.notify_trial_orders(analysis_name, classes)
+
+    def notify_trial_orders(self, analysis_name, order_classes):
+        """trial成立内容を、実発注ではないことが分かる形でDiscordへ送る。"""
+        lines = [
+            "【" + analysis_name + " trial no order】",
+            "- 解析と注文組み立てのみ（発注なし）",
+        ]
+        for index, order_class in enumerate(order_classes, start=1):
+            plan = order_class.exe_order_plan
+            lines.extend((
+                "- 候補" + str(index) + " 通貨: " + str(plan.get("pair")),
+                "- 売買: " + (
+                    "買い" if int(plan.get("direction") or 0) == 1 else "売り"
+                ),
+                "- エントリー想定: " + str(plan.get("target_price")),
+                "- 利確: " + str(plan.get("tp_price")),
+                "- 損切り: " + str(plan.get("lc_price")),
+                "- priority: " + str(plan.get("priority")),
+            ))
+        notice.line_send("\n".join(lines))
 
     def register_orders_with_position_control(self):
         """本番注文をまとめてPositionControlへ一度だけ渡す。"""
@@ -177,7 +244,10 @@ class wrap_all_analysis():
         self.turn_analysis_instance = turn_analysis_instance
         self.regime_snapshot = turn_analysis_instance.regime_snapshot
         if turn_analysis_instance.take_position_flag:
-            self.orders_add_this_class(turn_analysis_instance.exe_order_classes)
+            self.orders_add_from_analysis(
+                "line",
+                turn_analysis_instance.exe_order_classes,
+            )
 
     def m5_analysis_is_due(self):
         """完成M5を使う解析の本番実行窓。検証では毎判断時刻を処理する。"""
@@ -222,7 +292,7 @@ class wrap_all_analysis():
             self.ca,
         )
         if self.flip_order_classes:
-            self.orders_add_this_class(self.flip_order_classes)
+            self.orders_add_from_analysis("flip", self.flip_order_classes)
 
     def wrap_double_top_analysis(self):
         """共有 CandleAnalysis からダブルトップの検出と注文生成を行う。"""
@@ -233,7 +303,10 @@ class wrap_all_analysis():
             mode=self.mode,
         )
         if self.double_top_order_classes:
-            self.orders_add_this_class(self.double_top_order_classes)
+            self.orders_add_from_analysis(
+                "double_top",
+                self.double_top_order_classes,
+            )
 
     def _removed_flip_except(self, error):
         if False:

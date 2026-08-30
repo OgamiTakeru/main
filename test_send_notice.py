@@ -1,3 +1,5 @@
+# 最新更新日時: 2026-08-30 16:24 JST
+
 import unittest
 from unittest.mock import patch
 
@@ -12,9 +14,33 @@ class InspectionNoticeMarkTest(unittest.TestCase):
     @patch("send_notice.requests.post")
     def test_pair_mark_is_first_in_each_inspection_notice(self, post):
         cases = (
-            ("AUD_USD", "検証 終了", "⭐︎"),
-            ("USD_JPY", "win-point inspection 終了", "●"),
-            ("EUR_USD", "検証データ取得", "◽️"),
+            ("AUD_USD", "検証 途中経過", "⭐︎⭐︎"),
+            ("USD_JPY", "win-point inspection 途中経過", "●●"),
+            ("EUR_USD", "検証データ取得", "◽️◽️"),
+        )
+
+        with patch.object(
+            send_notice.tk,
+            "WEBHOOK_URL_inspection",
+            "inspection-webhook",
+            create=True,
+        ):
+            for pair, message, expected_mark in cases:
+                with self.subTest(pair=pair):
+                    send_notice.line_send(pair, message)
+                    payload = post.call_args.kwargs["json"]
+                    self.assertTrue(
+                        payload["content"].startswith(
+                            expected_mark + " @everyone "
+                        )
+                    )
+
+    @patch("send_notice.requests.post")
+    def test_pair_mark_is_repeated_five_times_at_completion(self, post):
+        cases = (
+            ("AUD_USD", "検証 完了", "⭐︎⭐︎⭐︎⭐︎⭐︎"),
+            ("USD_JPY", "win-point inspection 終了", "●●●●●"),
+            ("EUR_USD", "検証完了", "◽️◽️◽️◽️◽️"),
         )
 
         with patch.object(
