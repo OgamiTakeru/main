@@ -170,24 +170,12 @@ class DoubleTopSharedCoreTest(unittest.TestCase):
             source = (root / name).read_text(encoding="utf-8")
             self.assertNotIn("double_top_grid_validation", source)
 
-    def test_live_double_top_orders_remain_isolated_as_trial(self):
-        wrapper = object.__new__(analysis_main.wrap_all_analysis)
-        wrapper.mode = "live"
-        wrapper.exe_order_classes = []
-        wrapper.trial_order_classes = []
-        wrapper.notify_trial_orders = lambda *_: None
-        order = SimpleNamespace(
-            order_permission=True,
-            order_json={"order_permission": True},
-            exe_order_plan={"order_permission": True},
+    def test_double_top_is_not_registered_for_live_wiring(self):
+        """ダブルトップはANALYSIS_REGISTRYから外し、live経路には繋がない。"""
+        self.assertNotIn(
+            "double_top",
+            analysis_main._ANALYSIS_REGISTRATION_BY_NAME,
         )
-        wrapper.orders_add_from_analysis("double_top", [order])
-        self.assertEqual(wrapper.exe_order_classes, [])
-        self.assertEqual(wrapper.trial_order_classes, [order])
-        self.assertFalse(order.order_permission)
-        self.assertFalse(order.order_json["order_permission"])
-        self.assertFalse(order.exe_order_plan["order_permission"])
-        self.assertEqual(order.exe_order_plan["execution_mode"], "trial")
 
 
 class DoubleTopValidationContextTest(unittest.TestCase):
@@ -214,6 +202,9 @@ class DoubleTopValidationContextTest(unittest.TestCase):
         return frame
 
     def test_fast_candidate_matches_real_candle_analysis_context(self):
+        # 本番のCandleAnalysisはM5の完成足でPeaksを組むので、この照合は
+        # M5でしか意味がない。探索の足の長さを変えても、本番と突き合わせる
+        # この経路だけはM5のまま検査させる。
         m5_times = pd.date_range(
             end="2026-08-27 11:30:00",
             periods=300,
@@ -236,7 +227,9 @@ class DoubleTopValidationContextTest(unittest.TestCase):
         h1 = self._frame(h1_times, h1_values)
         decision = pd.Timestamp("2026-08-27 11:35:00")
 
-        with patch.object(grid_validation, "_notify"):
+        with patch.object(grid_validation, "_notify"), patch.object(
+            grid_validation, "BAR_MINUTES", 5
+        ):
             events, diagnostics = grid_validation.generate_events(
                 "USD_JPY",
                 decision.to_pydatetime(),

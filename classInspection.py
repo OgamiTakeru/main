@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-29 20:40 JST
+# 最新更新日時: 2026-09-08 04:40 JST
 
 import datetime
 import math
@@ -13,14 +13,15 @@ import classStrategyRegime
 import fAnalysis_order_Main as am
 import fCandleDataQuality as candle_quality
 import fGeneric as gene
-import fLineAnalysis as ti
 import tokens as tk
 import send_notice as notice
 from fStairTrend import STAIR_CONTEXT_FIELDS
 
 
 M5_PREHISTORY_CALENDAR_HOURS = 24 * 7
+M30_PREHISTORY_CALENDAR_HOURS = 24 * 14
 H1_PREHISTORY_CALENDAR_HOURS = 24 * 21
+BREAKOUT_PENDING_AND_POSITION_S5_ROWS = ((60 + 60) * 60 // 5) + 1
 
 
 class Inspection:
@@ -37,7 +38,7 @@ class Inspection:
         loop=1,
         memo="",
         anaN=60,
-        insN=500,
+        insN=BREAKOUT_PENDING_AND_POSITION_S5_ROWS,
         target_interval_minutes=60,
         pair="USD_JPY",
     ):
@@ -52,7 +53,8 @@ class Inspection:
         self.gl_m5_loop = loop
         self.memo = memo
         self.anaN = anaN
-        self.insN = insN
+        # breakoutは未約定60分の末尾で約定しても、その後60分を追う。
+        self.insN = max(int(insN), BREAKOUT_PENDING_AND_POSITION_S5_ROWS)
         self.target_interval_minutes = target_interval_minutes
         self.spread_pips = 0.8
         self.half_spread_pips = self.spread_pips / 2
@@ -115,8 +117,15 @@ class Inspection:
 
         self.gl_h1_df = pd.read_csv(self.gl_h1_csv_path, sep=",", encoding="utf-8")
 
-        if self.gl_m30_csv_path:
-            self.gl_m30_df = pd.read_csv(self.gl_m30_csv_path, sep=",", encoding="utf-8")
+        if not self.gl_m30_csv_path:
+            raise ValueError(
+                "resistance_breakout inspection requires native M30 data"
+            )
+        self.gl_m30_df = pd.read_csv(
+            self.gl_m30_csv_path,
+            sep=",",
+            encoding="utf-8",
+        )
 
         if self.gl_s5_csv_path:
             self.gl_s5_df = pd.read_csv(self.gl_s5_csv_path, sep=",", encoding="utf-8")
@@ -126,7 +135,7 @@ class Inspection:
 
     def load_start_cache_if_exists(self):
         paths = self.cache_file_paths()
-        required_keys = ("h1", "m5", "s5")
+        required_keys = ("h1", "m5", "m30", "s5")
         if not all(paths[key].exists() for key in required_keys):
             return False
 
@@ -182,14 +191,16 @@ class Inspection:
         self.gl_h1_df = data_response["data"]
         notice.line_send("検証データ取得", self.pair, "H1", len(self.gl_h1_df), "rows")
 
-        m30_rows = math.ceil(total_seconds / (30 * 60)) + 5
+        m30_fetch_from = self.required_m30_data_from()
+        m30_total_seconds = max((fetch_to - m30_fetch_from).total_seconds(), 0)
+        m30_rows = math.ceil(m30_total_seconds / (30 * 60)) + 5
         m30_count, m30_loop = self.cal_oanda_count_and_loop(m30_rows)
         params = {"granularity": "M30", "count": m30_count, "to": end_time_iso}
         data_response = self.oa.InstrumentsCandles_multi_exe(
             self.pair,
             params,
             m30_loop,
-            start_time=fetch_from,
+            start_time=m30_fetch_from,
             end_time=fetch_to,
         )
         self.gl_m30_df = data_response["data"]
@@ -258,6 +269,11 @@ class Inspection:
             self.df_covers_range(self.gl_h1_df, self.required_h1_data_from(), self.end_time)
             and self.df_covers_range(self.gl_d5_df, fetch_from, self.end_time)
             and self.df_covers_range(
+                self.gl_m30_df,
+                self.required_m30_data_from(),
+                self.end_time,
+            )
+            and self.df_covers_range(
                 self.gl_s5_df,
                 self.start_time,
                 fetch_to,
@@ -322,8 +338,56 @@ class Inspection:
         print("- data-integrity errors:", self.data_integrity_errors)
         print("- other inspection errors:", self.other_inspection_errors)
         self.save_result_data()
+        self.send_resistance_breakout_summary()
         self.print_tp_last_touch_winrate_summary()
         self.print_elapsed_time()
+
+    def send_resistance_breakout_summary(self):
+        """ブレイク検証の勝率・平均勝ちpips・実額損益を通知する。"""
+        required = {
+            "source",
+            "line_timeframe",
+            "actual_res",
+            "result_yen",
+        }
+        if self.result_df.empty or not required.issubset(self.result_df.columns):
+            return
+        rows = self.result_df[
+            self.result_df["source"].eq("resistance_breakout")
+        ].copy()
+        rows["actual_res"] = pd.to_numeric(rows["actual_res"], errors="coerce")
+        rows["result_yen"] = pd.to_numeric(rows["result_yen"], errors="coerce")
+        rows = rows.dropna(subset=["actual_res", "result_yen"])
+        if rows.empty:
+            return
+
+        lines = [self.pair + " resistance_breakout inspection 結果"]
+        groups = [("全体", rows)]
+        groups.extend(
+            (str(timeframe), frame)
+            for timeframe, frame in rows.groupby("line_timeframe", dropna=False)
+        )
+        for label, frame in groups:
+            wins = frame[frame["actual_res"] > 0]
+            win_rate = len(wins) / len(frame)
+            average_win_pips = (
+                float(wins["actual_res"].mean()) if not wins.empty else 0.0
+            )
+            net_yen = float(frame["result_yen"].sum())
+            lines.append(
+                "- "
+                + label
+                + ": 件数="
+                + str(len(frame))
+                + ", 勝率="
+                + f"{win_rate:.1%}"
+                + ", 平均勝ち="
+                + f"{average_win_pips:.2f}pips"
+                + ", 損益="
+                + f"{net_yen:.0f}円"
+            )
+        lines.append("- 注意: 各抵抗線候補は独立した反実仮想")
+        notice.line_send("\n".join(lines))
 
     def print_tp_last_touch_winrate_summary(self):
         required = {
@@ -399,13 +463,24 @@ class Inspection:
         print("Inspection elapsed seconds:", round(elapsed_seconds, 1))
         print("Inspection elapsed minutes:", round(elapsed_minutes, 2))
         notice.line_send(
-            "検証 終了しました",
-            self.pair,
-            str(self.start_time),
-            "->",
-            str(self.end_time),
-            str(len(self.result_df)) + "件",
-            str(round(elapsed_minutes, 2)) + "分",
+            self.pair
+            + " 検証 終了しました"
+            + "\n- 期間: "
+            + str(self.start_time)
+            + " -> "
+            + str(self.end_time)
+            + "\n- 結果: "
+            + str(len(self.result_df))
+            + "件"
+            + "\n- データ整合性エラー: "
+            + str(self.data_integrity_errors)
+            + "件"
+            + "\n- その他エラー: "
+            + str(self.other_inspection_errors)
+            + "件"
+            + "\n- 経過: "
+            + str(round(elapsed_minutes, 2))
+            + "分"
         )
 
     @staticmethod
@@ -473,7 +548,7 @@ class Inspection:
         analysis_m30_original_df_r = self.slice_original_df_r(
             self.gl_m30_df if not self.gl_m30_df.empty else self.gl_h1_df,
             target_time,
-            (self.anaN * 2) + 1,
+            max((self.anaN * 2) + 1, ca.M30_ANALYSIS_BARS + 1),
         )
         analysis_m5_original_df_r = self.slice_original_df_r(
             self.gl_d5_df,
@@ -629,22 +704,6 @@ class Inspection:
                 self.inspect_order_after(target_time, order_plan, inspection_s5_df)
             )
 
-        if any(order_plan.get("source") == "line" for order_plan in order_plans):
-            return
-
-        lines = self.extract_lines(analysis_result)
-        rsi_info = self.build_rsi_info(
-            basic_analysis.m5_completed_df_r,
-            basic_analysis.h1_completed_df_r,
-        )
-        for line_side, line in lines:
-            if not ti.MainAnalysis.is_h1_line_limit_order_target(line_side, line):
-                continue
-            order_plan = self.line_to_order_plan(target_time, line_side, line, rsi_info)
-            self.append_inspection_result(
-                self.inspect_order_after(target_time, order_plan, inspection_s5_df)
-            )
-
     @staticmethod
     def analysis_cache_key(df_r):
         if df_r is None or df_r.empty:
@@ -728,7 +787,56 @@ class Inspection:
 
         after_fill_df = inspection_s5_df.iloc[fill_index:].reset_index(drop=True)
         fill_time = after_fill_df.iloc[0]["time_jp"]
-        entry_price_actual = self.actual_entry_price(order_type, target_price, direction)
+        breakout_timeout_applied = False
+        breakout_timeout_covered = None
+        breakout_timeout_coverage_ratio = None
+        if order_plan.get("source") == "resistance_breakout":
+            try:
+                trade_timeout_min = float(order_plan.get("trade_timeout_min"))
+            except (TypeError, ValueError):
+                trade_timeout_min = 0.0
+            if trade_timeout_min > 0:
+                fill_time_dt = pd.to_datetime(
+                    fill_time,
+                    format="%Y/%m/%d %H:%M:%S",
+                )
+                position_deadline = fill_time_dt + datetime.timedelta(
+                    minutes=trade_timeout_min
+                )
+                position_times = pd.to_datetime(
+                    after_fill_df["time_jp"],
+                    format="%Y/%m/%d %H:%M:%S",
+                )
+                after_fill_df = after_fill_df[
+                    position_times < position_deadline
+                ].reset_index(drop=True)
+                breakout_timeout_applied = not after_fill_df.empty
+                if breakout_timeout_applied:
+                    expected_rows = max(
+                        int(trade_timeout_min * 60 / 5),
+                        1,
+                    )
+                    breakout_timeout_coverage_ratio = min(
+                        len(after_fill_df) / expected_rows,
+                        1.0,
+                    )
+                    last_s5_end = pd.to_datetime(
+                        after_fill_df.iloc[-1]["time_jp"],
+                        format="%Y/%m/%d %H:%M:%S",
+                    ) + datetime.timedelta(seconds=5)
+                    breakout_timeout_covered = bool(
+                        last_s5_end >= position_deadline
+                        and breakout_timeout_coverage_ratio > 0.5
+                    )
+        entry_price_actual = self.actual_entry_price(
+            order_type,
+            target_price,
+            direction,
+            assumed_stop_slippage_pips=order_plan.get(
+                "assumed_stop_slippage_pips",
+                0.0,
+            ),
+        )
         max_plus_pips, max_minus_pips = self.cal_order_max_plus_minus_actual(
             after_fill_df,
             entry_price_actual,
@@ -745,6 +853,19 @@ class Inspection:
             lc_price,
             direction,
         )
+        breakout_both_hit_same_s5 = bool(
+            order_plan.get("source") == "resistance_breakout"
+            and close_result == "both_tp_lc_same_candle"
+        )
+        if breakout_both_hit_same_s5:
+            # S5一本の中の順序は分からないため、検証は保守的にLCを採る。
+            close_result = "lc"
+            close_price = lc_price
+        if breakout_timeout_covered and close_result == "not_closed":
+            close_index = len(after_fill_df) - 1
+            close_result = "time_close"
+            close_time = after_fill_df.iloc[close_index]["time_jp"]
+            close_price = float(after_fill_df.iloc[close_index]["close"])
         elapsed_s5 = self.cal_elapsed_s5_after_fill(after_fill_df, close_index)
         force_results = self.cal_force_close_results_multi(
             after_fill_df,
@@ -781,6 +902,12 @@ class Inspection:
             {
                 **self.spread_context(order_plan, entry_price_actual, close_price_actual),
                 **mid_context,
+                "both_hit_same_s5_lc_assumed": breakout_both_hit_same_s5,
+                "breakout_timeout_applied": breakout_timeout_applied,
+                "breakout_timeout_covered": breakout_timeout_covered,
+                "breakout_timeout_coverage_ratio": (
+                    breakout_timeout_coverage_ratio
+                ),
                 "spread_block_reason": self.spread_block_reason(
                     close_result,
                     mid_context.get("mid_order_result"),
@@ -957,9 +1084,20 @@ class Inspection:
             max_minus = pair.price_to_pips(target_price - df["high"].max())
         return max_plus, max_minus
 
-    def actual_entry_price(self, order_type, target_price, direction):
-        if str(order_type).upper() == "MARKET":
+    def actual_entry_price(
+            self,
+            order_type,
+            target_price,
+            direction,
+            assumed_stop_slippage_pips=0.0,
+    ):
+        normalized_type = str(order_type).upper()
+        if normalized_type == "MARKET":
             return target_price + self.p.pips_to_price(self.half_spread_pips * direction)
+        if normalized_type == "STOP":
+            return target_price + self.p.pips_to_price(
+                float(assumed_stop_slippage_pips) * direction
+            )
         return target_price
 
     def actual_close_price(self, close_result, close_price, direction):
@@ -1154,6 +1292,18 @@ class Inspection:
         tp_pips = self.p.price_to_pips(tp_range) if tp_range is not None else None
         lc_pips = self.p.price_to_pips(lc_range) if lc_range is not None else None
         rr = tp_pips / lc_pips if tp_pips is not None and lc_pips not in (None, 0) else None
+        result_yen = None
+        if (
+                order_plan.get("source") == "resistance_breakout"
+                and res is not None
+                and lc_pips not in (None, 0)
+                and order_plan.get("actual_risk_yen") is not None
+        ):
+            result_yen = (
+                float(res)
+                / float(lc_pips)
+                * float(order_plan["actual_risk_yen"])
+            )
         return {
             "result_type": "order",
             "target_time": target_time,
@@ -1161,6 +1311,7 @@ class Inspection:
             "pair": order_plan.get("pair", self.pair),
             "res": res,
             "actual_res": res,
+            "result_yen": result_yen,
             "order_type": order_plan.get("type"),
             "direction": order_plan.get("direction"),
             "target_price": order_plan.get("target_price"),
@@ -1194,6 +1345,46 @@ class Inspection:
                 for field in STAIR_CONTEXT_FIELDS
             },
             "source": order_plan.get("source"),
+            **{
+                key: value
+                for key, value in order_plan.items()
+                if key.startswith("resistance_breakout_")
+            },
+            "line_source_granularity": order_plan.get(
+                "line_source_granularity"
+            ),
+            "line_history_bars": order_plan.get("line_history_bars"),
+            "peak_history_bars": order_plan.get("peak_history_bars"),
+            "trigger_timeframe": order_plan.get("trigger_timeframe"),
+            "trigger_foot_count": order_plan.get("trigger_foot_count"),
+            "trigger_peak_direction": order_plan.get(
+                "trigger_peak_direction"
+            ),
+            "trigger_peak_time": order_plan.get("trigger_peak_time"),
+            "entry_mode": order_plan.get("entry_mode"),
+            "candidate_rank": order_plan.get("candidate_rank"),
+            "distance_rank": order_plan.get("distance_rank"),
+            "distance_pips": order_plan.get("distance_pips"),
+            "distance_m5_a": order_plan.get("distance_m5_a"),
+            "distance_line_a": order_plan.get("distance_line_a"),
+            "line_peaks_count": order_plan.get("line_peaks_count"),
+            "line_core_peak_count": order_plan.get(
+                "line_core_peak_count"
+            ),
+            "line_direction_ratio": order_plan.get(
+                "line_direction_ratio"
+            ),
+            "line_average_range_pips": order_plan.get(
+                "line_average_range_pips"
+            ),
+            "group_threshold_pips": order_plan.get(
+                "group_threshold_pips"
+            ),
+            "configured_risk_yen": order_plan.get("configured_risk_yen"),
+            "actual_risk_yen": order_plan.get("actual_risk_yen"),
+            "max_units": order_plan.get("max_units"),
+            "units_uncapped": order_plan.get("units_uncapped"),
+            "units_capped": order_plan.get("units_capped"),
             "line_order_mode": order_plan.get("line_order_mode"),
             "line_timeframe": order_plan.get("line_timeframe"),
             "line_entry_type": order_plan.get("line_entry_type"),
@@ -1587,146 +1778,6 @@ class Inspection:
         target_price = float(order_plan["target_price"])
         return pair.price_to_pips((float(close_price) - target_price) * direction)
 
-    def extract_lines(self, analysis_result):
-        turn = getattr(analysis_result, "turn_analysis_instance", None)
-        line_class = getattr(turn, "line_class_h1_l", None)
-        if line_class is None:
-            line_class = ti.LineStrengthCal(analysis_result.ca, "h1", 65)
-
-        lines = []
-        for line in line_class.upper_lines:
-            lines.append(("upper", line))
-        for line in line_class.lower_lines:
-            lines.append(("lower", line))
-        return lines
-
-    @staticmethod
-    def build_rsi_info(m5_completed_df_r, h1_completed_df_r=None):
-        upper_border = 67.5
-        lower_border = 30
-        h1_info = Inspection.build_prefixed_rsi_info(
-            h1_completed_df_r,
-            "h1",
-            upper_border,
-            lower_border,
-        )
-        if len(m5_completed_df_r) < 3 or "RSI" not in m5_completed_df_r.columns:
-            return {
-                "rsi_1": None,
-                "rsi_2": None,
-                "rsi_3": None,
-                "rsi_time_1": None,
-                "rsi_time_2": None,
-                "rsi_time_3": None,
-                "rsi_upper_border": upper_border,
-                "rsi_lower_border": lower_border,
-                "rsi_is_high": None,
-                "rsi_is_low": None,
-                **h1_info,
-            }
-
-        f_low = m5_completed_df_r.iloc[0]
-        s_low = m5_completed_df_r.iloc[1]
-        t_low = m5_completed_df_r.iloc[2]
-        rsi_1 = f_low.get("RSI")
-        return {
-            "rsi_1": rsi_1,
-            "rsi_2": s_low.get("RSI"),
-            "rsi_3": t_low.get("RSI"),
-            "rsi_time_1": f_low.get("time_jp"),
-            "rsi_time_2": s_low.get("time_jp"),
-            "rsi_time_3": t_low.get("time_jp"),
-            "rsi_upper_border": upper_border,
-            "rsi_lower_border": lower_border,
-            "rsi_is_high": rsi_1 >= upper_border,
-            "rsi_is_low": rsi_1 <= lower_border,
-            **h1_info,
-        }
-
-    @staticmethod
-    def build_prefixed_rsi_info(
-            completed_df_r,
-            prefix,
-            upper_border,
-            lower_border,
-    ):
-        info = {
-            f"{prefix}_rsi_1": None,
-            f"{prefix}_rsi_2": None,
-            f"{prefix}_rsi_3": None,
-            f"{prefix}_rsi_time_1": None,
-            f"{prefix}_rsi_time_2": None,
-            f"{prefix}_rsi_time_3": None,
-            f"{prefix}_rsi_is_high": None,
-            f"{prefix}_rsi_is_low": None,
-        }
-        if (
-                completed_df_r is None
-                or len(completed_df_r) < 3
-                or "RSI" not in completed_df_r.columns
-        ):
-            return info
-
-        f_low = completed_df_r.iloc[0]
-        s_low = completed_df_r.iloc[1]
-        t_low = completed_df_r.iloc[2]
-        rsi_1 = f_low.get("RSI")
-        info.update({
-            f"{prefix}_rsi_1": rsi_1,
-            f"{prefix}_rsi_2": s_low.get("RSI"),
-            f"{prefix}_rsi_3": t_low.get("RSI"),
-            f"{prefix}_rsi_time_1": f_low.get("time_jp"),
-            f"{prefix}_rsi_time_2": s_low.get("time_jp"),
-            f"{prefix}_rsi_time_3": t_low.get("time_jp"),
-            f"{prefix}_rsi_is_high": rsi_1 >= upper_border,
-            f"{prefix}_rsi_is_low": rsi_1 <= lower_border,
-        })
-        return info
-
-    def line_to_order_plan(self, target_time, line_side, line, rsi_info=None):
-        pair = self.p
-        line_price = line["median_price"]
-        direction = -1 if line_side == "upper" else 1
-        spread_pips = 0.8
-        lc_pips = 15
-        rr = 1.65
-        tp_pips = round(rr * (lc_pips + spread_pips) + spread_pips, 1)
-        tp_price = pair.round_price(line_price + pair.pips_to_price(tp_pips * direction))
-        lc_price = pair.round_price(line_price - pair.pips_to_price(lc_pips * direction))
-        name = "line_" + line_side + "_" + target_time.strftime("%Y%m%d%H%M%S")
-
-        return {
-            "name": name,
-            "type": "LIMIT",
-            "direction": direction,
-            "target_price": pair.round_price(line_price),
-            "tp_price": tp_price,
-            "lc_price": lc_price,
-            "tp_range": pair.pips_to_price(tp_pips),
-            "lc_range": pair.pips_to_price(lc_pips),
-            "units": 0,
-            "priority": line.get("total_strength"),
-            "for_api_json": None,
-            "memo": "virtual line order",
-            "source": "line",
-            "line_timeframe": "h1",
-            "line_side": line_side,
-            "line_price": pair.round_price(line_price),
-            "line_total_strength": line.get("total_strength"),
-            "line_count": line.get("count"),
-            "line_ave_strength": line.get("ave_strength"),
-            "line_is_flipped": line.get("is_flipped_line"),
-            "line_oldest_time": line.get("oldest_time"),
-            "core_median_price": line.get("core_median_price"),
-            "core_count": line.get("core_count"),
-            "core_total_strength": line.get("core_total_strength"),
-            "line_strategy": "lower_c3_core1or3",
-            "line_peak_rsi_avg": line.get("line_peak_rsi_avg"),
-            "line_peak_rsi_latest": line.get("line_peak_rsi_latest"),
-            "line_peak_rsi_count": line.get("line_peak_rsi_count"),
-            **(rsi_info or {}),
-        }
-
     def cal_first_reach_results(self, df, target_price, direction):
         thresholds = (5, 10, 15, 20, 25, 30)
         results = {}
@@ -1820,6 +1871,11 @@ class Inspection:
     def required_h1_data_from(self):
         return self.start_time - datetime.timedelta(
             hours=max(self.anaN, H1_PREHISTORY_CALENDAR_HOURS)
+        )
+
+    def required_m30_data_from(self):
+        return self.start_time - datetime.timedelta(
+            hours=max(self.anaN, M30_PREHISTORY_CALENDAR_HOURS)
         )
 
     @staticmethod

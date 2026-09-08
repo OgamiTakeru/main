@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-29 21:21 JST
+# 最新更新日時: 2026-09-03 06:54 JST
 """判断時刻時点のローソク履歴について、鮮度と欠損を共通検査する。"""
 
 from __future__ import annotations
@@ -508,10 +508,18 @@ def validate_completed_history(
                 "M5 decision_time is not on a five-minute boundary"
             )
         expected_end = decision.floor("5min")
+    elif latest_boundary == "M30":
+        if decision.minute % 5 != 0:
+            raise CandleHistoryIntegrityError(
+                "M30 decision_time is not on a five-minute boundary"
+            )
+        # M5起点の検証でも、判断時刻までに完成した
+        # 30分足だけを使う。例: 10:35判断なら10:30開始足は除外。
+        expected_end = decision.floor("30min")
     elif latest_boundary == "H1":
         expected_end = decision.floor("h")
     else:
-        raise ValueError("latest_boundary must be M5 or H1")
+        raise ValueError("latest_boundary must be M5, M30 or H1")
 
     ascending = validate_history_coverage(
         frame,

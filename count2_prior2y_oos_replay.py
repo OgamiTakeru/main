@@ -1657,7 +1657,7 @@ def _write_progress(
     }
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    gene.replace_with_retry(temporary, path)
 
 
 def _write_outputs(

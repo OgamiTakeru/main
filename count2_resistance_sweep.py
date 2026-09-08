@@ -1,10 +1,10 @@
-# 最新更新日時: 2026-08-29 20:40 JST
+# 最新更新日時: 2026-09-08 08:20 JST
 """Count-2 resistance-line exhaustive validation.
 
 At every M5 decision point where the newest peak has count == 2, this module
-rebuilds the M5 resistance/support candidates using only candles completed at
-that time.  Every line ahead of the peak direction is then tested as an
-independent, counterfactual LIMIT order.
+rebuilds M5/M30/H1 resistance/support candidates from each timeframe's native
+completed candles.  Every line ahead of the M5 peak direction is then tested
+as an independent, counterfactual order.
 
 The candidate rows are opportunities, not simultaneously executable orders.
 Use ``event_id`` when comparing alternatives within the same decision.
@@ -29,13 +29,20 @@ import numpy as np
 import pandas as pd
 
 import classOanda
-from classCandleAnalysis import candleAnalysis as CandleAnalysis
+from classCandleAnalysis import (
+    CandleTimeframeBundle,
+    H1_ANALYSIS_BARS as PRODUCTION_H1_PEAK_HISTORY_BARS,
+    M30_ANALYSIS_BARS as PRODUCTION_M30_PEAK_HISTORY_BARS,
+    M5_ANALYSIS_BARS as PRODUCTION_M5_PEAK_HISTORY_BARS,
+    candleAnalysis as CandleAnalysis,
+)
 from classCandlePeaks import PeaksClass
 from fCandleDataQuality import (
     is_expected_market_closed_gap as candle_gap_is_expected_closed,
     oanda_coverage_open_mask,
 )
 import fGeneric as gene
+import fResistanceBreakoutCore as breakout_core
 from fFootCountShape import (
     attach_line_wick_context,
     flatten_foot_count2_shape,
@@ -57,6 +64,9 @@ LINE_HISTORY_BARS = 60
 PEAK_HISTORY_BARS = 180
 H1_HISTORY_BARS = 240
 H1_PREHISTORY_CALENDAR_HOURS = 24 * 21
+M30_PREHISTORY_CALENDAR_HOURS = 24 * 21
+LINE_TIMEFRAMES = ("M5", "M30", "H1")
+TIMEFRAME_MINUTES = {"M5": 5, "M30": 30, "H1": 60}
 TP_LOOKBACK = 6
 TP_MULTIPLIER = 3.0
 RR = 1.2
@@ -65,6 +75,8 @@ HORIZON_MINUTES = 60
 RETOUCH_TOLERANCE_PIPS = 1.0
 S5_SECONDS = 5
 TIME_FORMAT = "%Y/%m/%d %H:%M:%S"
+NORMALIZED_LC_RISK_YEN = 50.0
+PRODUCTION_EQUIVALENCE_SAMPLE_COUNT = 30
 
 
 def parse_args(
@@ -78,8 +90,8 @@ def parse_args(
     default_end = default_end or DEFAULT_END
     parser = argparse.ArgumentParser(
         description=(
-            f"{pair_name}: count2時点の進行方向先にあるM5抵抗線候補を"
-            "LIMIT注文として総当たり検証する"
+            f"{pair_name}: M5 count2時点の進行方向先にある"
+            "M5/M30/H1抵抗線候補を総当たり検証する"
         )
     )
     parser.add_argument("--start", default=default_start.isoformat(" "))
@@ -127,7 +139,123 @@ def parse_args(
         default=None,
         help="開発用。先頭から評価するcount2イベント数を制限する",
     )
+    parser.add_argument(
+        "--line-history-bars",
+        type=int,
+        default=LINE_HISTORY_BARS,
+        help=(
+            "各ライン足でラインを作る遡り本数。既定60本。"
+            "同じ本数でもM5・M30・H1で実時間の範囲は異なる"
+        ),
+    )
+    parser.add_argument(
+        "--peak-history-bars",
+        type=int,
+        default=PEAK_HISTORY_BARS,
+        help=(
+            "各ライン足でピークを作る遡り本数。既定180本。"
+            "line-history-bars より小さいと窓を伸ばしても古いピークが無い"
+        ),
+    )
+    parser.add_argument(
+        "--group-threshold-a",
+        type=float,
+        default=None,
+        help="グループ化幅をA倍率で指定する。未指定なら足ごとの固定pips",
+    )
+    parser.add_argument(
+        "--min-line-total-strength",
+        type=float,
+        default=0.0,
+        help="ラインの合計強度の下限。既定0は現行どおり",
+    )
+    parser.add_argument(
+        "--min-distance-a",
+        type=float,
+        default=0.0,
+        help="現在価格からの距離の下限（A倍率）。近すぎる線を落とす",
+    )
+    parser.add_argument(
+        "--exclude-flipped-recent",
+        action="store_true",
+        help=(
+            "直近の構成ピークが転換状態の線を除外する。"
+            "上側なのに直近が安値、下側なのに直近が高値、というもの"
+        ),
+    )
+    parser.add_argument(
+        "--min-line-direction-ratio",
+        type=float,
+        default=0.0,
+        help=(
+            "線の側に合う向きのピークが占める割合の下限（0〜1）。"
+            "上側の抵抗線なら高値ピーク、下側の支持線なら安値ピークが本来の向き。"
+            "0.7 なら7割以上。既定0は絞らない。"
+            "2本・3本構成の線では7割は実質100%と同じになる点に注意"
+        ),
+    )
+    parser.add_argument(
+        "--separate-line-directions",
+        action="store_true",
+        help=(
+            "上側のラインは高値のピーク、下側は安値のピークだけで組む。"
+            "既定は本番と同じく向きを問わず束ねる"
+        ),
+    )
+    parser.add_argument(
+        "--min-line-peak-count",
+        type=int,
+        default=1,
+        help="ラインとみなすのに必要なピーク数。既定1は現行どおり",
+    )
+    parser.add_argument(
+        "--target-grid",
+        action="store_true",
+        help=(
+            "TP/LCをA単位で総当たりし、セルごとの優位性を集計する。"
+            "候補行は増えず、集計だけを別CSVへ出す"
+        ),
+    )
+    parser.add_argument(
+        "--enforce-peak-strength",
+        action="store_true",
+        help=(
+            "ラインの構成ピークを min_line_peak_strength 以上に絞る。"
+            "既定は本番と同じく絞らない"
+        ),
+    )
+    parser.add_argument(
+        "--entry-mode",
+        choices=("limit", "stop"),
+        default="limit",
+        help=(
+            "limit: ラインで折り返す側へ指値（従来の逆張り）。"
+            "stop: ラインを抜ける側へ逆指値（ブレイク）"
+        ),
+    )
+    parser.add_argument(
+        "--stop-offset-pips",
+        type=float,
+        default=0.0,
+        help="ブレイク時、ラインから何pips先に逆指値を置くか",
+    )
+    parser.add_argument(
+        "--stop-slippage-pips",
+        type=float,
+        default=0.5,
+        help=(
+            "ブレイク時の想定スリッページ。逆指値は成行約定なので、"
+            "不利側へこのぶん滑った価格を建値にする"
+        ),
+    )
     args = parser.parse_args(argv)
+    if args.line_history_bars < 1 or args.peak_history_bars < 1:
+        parser.error("--line-history-bars と --peak-history-bars は1以上です")
+    if args.peak_history_bars < args.line_history_bars:
+        parser.error(
+            "--peak-history-bars は --line-history-bars 以上にしてください。"
+            "小さいと窓を伸ばしても古いピークが存在しません"
+        )
     args.start = pd.Timestamp(args.start).to_pydatetime()
     args.end = pd.Timestamp(args.end).to_pydatetime()
     if args.start >= args.end:
@@ -163,8 +291,8 @@ def _normalize_time(
     return df
 
 
-def prepare_m5(df: pd.DataFrame) -> pd.DataFrame:
-    """Supply the candle fields used by PeaksClass without using future rows."""
+def prepare_analysis_candles(df: pd.DataFrame) -> pd.DataFrame:
+    """Supply fields shared by PeaksClass for any analysis timeframe."""
     df = _normalize_time(df)
     for column in ("open", "close", "high", "low"):
         df[column] = pd.to_numeric(df[column], errors="coerce")
@@ -201,6 +329,11 @@ def prepare_m5(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["RSI"] = pd.to_numeric(df["RSI"], errors="coerce")
     return df
+
+
+def prepare_m5(df: pd.DataFrame) -> pd.DataFrame:
+    """Backward-compatible name for callers/tests that prepare M5 candles."""
+    return prepare_analysis_candles(df)
 
 
 def prepare_s5(df: pd.DataFrame) -> pd.DataFrame:
@@ -275,6 +408,7 @@ def data_coverage_errors(
     end: dt.datetime,
     horizon_minutes: int,
     h1: pd.DataFrame | None = None,
+    m30: pd.DataFrame | None = None,
 ) -> dict[str, list[str]]:
     """Detect truncated cache edges before event extraction begins.
 
@@ -284,6 +418,8 @@ def data_coverage_errors(
     candidate path is still required to be contiguous by LimitPathInspector.
     """
     errors: dict[str, list[str]] = {"M5": [], "S5": []}
+    if m30 is not None:
+        errors["M30"] = []
     if h1 is not None:
         errors["H1"] = []
     start_time = pd.Timestamp(start)
@@ -315,6 +451,37 @@ def data_coverage_errors(
                 errors["M5"].append(
                     "truncated_end:"
                     f"{actual_m5_last}<{expected_m5_last}"
+                )
+
+    if m30 is None:
+        pass
+    elif m30.empty:
+        errors["M30"].append("empty")
+    else:
+        m30_times = m30["time_jp_dt"]
+        history_rows = int((m30_times < start_time).sum())
+        if history_rows < PEAK_HISTORY_BARS:
+            errors["M30"].append(
+                f"prehistory_rows={history_rows}<{PEAK_HISTORY_BARS}"
+            )
+        m30_in_period = m30_times.between(
+            start_time,
+            end_time,
+            inclusive="left",
+        )
+        if not m30_in_period.any():
+            errors["M30"].append("no_rows_in_requested_period")
+        else:
+            expected_m30_last = _nearest_oanda_open_time(
+                end_time - pd.Timedelta(nanoseconds=1),
+                pd.Timedelta(minutes=30),
+                -1,
+            )
+            actual_m30_last = pd.Timestamp(m30_times.loc[m30_in_period].max())
+            if actual_m30_last < expected_m30_last:
+                errors["M30"].append(
+                    "truncated_end:"
+                    f"{actual_m30_last}<{expected_m30_last}"
                 )
 
     if h1 is None:
@@ -414,13 +581,19 @@ def load_pair_data(
     end: dt.datetime,
     existing_only: bool,
     horizon_minutes: int,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Load M5/H1 decision context and the S5 execution path."""
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load native M5/M30/H1 analysis candles and the S5 execution path."""
     win_point.PAIR = pair_name
-    paths = win_point.cache_paths(start, end)
+    paths = dict(win_point.cache_paths(start, end))
+    cache_name = f"{pair_name}_{start:%Y%m%d%H%M%S}_{end:%Y%m%d%H%M%S}"
+    paths["M30"] = Path(tk.folder_path) / f"m30_{cache_name}.csv"
     requirements = {
         "M5": (
             start - dt.timedelta(hours=max(win_point.H1_HISTORY, 16)),
+            end,
+        ),
+        "M30": (
+            start - dt.timedelta(hours=M30_PREHISTORY_CALENDAR_HOURS),
             end,
         ),
         "H1": (
@@ -432,7 +605,7 @@ def load_pair_data(
     data: dict[str, pd.DataFrame] = {}
     missing: list[str] = []
     incompatible: list[str] = []
-    for frame in ("M5", "H1", "S5"):
+    for frame in ("M5", "M30", "H1", "S5"):
         path = paths[frame]
         if not path.exists():
             missing.append(frame)
@@ -488,10 +661,11 @@ def load_pair_data(
         for frame in refresh_frames:
             data[frame] = fetch_frame(frame)
     else:
-        print(f"[CACHE] {pair_name}: M5/S5の既存キャッシュを使用")
+        print(f"[CACHE] {pair_name}: M5/M30/H1/S5の既存キャッシュを使用")
 
-    m5 = prepare_m5(data.pop("M5"))
-    h1 = prepare_m5(data.pop("H1"))
+    m5 = prepare_analysis_candles(data.pop("M5"))
+    m30 = prepare_analysis_candles(data.pop("M30"))
+    h1 = prepare_analysis_candles(data.pop("H1"))
     s5 = prepare_s5(data.pop("S5"))
     coverage_errors = data_coverage_errors(
         m5,
@@ -500,6 +674,7 @@ def load_pair_data(
         end,
         horizon_minutes,
         h1=h1,
+        m30=m30,
     )
     if coverage_errors and existing_only:
         details = "; ".join(
@@ -512,9 +687,11 @@ def load_pair_data(
         for frame in coverage_errors:
             refreshed = fetch_frame(frame)
             if frame == "M5":
-                m5 = prepare_m5(refreshed)
+                m5 = prepare_analysis_candles(refreshed)
+            elif frame == "M30":
+                m30 = prepare_analysis_candles(refreshed)
             elif frame == "H1":
-                h1 = prepare_m5(refreshed)
+                h1 = prepare_analysis_candles(refreshed)
             else:
                 s5 = prepare_s5(refreshed)
         remaining_errors = data_coverage_errors(
@@ -524,6 +701,7 @@ def load_pair_data(
             end,
             horizon_minutes,
             h1=h1,
+            m30=m30,
         )
         if remaining_errors:
             raise ValueError(
@@ -533,7 +711,7 @@ def load_pair_data(
                     for frame, values in remaining_errors.items()
                 )
             )
-    return m5, h1, s5
+    return m5, m30, h1, s5
 
 
 def target_parameters(
@@ -544,61 +722,147 @@ def target_parameters(
     multiplier: float = TP_MULTIPLIER,
     rr: float = RR,
 ) -> dict[str, Any]:
-    """Calculate TP/LC from exactly the preceding completed M5 candles."""
+    """Compatibility adapter to the shared newest-first breakout core."""
     decision_time = pd.Timestamp(m5.iloc[index]["time_jp_dt"])
-    completed = m5.iloc[max(0, index - lookback) : index]
-    base = {
-        "tp_lookback": int(lookback),
-        "tp_multiplier": float(multiplier),
-        "rr": float(rr),
-    }
-    if len(completed) != lookback:
-        return {
-            **base,
-            "target_valid": False,
-            "target_skip_reason": "insufficient_completed_m5",
-        }
-    if (completed["time_jp_dt"] >= decision_time).any():
-        return {
-            **base,
-            "target_valid": False,
-            "target_skip_reason": "non_past_m5_in_target_window",
-        }
+    completed_df_r = m5.iloc[:index].iloc[::-1].reset_index(drop=True)
+    return breakout_core.target_parameters(
+        completed_df_r,
+        decision_time,
+        pair,
+        lookback,
+        multiplier,
+        rr,
+    )
 
-    high = pd.to_numeric(completed["high"], errors="coerce")
-    low = pd.to_numeric(completed["low"], errors="coerce")
-    ranges = (high - low) / pair.pip_value
-    if not np.isfinite(ranges.to_numpy(dtype=float)).all():
-        return {
-            **base,
-            "target_valid": False,
-            "target_skip_reason": "invalid_m5_range",
-        }
-    average_range = float(ranges.mean())
-    tp_pips = float(average_range * multiplier)
-    if not math.isfinite(tp_pips) or tp_pips <= 0:
-        return {
-            **base,
-            "target_valid": False,
-            "target_skip_reason": "non_positive_target",
-        }
-    return {
-        **base,
-        "target_valid": True,
-        "target_skip_reason": None,
-        "target_source_first_time": pd.Timestamp(
-            completed.iloc[0]["time_jp_dt"]
-        ),
-        "target_source_last_time": pd.Timestamp(
-            completed.iloc[-1]["time_jp_dt"]
-        ),
-        "recent_m5_avg_range_pips": average_range,
-        "recent_m5_median_range_pips": float(ranges.median()),
-        "recent_m5_min_range_pips": float(ranges.min()),
-        "recent_m5_max_range_pips": float(ranges.max()),
-        "tp_pips": tp_pips,
-        "lc_pips": float(tp_pips / rr),
-    }
+
+# 優位性をTP/LC別に測るためのグリッド（A単位）。
+# 現行の本番相当は tp=3.0A / lc=2.5A（rr1.2）で、これもセルに含まれる。
+TARGET_GRID_TP_A = (1.0, 1.5, 2.0, 3.0, 4.0, 5.0)
+TARGET_GRID_LC_A = (1.0, 1.5, 2.0, 2.5, 3.5)
+
+
+def _line_count_bucket(line_count: Any) -> str:
+    try:
+        value = int(float(line_count))
+    except (TypeError, ValueError):
+        return "unknown"
+    if value <= 1:
+        return "1"
+    if value == 2:
+        return "2"
+    if value <= 4:
+        return "3-4"
+    return "5+"
+
+
+class TargetGridAccumulator:
+    """TP/LCセルごとに、ランダム基準と実測の差を集計する。
+
+    行を貯めるとメモリが持たないので、セル単位の合計だけを持つ。
+    ランダム基準はドリフト無しのランダムウォークでの期待勝率
+    ``LC距離 ÷ (TP距離 + LC距離)``。売りはbidで入りaskで決済するため、
+    利確はスプレッドぶん遠く、損切りはスプレッドぶん近い。これを織り込まないと
+    期待値が過大になり、優位性が実際より低く見える。
+    """
+
+    def __init__(self, spread_pips: float):
+        self.spread_pips = float(spread_pips)
+        self.cells: dict[tuple, dict[str, float]] = {}
+
+    def add(
+        self,
+        tp_a: float,
+        lc_a: float,
+        line_count: Any,
+        role: Any,
+        tp_pips: float,
+        lc_pips: float,
+        path: dict[str, Any],
+    ) -> None:
+        if not path.get("filled"):
+            return
+        key = (
+            float(tp_a),
+            float(lc_a),
+            _line_count_bucket(line_count),
+            str(role),
+        )
+        cell = self.cells.get(key)
+        if cell is None:
+            cell = {
+                "filled": 0.0,
+                "resolved": 0.0,
+                "tp_wins": 0.0,
+                "expected_sum": 0.0,
+                "pips_sum": 0.0,
+                "win_pips_sum": 0.0,
+                "yen_sum": 0.0,
+                "timeout": 0.0,
+            }
+            self.cells[key] = cell
+        cell["filled"] += 1.0
+        result = path.get("trade_result")
+        pips = path.get("trade_result_pips")
+        if pips is not None and math.isfinite(float(pips)):
+            cell["pips_sum"] += float(pips)
+        result_r = path.get("result_r")
+        if result_r is not None and math.isfinite(float(result_r)):
+            cell["yen_sum"] += float(result_r) * NORMALIZED_LC_RISK_YEN
+        if result == "timeout":
+            cell["timeout"] += 1.0
+        if result not in ("tp", "lc"):
+            return
+        tp_ask = float(tp_pips) + self.spread_pips
+        lc_ask = float(lc_pips) - self.spread_pips
+        if lc_ask <= 0 or tp_ask <= 0:
+            return
+        cell["resolved"] += 1.0
+        cell["expected_sum"] += lc_ask / (tp_ask + lc_ask)
+        if result == "tp":
+            cell["tp_wins"] += 1.0
+            if pips is not None and math.isfinite(float(pips)):
+                cell["win_pips_sum"] += float(pips)
+
+    def to_frame(self) -> pd.DataFrame:
+        rows = []
+        for (tp_a, lc_a, bucket, role), cell in sorted(self.cells.items()):
+            resolved = cell["resolved"]
+            actual = cell["tp_wins"] / resolved if resolved else np.nan
+            expected = cell["expected_sum"] / resolved if resolved else np.nan
+            rows.append(
+                {
+                    "tp_a": tp_a,
+                    "lc_a": lc_a,
+                    "configured_rr": tp_a / lc_a if lc_a else np.nan,
+                    "line_count_bucket": bucket,
+                    "line_peaks_count_bucket": bucket,
+                    "line_current_role": role,
+                    "filled_count": int(cell["filled"]),
+                    "resolved_count": int(resolved),
+                    "timeout_count": int(cell["timeout"]),
+                    "actual_win_rate": actual,
+                    "random_win_rate": expected,
+                    "edge_points": (
+                        (actual - expected) * 100.0
+                        if resolved
+                        else np.nan
+                    ),
+                    "sum_pips": cell["pips_sum"],
+                    "mean_win_pips": (
+                        cell["win_pips_sum"] / cell["tp_wins"]
+                        if cell["tp_wins"]
+                        else np.nan
+                    ),
+                    "net_result_yen": cell["yen_sum"],
+                    "normalized_lc_risk_yen": NORMALIZED_LC_RISK_YEN,
+                    "avg_pips": (
+                        cell["pips_sum"] / cell["filled"]
+                        if cell["filled"]
+                        else np.nan
+                    ),
+                }
+            )
+        return pd.DataFrame(rows)
 
 
 def select_ahead_lines(
@@ -608,61 +872,184 @@ def select_ahead_lines(
     lower_lines: list[dict[str, Any]],
     pair: gene.CurrencyPair,
     profile: Any | None = None,
+    entry_mode: str = "limit",
+    average_range_pips: float | None = None,
+    min_distance_a: float = 0.0,
+    exclude_flipped_recent: bool = False,
 ) -> list[dict[str, Any]]:
-    """Keep every raw line strictly ahead in the newest peak direction."""
-    if int(peak_direction) not in (-1, 1):
-        raise ValueError("peak_direction must be -1 or 1")
+    """Compatibility adapter to the shared resistance-breakout core."""
+    return breakout_core.select_ahead_lines(
+        peak_direction,
+        current_price,
+        upper_lines,
+        lower_lines,
+        pair,
+        profile,
+        entry_mode,
+        average_range_pips,
+        min_distance_a,
+        exclude_flipped_recent,
+    )
 
-    # この検証での count2 は、次の抵抗ポイントを探すための起点。
-    # 上向き count2:
-    #   下落 -> 安値から少し上昇 -> 上側の抵抗線候補へさらに上昇
-    #   -> その抵抗線で SELL -> 下へ折り返して SELL の TP
-    # 下向き count2 はこの逆で、下側の抵抗線候補に BUY を置く。
-    # つまり注文方向は count2 の進行方向と逆になる。
-    # ここでいう「次の count2」は予測したい次の折り返し地点の意味であり、
-    # 候補ライン上で実際に二つ目の count2 が成立することは約定条件ではない。
-    side = "upper" if peak_direction == 1 else "lower"
-    trade_direction = -int(peak_direction)
-    source = upper_lines if side == "upper" else lower_lines
-    selected: list[dict[str, Any]] = []
-    for line in source:
-        try:
-            raw_line_price = float(line["median_price"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        line_price = pair.round_price(raw_line_price)
-        distance_pips = (
-            (line_price - float(current_price))
-            * int(peak_direction)
-            / pair.pip_value
+
+def _build_event_decision_context(
+    m5: pd.DataFrame,
+    index: int,
+    pair_name: str,
+    h1: pd.DataFrame | None,
+    peak_history_bars: int,
+) -> Any:
+    """Build the shared M5-trigger/H1 context once for one decision time."""
+    decision_time = pd.Timestamp(m5.iloc[index]["time_jp_dt"])
+    source_completed = m5.iloc[
+        max(0, index - peak_history_bars) : index
+    ].copy()
+    if len(source_completed) < LINE_HISTORY_BARS:
+        raise ValueError("insufficient_m5_for_decision_context")
+    if (source_completed["time_jp_dt"] >= decision_time).any():
+        raise ValueError("future_m5_in_decision_context")
+    source_price = float(source_completed.iloc[-1]["close"])
+    return CandleAnalysis.build_decision_context_from_frames(
+        pair_name,
+        decision_time,
+        source_completed,
+        h1,
+        current_price=source_price,
+        current_price_source="inspection_m5",
+        mode="inspection",
+        require_complete_flags=False,
+        m5_history=peak_history_bars,
+        h1_history=max(H1_HISTORY_BARS, peak_history_bars),
+        # PeaksClassの足ごとの既定本数で切られないよう、
+        # 検証で指定したピーク窓をM5/H1の両方へ適用する。
+        peaks_class_factory=functools.partial(
+            PeaksClass,
+            analysis_num=peak_history_bars,
+        ),
+    )
+
+
+def _decision_context_bundle(
+    decision_context: Any,
+    line_timeframe: str,
+) -> CandleTimeframeBundle:
+    """Expose the causal M5/H1 source as one explicit timeframe bundle."""
+    if line_timeframe == "M5":
+        original_df_r = decision_context.m5_original_df_r
+        completed_df_r = decision_context.m5_completed_df_r
+        peaks = decision_context.m5_peaks_class
+    elif line_timeframe == "H1":
+        original_df_r = decision_context.h1_original_df_r
+        completed_df_r = decision_context.h1_completed_df_r
+        peaks = decision_context.h1_peaks_class
+    else:
+        raise ValueError("decision context only provides M5 or H1")
+    if original_df_r is None or completed_df_r is None or peaks is None:
+        raise ValueError(line_timeframe + " decision context is unavailable")
+    return CandleTimeframeBundle(
+        timeframe=line_timeframe,
+        duration=pd.Timedelta(minutes=TIMEFRAME_MINUTES[line_timeframe]),
+        original_df_r=original_df_r,
+        completed_df_r=completed_df_r,
+        peaks_class=peaks,
+        source_granularity=line_timeframe,
+    )
+
+
+def _native_m30_bundle(
+    m30: pd.DataFrame | None,
+    decision_time: pd.Timestamp,
+    current_price: float,
+    pair: gene.CurrencyPair,
+    peak_history_bars: int,
+) -> CandleTimeframeBundle:
+    """Build M30 Peaks from native M30 candles completed by decision time."""
+    if m30 is None:
+        raise ValueError("native_m30_frame_is_required")
+    original_df_r = CandleAnalysis.normalize_original_df_r(
+        m30,
+        decision_time,
+        "m30_original_df_r",
+    )
+    completed_df_r = CandleAnalysis.select_completed_df_r(
+        original_df_r,
+        decision_time,
+        pd.Timedelta(minutes=30),
+        limit=peak_history_bars,
+        require_complete_flag=False,
+    )
+    # native M30 と名付けただけのM5データを通さない。共通品質検査は
+    # 30分間隔・判断境界・必要本数を確認し、営業時間内欠損が50%未満なら
+    # 取得済みの完成足で続行する。
+    completed_df_r = CandleAnalysis.validate_completed_history_for_context(
+        completed_df_r,
+        decision_time,
+        pd.Timedelta(minutes=30),
+        peak_history_bars,
+        "M30",
+        latest_boundary="M30",
+        stale_is_integrity=True,
+    )
+    if (
+        completed_df_r["time_jp_dt"] + pd.Timedelta(minutes=30)
+        > decision_time
+    ).any():
+        raise ValueError("future_m30_in_line_snapshot")
+    with contextlib.redirect_stdout(io.StringIO()):
+        peaks = PeaksClass(
+            original_df_r,
+            "M30",
+            current_price,
+            pair,
+            completed_df_r=completed_df_r,
+            decision_time=decision_time,
+            source_granularity="M30",
+            analysis_num=peak_history_bars,
         )
-        if not math.isfinite(distance_pips) or distance_pips <= 0:
-            continue
-        current_target: bool | None = None
-        if profile is not None:
-            try:
-                current_target = bool(
-                    profile.is_m5_reversal_target(side, line)
-                )
-            except (AttributeError, KeyError, TypeError, ValueError):
-                current_target = None
-        selected.append(
-            {
-                "line": line,
-                "line_side": side,
-                "trade_direction": trade_direction,
-                "trade_side": "BUY" if trade_direction == 1 else "SELL",
-                "raw_line_price": raw_line_price,
-                "line_price": line_price,
-                "distance_pips": float(distance_pips),
-                "current_policy_reversal_target": current_target,
-            }
+    if not peaks.peaks_original:
+        raise ValueError("no_M30_peak")
+    return CandleTimeframeBundle(
+        timeframe="M30",
+        duration=pd.Timedelta(minutes=30),
+        original_df_r=original_df_r,
+        completed_df_r=completed_df_r,
+        peaks_class=peaks,
+        source_granularity="M30",
+    )
+
+
+def _timeframe_average_range_pips(
+    completed_df_r: pd.DataFrame,
+    pair: gene.CurrencyPair,
+    lookback: int = TP_LOOKBACK,
+) -> float | None:
+    """Compatibility adapter for the shared newest-first A calculation."""
+    return breakout_core.average_range_pips_from_completed_df_r(
+        completed_df_r,
+        pair,
+        lookback,
+    )
+
+
+def _detect_m5_stair_once(
+    decision_context: Any,
+    *args: Any,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Reuse M5 stair evidence across the three line-timeframe rebuilds."""
+    cached = getattr(
+        decision_context,
+        "_resistance_sweep_m5_stair_context",
+        None,
+    )
+    if cached is None:
+        cached = detect_m5_stair_trend(*args, **kwargs)
+        setattr(
+            decision_context,
+            "_resistance_sweep_m5_stair_context",
+            cached,
         )
-    selected.sort(key=lambda item: (item["distance_pips"], item["line_price"]))
-    for rank, item in enumerate(selected, start=1):
-        item["candidate_rank"] = rank
-        item["distance_rank"] = rank
-    return selected
+    return cached
 
 
 def rebuild_candidates_at(
@@ -670,33 +1057,35 @@ def rebuild_candidates_at(
     index: int,
     pair_name: str,
     h1: pd.DataFrame | None = None,
+    m30: pd.DataFrame | None = None,
     h1_stair_cache: dict[pd.Timestamp, dict[str, Any]] | None = None,
     decision_context: Any | None = None,
+    entry_mode: str = "limit",
+    enforce_peak_strength_filter: bool = False,
+    separate_line_directions: bool = False,
+    min_line_peak_count: int = 1,
+    group_threshold_a: float | None = None,
+    min_line_total_strength: float = 0.0,
+    min_line_direction_ratio: float = 0.0,
+    min_distance_a: float = 0.0,
+    exclude_flipped_recent: bool = False,
+    line_history_bars: int = LINE_HISTORY_BARS,
+    peak_history_bars: int = PEAK_HISTORY_BARS,
+    line_timeframe: str = "M5",
 ) -> dict[str, Any]:
-    """Recreate peak and line state from rows strictly before ``index``."""
+    """Recreate one timeframe's lines at an M5 count-2 decision."""
     pair = gene.currency_pair(pair_name)
+    line_timeframe = str(line_timeframe).strip().upper()
+    if line_timeframe not in LINE_TIMEFRAMES:
+        raise ValueError("line_timeframe must be M5, M30 or H1")
     requested_decision_time = pd.Timestamp(m5.iloc[index]["time_jp_dt"])
     if decision_context is None:
-        source_completed = m5.iloc[
-            max(0, index - PEAK_HISTORY_BARS) : index
-        ].copy()
-        if len(source_completed) < LINE_HISTORY_BARS + 1:
-            raise ValueError("insufficient_m5_for_line_rebuild")
-        if (source_completed["time_jp_dt"] >= requested_decision_time).any():
-            raise ValueError("future_m5_in_line_snapshot")
-        source_price = float(source_completed.iloc[-1]["close"])
-        decision_context = CandleAnalysis.build_decision_context_from_frames(
+        decision_context = _build_event_decision_context(
+            m5,
+            index,
             pair_name,
-            requested_decision_time,
-            source_completed,
             h1,
-            current_price=source_price,
-            current_price_source="inspection_m5",
-            mode="inspection",
-            require_complete_flags=False,
-            m5_history=PEAK_HISTORY_BARS,
-            h1_history=H1_HISTORY_BARS,
-            peaks_class_factory=PeaksClass,
+            peak_history_bars,
         )
     context_pair = str(getattr(decision_context, "pair_name", "")).upper()
     if context_pair != str(pair_name).upper():
@@ -706,18 +1095,50 @@ def rebuild_candidates_at(
         raise ValueError("decision_context_time_mismatch")
 
     m5_completed_df_r = decision_context.m5_completed_df_r
-    completed = m5_completed_df_r.iloc[::-1].reset_index(drop=True)
     current_price = float(decision_context.current_price)
-    peaks = decision_context.m5_peaks_class
-    if not peaks.peaks_original:
-        raise ValueError("no_peak")
-    newest_peak = peaks.peaks_original[0]
+    m5_peaks = decision_context.m5_peaks_class
+    if not m5_peaks.peaks_original:
+        raise ValueError("no_M5_peak")
+    newest_peak = m5_peaks.peaks_original[0]
     if int(newest_peak.get("count", 0)) != 2:
         raise ValueError(
             "count2_prefilter_mismatch:"
             + str(newest_peak.get("count"))
         )
     peak_direction = int(newest_peak["direction"])
+
+    if line_timeframe == "M30":
+        line_bundle = _native_m30_bundle(
+            m30,
+            decision_time,
+            current_price,
+            pair,
+            peak_history_bars,
+        )
+    else:
+        line_bundle = _decision_context_bundle(
+            decision_context,
+            line_timeframe,
+        )
+    if not line_bundle.is_native:
+        raise ValueError(
+            line_timeframe
+            + "_line_source_is_not_native:"
+            + str(line_bundle.source_granularity)
+        )
+    if len(line_bundle.completed_df_r) < line_history_bars:
+        raise ValueError(
+            "insufficient_"
+            + line_timeframe
+            + "_for_line_rebuild:"
+            + str(len(line_bundle.completed_df_r))
+            + "<"
+            + str(line_history_bars)
+        )
+    line_peaks = line_bundle.peaks_class
+    if not line_peaks.peaks_original:
+        raise ValueError("no_" + line_timeframe + "_peak")
+    completed = line_bundle.completed_df_r.iloc[::-1].reset_index(drop=True)
 
     h1_completed_df_r = decision_context.h1_completed_df_r
     h1_peaks = decision_context.h1_peaks_class
@@ -743,32 +1164,45 @@ def rebuild_candidates_at(
 
     analysis = SimpleNamespace(
         pair=pair_name,
-        basic_analysis=decision_context,
-        require_basic_analysis=lambda: decision_context,
+        analysis_mode="inspection",
         current_price=current_price,
         decision_time=decision_time,
-        m5_original_df_r=decision_context.m5_original_df_r,
-        m5_completed_df_r=m5_completed_df_r,
-        peaks_class=peaks,
-        candle_meta_class=None,
-        h1_original_df_r=decision_context.h1_original_df_r,
-        h1_completed_df_r=h1_completed_df_r,
-        peaks_class_hour=h1_peaks,
-        candle_meta_class_hour=None,
-        m30_original_df_r=decision_context.m5_original_df_r,
-        m30_completed_df_r=m5_completed_df_r,
-        peaks_class_m30=peaks,
-        candle_meta_class_m30=None,
     )
     with contextlib.redirect_stdout(io.StringIO()):
+        # Aはラインを作る時間足そのものの直前完成足から算出する。
+        # M30/H1にM5の中身を渡し、閾値だけ変える状態にはしない。
+        average_range_pips = _timeframe_average_range_pips(
+            line_bundle.completed_df_r,
+            pair,
+        )
+        group_threshold_pips = (
+            group_threshold_a * average_range_pips
+            if group_threshold_a is not None and average_range_pips
+            else None
+        )
         line_class = LineStrengthCal(
             analysis,
-            "m5",
-            LINE_HISTORY_BARS,
+            line_timeframe.lower(),
+            line_history_bars,
+            enforce_peak_strength_filter=enforce_peak_strength_filter,
+            separate_line_directions=separate_line_directions,
+            min_line_peak_count=min_line_peak_count,
+            group_threshold_pips=group_threshold_pips,
+            min_line_total_strength=min_line_total_strength,
+            min_line_direction_ratio=min_line_direction_ratio,
+            timeframe_bundle=line_bundle,
         )
-    profile = line_strategy_profile(pair_name)
-    stair_context = detect_m5_stair_trend(
-        peaks.peaks_original,
+    profile = getattr(
+        decision_context,
+        "_resistance_sweep_profile",
+        None,
+    )
+    if profile is None:
+        profile = line_strategy_profile(pair_name)
+        setattr(decision_context, "_resistance_sweep_profile", profile)
+    stair_context = _detect_m5_stair_once(
+        decision_context,
+        m5_peaks.peaks_original,
         pair,
         m5_completed_df_r,
         min_impulse_foot_count=getattr(
@@ -883,17 +1317,34 @@ def rebuild_candidates_at(
         line_class.upper_lines,
         line_class.lower_lines,
         pair,
-        profile,
+        profile if line_timeframe == "M5" else None,
+        entry_mode=entry_mode,
+        average_range_pips=average_range_pips,
+        min_distance_a=min_distance_a,
+        exclude_flipped_recent=exclude_flipped_recent,
     )
     for candidate in candidates:
         candidate["m5_stair_context"] = stair_context
         candidate["h1_stair_context"] = h1_stair_context
+        candidate["line_timeframe"] = line_timeframe
     rsi_info = dict(decision_context.rsi_info)
     return {
         "decision_time": decision_time,
         "current_price": current_price,
         "newest_peak": newest_peak,
-        "m5_peaks": peaks.peaks_original,
+        "m5_peaks": m5_peaks.peaks_original,
+        "line_peaks": line_peaks.peaks_original,
+        "line_timeframe": line_timeframe,
+        "line_source_granularity": str(
+            line_bundle.source_granularity
+        ).upper(),
+        "line_history_bars": int(line_history_bars),
+        "line_history_minutes": int(
+            line_history_bars * TIMEFRAME_MINUTES[line_timeframe]
+        ),
+        "peak_history_bars": int(peak_history_bars),
+        "line_average_range_pips": average_range_pips,
+        "group_threshold_pips": float(line_class.threshold),
         "peak_direction": peak_direction,
         "completed_history": completed,
         "candidates": candidates,
@@ -909,6 +1360,707 @@ def rebuild_candidates_at(
     }
 
 
+_PRODUCTION_EQUIVALENCE_FIELDS = (
+    "decision_time",
+    "pair",
+    "source",
+    "owner_tag",
+    "resistance_breakout_version",
+    "resistance_breakout_core_version",
+    "resistance_breakout_policy_id",
+    "line_timeframe",
+    "line_source_granularity",
+    "line_history_bars",
+    "peak_history_bars",
+    "configured_peak_history_bars",
+    "candidate_rank",
+    "distance_rank",
+    "line_side",
+    "direction",
+    "line_price",
+    "line_raw_median_price",
+    "line_core_price",
+    "line_peak_signature",
+    "distance_pips",
+    "line_peaks_count",
+    "line_core_peak_count",
+    "line_total_strength",
+    "line_ave_strength",
+    "line_core_total_strength",
+    "line_direction_ratio",
+    "line_is_flipped",
+    "line_newest_peak_time",
+    "line_oldest_peak_time",
+    "line_average_range_pips",
+    "group_threshold_pips",
+    "trigger_foot_count",
+    "trigger_peak_direction",
+    "trigger_peak_time",
+    "m5_average_range_pips",
+    "entry_mode",
+    "type",
+    "target_price",
+    "resistance_breakout_trigger_price",
+    "tp_price",
+    "lc_price",
+    "tp_pips",
+    "lc_pips",
+    "stop_offset_pips",
+    "assumed_stop_slippage_pips",
+    "priority",
+    "order_timeout_min",
+    "trade_timeout_min",
+    "order_permission",
+)
+
+_PRODUCTION_EQUIVALENCE_TIME_FIELDS = {
+    "decision_time",
+    "line_newest_peak_time",
+    "line_oldest_peak_time",
+    "trigger_peak_time",
+}
+
+_PRODUCTION_EQUIVALENCE_PRICE_FIELDS = {
+    "line_price",
+    "line_raw_median_price",
+    "line_core_price",
+    "target_price",
+    "resistance_breakout_trigger_price",
+    "tp_price",
+    "lc_price",
+}
+
+
+def _causal_frame_for_equivalence(
+    frame: pd.DataFrame,
+    decision_time: pd.Timestamp,
+    label: str,
+    row_limit: int | None = None,
+) -> pd.DataFrame:
+    """Return source rows whose candle start is not after the decision."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        raise ValueError(label + " frame is empty")
+    decision = CandleAnalysis.normalize_decision_time(decision_time)
+    times = CandleAnalysis._frame_times(frame)
+    causal_mask = times <= decision
+    causal_positions = np.flatnonzero(causal_mask.to_numpy(dtype=bool))
+    if not causal_positions.size:
+        raise ValueError(label + " has no causal rows")
+    if row_limit is not None:
+        limit = max(int(row_limit), 1)
+        causal_times = times.iloc[causal_positions]
+        if len(causal_positions) > limit:
+            if causal_times.is_monotonic_increasing:
+                causal_positions = causal_positions[-limit:]
+            elif causal_times.is_monotonic_decreasing:
+                causal_positions = causal_positions[:limit]
+            else:
+                chronological_order = np.argsort(
+                    causal_times.to_numpy(dtype="datetime64[ns]"),
+                    kind="stable",
+                )
+                causal_positions = causal_positions[
+                    chronological_order[-limit:]
+                ]
+    causal = frame.iloc[causal_positions].copy()
+    causal["time_jp_dt"] = times.iloc[causal_positions].to_numpy()
+    causal.sort_values("time_jp_dt", kind="stable", inplace=True)
+    causal.reset_index(drop=True, inplace=True)
+    return causal
+
+
+def _build_equivalence_candle_analysis(
+    pair_name: str,
+    decision_time: pd.Timestamp,
+    m5: pd.DataFrame,
+    m30: pd.DataFrame,
+    h1: pd.DataFrame,
+) -> CandleAnalysis:
+    """Build the production CandleAnalysis path without OANDA or Discord."""
+    decision = CandleAnalysis.normalize_decision_time(decision_time)
+    # 2年分をサンプルごとに複製しない。形成足を含み得る1本を足しても、
+    # 本番Peaksが読む完成足数は完全に保持される。
+    causal_m5 = _causal_frame_for_equivalence(
+        m5,
+        decision,
+        "M5",
+        PRODUCTION_M5_PEAK_HISTORY_BARS + 1,
+    )
+    causal_m30 = _causal_frame_for_equivalence(
+        m30,
+        decision,
+        "M30",
+        PRODUCTION_M30_PEAK_HISTORY_BARS + 1,
+    )
+    causal_h1 = _causal_frame_for_equivalence(
+        h1,
+        decision,
+        "H1",
+        PRODUCTION_H1_PEAK_HISTORY_BARS + 1,
+    )
+    latest_completed_m5 = CandleAnalysis.select_completed_df_r(
+        causal_m5,
+        decision,
+        pd.Timedelta(minutes=5),
+        limit=1,
+        require_complete_flag=False,
+    )
+    current_price = float(latest_completed_m5.iloc[0]["close"])
+    with contextlib.redirect_stdout(io.StringIO()):
+        return CandleAnalysis(
+            None,
+            pair_name,
+            target_time_jp=decision.to_pydatetime(),
+            m5_original_df_r=causal_m5,
+            h1_original_df_r=causal_h1,
+            m30_original_df_r=causal_m30,
+            s5_original_df_r=None,
+            current_price=current_price,
+            current_price_source="equivalence_latest_completed_m5",
+            decision_time=decision,
+        )
+
+
+def _eligible_production_equivalence_indices(
+    m5: pd.DataFrame,
+    m30: pd.DataFrame,
+    h1: pd.DataFrame,
+    decision_indices: list[int] | tuple[int, ...] | np.ndarray | pd.Series,
+) -> list[int]:
+    if any(
+        not isinstance(frame, pd.DataFrame) or frame.empty
+        for frame in (m5, m30, h1)
+    ):
+        return []
+    m5_times = np.sort(
+        CandleAnalysis._frame_times(m5).to_numpy(dtype="datetime64[ns]")
+    )
+    m30_times = np.sort(
+        CandleAnalysis._frame_times(m30).to_numpy(dtype="datetime64[ns]")
+    )
+    h1_times = np.sort(
+        CandleAnalysis._frame_times(h1).to_numpy(dtype="datetime64[ns]")
+    )
+
+    def completed_count(times: np.ndarray, completed_start: pd.Timestamp) -> int:
+        return int(np.searchsorted(
+            times,
+            np.datetime64(completed_start, "ns"),
+            side="right",
+        ))
+
+    eligible = []
+    for raw_index in decision_indices:
+        index = int(raw_index)
+        if index < 0 or index >= len(m5):
+            raise IndexError("equivalence decision index is out of range")
+        decision_time = CandleAnalysis.normalize_decision_time(
+            m5.iloc[index]["time_jp_dt"]
+        )
+        if completed_count(
+            m5_times,
+            decision_time - pd.Timedelta(minutes=5),
+        ) < PRODUCTION_M5_PEAK_HISTORY_BARS:
+            continue
+        if completed_count(
+            m30_times,
+            decision_time - pd.Timedelta(minutes=30),
+        ) < PRODUCTION_M30_PEAK_HISTORY_BARS:
+            continue
+        if completed_count(
+            h1_times,
+            decision_time - pd.Timedelta(hours=1),
+        ) < PRODUCTION_H1_PEAK_HISTORY_BARS:
+            continue
+        eligible.append(index)
+    return eligible
+
+
+def _is_missing_equivalence_value(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        missing = pd.isna(value)
+    except (TypeError, ValueError):
+        return False
+    return bool(missing) if isinstance(missing, (bool, np.bool_)) else False
+
+
+def _assert_equivalence_value(
+    *,
+    field: str,
+    expected: Any,
+    actual: Any,
+    pair: gene.CurrencyPair,
+    decision_time: pd.Timestamp,
+    timeframe: str = "context",
+) -> None:
+    expected_missing = _is_missing_equivalence_value(expected)
+    actual_missing = _is_missing_equivalence_value(actual)
+    if expected_missing or actual_missing:
+        if expected_missing and actual_missing:
+            return
+        raise ValueError(
+            "resistance breakout production equivalence mismatch: "
+            f"decision={decision_time}, timeframe={timeframe}, field={field}, "
+            f"sweep={expected!r}, production={actual!r}"
+        )
+    if field in _PRODUCTION_EQUIVALENCE_TIME_FIELDS:
+        matches = pd.Timestamp(expected) == pd.Timestamp(actual)
+    elif isinstance(expected, (bool, np.bool_)) or isinstance(
+        actual,
+        (bool, np.bool_),
+    ):
+        matches = bool(expected) is bool(actual)
+    elif isinstance(expected, (int, float, np.integer, np.floating)) and isinstance(
+        actual,
+        (int, float, np.integer, np.floating),
+    ):
+        absolute_tolerance = (
+            pair.pip_value / 10
+            if field in _PRODUCTION_EQUIVALENCE_PRICE_FIELDS
+            else 1e-9
+        )
+        matches = math.isclose(
+            float(expected),
+            float(actual),
+            rel_tol=1e-9,
+            abs_tol=absolute_tolerance,
+        )
+    else:
+        matches = expected == actual
+    if not matches:
+        raise ValueError(
+            "resistance breakout production equivalence mismatch: "
+            f"decision={decision_time}, timeframe={timeframe}, field={field}, "
+            f"sweep={expected!r}, production={actual!r}"
+        )
+
+
+def _assert_no_future_completed_rows(
+    frame: pd.DataFrame,
+    decision_time: pd.Timestamp,
+    duration: pd.Timedelta,
+    label: str,
+) -> None:
+    times = CandleAnalysis._frame_times(frame)
+    if (times + duration > decision_time).any():
+        raise ValueError(
+            label + " contains a forming or future candle in equivalence check"
+        )
+
+
+def _sweep_candidate_as_production_plan(
+    *,
+    pair_name: str,
+    decision_time: pd.Timestamp,
+    rebuilt: dict[str, Any],
+    candidate: dict[str, Any],
+    target: dict[str, Any],
+    trigger: dict[str, Any],
+    policy: breakout_core.ResistanceBreakoutPolicy,
+) -> dict[str, Any]:
+    pair = gene.currency_pair(pair_name)
+    line = candidate["line"]
+    levels = breakout_core.build_stop_order_levels(
+        candidate["line_price"],
+        candidate["trade_direction"],
+        target["tp_pips"],
+        target["lc_pips"],
+        pair,
+        policy.stop_offset_pips,
+    )
+    native_direction = 1 if candidate["line_side"] == "upper" else -1
+    return {
+        "decision_time": decision_time,
+        "pair": pair_name,
+        "source": "resistance_breakout",
+        "owner_tag": breakout_core.OWNER_TAG,
+        "resistance_breakout_version": breakout_core.ADAPTER_VERSION,
+        "resistance_breakout_core_version": breakout_core.CORE_VERSION,
+        "resistance_breakout_policy_id": policy.policy_id,
+        "line_timeframe": rebuilt["line_timeframe"],
+        "line_source_granularity": rebuilt["line_source_granularity"],
+        "line_history_bars": int(rebuilt["line_history_bars"]),
+        "peak_history_bars": int(rebuilt["peak_history_bars"]),
+        "configured_peak_history_bars": int(policy.peak_history_bars),
+        "candidate_rank": int(candidate["candidate_rank"]),
+        "distance_rank": int(candidate["distance_rank"]),
+        "line_side": candidate["line_side"],
+        "direction": int(candidate["trade_direction"]),
+        "line_price": levels.line_price,
+        "line_raw_median_price": candidate.get("raw_line_price"),
+        "line_core_price": line.get("core_median_price"),
+        "line_peak_signature": breakout_core.line_peak_signature(line),
+        "distance_pips": float(candidate["distance_pips"]),
+        "line_peaks_count": int(line.get("count") or 0),
+        "line_core_peak_count": int(line.get("core_count") or 0),
+        "line_total_strength": line.get("total_strength"),
+        "line_ave_strength": line.get("ave_strength"),
+        "line_core_total_strength": line.get("core_total_strength"),
+        "line_direction_ratio": breakout_core.native_direction_ratio(
+            line,
+            native_direction,
+        ),
+        "line_is_flipped": line.get("is_flipped_line"),
+        "line_newest_peak_time": line.get("newest_time"),
+        "line_oldest_peak_time": line.get("oldest_time"),
+        "line_average_range_pips": float(
+            rebuilt["line_average_range_pips"]
+        ),
+        "group_threshold_pips": float(rebuilt["group_threshold_pips"]),
+        "trigger_foot_count": trigger["trigger_foot_count"],
+        "trigger_peak_direction": trigger["peak_direction"],
+        "trigger_peak_time": trigger["peak_time"],
+        "m5_average_range_pips": float(
+            target["recent_m5_avg_range_pips"]
+        ),
+        "entry_mode": "stop",
+        "type": "STOP",
+        "target_price": levels.trigger_price,
+        "resistance_breakout_trigger_price": levels.trigger_price,
+        "tp_price": levels.tp_price,
+        "lc_price": levels.lc_price,
+        "tp_pips": levels.tp_pips,
+        "lc_pips": levels.lc_pips,
+        "stop_offset_pips": levels.stop_offset_pips,
+        "assumed_stop_slippage_pips": float(
+            policy.assumed_stop_slippage_pips
+        ),
+        "priority": int(policy.priority),
+        "order_timeout_min": int(policy.order_timeout_min),
+        "trade_timeout_min": int(policy.trade_timeout_min),
+        "order_permission": breakout_core.ORDER_PERMISSION,
+    }
+
+
+def validate_production_context_equivalence(
+    pair_name: str,
+    m5: pd.DataFrame,
+    m30: pd.DataFrame,
+    h1: pd.DataFrame,
+    decision_indices: list[int] | tuple[int, ...] | np.ndarray | pd.Series,
+    sample_count: int = 30,
+    *,
+    policy: breakout_core.ResistanceBreakoutPolicy | None = None,
+    require_candidates: bool = True,
+) -> dict[str, Any]:
+    """Fail fast unless sweep candidates equal production trial orders.
+
+    The ordinary sweep deliberately stores broad candidates.  This check does
+    not compare those broad defaults.  It rebuilds a separate M5/M30 baseline
+    from the fixed live policy, then compares it with
+    ``fResistanceBreakoutAnalysis.build_orders_for_decision``.  Current price
+    is fixed to the latest completed M5 close on both paths; live quote drift is
+    outside this offline context-equivalence check.
+    """
+    import fResistanceBreakoutAnalysis as live_breakout
+
+    active_policy = (
+        live_breakout.LIVE_TRIAL_POLICY_V1
+        if policy is None
+        else policy
+    )
+    eligible_indices = _eligible_production_equivalence_indices(
+        m5,
+        m30,
+        h1,
+        decision_indices,
+    )
+    if not eligible_indices:
+        raise ValueError(
+            "no decision has enough M5/M30/H1 history for production equivalence"
+        )
+    requested_samples = max(int(sample_count), 1)
+    sample_positions = np.unique(np.linspace(
+        0,
+        len(eligible_indices) - 1,
+        min(requested_samples, len(eligible_indices)),
+        dtype=int,
+    ))
+    pair = gene.currency_pair(pair_name)
+    checked_decisions = 0
+    checked_candidates = 0
+    checked_candidates_by_timeframe = {
+        timeframe: 0 for timeframe in active_policy.timeframes
+    }
+    peak_history_by_timeframe: dict[str, int] = {}
+
+    for sample_position in sample_positions:
+        index = eligible_indices[int(sample_position)]
+        decision_time = CandleAnalysis.normalize_decision_time(
+            m5.iloc[index]["time_jp_dt"]
+        )
+        production_ca = _build_equivalence_candle_analysis(
+            pair_name,
+            decision_time,
+            m5,
+            m30,
+            h1,
+        )
+        production_context = production_ca.require_basic_analysis()
+        production_m5_bundle = production_ca.get_timeframe_bundle(
+            "M5",
+            require_native=True,
+        )
+        m5_peak_history = int(getattr(
+            production_m5_bundle.peaks_class,
+            "analysis_num",
+            PRODUCTION_M5_PEAK_HISTORY_BARS,
+        ))
+        sweep_context = _build_event_decision_context(
+            m5,
+            index,
+            pair_name,
+            h1,
+            m5_peak_history,
+        )
+
+        _assert_equivalence_value(
+            field="decision_time",
+            expected=sweep_context.decision_time,
+            actual=production_context.decision_time,
+            pair=pair,
+            decision_time=decision_time,
+        )
+        _assert_equivalence_value(
+            field="current_price",
+            expected=sweep_context.current_price,
+            actual=production_context.current_price,
+            pair=pair,
+            decision_time=decision_time,
+        )
+        _assert_no_future_completed_rows(
+            sweep_context.m5_completed_df_r,
+            decision_time,
+            pd.Timedelta(minutes=5),
+            "sweep M5",
+        )
+        _assert_no_future_completed_rows(
+            production_context.m5_completed_df_r,
+            decision_time,
+            pd.Timedelta(minutes=5),
+            "production M5",
+        )
+
+        sweep_trigger = breakout_core.evaluate_breakout_trigger(
+            sweep_context.newest_m5_peak,
+            active_policy.trigger_foot_count,
+        )
+        production_trigger = breakout_core.evaluate_breakout_trigger(
+            production_context.newest_m5_peak,
+            active_policy.trigger_foot_count,
+        )
+        for field in (
+            "trigger_valid",
+            "trigger_skip_reason",
+            "trigger_foot_count",
+            "peak_direction",
+            "peak_time",
+        ):
+            compare_field = (
+                "trigger_peak_time" if field == "peak_time" else field
+            )
+            _assert_equivalence_value(
+                field=compare_field,
+                expected=sweep_trigger.get(field),
+                actual=production_trigger.get(field),
+                pair=pair,
+                decision_time=decision_time,
+            )
+
+        sweep_target = target_parameters(
+            m5,
+            index,
+            pair,
+            active_policy.target_lookback,
+            active_policy.target_multiplier,
+            active_policy.rr,
+        )
+        production_target = breakout_core.target_parameters(
+            production_context.m5_completed_df_r,
+            decision_time,
+            pair,
+            active_policy.target_lookback,
+            active_policy.target_multiplier,
+            active_policy.rr,
+        )
+        for field in (
+            "target_valid",
+            "target_skip_reason",
+            "recent_m5_avg_range_pips",
+            "tp_pips",
+            "lc_pips",
+        ):
+            _assert_equivalence_value(
+                field=field,
+                expected=sweep_target.get(field),
+                actual=production_target.get(field),
+                pair=pair,
+                decision_time=decision_time,
+            )
+
+        expected_plans: list[dict[str, Any]] = []
+        target_is_executable = bool(
+            sweep_trigger["trigger_valid"]
+            and sweep_target["target_valid"]
+            and breakout_core.live_target_is_wide_enough(
+                sweep_target["tp_pips"],
+                active_policy.spread_pips,
+                active_policy.min_tp_spread_ratio,
+            )
+        )
+        if target_is_executable:
+            for timeframe in active_policy.timeframes:
+                production_bundle = production_ca.get_timeframe_bundle(
+                    timeframe,
+                    require_native=True,
+                )
+                actual_peak_history = int(getattr(
+                    production_bundle.peaks_class,
+                    "analysis_num",
+                    active_policy.peak_history_bars,
+                ))
+                peak_history_contract = {
+                    "M5": PRODUCTION_M5_PEAK_HISTORY_BARS,
+                    "M30": PRODUCTION_M30_PEAK_HISTORY_BARS,
+                    "H1": PRODUCTION_H1_PEAK_HISTORY_BARS,
+                }
+                required_peak_history = peak_history_contract[timeframe]
+                if actual_peak_history != required_peak_history:
+                    raise ValueError(
+                        "resistance breakout production equivalence mismatch: "
+                        f"decision={decision_time}, timeframe={timeframe}, "
+                        "field=peak_history_contract, "
+                        f"expected={required_peak_history}, "
+                        f"production={actual_peak_history}"
+                    )
+                peak_history_by_timeframe[timeframe] = actual_peak_history
+                _assert_no_future_completed_rows(
+                    production_bundle.completed_df_r,
+                    decision_time,
+                    production_bundle.duration,
+                    "production " + timeframe,
+                )
+                rebuilt = rebuild_candidates_at(
+                    m5,
+                    index,
+                    pair_name,
+                    m30=m30,
+                    h1=h1,
+                    decision_context=sweep_context,
+                    entry_mode="stop",
+                    enforce_peak_strength_filter=(
+                        active_policy.enforce_peak_strength_filter
+                    ),
+                    separate_line_directions=False,
+                    min_line_peak_count=active_policy.min_line_peak_count,
+                    group_threshold_a=active_policy.group_threshold_a,
+                    min_line_total_strength=(
+                        active_policy.min_line_total_strength
+                    ),
+                    min_line_direction_ratio=(
+                        active_policy.min_line_direction_ratio
+                    ),
+                    min_distance_a=active_policy.min_distance_a,
+                    exclude_flipped_recent=(
+                        active_policy.exclude_flipped_recent
+                    ),
+                    line_history_bars=active_policy.line_history_bars,
+                    peak_history_bars=actual_peak_history,
+                    line_timeframe=timeframe,
+                )
+                for candidate in rebuilt["candidates"]:
+                    expected_plans.append(
+                        _sweep_candidate_as_production_plan(
+                            pair_name=pair_name,
+                            decision_time=decision_time,
+                            rebuilt=rebuilt,
+                            candidate=candidate,
+                            target=sweep_target,
+                            trigger=sweep_trigger,
+                            policy=active_policy,
+                        )
+                    )
+                    checked_candidates_by_timeframe[timeframe] += 1
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            production_orders = live_breakout.build_orders_for_decision(
+                production_ca,
+                mode="inspection",
+                policy=active_policy,
+            )
+        production_plans = [
+            dict(order.exe_order_plan)
+            for order in production_orders
+        ]
+        timeframe_order = {
+            timeframe: position
+            for position, timeframe in enumerate(active_policy.timeframes)
+        }
+        sort_key = lambda row: (
+            timeframe_order.get(str(row.get("line_timeframe")).upper(), 999),
+            int(row.get("candidate_rank") or 0),
+        )
+        expected_plans.sort(key=sort_key)
+        production_plans.sort(key=sort_key)
+        if len(expected_plans) != len(production_plans):
+            raise ValueError(
+                "resistance breakout production equivalence mismatch: "
+                f"decision={decision_time}, field=candidate_count, "
+                f"sweep={len(expected_plans)}, "
+                f"production={len(production_plans)}"
+            )
+        for expected, actual in zip(expected_plans, production_plans):
+            timeframe = str(expected["line_timeframe"]).upper()
+            for field in _PRODUCTION_EQUIVALENCE_FIELDS:
+                _assert_equivalence_value(
+                    field=field,
+                    expected=expected.get(field),
+                    actual=actual.get(field),
+                    pair=pair,
+                    decision_time=decision_time,
+                    timeframe=timeframe,
+                )
+        checked_decisions += 1
+        checked_candidates += len(expected_plans)
+
+    missing_candidate_timeframes = [
+        timeframe
+        for timeframe, count in checked_candidates_by_timeframe.items()
+        if count < 1
+    ]
+    if require_candidates and missing_candidate_timeframes:
+        raise ValueError(
+            "production equivalence compared only empty candidate sets for: "
+            + ", ".join(missing_candidate_timeframes)
+        )
+    return {
+        "checked_decisions": checked_decisions,
+        "checked_candidates": checked_candidates,
+        "checked_candidates_by_timeframe": (
+            checked_candidates_by_timeframe
+        ),
+        "candidate_evidence_by_timeframe": {
+            timeframe: (
+                "candidate_compared" if count > 0 else "empty_only"
+            )
+            for timeframe, count in checked_candidates_by_timeframe.items()
+        },
+        "fully_exercised": not missing_candidate_timeframes,
+        "mismatches": 0,
+        "core_version": breakout_core.CORE_VERSION,
+        "policy_id": active_policy.policy_id,
+        "timeframes": tuple(active_policy.timeframes),
+        "peak_history_bars_by_timeframe": peak_history_by_timeframe,
+        "current_price_source": "latest_completed_m5_close",
+        "sweep_builder": "count2_resistance_sweep.rebuild_candidates_at",
+        "production_builder": (
+            "fResistanceBreakoutAnalysis.build_orders_for_decision"
+        ),
+    }
+
+
 def _parse_time(value: Any) -> pd.Timestamp:
     if value is None or value == "":
         return pd.NaT
@@ -918,6 +2070,7 @@ def _parse_time(value: Any) -> pd.Timestamp:
 def _episode_summary(
     mask: pd.Series,
     times: pd.Series,
+    candle_minutes: int = 5,
 ) -> tuple[int, pd.Timestamp]:
     selected = np.flatnonzero(mask.to_numpy(dtype=bool))
     if not selected.size:
@@ -931,7 +2084,9 @@ def _episode_summary(
         new_episode = (
             previous_index is None
             or index != previous_index + 1
-            or timestamp - previous_time > pd.Timedelta(minutes=5)
+            or timestamp - previous_time > pd.Timedelta(
+                minutes=candle_minutes
+            )
         )
         if new_episode:
             episode_count += 1
@@ -946,6 +2101,8 @@ def line_touch_features(
     decision_time: pd.Timestamp,
     pair: gene.CurrencyPair,
     tolerance_pips: float = RETOUCH_TOLERANCE_PIPS,
+    candle_minutes: int = 5,
+    include_predict_reversal_context: bool = True,
 ) -> dict[str, Any]:
     """Separate source-peak touches from later candle retouches."""
     source_last = _parse_time(
@@ -980,15 +2137,18 @@ def line_touch_features(
         "prior_body_retouch_last_time": pd.NaT,
         "minutes_since_prior_body_retouch": np.nan,
     }
-    result.update(
-        predict_reversal_last_reach_context(
-            completed_history,
-            line,
-            decision_time,
-            pair,
-            tolerance_pips,
+    if include_predict_reversal_context:
+        # この特徴量はM5 PredictReversal profile専用。
+        # M30/H1の抵抗線にM5前提の値を横流ししない。
+        result.update(
+            predict_reversal_last_reach_context(
+                completed_history,
+                line,
+                decision_time,
+                pair,
+                tolerance_pips,
+            )
         )
-    )
     if pd.isna(source_last):
         return result
 
@@ -1014,10 +2174,12 @@ def line_touch_features(
     wick_count, wick_last = _episode_summary(
         wick_touch,
         history["time_jp_dt"],
+        candle_minutes,
     )
     body_count, body_last = _episode_summary(
         body_touch,
         history["time_jp_dt"],
+        candle_minutes,
     )
     result.update(
         {
@@ -1152,16 +2314,83 @@ class LimitPathInspector:
         lc_pips: float,
         horizon_minutes: int = HORIZON_MINUTES,
         spread_pips: float = SPREAD_PIPS,
+        approach_side: int | None = None,
+        entry_mode: str = "limit",
+        stop_offset_pips: float = 0.0,
+        stop_slippage_pips: float = 0.0,
     ) -> dict[str, Any]:
+        """ラインを起点にした一件の注文を、S5の値動きで判定する。
+
+        ``approach_side`` は「価格がどちらへ動けば注文が起動するか」を表す。
+        上側のラインなら +1（上昇して届く）、下側なら -1。逆張り（limit）では
+        注文方向と必ず逆向きになるため省略でき、その場合は従来どおり
+        ``-direction`` を使う。ブレイク（stop）では注文方向と同じ向きになる
+        ので、両者を分けて渡す必要がある。
+
+        ``entry_mode`` が ``"stop"`` のときは、ラインから
+        ``stop_offset_pips`` だけ先に置いた逆指値が起動し、成行で約定する。
+        指値と違って有利な価格は保証されないので、``stop_slippage_pips`` を
+        不利側へ足した価格を建値とする。抜けた直後は値動きが速く、ここを
+        0 にすると実運用より良い結果が出る。
+
+        中身は ``inspect_targets`` の一件版。判定の実体を一箇所に保つため、
+        こちらは薄い呼び出しにしてある。
+        """
+        results = self.inspect_targets(
+            decision_time=decision_time,
+            expiry_time=expiry_time,
+            direction=direction,
+            line_price=line_price,
+            targets=((float(tp_pips), float(lc_pips)),),
+            horizon_minutes=horizon_minutes,
+            spread_pips=spread_pips,
+            approach_side=approach_side,
+            entry_mode=entry_mode,
+            stop_offset_pips=stop_offset_pips,
+            stop_slippage_pips=stop_slippage_pips,
+        )
+        return results[0]
+
+    def inspect_targets(
+        self,
+        decision_time: pd.Timestamp,
+        expiry_time: pd.Timestamp,
+        direction: int,
+        line_price: float,
+        targets,
+        horizon_minutes: int = HORIZON_MINUTES,
+        spread_pips: float = SPREAD_PIPS,
+        approach_side: int | None = None,
+        entry_mode: str = "limit",
+        stop_offset_pips: float = 0.0,
+        stop_slippage_pips: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """同じ約定に対して、複数の利確・損切り幅をまとめて判定する。
+
+        ``targets`` は ``(tp_pips, lc_pips)`` の並び。約定の探索と保有期間の
+        S5切り出しは幅に依存しないので、一度だけ行って全ての幅で使い回す。
+        TP/LCを総当たりしたいとき、幅の数だけ検証を回し直さずに済む。
+
+        戻り値は ``targets`` と同じ順・同じ長さ。約定しなかった等の理由で
+        個別判定に至らない場合は、全要素へ同じ内容を返す。
+        """
+        targets = list(targets)
+        if not targets:
+            raise ValueError("targets must not be empty")
+
         base = self._base()
         decision_time = pd.Timestamp(decision_time)
         expiry_time = pd.Timestamp(expiry_time)
+
+        def _same_for_all(payload):
+            return [dict(payload) for _ in targets]
+
         if expiry_time <= decision_time:
-            return {
+            return _same_for_all({
                 **base,
                 "path_skip_reason": "invalid_pending_interval",
                 "candidate_result": "invalid_pending_interval",
-            }
+            })
         if int(direction) not in (-1, 1):
             raise ValueError("direction must be -1 or 1")
 
@@ -1180,23 +2409,59 @@ class LimitPathInspector:
             )
         )
         if start_i >= len(self.times) or start_i >= expiry_i:
-            return {
+            return _same_for_all({
                 **base,
                 "path_skip_reason": "no_s5_during_pending",
                 "candidate_result": "incomplete_pending",
-            }
+            })
         pending_times = self.times[start_i:expiry_i]
 
+        mode = str(entry_mode).lower()
+        if mode not in ("limit", "stop"):
+            raise ValueError("entry_mode must be 'limit' or 'stop'")
+        side = (
+            int(approach_side)
+            if approach_side is not None
+            else (
+                int(direction)
+                if mode == "stop"
+                else -int(direction)
+            )
+        )
+        if side not in (-1, 1):
+            raise ValueError("approach_side must be -1 or 1")
+
         half_spread = self.pair.pips_to_price(spread_pips / 2)
-        pending_high = self.highs[start_i:expiry_i]
-        pending_low = self.lows[start_i:expiry_i]
-        if direction == 1:
-            fill_touch = np.isfinite(pending_low) & (
-                pending_low <= line_price - half_spread
+        if mode == "stop":
+            trigger_price = breakout_core.stop_trigger_price(
+                line_price,
+                side,
+                self.pair,
+                stop_offset_pips,
             )
         else:
+            trigger_price = float(line_price)
+        pending_high = self.highs[start_i:expiry_i]
+        pending_low = self.lows[start_i:expiry_i]
+        if mode == "stop" and side == -1:
+            # SELL STOPはbid(mid-half spread)がtrigger以下で起動する。
+            fill_touch = np.isfinite(pending_low) & (
+                pending_low <= trigger_price + half_spread
+            )
+        elif mode == "stop":
+            # BUY STOPはask(mid+half spread)がtrigger以上で起動する。
             fill_touch = np.isfinite(pending_high) & (
-                pending_high >= line_price + half_spread
+                pending_high >= trigger_price - half_spread
+            )
+        elif side == -1:
+            # BUY LIMITはaskがtrigger以下で約定する。
+            fill_touch = np.isfinite(pending_low) & (
+                pending_low <= trigger_price - half_spread
+            )
+        else:
+            # SELL LIMITはbidがtrigger以上で約定する。
+            fill_touch = np.isfinite(pending_high) & (
+                pending_high >= trigger_price + half_spread
             )
         reached = np.flatnonzero(fill_touch)
         if not reached.size:
@@ -1206,21 +2471,21 @@ class LimitPathInspector:
                 expiry_time,
             )
             if not pending_complete:
-                return {
+                return _same_for_all({
                     **base,
                     "path_skip_reason": "incomplete_pending",
                     "candidate_result": "incomplete_pending",
                     "pending_s5_rows": len(pending_times),
                     "pending_path_complete": False,
-                }
-            return {
+                })
+            return _same_for_all({
                 **base,
                 "has_s5_path": True,
                 "pending_path_complete": True,
                 "candidate_result": "not_filled",
                 "trade_result": "not_filled",
                 "pending_s5_rows": len(pending_times),
-            }
+            })
 
         fill_offset = int(reached[0])
         fill_i = start_i + fill_offset
@@ -1230,19 +2495,26 @@ class LimitPathInspector:
             decision_time,
         )
         if not pending_complete:
-            return {
+            return _same_for_all({
                 **base,
                 "path_skip_reason": "incomplete_pending_before_fill",
                 "candidate_result": "incomplete_pending",
                 "pending_s5_rows": fill_offset + 1,
                 "pending_path_complete": False,
-            }
+            })
         open_mid = float(self.opens[fill_i])
-        fill_at_open = (
-            open_mid + half_spread <= line_price
-            if direction == 1
-            else open_mid - half_spread >= line_price
-        )
+        if mode == "stop":
+            fill_at_open = (
+                open_mid - half_spread <= trigger_price
+                if side == -1
+                else open_mid + half_spread >= trigger_price
+            )
+        else:
+            fill_at_open = (
+                open_mid + half_spread <= trigger_price
+                if side == -1
+                else open_mid - half_spread >= trigger_price
+            )
         horizon_end = fill_time + pd.Timedelta(minutes=horizon_minutes)
         end_i = int(
             np.searchsorted(
@@ -1256,7 +2528,7 @@ class LimitPathInspector:
         low = self.lows[fill_i:end_i]
         close = self.closes[fill_i:end_i]
         if not len(path_times):
-            return {
+            return _same_for_all({
                 **base,
                 "filled": True,
                 "fill_time": fill_time,
@@ -1267,11 +2539,20 @@ class LimitPathInspector:
                 "path_skip_reason": "no_s5_after_fill",
                 "candidate_result": "incomplete_horizon",
                 "pending_s5_rows": fill_offset + 1,
-            }
+            })
 
-        actual_entry = float(line_price)
-        tp_price = actual_entry + direction * self.pair.pips_to_price(tp_pips)
-        lc_price = actual_entry - direction * self.pair.pips_to_price(lc_pips)
+        if mode == "stop":
+            # 逆指値は成行約定なので、不利側へ滑った価格を建値にする。
+            actual_entry = breakout_core.stop_actual_entry_price(
+                trigger_price,
+                direction,
+                self.pair,
+                stop_slippage_pips,
+            )
+        else:
+            actual_entry = float(trigger_price)
+
+        # ここまでが利確・損切り幅に依存しない部分。以降を幅ごとに繰り返す。
         if direction == 1:
             favorable_quote = high - half_spread
             adverse_quote = low - half_spread
@@ -1282,11 +2563,6 @@ class LimitPathInspector:
             adverse_pips = (
                 adverse_quote - actual_entry
             ) / self.pair.pip_value
-            tp_touch = favorable_quote >= tp_price
-            lc_touch = adverse_quote <= lc_price
-            fill_close_confirms_tp = (
-                fill_at_open or close_quote[0] >= tp_price
-            )
         else:
             favorable_quote = low + half_spread
             adverse_quote = high + half_spread
@@ -1297,11 +2573,6 @@ class LimitPathInspector:
             adverse_pips = (
                 actual_entry - adverse_quote
             ) / self.pair.pip_value
-            tp_touch = favorable_quote <= tp_price
-            lc_touch = adverse_quote >= lc_price
-            fill_close_confirms_tp = (
-                fill_at_open or close_quote[0] <= tp_price
-            )
 
         metric_favorable_pips = favorable_pips.copy()
         if not fill_at_open:
@@ -1312,27 +2583,7 @@ class LimitPathInspector:
             )
             metric_favorable_pips[0] = max(0.0, close_progress_pips)
 
-        fill_bar_ambiguous = bool(
-            tp_touch[0] and not lc_touch[0] and not fill_close_confirms_tp
-        )
-        hit_i: int | None = None
-        if lc_touch[0] or (tp_touch[0] and fill_close_confirms_tp):
-            hit_i = 0
-        elif len(path_times) > 1:
-            later_reached = np.flatnonzero(tp_touch[1:] | lc_touch[1:])
-            if later_reached.size:
-                hit_i = int(later_reached[0]) + 1
-
-        coverage_rows = hit_i + 1 if hit_i is not None else len(path_times)
-        path_complete_to_outcome = self._is_contiguous(
-            path_times[:coverage_rows],
-            fill_time,
-            horizon_end if hit_i is None else None,
-        )
-        has_full_horizon = bool(
-            hit_i is None and path_complete_to_outcome
-        )
-        common = {
+        entry_common = {
             **base,
             "has_s5_path": True,
             "pending_path_complete": bool(pending_complete),
@@ -1342,97 +2593,200 @@ class LimitPathInspector:
                 (fill_time - decision_time).total_seconds()
             ),
             "fill_at_bar_open": bool(fill_at_open),
-            "fill_bar_tp_ambiguous": fill_bar_ambiguous,
             "actual_entry_price": actual_entry,
-            "tp_price": tp_price,
-            "lc_price": lc_price,
-            "position_path_complete_to_outcome": bool(
-                path_complete_to_outcome
-            ),
-            "has_full_horizon": bool(has_full_horizon),
             "pending_s5_rows": fill_offset + 1,
             "position_s5_rows": len(path_times),
         }
 
-        if not path_complete_to_outcome:
-            return {
-                **common,
-                "path_skip_reason": "incomplete_horizon",
-                "candidate_result": "incomplete_horizon",
-                "trade_result": "incomplete_horizon",
-                "max_favorable_pips_before_exit": float(
-                    np.nanmax(metric_favorable_pips)
+        results = []
+        for raw_tp, raw_lc in targets:
+            tp_pips = float(raw_tp)
+            lc_pips = float(raw_lc)
+            # OANDAへ先に送るTP/LCは絶対価格。STOPが滑って約定しても
+            # trigger基準の価格は移動しない。損益だけactual_entryから測る。
+            order_price_reference = (
+                trigger_price if mode == "stop" else actual_entry
+            )
+            tp_price = order_price_reference + direction * self.pair.pips_to_price(
+                tp_pips
+            )
+            lc_price = order_price_reference - direction * self.pair.pips_to_price(
+                lc_pips
+            )
+            if direction == 1:
+                tp_touch = favorable_quote >= tp_price
+                lc_touch = adverse_quote <= lc_price
+                fill_close_confirms_tp = (
+                    fill_at_open or close_quote[0] >= tp_price
+                )
+            else:
+                tp_touch = favorable_quote <= tp_price
+                lc_touch = adverse_quote >= lc_price
+                fill_close_confirms_tp = (
+                    fill_at_open or close_quote[0] <= tp_price
+                )
+
+            fill_bar_ambiguous = bool(
+                tp_touch[0]
+                and not lc_touch[0]
+                and not fill_close_confirms_tp
+            )
+            hit_i = None
+            if lc_touch[0] or (tp_touch[0] and fill_close_confirms_tp):
+                hit_i = 0
+            elif len(path_times) > 1:
+                later_reached = np.flatnonzero(tp_touch[1:] | lc_touch[1:])
+                if later_reached.size:
+                    hit_i = int(later_reached[0]) + 1
+
+            coverage_rows = (
+                hit_i + 1 if hit_i is not None else len(path_times)
+            )
+            path_complete_to_outcome = self._is_contiguous(
+                path_times[:coverage_rows],
+                fill_time,
+                horizon_end if hit_i is None else None,
+            )
+            has_full_horizon = bool(
+                hit_i is None and path_complete_to_outcome
+            )
+            common = {
+                **entry_common,
+                "fill_bar_tp_ambiguous": fill_bar_ambiguous,
+                "tp_price": tp_price,
+                "lc_price": lc_price,
+                "position_path_complete_to_outcome": bool(
+                    path_complete_to_outcome
                 ),
-                "max_adverse_pips_before_exit": float(
-                    np.nanmin(adverse_pips)
-                ),
+                "has_full_horizon": bool(has_full_horizon),
             }
 
-        both_same_s5 = bool(
-            hit_i is not None and tp_touch[hit_i] and lc_touch[hit_i]
-        )
-        if hit_i is None:
-            exit_i = len(path_times) - 1
-            result_name = "timeout"
-            result_pips = float(
-                direction
-                * (float(close_quote[exit_i]) - actual_entry)
-                / self.pair.pip_value
-            )
-            actual_exit = float(close_quote[exit_i])
-            tp_hit = False
-            lc_hit = False
-        elif lc_touch[hit_i]:
-            exit_i = hit_i
-            result_name = (
-                "both_same_s5_lc_assumed" if both_same_s5 else "lc"
-            )
-            result_pips = -float(lc_pips)
-            actual_exit = float(lc_price)
-            tp_hit = False
-            lc_hit = True
-        else:
-            exit_i = hit_i
-            result_name = "tp"
-            result_pips = float(tp_pips)
-            actual_exit = float(tp_price)
-            tp_hit = True
-            lc_hit = False
+            if not path_complete_to_outcome:
+                results.append({
+                    **common,
+                    "path_skip_reason": "incomplete_horizon",
+                    "candidate_result": "incomplete_horizon",
+                    "trade_result": "incomplete_horizon",
+                    "max_favorable_pips_before_exit": float(
+                        np.nanmax(metric_favorable_pips)
+                    ),
+                    "max_adverse_pips_before_exit": float(
+                        np.nanmin(adverse_pips)
+                    ),
+                })
+                continue
 
-        exit_time = pd.Timestamp(path_times[exit_i])
-        before_exit = slice(0, exit_i + 1)
-        return {
-            **common,
-            "candidate_result": result_name,
-            "trade_result": result_name,
-            "tp_hit": tp_hit,
-            "lc_hit": lc_hit,
-            "both_hit_same_s5": both_same_s5,
-            "exit_time": exit_time,
-            "actual_exit_price": actual_exit,
-            "trade_result_pips": result_pips,
-            "result_r": float(result_pips / lc_pips),
-            "max_favorable_pips_before_exit": float(
-                np.nanmax(metric_favorable_pips[before_exit])
-            ),
-            "max_adverse_pips_before_exit": float(
-                np.nanmin(adverse_pips[before_exit])
-            ),
-        }
+            both_same_s5 = bool(
+                hit_i is not None and tp_touch[hit_i] and lc_touch[hit_i]
+            )
+            if hit_i is None:
+                exit_i = len(path_times) - 1
+                result_name = "timeout"
+                result_pips = float(
+                    direction
+                    * (float(close_quote[exit_i]) - actual_entry)
+                    / self.pair.pip_value
+                )
+                actual_exit = float(close_quote[exit_i])
+                tp_hit = False
+                lc_hit = False
+            elif lc_touch[hit_i]:
+                exit_i = hit_i
+                result_name = (
+                    "both_same_s5_lc_assumed" if both_same_s5 else "lc"
+                )
+                result_pips = float(
+                    direction
+                    * (float(lc_price) - actual_entry)
+                    / self.pair.pip_value
+                )
+                actual_exit = float(lc_price)
+                tp_hit = False
+                lc_hit = True
+            else:
+                exit_i = hit_i
+                result_name = "tp"
+                result_pips = float(
+                    direction
+                    * (float(tp_price) - actual_entry)
+                    / self.pair.pip_value
+                )
+                actual_exit = float(tp_price)
+                tp_hit = True
+                lc_hit = False
+
+            exit_time = pd.Timestamp(path_times[exit_i])
+            before_exit = slice(0, exit_i + 1)
+            results.append({
+                **common,
+                "candidate_result": result_name,
+                "trade_result": result_name,
+                "tp_hit": tp_hit,
+                "lc_hit": lc_hit,
+                "both_hit_same_s5": both_same_s5,
+                "exit_time": exit_time,
+                "actual_exit_price": actual_exit,
+                "trade_result_pips": result_pips,
+                "result_r": float(result_pips / lc_pips),
+                "max_favorable_pips_before_exit": float(
+                    np.nanmax(metric_favorable_pips[before_exit])
+                ),
+                "max_adverse_pips_before_exit": float(
+                    np.nanmin(adverse_pips[before_exit])
+                ),
+            })
+        return results
+
+
+def _line_direction_columns(line: dict[str, Any]) -> dict[str, Any]:
+    """構成ピークの向きに関する内訳を返す。
+
+    ``prices_info`` は新しい順。素の抵抗線・支持線と、役割が入れ替わった線
+    （上側なのに直近が安値、下側なのに直近が高値）を後から切り分けたい。
+    走行に時間がかかるため、ここで絞らず記録だけしておく。
+    """
+    info = line.get("prices_info") or []
+    directions: list[int] = []
+    for item in info:
+        try:
+            directions.append(int(float(item.get("direction") or 0)))
+        except (TypeError, ValueError):
+            directions.append(0)
+    newest = directions[0] if directions else None
+    positive = sum(1 for value in directions if value > 0)
+    negative = sum(1 for value in directions if value < 0)
+    same = positive if (newest or 0) > 0 else negative
+    opposite = negative if (newest or 0) > 0 else positive
+    return {
+        # 直近の構成ピークの向き。上側の線で -1、下側の線で +1 なら、
+        # 既に役割が入れ替わった線（flip）であって素の線ではない。
+        "line_newest_peak_direction": newest,
+        "line_positive_peak_count": positive,
+        "line_negative_peak_count": negative,
+        # 直近の向きを基準にした内訳。逆方向が多いほどレンジに近い。
+        "line_same_direction_count": same if newest else None,
+        "line_opposite_direction_count": opposite if newest else None,
+    }
 
 
 def _line_columns(line: dict[str, Any]) -> dict[str, Any]:
     dirs = line.get("dirs_grouped") or []
     return {
         "line_total_strength": line.get("total_strength"),
+        # peaks count = この抵抗線・支持線を構成するピーク数。
+        "line_peaks_count": line.get("count"),
         "line_count": line.get("count"),
         "line_average_strength": line.get("ave_strength"),
         "line_core_price": line.get("core_median_price"),
+        "line_core_peak_count": line.get("core_count"),
         "line_core_count": line.get("core_count"),
         "line_core_total_strength": line.get("core_total_strength"),
         "line_newest_source_time": line.get("newest_time"),
         "line_oldest_source_time": line.get("oldest_time"),
         "line_source_directions": "|".join(str(value) for value in dirs),
+        # 構成ピークの向きを、後から閾値を振れる形で残す。
+        # 走行が長いので、絞り込みではなく記録にしておき、解析時に選ぶ。
+        **_line_direction_columns(line),
         "line_is_flipped": line.get("is_flipped_line"),
         "line_origin_role": line.get("line_origin_role"),
         "line_current_role": line.get("line_current_role"),
@@ -1445,6 +2799,8 @@ def _line_columns(line: dict[str, Any]) -> dict[str, Any]:
 
 def _peak_columns(peak: dict[str, Any], pair: gene.CurrencyPair) -> dict[str, Any]:
     return {
+        # foot count = この1ピークを構成するローソク足の本数。
+        "trigger_foot_count": peak.get("count"),
         "peak_count": peak.get("count"),
         "peak_direction": peak.get("direction"),
         "peak_latest_time": peak.get("latest_time_jp"),
@@ -1583,6 +2939,8 @@ def make_ranking(
     if candidates.empty:
         return pd.DataFrame()
     work = candidates.copy()
+    if "line_timeframe" not in work:
+        work["line_timeframe"] = "M5"
     work["distance_bin"] = _distance_bin(work["distance_pips"])
     work["completed_trade"] = work["candidate_result"].isin(
         ["tp", "lc", "both_same_s5_lc_assumed", "timeout"]
@@ -1605,8 +2963,11 @@ def make_ranking(
     ]
     summaries: list[dict[str, Any]] = []
     for group_name, columns in dimensions:
-        grouped = [((), work)] if not columns else work.groupby(
-            columns,
+        # M5/M30/H1の母数と成績を混ぜない。同じrank=1でも
+        # それぞれの足内で付けた順位であり、直接比較できない。
+        group_columns = ["line_timeframe", *columns]
+        grouped = work.groupby(
+            group_columns,
             dropna=False,
             observed=True,
         )
@@ -1616,6 +2977,12 @@ def make_ranking(
             if not isinstance(keys, tuple):
                 keys = (keys,)
             completed = group[group["completed_trade"]]
+            wins = completed[completed["is_win"]]
+            completed_result_yen = (
+                pd.to_numeric(completed["result_yen"], errors="coerce")
+                if "result_yen" in completed
+                else pd.Series(index=completed.index, dtype=float)
+            )
             row: dict[str, Any] = {
                 "group_type": group_name,
                 "candidate_rows": len(group),
@@ -1628,6 +2995,21 @@ def make_ranking(
                 "fill_rate": float(group["filled"].fillna(False).mean()),
                 "win_rate_completed": (
                     float(completed["is_win"].mean())
+                    if len(completed)
+                    else np.nan
+                ),
+                "mean_win_pips": (
+                    float(
+                        pd.to_numeric(
+                            wins["trade_result_pips"],
+                            errors="coerce",
+                        ).mean()
+                    )
+                    if len(wins)
+                    else np.nan
+                ),
+                "net_result_yen": (
+                    float(completed_result_yen.sum(min_count=1))
                     if len(completed)
                     else np.nan
                 ),
@@ -1652,7 +3034,7 @@ def make_ranking(
                     else np.nan
                 ),
             }
-            for column, key in zip(columns, keys):
+            for column, key in zip(group_columns, keys):
                 row[column] = key
             summaries.append(row)
     return pd.DataFrame(summaries)
@@ -1946,16 +3328,40 @@ def output_paths(
 ) -> dict[str, Path]:
     period = f"{args.start:%Y%m%d}_{args.end:%Y%m%d}"
     config = (
-        f"m5line{LINE_HISTORY_BARS}"
+        f"m5-m30-h1line{args.line_history_bars}"
         f"_range{args.tp_lookback}x{args.tp_multiplier:g}"
         f"_rr{args.rr:g}"
         f"_sp{args.spread_pips:g}"
         f"_{args.horizon_minutes}m"
     )
+    if args.enforce_peak_strength:
+        config = f"{config}_strong"
+    if args.group_threshold_a is not None:
+        config = f"{config}_grp{args.group_threshold_a:g}A"
+    if args.min_distance_a > 0:
+        config = f"{config}_far{args.min_distance_a:g}A"
+    if args.min_line_total_strength > 0:
+        config = f"{config}_str{args.min_line_total_strength:g}"
+    if args.min_line_direction_ratio > 0:
+        config = f"{config}_dir{args.min_line_direction_ratio*100:g}"
+    if args.exclude_flipped_recent:
+        config = f"{config}_noflip"
+    if args.separate_line_directions:
+        config = f"{config}_dirsplit"
+    if args.min_line_peak_count > 1:
+        config = f"{config}_minpk{args.min_line_peak_count}"
+    if args.entry_mode == "stop":
+        # 逆張りの既存ファイルを上書きしないよう、ブレイク版は名前を分ける。
+        config = (
+            f"{config}_break"
+            f"off{args.stop_offset_pips:g}"
+            f"slip{args.stop_slippage_pips:g}"
+        )
     stem = f"{pair_name}_{period}_{config}"
     folder = Path(args.output_dir)
     return {
         "candidates": folder / f"resistance_sweep_candidates_{stem}.csv",
+        "target_grid": folder / f"resistance_sweep_target_grid_{stem}.csv",
         "wins": folder / f"resistance_sweep_wins_{stem}.csv",
         "events": folder / f"resistance_sweep_events_{stem}.csv",
         "ranking": folder / f"resistance_sweep_ranking_{stem}.csv",
@@ -2036,7 +3442,8 @@ def _write_progress(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    temporary_path.replace(path)
+    # 進捗表示は本質ではない。OneDriveのロックで長時間の走行を落とさない。
+    gene.replace_with_retry(temporary_path, path, required=False)
     return payload
 
 
@@ -2053,7 +3460,7 @@ def _archive_progress(path: Path) -> Path:
             f"{path.stem}_{timestamp}_{sequence}{path.suffix}"
         )
         sequence += 1
-    path.replace(destination)
+    gene.replace_with_retry(path, destination)
     path.with_suffix(path.suffix + ".tmp").unlink(missing_ok=True)
     return destination
 
@@ -2074,7 +3481,7 @@ def _archive_existing_output(path: Path) -> list[Path]:
                 f"{candidate.stem}_{timestamp}_{sequence}{candidate.suffix}"
             )
             sequence += 1
-        candidate.replace(destination)
+        gene.replace_with_retry(candidate, destination)
         archived.append(destination)
     return archived
 
@@ -2101,7 +3508,7 @@ def _mark_progress_failed(path: Path, error: Exception) -> Path:
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    temporary_path.replace(path)
+    gene.replace_with_retry(temporary_path, path, required=False)
     return _archive_progress(path)
 
 
@@ -2118,6 +3525,9 @@ def _event_summary(
                 "completed_trade_count": 0,
                 "winning_candidate_count": 0,
                 "has_winning_candidate": False,
+                "win_rate_completed": np.nan,
+                "mean_win_pips": np.nan,
+                "net_result_yen": 0.0,
                 "closest_winning_rank": np.nan,
                 "closest_winning_distance_pips": np.nan,
             }
@@ -2128,12 +3538,38 @@ def _event_summary(
         ["tp", "lc", "both_same_s5_lc_assumed", "timeout"]
     )
     wins = frame[frame["candidate_result"].eq("tp")]
+    completed_rows = frame[completed]
     row.update(
         {
             "filled_candidate_count": int(frame["filled"].fillna(False).sum()),
             "completed_trade_count": int(completed.sum()),
             "winning_candidate_count": len(wins),
             "has_winning_candidate": bool(len(wins)),
+            "win_rate_completed": (
+                float(len(wins) / len(completed_rows))
+                if len(completed_rows)
+                else np.nan
+            ),
+            "mean_win_pips": (
+                float(
+                    pd.to_numeric(
+                        wins["trade_result_pips"],
+                        errors="coerce",
+                    ).mean()
+                )
+                if len(wins)
+                else np.nan
+            ),
+            "net_result_yen": (
+                float(
+                    pd.to_numeric(
+                        completed_rows["result_yen"],
+                        errors="coerce",
+                    ).sum(min_count=1)
+                )
+                if len(completed_rows)
+                else 0.0
+            ),
             "closest_winning_rank": (
                 int(wins["candidate_rank"].min()) if len(wins) else np.nan
             ),
@@ -2164,7 +3600,7 @@ def run_sweep(
         wall_started=wall_started,
         process_started=process_started,
     )
-    m5, h1, s5 = load_pair_data(
+    m5, m30, h1, s5 = load_pair_data(
         pair_name,
         args.start,
         args.end,
@@ -2178,7 +3614,7 @@ def run_sweep(
         pair_name=pair_name,
         args=args,
         status="running",
-        phase="processing",
+        phase="production_equivalence",
         wall_started=wall_started,
         process_started=process_started,
         total_positions=total_positions,
@@ -2186,8 +3622,17 @@ def run_sweep(
     inspector = LimitPathInspector(s5, pair)
     candidate_rows: list[dict[str, Any]] = []
     event_rows: list[dict[str, Any]] = []
+    grid_accumulators = (
+        {
+            timeframe: TargetGridAccumulator(args.spread_pips)
+            for timeframe in LINE_TIMEFRAMES
+        }
+        if args.target_grid
+        else None
+    )
     h1_stair_cache: dict[pd.Timestamp, dict[str, Any]] = {}
     evaluated_events = 0
+    processed_positions = 0
     last_decision_time: pd.Timestamp | None = None
     next_notice = pd.Timestamp(args.start) + pd.DateOffset(months=2)
 
@@ -2197,14 +3642,54 @@ def run_sweep(
             f"- 期間: {args.start:%Y-%m-%d %H:%M} ～ {args.end:%Y-%m-%d %H:%M}\n"
             f"- 条件: 直近{args.tp_lookback}本平均×{args.tp_multiplier:g}, "
             f"RR={args.rr:g}, spread={args.spread_pips:g}pips\n"
-            f"- 評価: 全候補を独立した反実仮想LIMITとして検証"
+            f"- トリガー: M5 count2\n"
+            f"- ライン足: M5 / M30 / H1（それぞれnative完成足）\n"
+            f"- 評価: 全候補を独立した反実仮想注文として検証"
         )
+    )
+
+    # 総当たりの広い保存条件とは別に、本番Trial固定条件で実CandleAnalysis、
+    # 実Peaks、実LineStrengthCalを通す。ここが不一致なら集計へ進めない。
+    production_equivalence = validate_production_context_equivalence(
+        pair_name,
+        m5,
+        m30,
+        h1,
+        indices,
+        sample_count=PRODUCTION_EQUIVALENCE_SAMPLE_COUNT,
+        require_candidates=True,
+    )
+    equivalence_by_timeframe = production_equivalence[
+        "checked_candidates_by_timeframe"
+    ]
+    _notify(
+        (
+            f"{pair_name} 抵抗線ブレイク 本番等価性確認完了\n"
+            f"- 判断時刻: {production_equivalence['checked_decisions']}件\n"
+            f"- 候補: {production_equivalence['checked_candidates']}件\n"
+            + "\n".join(
+                f"- {timeframe}: {count}件"
+                for timeframe, count in equivalence_by_timeframe.items()
+            )
+            + "\n- 不一致: 0件"
+        )
+    )
+    _write_progress(
+        paths["progress"],
+        pair_name=pair_name,
+        args=args,
+        status="running",
+        phase="processing",
+        wall_started=wall_started,
+        process_started=process_started,
+        total_positions=total_positions,
     )
 
     for position, index in enumerate(indices):
         decision_time = pd.Timestamp(m5.iloc[index]["time_jp_dt"])
         last_decision_time = decision_time
         current_position = position + 1
+        processed_positions = current_position
         if current_position == 1 or current_position % 50 == 0:
             _write_progress(
                 paths["progress"],
@@ -2224,17 +3709,22 @@ def run_sweep(
             "event_id": _event_id(pair_name, decision_time),
             "pair": pair_name,
             "decision_time": decision_time,
+            "decision_trigger_timeframe": "M5",
             "counterfactual_candidates": True,
         }
         if position + 1 >= len(indices):
-            event_rows.append(
-                {
-                    **event_base,
-                    "event_status": "no_next_count2",
-                    "event_skip_reason": "next_count2_not_inside_requested_period",
-                    "candidate_count": 0,
-                }
-            )
+            for line_timeframe in LINE_TIMEFRAMES:
+                event_rows.append(
+                    {
+                        **event_base,
+                        "line_timeframe": line_timeframe,
+                        "event_status": "no_next_count2",
+                        "event_skip_reason": (
+                            "next_count2_not_inside_requested_period"
+                        ),
+                        "candidate_count": 0,
+                    }
+                )
             break
         next_index = indices[position + 1]
         next_count2_time = pd.Timestamp(m5.iloc[next_index]["time_jp_dt"])
@@ -2252,38 +3742,118 @@ def run_sweep(
             args.rr,
         )
         if not target["target_valid"]:
-            event_rows.append(
-                {
-                    **event_base,
-                    **target,
-                    "event_status": "skipped",
-                    "event_skip_reason": target["target_skip_reason"],
-                    "candidate_count": 0,
-                }
-            )
+            for line_timeframe in LINE_TIMEFRAMES:
+                event_rows.append(
+                    {
+                        **event_base,
+                        **target,
+                        "line_timeframe": line_timeframe,
+                        "event_status": "skipped",
+                        "event_skip_reason": target["target_skip_reason"],
+                        "candidate_count": 0,
+                    }
+                )
             continue
 
         try:
-            rebuilt = rebuild_candidates_at(
+            decision_context = _build_event_decision_context(
                 m5,
                 index,
                 pair_name,
                 h1=h1,
-                h1_stair_cache=h1_stair_cache,
+                peak_history_bars=args.peak_history_bars,
             )
         except Exception as error:
-            event_rows.append(
-                {
-                    **event_base,
-                    **target,
-                    "event_status": "skipped",
-                    "event_skip_reason": (
-                        f"line_rebuild_error:{type(error).__name__}:{error}"
-                    ),
-                    "candidate_count": 0,
-                }
-            )
+            for line_timeframe in LINE_TIMEFRAMES:
+                event_rows.append(
+                    {
+                        **event_base,
+                        **target,
+                        "line_timeframe": line_timeframe,
+                        "event_status": "skipped",
+                        "event_skip_reason": (
+                            "decision_context_error:"
+                            f"{type(error).__name__}:{error}"
+                        ),
+                        "candidate_count": 0,
+                    }
+                )
             continue
+
+        rebuilt_by_timeframe: dict[str, dict[str, Any]] = {}
+        for line_timeframe in LINE_TIMEFRAMES:
+            try:
+                rebuilt_frame = rebuild_candidates_at(
+                    m5,
+                    index,
+                    pair_name,
+                    m30=m30,
+                    h1=h1,
+                    h1_stair_cache=h1_stair_cache,
+                    decision_context=decision_context,
+                    entry_mode=args.entry_mode,
+                    enforce_peak_strength_filter=args.enforce_peak_strength,
+                    separate_line_directions=args.separate_line_directions,
+                    min_line_peak_count=args.min_line_peak_count,
+                    group_threshold_a=args.group_threshold_a,
+                    min_line_total_strength=args.min_line_total_strength,
+                    min_line_direction_ratio=args.min_line_direction_ratio,
+                    min_distance_a=args.min_distance_a,
+                    exclude_flipped_recent=args.exclude_flipped_recent,
+                    line_history_bars=args.line_history_bars,
+                    peak_history_bars=args.peak_history_bars,
+                    line_timeframe=line_timeframe,
+                )
+            except Exception as error:
+                event_rows.append(
+                    {
+                        **event_base,
+                        **target,
+                        "line_timeframe": line_timeframe,
+                        "event_status": "skipped",
+                        "event_skip_reason": (
+                            f"line_rebuild_error:{type(error).__name__}:{error}"
+                        ),
+                        "candidate_count": 0,
+                    }
+                )
+                continue
+            rebuilt_by_timeframe[line_timeframe] = rebuilt_frame
+
+        if not rebuilt_by_timeframe:
+            continue
+        # M5/M30/H1の中身は混ぜず、後段の注文パス検査だけ
+        # 一本のループで共有する。候補rankは各足の内部で付与済み。
+        rebuilt = dict(
+            rebuilt_by_timeframe.get("M5")
+            or next(iter(rebuilt_by_timeframe.values()))
+        )
+        rebuilt["candidates"] = []
+        for line_timeframe, rebuilt_frame in rebuilt_by_timeframe.items():
+            for candidate in rebuilt_frame["candidates"]:
+                candidate["_completed_history"] = rebuilt_frame[
+                    "completed_history"
+                ]
+                candidate["line_timeframe"] = line_timeframe
+                candidate["line_source_granularity"] = rebuilt_frame[
+                    "line_source_granularity"
+                ]
+                candidate["line_history_bars"] = rebuilt_frame[
+                    "line_history_bars"
+                ]
+                candidate["line_history_minutes"] = rebuilt_frame[
+                    "line_history_minutes"
+                ]
+                candidate["peak_history_bars"] = rebuilt_frame[
+                    "peak_history_bars"
+                ]
+                candidate["line_average_range_pips"] = rebuilt_frame[
+                    "line_average_range_pips"
+                ]
+                candidate["group_threshold_pips"] = rebuilt_frame[
+                    "group_threshold_pips"
+                ]
+                rebuilt["candidates"].append(candidate)
 
         peak = rebuilt["newest_peak"]
         fc2_shape = rebuilt["decision_context"].shape_for_peak(
@@ -2292,38 +3862,45 @@ def run_sweep(
             average_range_pips=target["recent_m5_avg_range_pips"],
         )
         if not fc2_shape.get("valid"):
-            event_rows.append(
-                {
-                    **event_base,
-                    **target,
-                    **_peak_columns(peak, pair),
-                    **flatten_foot_count2_shape(fc2_shape),
-                    "event_status": "skipped",
-                    "event_skip_reason": (
-                        "foot_count2_shape_error:"
-                        + str(fc2_shape.get("reason"))
-                    ),
-                    "candidate_count": 0,
-                }
-            )
+            for line_timeframe in rebuilt_by_timeframe:
+                event_rows.append(
+                    {
+                        **event_base,
+                        **target,
+                        **_peak_columns(peak, pair),
+                        **flatten_foot_count2_shape(fc2_shape),
+                        "line_timeframe": line_timeframe,
+                        "event_status": "skipped",
+                        "event_skip_reason": (
+                            "foot_count2_shape_error:"
+                            + str(fc2_shape.get("reason"))
+                        ),
+                        "candidate_count": 0,
+                    }
+                )
             continue
         h1_pair_shape = rebuilt["h1_pair_shape_context"]
         if not h1_pair_shape.get("valid"):
-            event_rows.append(
-                {
-                    **event_base,
-                    **target,
-                    **_peak_columns(peak, pair),
-                    **flatten_foot_count2_shape(fc2_shape),
-                    **flatten_foot_count2_shape(h1_pair_shape, prefix="h1_pair_"),
-                    "event_status": "skipped",
-                    "event_skip_reason": (
-                        "h1_two_candle_shape_error:"
-                        + str(h1_pair_shape.get("reason"))
-                    ),
-                    "candidate_count": 0,
-                }
-            )
+            for line_timeframe in rebuilt_by_timeframe:
+                event_rows.append(
+                    {
+                        **event_base,
+                        **target,
+                        **_peak_columns(peak, pair),
+                        **flatten_foot_count2_shape(fc2_shape),
+                        **flatten_foot_count2_shape(
+                            h1_pair_shape,
+                            prefix="h1_pair_",
+                        ),
+                        "line_timeframe": line_timeframe,
+                        "event_status": "skipped",
+                        "event_skip_reason": (
+                            "h1_two_candle_shape_error:"
+                            + str(h1_pair_shape.get("reason"))
+                        ),
+                        "candidate_count": 0,
+                    }
+                )
             continue
         event_base.update(
             {
@@ -2355,11 +3932,13 @@ def run_sweep(
                 pair=pair,
             )
             touches = line_touch_features(
-                rebuilt["completed_history"],
+                candidate["_completed_history"],
                 candidate["line"],
                 decision_time,
                 pair,
                 args.retouch_tolerance_pips,
+                TIMEFRAME_MINUTES[candidate["line_timeframe"]],
+                candidate["line_timeframe"] == "M5",
             )
             candidate.update(touches)
             candidate["predict_distance_to_tp_ratio"] = (
@@ -2367,9 +3946,14 @@ def run_sweep(
             )
             touches_by_candidate[id(candidate)] = touches
 
-        counterfactual_candidates = [
+        m5_line_candidates = [
             candidate
             for candidate in rebuilt["candidates"]
+            if candidate["line_timeframe"] == "M5"
+        ]
+        counterfactual_candidates = [
+            candidate
+            for candidate in m5_line_candidates
             if candidate.get("current_policy_reversal_target") is True
         ]
         rebuilt["profile"].rank_predict_reversal_candidates(
@@ -2380,7 +3964,7 @@ def run_sweep(
                 "count": peak.get("count"),
             },
         )
-        for candidate in rebuilt["candidates"]:
+        for candidate in m5_line_candidates:
             candidate["counterfactual_predict_candidate_rank"] = (
                 candidate.get("predict_candidate_rank")
             )
@@ -2415,27 +3999,84 @@ def run_sweep(
             rsi_info=rebuilt["rsi_info"],
             latest_peak_info=latest_peak_info,
         )
-        for candidate in rebuilt["candidates"]:
+        for candidate in m5_line_candidates:
             candidate.setdefault("current_policy_live_eligible", False)
             candidate["current_policy_live_selected"] = bool(
                 candidate["current_policy_live_eligible"]
                 and candidate.get("predict_candidate_rank") == 1
             )
+        for candidate in rebuilt["candidates"]:
+            if candidate["line_timeframe"] == "M5":
+                continue
+            # PredictReversalはM5用profile。M30/H1へ横流しせず、
+            # native足の素の抵抗線候補として検証する。
+            candidate["counterfactual_predict_candidate_rank"] = None
+            candidate["counterfactual_predict_selected"] = False
+            candidate["current_policy_live_eligible"] = False
+            candidate["current_policy_live_selected"] = False
 
-        rows_for_event: list[dict[str, Any]] = []
+        rows_for_event: dict[str, list[dict[str, Any]]] = {
+            timeframe: [] for timeframe in rebuilt_by_timeframe
+        }
         for candidate in rebuilt["candidates"]:
             line = candidate["line"]
             touches = touches_by_candidate[id(candidate)]
-            path = inspector.inspect(
+            line_timeframe = candidate["line_timeframe"]
+            grid_accumulator = (
+                grid_accumulators[line_timeframe]
+                if grid_accumulators is not None
+                else None
+            )
+            # 先頭が本番相当の一件。以降がグリッドのセルで、約定の探索と
+            # 保有期間の切り出しを共有するため一度の呼び出しでまとめて判定する。
+            targets = [(target["tp_pips"], target["lc_pips"])]
+            if grid_accumulator is not None:
+                average_range = float(target["recent_m5_avg_range_pips"])
+                targets.extend(
+                    (average_range * tp_a, average_range * lc_a)
+                    for tp_a in TARGET_GRID_TP_A
+                    for lc_a in TARGET_GRID_LC_A
+                )
+            # 変数名は path_results にする。paths は出力ファイルの辞書で、
+            # ここで上書きすると後段の書き出しが壊れる。
+            path_results = inspector.inspect_targets(
                 decision_time=decision_time,
                 expiry_time=next_count2_time,
                 direction=candidate["trade_direction"],
                 line_price=candidate["line_price"],
-                tp_pips=target["tp_pips"],
-                lc_pips=target["lc_pips"],
+                targets=targets,
                 horizon_minutes=args.horizon_minutes,
                 spread_pips=args.spread_pips,
+                approach_side=candidate["approach_side"],
+                entry_mode=args.entry_mode,
+                stop_offset_pips=args.stop_offset_pips,
+                stop_slippage_pips=args.stop_slippage_pips,
             )
+            path = path_results[0]
+            result_r = path.get("result_r")
+            path["result_yen"] = (
+                float(result_r) * NORMALIZED_LC_RISK_YEN
+                if result_r is not None and math.isfinite(float(result_r))
+                else np.nan
+            )
+            if grid_accumulator is not None:
+                cells = [
+                    (tp_a, lc_a)
+                    for tp_a in TARGET_GRID_TP_A
+                    for lc_a in TARGET_GRID_LC_A
+                ]
+                for (tp_a, lc_a), (tp_pips, lc_pips), cell_path in zip(
+                    cells, targets[1:], path_results[1:]
+                ):
+                    grid_accumulator.add(
+                        tp_a,
+                        lc_a,
+                        candidate["line"].get("count"),
+                        candidate["line_side"],
+                        tp_pips,
+                        lc_pips,
+                        cell_path,
+                    )
             row = {
                 **event_base,
                 "candidate_rank": candidate["candidate_rank"],
@@ -2549,10 +4190,27 @@ def run_sweep(
                 "current_policy_reversal_target": candidate[
                     "current_policy_reversal_target"
                 ],
-                "candidate_scope": "all_raw_m5_line_groups_ahead",
+                "candidate_scope": (
+                    "all_raw_"
+                    + line_timeframe.lower()
+                    + "_line_groups_ahead"
+                ),
                 "candidate_pruning_applied": False,
-                "line_timeframe": "M5",
-                "line_history_bars": LINE_HISTORY_BARS,
+                "decision_trigger_timeframe": "M5",
+                "line_timeframe": line_timeframe,
+                "line_source_granularity": candidate[
+                    "line_source_granularity"
+                ],
+                "line_history_bars": candidate["line_history_bars"],
+                "line_history_minutes": candidate["line_history_minutes"],
+                "peak_history_bars": candidate["peak_history_bars"],
+                "line_average_range_pips": candidate[
+                    "line_average_range_pips"
+                ],
+                "group_threshold_pips": candidate[
+                    "group_threshold_pips"
+                ],
+                "normalized_lc_risk_yen": NORMALIZED_LC_RISK_YEN,
                 "fixed_spread_pips": args.spread_pips,
                 "pending_expiry_exclusive": True,
                 "position_horizon_minutes": args.horizon_minutes,
@@ -2564,19 +4222,37 @@ def run_sweep(
                 **path,
             }
             candidate_rows.append(row)
-            rows_for_event.append(row)
+            rows_for_event[line_timeframe].append(row)
 
-        event_status = "evaluated" if rows_for_event else "no_candidates"
-        event_rows.append(
-            _event_summary(
-                {
-                    **event_base,
-                    "event_status": event_status,
-                    "event_skip_reason": None,
-                },
-                rows_for_event,
+        for line_timeframe, rebuilt_frame in rebuilt_by_timeframe.items():
+            timeframe_rows = rows_for_event[line_timeframe]
+            event_status = "evaluated" if timeframe_rows else "no_candidates"
+            event_rows.append(
+                _event_summary(
+                    {
+                        **event_base,
+                        "line_timeframe": line_timeframe,
+                        "line_source_granularity": rebuilt_frame[
+                            "line_source_granularity"
+                        ],
+                        "line_history_bars": rebuilt_frame[
+                            "line_history_bars"
+                        ],
+                        "line_history_minutes": rebuilt_frame[
+                            "line_history_minutes"
+                        ],
+                        "peak_history_bars": rebuilt_frame[
+                            "peak_history_bars"
+                        ],
+                        "group_threshold_pips": rebuilt_frame[
+                            "group_threshold_pips"
+                        ],
+                        "event_status": event_status,
+                        "event_skip_reason": None,
+                    },
+                    timeframe_rows,
+                )
             )
-        )
         evaluated_events += 1
 
         while decision_time >= next_notice:
@@ -2627,7 +4303,6 @@ def run_sweep(
         if args.max_events is not None and evaluated_events >= args.max_events:
             break
 
-    processed_positions = min(total_positions, len(event_rows))
     _write_progress(
         paths["progress"],
         pair_name=pair_name,
@@ -2663,6 +4338,20 @@ def run_sweep(
         if key != "progress":
             _archive_existing_output(path)
     candidates.to_csv(paths["candidates"], index=False, encoding="utf-8-sig")
+    if grid_accumulators is not None:
+        target_grid_frames = []
+        for line_timeframe, accumulator in grid_accumulators.items():
+            timeframe_grid = accumulator.to_frame()
+            timeframe_grid.insert(0, "line_timeframe", line_timeframe)
+            timeframe_grid.insert(
+                1,
+                "line_source_granularity",
+                line_timeframe,
+            )
+            target_grid_frames.append(timeframe_grid)
+        pd.concat(target_grid_frames, ignore_index=True).to_csv(
+            paths["target_grid"], index=False, encoding="utf-8-sig"
+        )
     wins.to_csv(paths["wins"], index=False, encoding="utf-8-sig")
     events.to_csv(paths["events"], index=False, encoding="utf-8-sig")
     ranking.to_csv(paths["ranking"], index=False, encoding="utf-8-sig")
@@ -2724,13 +4413,91 @@ def run_sweep(
         .value_counts()
     )
     elapsed_minutes = (time.monotonic() - process_started) / 60
+    timeframe_summary_lines = []
+    for line_timeframe in LINE_TIMEFRAMES:
+        timeframe_candidates = (
+            candidates[candidates["line_timeframe"].eq(line_timeframe)]
+            if not candidates.empty
+            else pd.DataFrame()
+        )
+        timeframe_completed = (
+            timeframe_candidates[
+                timeframe_candidates["candidate_result"].isin(
+                    ["tp", "lc", "both_same_s5_lc_assumed", "timeout"]
+                )
+            ]
+            if not timeframe_candidates.empty
+            else pd.DataFrame()
+        )
+        timeframe_wins = (
+            timeframe_completed[
+                timeframe_completed["candidate_result"].eq("tp")
+            ]
+            if not timeframe_completed.empty
+            else pd.DataFrame()
+        )
+        win_rate = (
+            len(timeframe_wins) / len(timeframe_completed)
+            if len(timeframe_completed)
+            else np.nan
+        )
+        mean_win_pips = (
+            float(
+                pd.to_numeric(
+                    timeframe_wins["trade_result_pips"],
+                    errors="coerce",
+                ).mean()
+            )
+            if len(timeframe_wins)
+            else np.nan
+        )
+        net_yen = (
+            float(
+                pd.to_numeric(
+                    timeframe_completed["result_yen"],
+                    errors="coerce",
+                ).sum(min_count=1)
+            )
+            if len(timeframe_completed)
+            else 0.0
+        )
+        timeframe_summary_lines.append(
+            f"{line_timeframe}: 完了={len(timeframe_completed)}, "
+            + (
+                f"勝率={win_rate:.1%}, "
+                if math.isfinite(win_rate)
+                else "勝率=-, "
+            )
+            + (
+                f"平均勝ち={mean_win_pips:.2f}pips, "
+                if math.isfinite(mean_win_pips)
+                else "平均勝ち=-, "
+            )
+            + (
+                f"損益={net_yen:.0f}円"
+                f"（LC時{NORMALIZED_LC_RISK_YEN:g}円リスク換算）"
+            )
+        )
     summary_lines = [
         f"期間: {args.start:%Y-%m-%d} ～ {args.end:%Y-%m-%d}",
+        (
+            "本番等価性: "
+            f"判断={production_equivalence['checked_decisions']}件, "
+            f"候補={production_equivalence['checked_candidates']}件, "
+            "不一致=0件"
+        ),
+        *(
+            f"本番等価性 {timeframe}: 候補={count}件"
+            for timeframe, count in equivalence_by_timeframe.items()
+        ),
         f"検出count2: {len(indices)}",
         f"評価イベント: {evaluated_events}",
-        f"候補なしイベント: {int(event_status.get('no_candidates', 0))}",
         (
-            "除外イベント: "
+            "候補なし時間足イベント: "
+            f"{int(event_status.get('no_candidates', 0))}"
+        ),
+        (
+            "除外時間足イベント: "
             f"次count2なし={int(event_status.get('no_next_count2', 0))}, "
             f"ライン再構築エラー={line_error_count}, "
             f"TP算出不可等={target_skip_count}"
@@ -2751,7 +4518,8 @@ def run_sweep(
                 else ""
             )
         ),
-        f"1本以上勝ち候補があったイベント: {winning_events}",
+        f"1本以上勝ち候補があった時間足イベント: {winning_events}",
+        *timeframe_summary_lines,
         f"経過時間: {elapsed_minutes:.1f}分",
         "注意: 候補行は同時注文ではなく、イベント内の独立した反実仮想",
     ]

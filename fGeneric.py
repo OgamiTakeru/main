@@ -1,5 +1,40 @@
+# 最新更新日時: 2026-09-08 11:05 JST
+
 import datetime  # 日付関係
 import json
+import time as _time
+from pathlib import Path as _Path
+
+
+def replace_with_retry(source, destination, attempts=6, required=True):
+    """ファイルの原子的な置き換えを、数回リトライしてから諦める。
+
+    出力先が OneDrive の同期フォルダにあるため、同期処理が対象ファイルを
+    掴んでいる瞬間に ``os.replace`` が ``PermissionError [WinError 5]`` で
+    失敗することがある。実際に2年分の走行が開始1分で落ちた。
+    ロックは一時的なので、少し待って試し直せばほぼ通る。
+
+    ``required=False`` を渡すと、リトライを使い切っても例外を投げずに
+    False を返す。進捗表示のように「あってもなくてもいい書き込み」で
+    長時間の走行を巻き添えにしないため。
+
+    戻り値は置き換えに成功したかどうか。
+    """
+    source = _Path(source)
+    destination = _Path(destination)
+    for attempt in range(attempts):
+        try:
+            source.replace(destination)
+            return True
+        except (PermissionError, OSError):
+            if attempt == attempts - 1:
+                if required:
+                    raise
+                return False
+            # 0.4秒から少しずつ延ばす。OneDriveの同期は数秒で終わる。
+            _time.sleep(0.4 * (attempt + 1))
+    return False
+
 from plotly.subplots import make_subplots  # draw_graph
 import plotly.graph_objects as go  # draw_graph
 

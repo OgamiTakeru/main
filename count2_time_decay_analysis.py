@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-09-08 11:05 JST
 """Future-safe time-decay analysis for count-2 reversal opportunities.
 
 The analyzer is intentionally separate from candidate generation, the TP/LC
@@ -861,7 +862,7 @@ def _write_csv_atomic(
         _archive_file(temporary)
     frame = pd.DataFrame(rows, columns=list(columns) if columns is not None else None)
     frame.to_csv(temporary, index=False)
-    os.replace(temporary, path)
+    gene.replace_with_retry(temporary, path)
 
 
 def _threshold_stems(columns: Iterable[str], prefix: str) -> list[str]:

@@ -17,6 +17,18 @@ import pandas as pd
 
 CORE_VERSION_V1 = "double_top_core_v1"
 
+# 損切りをどの水準の上に置くか。v1本番は max_top のみを使う。
+# 実測（OOS 4356件）では max_top 基準だとRRが1.0に届いた例が一件も無く、
+# ネックライン基準にしないとRR下限を満たせないため、検証用に軸を用意する。
+STOP_REFERENCE_MAX_TOP = "max_top"
+STOP_REFERENCE_T2 = "t2"
+STOP_REFERENCE_NECKLINE = "neckline"
+STOP_REFERENCES = (
+    STOP_REFERENCE_MAX_TOP,
+    STOP_REFERENCE_T2,
+    STOP_REFERENCE_NECKLINE,
+)
+
 
 @dataclass(frozen=True)
 class DoubleTopPolicyV1:
@@ -361,6 +373,52 @@ def stop_price_v1(
         max(float(t1_price), float(t2_price))
         + pair.pips_to_price(float(stop_buffer_pips))
     )
+
+
+def stop_reference_price_v1(
+        stop_reference: str,
+        t1_price: float,
+        t2_price: float,
+        neckline_price: float,
+) -> float:
+    """損切りの基準になる価格を、指定された水準から返す。"""
+    if stop_reference == STOP_REFERENCE_MAX_TOP:
+        return max(float(t1_price), float(t2_price))
+    if stop_reference == STOP_REFERENCE_T2:
+        return float(t2_price)
+    if stop_reference == STOP_REFERENCE_NECKLINE:
+        return float(neckline_price)
+    raise ValueError(f"unknown stop reference: {stop_reference}")
+
+
+def stop_price_v2(
+        pair: Any,
+        stop_reference: str,
+        t1_price: float,
+        t2_price: float,
+        neckline_price: float,
+        buffer_pips: float = 0.0,
+        buffer_a_multiple: float = 0.0,
+        average_range_pips: float = 0.0,
+) -> float:
+    """基準価格の上へ、固定pipsとA倍率のバッファを足した損切り価格。
+
+    ``buffer_a_multiple`` はボラティリティ（M5平均レンジA）に比例させるための
+    もので、固定pipsだけだと高さHが小さい局面でバッファが相対的に重くなり、
+    RRを押し下げる。stop_price_v1 は max_top 基準の固定pips版で、本番v1は
+    そちらを使い続ける。
+    """
+    base = stop_reference_price_v1(
+        stop_reference,
+        t1_price,
+        t2_price,
+        neckline_price,
+    )
+    total_buffer_pips = (
+        float(buffer_pips)
+        + float(buffer_a_multiple) * float(average_range_pips)
+    )
+    return pair.round_price(base + pair.pips_to_price(total_buffer_pips))
 
 
 def build_short_order_levels_v1(

@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-29 19:28 JST
+# 最新更新日時: 2026-09-03 06:54 JST
 
 import copy
 
@@ -2598,55 +2598,123 @@ class MainAnalysis:
         )
 
 class LineStrengthCal:
-    def __init__(self, candle_analysis_class, foot, time_before_foot_count=30):
+    def __init__(
+            self,
+            candle_analysis_class,
+            foot,
+            time_before_foot_count=30,
+            enforce_peak_strength_filter=False,
+            separate_line_directions=False,
+            min_line_peak_count=1,
+            group_threshold_pips=None,
+            min_line_total_strength=0.0,
+            min_line_direction_ratio=0.0,
+            timeframe_bundle=None,
+    ):
+        """抵抗線・支持線を組み立てる。
+
+        ``enforce_peak_strength_filter`` は、ラインの構成要素にする
+        ピークを ``min_line_peak_strength`` 以上に絞るかどうか。既定は
+        False で、これは本番が長く使ってきた挙動（実質フィルタなし）を
+        変えないため。検証で強い線だけを見たいときに True を渡す。
+        """
         print("  ")
         print("  抵抗線計算クラス 時間範囲(足数)", time_before_foot_count, "足", foot)
+        self.enforce_peak_strength_filter = bool(enforce_peak_strength_filter)
+        # 上側のラインは高値のピーク、下側は安値のピークだけで組むか。
+        # 既定 False は、本番が長く使ってきた「向きを問わず束ねる」挙動。
+        self.separate_line_directions = bool(separate_line_directions)
+        # ラインとみなすのに必要なピーク数。既定1は現行どおり（実質フィルタなし）。
+        self.min_line_peak_count = int(min_line_peak_count)
+        # グループ化幅の上書き。Noneなら足ごとの固定値（M5は1.0pips）のまま。
+        # 呼び出し側でA倍率から算出して渡す。固定pipsだとボラティリティが
+        # 変わったとき「同じ水準」の意味が変わってしまう。
+        self.group_threshold_override = (
+            float(group_threshold_pips)
+            if group_threshold_pips is not None
+            else None
+        )
+        # ラインの合計強度の下限。既定0は現行どおり（絞らない）。
+        self.min_line_total_strength = float(min_line_total_strength)
+        # 線の側に合う向きのピークが占める割合の下限。
+        # 上側の抵抗線なら高値ピーク、下側の支持線なら安値ピークが「本来の向き」。
+        # 安値だけで組まれたものを抵抗線と呼ぶと、測る対象を取り違える。
+        # separate_line_directions は0%か100%しか選べないので、その中間を扱う。
+        # 既定0は現行どおり（絞らない）。
+        self.min_line_direction_ratio = float(min_line_direction_ratio)
         # ■■■基本情報の取得
         self.mode = getattr(candle_analysis_class, "analysis_mode", "live")
         self.s = "     "
-        self.foot = foot
+        requested_timeframe = str(foot).strip().upper()
+        timeframe_specs = {
+            "M5": {"threshold": 1, "max_line_price_gap_pips": 2},
+            "M30": {"threshold": 3, "max_line_price_gap_pips": None},
+            "H1": {"threshold": 2.5, "max_line_price_gap_pips": None},
+        }
+        if requested_timeframe not in timeframe_specs:
+            raise ValueError("foot must be m5, m30 or h1")
+        self.foot = requested_timeframe.lower()
         self.max_line_price_gap_pips = None
         self.pair = getattr(candle_analysis_class, "pair", "USD_JPY")
         self.p = gene.currency_pair(self.pair)
         self.candle_analysis_class = candle_analysis_class  # ローソク情報の全て
         self.time_before_foot_count = time_before_foot_count
-        self.basic_analysis = candle_analysis_class.require_basic_analysis()
+        if timeframe_bundle is None:
+            get_bundle = getattr(
+                candle_analysis_class,
+                "get_timeframe_bundle",
+                None,
+            )
+            if not callable(get_bundle):
+                raise TypeError(
+                    "candle_analysis_class must provide get_timeframe_bundle"
+                )
+            timeframe_bundle = get_bundle(
+                requested_timeframe,
+                require_native=True,
+            )
 
-        # 各足でのローソク情報
-        self.candle_meta_m5 = candle_analysis_class.candle_meta_class  # peaks以外の部分。cal_move_ave関数を使う用
-        self.peaks_class_m5 = self.basic_analysis.m5_peaks_class
-        self.peaks_m5 = self.peaks_class_m5.peaks_original
-        self.m5_completed_df_r = self.basic_analysis.m5_completed_df_r
+        bundle_timeframe = str(
+            getattr(timeframe_bundle, "timeframe", "")
+        ).strip().upper()
+        if bundle_timeframe != requested_timeframe:
+            raise ValueError(
+                "timeframe_bundle mismatch: requested="
+                + requested_timeframe
+                + ", bundle="
+                + bundle_timeframe
+            )
+        source_granularity = str(
+            getattr(timeframe_bundle, "source_granularity", "")
+        ).strip().upper()
+        if source_granularity != requested_timeframe:
+            raise ValueError(
+                "timeframe_bundle must contain native candles: requested="
+                + requested_timeframe
+                + ", source="
+                + source_granularity
+            )
 
-        self.candle_meta_h1 = candle_analysis_class.candle_meta_class_hour
-        self.peaks_class_h1 = self.basic_analysis.h1_peaks_class
-        self.peaks_h1 = self.peaks_class_h1.peaks_original
-        self.h1_completed_df_r = self.basic_analysis.h1_completed_df_r
+        # 選択した時間足だけを読む。bundle指定時は、検証用の軽量な
+        # CandleAnalysis互換holderでも他の時間足を構築せずに使用できる。
+        self.timeframe_bundle = timeframe_bundle
+        self.candle_meta = getattr(
+            timeframe_bundle,
+            "candle_meta_class",
+            None,
+        )
+        self.peaks_class = timeframe_bundle.peaks_class
+        self.peaks = self.peaks_class.peaks_original
+        self.analysis_df_r = timeframe_bundle.completed_df_r
 
-        self.candle_meta_m30 = candle_analysis_class.candle_meta_class_m30
-        self.peaks_class_m30 = candle_analysis_class.peaks_class_m30
-        self.peaks_m30 = candle_analysis_class.peaks_class_m30.peaks_original
-        self.m30_completed_df_r = candle_analysis_class.m30_completed_df_r
+        timeframe_spec = timeframe_specs[requested_timeframe]
+        self.threshold = timeframe_spec["threshold"]
+        self.max_line_price_gap_pips = timeframe_spec[
+            "max_line_price_gap_pips"
+        ]
 
-
-        # この関数で使う基本を入れておく
-        if foot == "m5":
-            self.peaks_class = self.peaks_class_m5
-            self.peaks = self.peaks_m5
-            self.analysis_df_r = self.m5_completed_df_r
-            self.threshold = 1
-            self.max_line_price_gap_pips = 2
-        elif foot == "h1":
-            self.peaks_class = self.peaks_class_h1
-            self.peaks = self.peaks_h1
-            self.analysis_df_r = self.h1_completed_df_r
-            self.threshold = 2.5
-        elif foot == "m30":
-            self.peaks_class = self.peaks_class_m30
-            self.peaks = self.peaks_m30
-            self.analysis_df_r = self.m30_completed_df_r
-            self.threshold = 3
-
+        if self.group_threshold_override is not None:
+            self.threshold = self.group_threshold_override
         self.min_line_peak_strength = 2
         self.current_time = pd.Timestamp(
             candle_analysis_class.decision_time
@@ -2918,7 +2986,7 @@ class LineStrengthCal:
         # 必要な情報を変数化
         base_price = self.current_price
         time_before_foot_count = self.time_before_foot_count
-        threshold = self.threshold if self.foot == "m5" else 3  # pipsで指定
+        threshold = self.threshold  # pipsで指定
         
         # ピークの取得
         peaks = self.peaks_class.peaks_original  # 使う足の選択
@@ -2951,11 +3019,27 @@ class LineStrengthCal:
             )
         ]
         peaks_before_strength_filter = len(peaks)
-        peaks = [  # peakをStrengthで1より大きいものに絞る（テスト）
+        # 既定の下限は0（＝絞らない）。検証で強い線だけを見たいときだけ、
+        # enforce_peak_strength_filter=True で min_line_peak_strength を効かせる。
+        # 以前ここは 0 固定で書かれており、min_line_peak_strength=2 という
+        # 宣言と食い違ったまま「絞っている」ように見える印字が出ていた。
+        strength_floor = (
+            float(self.min_line_peak_strength)
+            if self.enforce_peak_strength_filter
+            else 0.0
+        )
+        peaks = [
             d for d in peaks
-            if float(d.get('peak_strength', 0)) >= 0
+            if float(d.get('peak_strength', 0)) >= strength_floor
         ]
-        print("    Line peak strength filter", self.min_line_peak_strength, peaks_before_strength_filter, "->", len(peaks))
+        print(
+            "    Line peak strength filter",
+            f"floor={strength_floor:g}",
+            f"enforced={self.enforce_peak_strength_filter}",
+            peaks_before_strength_filter,
+            "->",
+            len(peaks),
+        )
         self.filtered_peaks = peaks
         self.filtered_df_r = filtered_df_r
 
@@ -3016,6 +3100,36 @@ class LineStrengthCal:
         self.all_lines = combined
 
 
+    @staticmethod
+    def native_direction_ratio(group, native_direction):
+        """線の側に合う向きのピークが占める割合を返す。
+
+        ``native_direction`` は上側の線なら1（高値）、下側なら-1（安値）。
+        向きが取れない場合は None を返す。
+        """
+        values = [
+            float(value)
+            for value in (group.get("dirs") or [])
+            if value is not None
+        ]
+        if not values:
+            return None
+        same = sum(1 for value in values if value * native_direction > 0)
+        return same / len(values)
+
+    def passes_direction_ratio(self, group, native_direction):
+        """向きの多数派要件を満たすか。既定（下限0）では常に True。
+
+        注意：2本・3本構成の線では、7割を求めると実質100%と同じになる
+        （2/2、3/3 でないと届かない）。閾値が効くのは4本以上の線。
+        """
+        if self.min_line_direction_ratio <= 0:
+            return True
+        ratio = self.native_direction_ratio(group, native_direction)
+        if ratio is None:
+            return False
+        return ratio >= self.min_line_direction_ratio
+
     def search_upper_lines(self, base_price, peaks, threshold=None):
         # print("    UpperLines検索")
         # グループ化
@@ -3024,11 +3138,19 @@ class LineStrengthCal:
             upper_lower=1,  # base_priceより下側
             target_price=base_price,
             threshold=threshold,
+            # 抵抗線として意識されるのは「そこで跳ね返された高値」なので、
+            # 向きを揃えるときは高値のピークだけで組む。
+            direction_filter=1 if self.separate_line_directions else None,
             sort_direction=1  # 昇順
         )
         # 弱すぎるグループは排除する
-        # filtered = [d for d in minus_groups if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
-        filtered = [d for d in minus_groups if d["ave_strength"] >= 0 and d['count'] >= 1]
+        filtered = [
+            d for d in minus_groups
+            if d["ave_strength"] >= 0
+            and d['count'] >= self.min_line_peak_count
+            and float(d.get("total_strength") or 0) >= self.min_line_total_strength
+            and self.passes_direction_ratio(d, 1)
+        ]
         return filtered
 
     def search_lower_lines(self, base_price, peaks, threshold=None):
@@ -3039,11 +3161,18 @@ class LineStrengthCal:
             upper_lower=-1,  # base_priceより下側
             target_price=base_price,
             threshold=threshold,
+            # 支持線は安値のピークだけで組む。
+            direction_filter=-1 if self.separate_line_directions else None,
             sort_direction=-1  # 降順
         )
         # 弱すぎるグループは排除する
-        # filtered = [d for d in minus_groups if (d["ave_strength"] >= 2 and d['count'] >= 2) or d["total_strength"] >= 10]
-        filtered = [d for d in minus_groups if d["ave_strength"] >= 0 and d['count'] >= 1]
+        filtered = [
+            d for d in minus_groups
+            if d["ave_strength"] >= 0
+            and d['count'] >= self.min_line_peak_count
+            and float(d.get("total_strength") or 0) >= self.min_line_total_strength
+            and self.passes_direction_ratio(d, -1)
+        ]
         return filtered
 
     def make_same_price_group_core_first(self, peaks,

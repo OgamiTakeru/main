@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-09-08 11:05 JST
 """Compare causal 60-minute exit-management policies on fixed OOS Top15 orders.
 
 This module is inspection-only.  It never mutates the live strategy profile.
@@ -113,7 +114,7 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
-    temporary.replace(path)
+    gene.replace_with_retry(temporary, path)
 
 
 def _prepare_outputs(args: argparse.Namespace) -> dict[str, Path]:

@@ -1,9 +1,8 @@
-# 最新更新日時: 2026-08-30 15:42 JST
+# 最新更新日時: 2026-09-08 04:21 JST
 
 import datetime
 from dataclasses import dataclass
 
-import fLineAnalysis as ti
 import fFlipWatch  # noqa: F401  登録済みflipの出自ハンドラを起動時に登録する
 import classOrderCreate as OCreate
 import fGeneric as gene
@@ -25,9 +24,15 @@ class AnalysisRegistration:
 # main_exeは解析名・有効フラグ・固有の実行時刻を知らない。
 ANALYSIS_REGISTRY = (
     AnalysisRegistration(
-        name="line",
-        enabled_modes=("inspection",),
-        runner_method="wrap_line_analysis",
+        name="resistance_breakout",
+        enabled_modes=("inspection", "live"),
+        runner_method="wrap_resistance_breakout_analysis",
+        due_method="resistance_breakout_analysis_is_due",
+        # 2026-09-08: ユーザー判断で trial を外し、実発注に切り替えた。
+        # 2年検証（2023-2025）では M5 が R −0.042/回で有意にマイナス、
+        # M30 は R −0.001/回でゼロ。期待値がプラスと確認できたわけではなく、
+        # 実際の値動きと突き合わせるための実運用という位置づけ。
+        live_order_mode="execute",
     ),
     AnalysisRegistration(
         name="flip",
@@ -35,25 +40,12 @@ ANALYSIS_REGISTRY = (
         runner_method="wrap_flip_analysis",
         due_method="flip_analysis_is_due",
     ),
-    AnalysisRegistration(
-        name="double_top",
-        # 本番データで解析・注文組み立てまでは行うが、実発注はしない。
-        enabled_modes=("inspection", "live"),
-        runner_method="wrap_double_top_analysis",
-        due_method="double_top_analysis_is_due",
-        live_order_mode="trial",
-    ),
 )
 
 _ANALYSIS_REGISTRATION_BY_NAME = {
     registration.name: registration
     for registration in ANALYSIS_REGISTRY
 }
-_LIVE_LINE_REGIME_CACHE = {}
-
-
-
-
 class wrap_all_analysis():
     def __init__(
         self,
@@ -78,8 +70,8 @@ class wrap_all_analysis():
         self.exe_order_classes = []
         self.turn_analysis_instance = None
         self.regime_snapshot = None
+        self.resistance_breakout_order_classes = []
         self.flip_order_classes = []
-        self.double_top_order_classes = []
         self.trial_order_classes = []
         self.position_control_result = None
 
@@ -155,14 +147,16 @@ class wrap_all_analysis():
 
     def notify_trial_orders(self, analysis_name, order_classes):
         """trial成立内容を、実発注ではないことが分かる形でDiscordへ送る。"""
-        lines = [
+        header = [
             "【" + analysis_name + " trial no order】",
             "- 解析と注文組み立てのみ（発注なし）",
         ]
+        lines = list(header)
         for index, order_class in enumerate(order_classes, start=1):
             plan = order_class.exe_order_plan
-            lines.extend((
-                "- 候補" + str(index) + " 通貨: " + str(plan.get("pair")),
+            candidate_lines = [
+                "- 候補" + str(index),
+                "- 通貨: " + str(plan.get("pair")),
                 "- 売買: " + (
                     "買い" if int(plan.get("direction") or 0) == 1 else "売り"
                 ),
@@ -170,7 +164,36 @@ class wrap_all_analysis():
                 "- 利確: " + str(plan.get("tp_price")),
                 "- 損切り: " + str(plan.get("lc_price")),
                 "- priority: " + str(plan.get("priority")),
-            ))
+            ]
+            timeframe = (
+                plan.get("resistance_breakout_timeframe")
+                or plan.get("line_timeframe")
+            )
+            if timeframe is not None:
+                candidate_lines.insert(2, "- 抵抗線足: " + str(timeframe))
+            line_price = plan.get("line_price")
+            if line_price is not None:
+                candidate_lines.insert(3, "- 抵抗線価格: " + str(line_price))
+            peaks_count = plan.get("line_peaks_count")
+            if peaks_count is not None:
+                candidate_lines.append(
+                    "- peaks count: " + str(peaks_count)
+                )
+            core_peak_count = plan.get("line_core_peak_count")
+            if core_peak_count is not None:
+                candidate_lines.append(
+                    "- core peak: " + str(core_peak_count)
+                )
+
+            # send_notice側で時刻などが付く分を空け、候補単位で分割する。
+            if (
+                    len("\n".join(lines + candidate_lines)) > 1600
+                    and len(lines) > len(header)
+            ):
+                notice.line_send("\n".join(lines))
+                lines = list(header)
+                lines.append("- 続き")
+            lines.extend(candidate_lines)
         notice.line_send("\n".join(lines))
 
     def register_orders_with_position_control(self):
@@ -191,9 +214,8 @@ class wrap_all_analysis():
     def run_registered_analyses(self):
         """現在のモードで有効な解析を、登録順に実行する。
 
-        一つの解析で例外が出ても、他の解析とループは続ける。ここで受け止めて
-        おくことで、解析を追加する側は例外処理を書かなくてよい（書き忘れて
-        本番のループごと止める事故を防ぐ）。
+        本番では一つの解析で例外が出ても、他の解析とループは続ける。
+        Inspectionでは失敗をシグナルなしに見せないため、そのまま送出する。
         """
         for registration in ANALYSIS_REGISTRY:
             if self.mode not in registration.enabled_modes:
@@ -204,6 +226,10 @@ class wrap_all_analysis():
                         continue
                 getattr(self, registration.runner_method)()
             except Exception as error:
+                # 検証ではバグや履歴不足を「シグナルなし」に見せない。
+                # 本番だけ解析単位で受け止め、他の解析とループを継続する。
+                if self.mode == "inspection":
+                    raise
                 self.notify_analysis_failure(registration.name, error)
 
     def notify_analysis_failure(self, name, error):
@@ -217,37 +243,6 @@ class wrap_all_analysis():
             + "\n- " + type(error).__name__ + ": " + str(error)
             + "\n- 他の解析とループは継続する"
         )
-
-    def wrap_line_analysis(self):
-        """共有 CandleAnalysis から従来のライン解析を実行する。"""
-        strategy_regime = self.strategy_regime
-        if strategy_regime is None and self.mode == "live":
-            import classStrategyRegime
-
-            pair = getattr(self.ca, "pair", "USD_JPY")
-            cache_key = (pair, self.mode)
-            strategy_regime = _LIVE_LINE_REGIME_CACHE.get(cache_key)
-            if strategy_regime is None:
-                strategy_regime = classStrategyRegime.StrategyRegime(
-                    pair,
-                    mode=self.mode,
-                )
-                _LIVE_LINE_REGIME_CACHE[cache_key] = strategy_regime
-            self.strategy_regime = strategy_regime
-
-        turn_analysis_instance = ti.MainAnalysis(
-            self.ca,
-            self.position_control_class,
-            self.mode,
-            strategy_regime=strategy_regime,
-        )
-        self.turn_analysis_instance = turn_analysis_instance
-        self.regime_snapshot = turn_analysis_instance.regime_snapshot
-        if turn_analysis_instance.take_position_flag:
-            self.orders_add_from_analysis(
-                "line",
-                turn_analysis_instance.exe_order_classes,
-            )
 
     def m5_analysis_is_due(self):
         """完成M5を使う解析の本番実行窓。検証では毎判断時刻を処理する。"""
@@ -264,9 +259,25 @@ class wrap_all_analysis():
         """flip固有の登録名から、共通のM5実行窓へ委譲する。"""
         return self.m5_analysis_is_due()
 
-    def double_top_analysis_is_due(self):
-        """ダブルトップ固有の登録名から、共通のM5実行窓へ委譲する。"""
+    def resistance_breakout_analysis_is_due(self):
+        """抵抗線ブレイクを共通のM5実行窓で起動する。"""
         return self.m5_analysis_is_due()
+
+    def wrap_resistance_breakout_analysis(self):
+        """共有CandleAnalysisからブレイクのtrial注文を組み立てる。"""
+        import fResistanceBreakoutAnalysis as resistance_breakout
+
+        self.resistance_breakout_order_classes = (
+            resistance_breakout.build_orders_for_decision(
+                self.ca,
+                mode=self.mode,
+            )
+        )
+        if self.resistance_breakout_order_classes:
+            self.orders_add_from_analysis(
+                "resistance_breakout",
+                self.resistance_breakout_order_classes,
+            )
 
     def wrap_flip_analysis(self):
         """共有 CandleAnalysis から flip の待機オーダーを組み立てる。
@@ -293,20 +304,6 @@ class wrap_all_analysis():
         )
         if self.flip_order_classes:
             self.orders_add_from_analysis("flip", self.flip_order_classes)
-
-    def wrap_double_top_analysis(self):
-        """共有 CandleAnalysis からダブルトップの検出と注文生成を行う。"""
-        import f_ダブルトップ as double_top
-
-        self.double_top_order_classes = double_top.build_orders_for_decision(
-            self.ca,
-            mode=self.mode,
-        )
-        if self.double_top_order_classes:
-            self.orders_add_from_analysis(
-                "double_top",
-                self.double_top_order_classes,
-            )
 
     def _removed_flip_except(self, error):
         if False:

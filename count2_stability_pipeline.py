@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-09-08 11:04 JST
 """One-click, cache-only count2 stability selection and fixed replay.
 
 The public launcher exposes three logical phases:
@@ -21,6 +22,8 @@ import math
 import time
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
+
+import fGeneric as gene
 
 
 VERSION = "count2_stability_pipeline_v1"
@@ -58,7 +61,7 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
         json.dumps(_json_safe(payload), ensure_ascii=False, indent=2, allow_nan=False),
         encoding="utf-8",
     )
-    temporary.replace(path)
+    gene.replace_with_retry(temporary, path)
 
 
 def _archive_file(path: Path) -> Path:
@@ -72,7 +75,7 @@ def _archive_file(path: Path) -> Path:
     while destination.exists():
         destination = archive / f"{path.stem}_{stamp}_{suffix}{path.suffix}"
         suffix += 1
-    path.replace(destination)
+    gene.replace_with_retry(path, destination)
     return destination
 
 

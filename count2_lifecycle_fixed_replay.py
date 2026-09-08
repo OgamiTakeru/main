@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-09-08 11:05 JST
 """Replay a frozen lifecycle-training artifact on the following period.
 
 The selection artifact is the sole policy input.  This process never loads a
@@ -581,7 +582,7 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
         json.dumps(_json_safe(payload), ensure_ascii=False, indent=2, allow_nan=False),
         encoding="utf-8",
     )
-    temporary.replace(path)
+    gene.replace_with_retry(temporary, path)
 
 
 def _archive_generation(paths: Mapping[str, Path]) -> list[Path]:

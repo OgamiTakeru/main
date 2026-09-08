@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-09-08 11:04 JST
 """Rank a completed prior-two-year count2 grid without rerunning outcomes.
 
 The grid aggregate contains every causal M5/H1 morphology condition, every
@@ -19,6 +20,7 @@ from typing import Any
 
 import pandas as pd
 
+import fGeneric as gene
 import test_win_point_usd_aud as win_point
 import tokens as tk
 
@@ -111,7 +113,7 @@ def _archive(path: Path) -> Path:
     while destination.exists():
         destination = folder / f"{path.stem}_{stamp}_{number}{path.suffix}"
         number += 1
-    path.replace(destination)
+    gene.replace_with_retry(path, destination)
     return destination
 
 
@@ -331,7 +333,7 @@ def _write_csv_atomic(frame: pd.DataFrame, path: Path) -> None:
     if temporary.exists():
         _archive(temporary)
     frame.to_csv(temporary, index=False, encoding="utf-8-sig")
-    temporary.replace(path)
+    gene.replace_with_retry(temporary, path)
 
 
 def _ranking_notices(pair: str, label: str, ranking: pd.DataFrame) -> list[str]:

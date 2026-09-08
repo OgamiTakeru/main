@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-09-08 11:05 JST
 """Future-safe count-2 entry/TP/LC grid search for supported pairs.
 
 This module consumes the causal candidate CSV created by
@@ -399,7 +400,7 @@ def _archive_file(path: Path) -> Path:
     while destination.exists():
         destination = archive / f"{path.stem}_{stamp}_{number}{path.suffix}"
         number += 1
-    path.replace(destination)
+    gene.replace_with_retry(path, destination)
     return destination
 
 
@@ -428,7 +429,7 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
-    temporary.replace(path)
+    gene.replace_with_retry(temporary, path)
 
 
 class PartCsvWriter:
@@ -464,7 +465,7 @@ class PartCsvWriter:
             self.writer = None
         if self.path.exists():
             _archive_file(self.path)
-        self.part_path.replace(self.path)
+        gene.replace_with_retry(self.part_path, self.path)
         return self.path
 
     def abort(self) -> Path:

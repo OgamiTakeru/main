@@ -1,8 +1,10 @@
-# 最新更新日時: 2026-08-29 15:38 JST
+# 最新更新日時: 2026-09-03 06:54 JST
 
 import datetime as dt
 import tempfile
 import unittest
+
+import fLineAnalysis as fla
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -11,8 +13,9 @@ import numpy as np
 import pandas as pd
 
 import classOanda
+from classCandleAnalysis import CandleTimeframeBundle, candleAnalysis
 import fGeneric as gene
-from fLineAnalysis import line_strategy_profile
+from fLineAnalysis import LineStrengthCal, line_strategy_profile
 import test_win_point_predict_resistance_euro_usd as eur_entry
 import test_win_point_predict_resistance_usd_aud as aud_entry
 import test_win_point_predict_resistance_usd_jpy as jpy_entry
@@ -93,6 +96,158 @@ class S5CacheFormatTest(unittest.TestCase):
             ).to_csv(path, index=False)
 
             self.assertFalse(s5_cache_has_no_tick_completion(path))
+
+
+class TimeframeBundleTest(unittest.TestCase):
+    @staticmethod
+    def _m30_analysis(source_granularity="M30", uses_h1_fallback=False):
+        analysis = candleAnalysis.__new__(candleAnalysis)
+        analysis.m5_original_df_r = pd.DataFrame({"source": ["M5"]})
+        analysis.m30_original_df_r = pd.DataFrame({"source": ["M30"]})
+        analysis.m30_completed_df_r = pd.DataFrame({"source": ["M30"]})
+        analysis.peaks_class_m30 = SimpleNamespace(
+            peaks_original=[{"direction": 1}],
+            source_granularity=source_granularity,
+        )
+        analysis.candle_meta_class_m30 = SimpleNamespace(source="M30")
+        analysis.m30_uses_h1_fallback = uses_h1_fallback
+        return analysis
+
+    def test_native_m30_bundle_keeps_real_m30_candles_and_peaks(self):
+        analysis = self._m30_analysis()
+
+        bundle = analysis.get_timeframe_bundle("M30", require_native=True)
+
+        self.assertEqual(bundle.timeframe, "M30")
+        self.assertEqual(bundle.duration, pd.Timedelta(minutes=30))
+        self.assertEqual(bundle.source_granularity, "M30")
+        self.assertTrue(bundle.is_native)
+        self.assertIs(bundle.original_df_r, analysis.m30_original_df_r)
+        self.assertIs(bundle.completed_df_r, analysis.m30_completed_df_r)
+        self.assertIs(bundle.peaks_class, analysis.peaks_class_m30)
+        self.assertIsNot(bundle.original_df_r, analysis.m5_original_df_r)
+
+    def test_native_m30_bundle_rejects_h1_fallback(self):
+        analysis = self._m30_analysis(
+            source_granularity="H1",
+            uses_h1_fallback=True,
+        )
+
+        with self.assertRaisesRegex(ValueError, "requires native candles"):
+            analysis.get_timeframe_bundle("M30", require_native=True)
+
+    def test_m30_forming_candle_is_not_in_completed_snapshot(self):
+        frame = pd.DataFrame(
+            [
+                {
+                    "time_jp": "2026/09/03 10:00:00",
+                    "open": 1.0,
+                    "close": 1.1,
+                    "high": 1.2,
+                    "low": 0.9,
+                },
+                {
+                    # 10:35判断では10:30-11:00足はまだ形成中。
+                    "time_jp": "2026/09/03 10:30:00",
+                    "open": 1.1,
+                    "close": 9.9,
+                    "high": 9.9,
+                    "low": 0.1,
+                },
+            ]
+        )
+        decision_time = pd.Timestamp("2026-09-03 10:35:00")
+        original_df_r = candleAnalysis.normalize_original_df_r(
+            frame,
+            decision_time,
+            "m30_original_df_r",
+        )
+
+        completed_df_r = candleAnalysis.select_completed_df_r(
+            original_df_r,
+            decision_time,
+            pd.Timedelta(minutes=30),
+        )
+
+        self.assertEqual(
+            completed_df_r["time_jp"].tolist(),
+            ["2026/09/03 10:00:00"],
+        )
+
+    def test_m5_cadence_cannot_be_labeled_as_native_m30(self):
+        fake_m30_df_r = pd.DataFrame(
+            {
+                "time_jp": [
+                    "2026/09/03 10:05:00",
+                    "2026/09/03 10:00:00",
+                ],
+                "time_jp_dt": pd.to_datetime(
+                    ["2026-09-03 10:05:00", "2026-09-03 10:00:00"]
+                ),
+                "open": [1.0, 1.0],
+                "close": [1.0, 1.0],
+                "high": [1.1, 1.1],
+                "low": [0.9, 0.9],
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "off-grid"):
+            candleAnalysis.validate_completed_history_for_context(
+                fake_m30_df_r,
+                pd.Timestamp("2026-09-03 10:40:00"),
+                pd.Timedelta(minutes=30),
+                2,
+                "M30",
+                latest_boundary="M30",
+                stale_is_integrity=True,
+            )
+
+    def test_line_calculator_uses_supplied_bundle_without_basic_context(self):
+        completed_df_r = pd.DataFrame(
+            {
+                "time_jp": ["2026/09/03 12:00:00"],
+                "open": [1.0],
+                "close": [1.0],
+                "high": [1.1],
+                "low": [0.9],
+            }
+        )
+        peaks = SimpleNamespace(
+            peaks_original=[{"direction": 1}],
+            source_granularity="M30",
+        )
+        bundle = CandleTimeframeBundle(
+            timeframe="M30",
+            duration=pd.Timedelta(minutes=30),
+            original_df_r=completed_df_r.copy(),
+            completed_df_r=completed_df_r,
+            peaks_class=peaks,
+            source_granularity="M30",
+        )
+
+        def unexpected_basic_analysis():
+            raise AssertionError("bundle path must not read M5/H1 basic context")
+
+        owner = SimpleNamespace(
+            analysis_mode="inspection",
+            pair="EUR_USD",
+            decision_time=pd.Timestamp("2026-09-03 12:30:00"),
+            current_price=1.0,
+            require_basic_analysis=unexpected_basic_analysis,
+        )
+        with (
+            patch.object(LineStrengthCal, "lines_wrap_up"),
+            patch.object(LineStrengthCal, "line_each_analysis"),
+            patch.object(LineStrengthCal, "lines_df_analysis"),
+        ):
+            result = LineStrengthCal(
+                owner,
+                "m30",
+                timeframe_bundle=bundle,
+            )
+
+        self.assertIs(result.peaks_class, peaks)
+        self.assertIs(result.analysis_df_r, completed_df_r)
 
 
 def m5_with_ranges(pair, range_pips):
@@ -288,6 +443,70 @@ class CandidateDirectionTest(unittest.TestCase):
         )
 
 
+class LineDirectionRatioTest(unittest.TestCase):
+    """線の側に合う向きのピークが占める割合の下限を検証する。
+
+    抵抗線は高値が並ぶから抵抗線なので、安値だけで組まれた線を
+    抵抗線として扱うのは対象の取り違えになる。既存の
+    separate_line_directions は0%か100%しか選べないため、
+    その中間（7割など）を扱えるようにした分の確認。
+    """
+
+    def test_ratio_counts_peaks_matching_the_line_side(self):
+        ratio = fla.LineStrengthCal.native_direction_ratio
+        self.assertEqual(ratio({"dirs": [1, 1, 1]}, 1), 1.0)
+        self.assertEqual(ratio({"dirs": [-1, -1, -1]}, 1), 0.0)
+        self.assertEqual(ratio({"dirs": [1, -1, -1, -1]}, -1), 0.75)
+        self.assertAlmostEqual(ratio({"dirs": [1, 1, -1]}, 1), 2 / 3)
+
+    def test_ratio_is_none_when_no_direction_is_available(self):
+        self.assertIsNone(
+            fla.LineStrengthCal.native_direction_ratio({"dirs": []}, 1)
+        )
+        self.assertIsNone(
+            fla.LineStrengthCal.native_direction_ratio({}, -1)
+        )
+
+    def _checker(self, minimum):
+        checker = fla.LineStrengthCal.__new__(fla.LineStrengthCal)
+        checker.min_line_direction_ratio = minimum
+        return checker
+
+    def test_default_zero_keeps_every_line(self):
+        """既定0では本番の挙動を変えない。安値だけの上側線も残る。"""
+        checker = self._checker(0.0)
+        self.assertTrue(checker.passes_direction_ratio({"dirs": [-1, -1]}, 1))
+        self.assertTrue(checker.passes_direction_ratio({"dirs": []}, 1))
+
+    def test_majority_requirement_drops_opposite_dominated_lines(self):
+        checker = self._checker(0.7)
+        # 上側の線なのに安値ばかり → 落とす
+        self.assertFalse(checker.passes_direction_ratio({"dirs": [-1, -1, -1]}, 1))
+        # 4本中3本が高値 = 75% → 残す
+        self.assertTrue(
+            checker.passes_direction_ratio({"dirs": [1, 1, 1, -1]}, 1)
+        )
+        # 向きが取れないものは落とす（既定0のときだけ通す）
+        self.assertFalse(checker.passes_direction_ratio({"dirs": []}, 1))
+
+    def test_seventy_percent_behaves_as_hundred_for_two_and_three_peaks(self):
+        """2本・3本構成では7割は実質100%と同じになる。閾値が効くのは4本以上。"""
+        checker = self._checker(0.7)
+        self.assertFalse(checker.passes_direction_ratio({"dirs": [1, -1]}, 1))
+        self.assertFalse(checker.passes_direction_ratio({"dirs": [1, 1, -1]}, 1))
+        self.assertTrue(checker.passes_direction_ratio({"dirs": [1, 1]}, 1))
+        self.assertTrue(checker.passes_direction_ratio({"dirs": [1, 1, 1]}, 1))
+
+    def test_lower_lines_require_low_peaks(self):
+        checker = self._checker(0.7)
+        self.assertTrue(
+            checker.passes_direction_ratio({"dirs": [-1, -1, -1, 1]}, -1)
+        )
+        self.assertFalse(
+            checker.passes_direction_ratio({"dirs": [1, 1, 1, -1]}, -1)
+        )
+
+
 class TouchFeatureTest(unittest.TestCase):
     def test_future_touch_is_not_counted_as_prior_retouch(self):
         pair = gene.currency_pair("EUR_USD")
@@ -366,6 +585,10 @@ class FutureLeakGuardTest(unittest.TestCase):
                     *,
                     completed_df_r,
                     decision_time,
+                    # 本物の PeaksClass と同じく追加の設定を受け取れるようにする。
+                    # 固定引数にすると、実装側に引数が増えたときこの差し替えが
+                    # 落ちるだけで、検査したい未来価格の混入とは無関係に失敗する。
+                    **options,
             ):
                 captured.append(
                     {
@@ -389,9 +612,13 @@ class FutureLeakGuardTest(unittest.TestCase):
                 ]
 
         class FakeLines:
-            def __init__(self, analysis, foot, history_bars):
+            # 本物の LineStrengthCal と同じく追加の設定を受け取れるようにする。
+            # ここを固定引数にすると、実装側に引数が増えたとき、この差し替えが
+            # 落ちるだけで検査したい未来価格の混入とは無関係に失敗する。
+            def __init__(self, analysis, foot, history_bars, **options):
                 pair = gene.currency_pair(analysis.pair)
                 price = analysis.current_price + pair.pips_to_price(5)
+                self.threshold = options.get("group_threshold_pips") or 1.0
                 self.upper_lines = [
                     {
                         "median_price": price,

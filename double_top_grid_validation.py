@@ -54,9 +54,37 @@ MIN_ACTIVE_MONTHS = 12
 MIN_POSITIVE_MONTH_RATE = 0.50
 MIN_INTERACTION_EVENTS = 20
 
-TP_HEIGHT_MULTIPLIERS = (0.50, 0.75, 1.00, 1.25, 1.50)
+# 形成を読む足の長さ（分）。5ならM5そのまま、15/30ならM5を束ねて合成する。
+# M5のダブルトップは高さの中央値が4.4pipsしかなく、M5足1本ぶんの値幅しか
+# 無い。ランダムな地点に同じ利確損切りを置いた場合と比べても優位が出なかった
+# ため、意識される水準になる粒度を試せるようにしてある。H1まで上げると
+# 経済指標の影響が支配的になり件数も足りないので、ここでは扱わない。
+BAR_MINUTES = 30
+BASE_BAR_MINUTES = 5
+
+TP_HEIGHT_MULTIPLIERS = (1.00, 1.25, 1.50, 2.00)
 STOP_BUFFER_PIPS = (0.0, 1.0, 2.0, 3.0, 5.0)
 TRADE_TIMEOUT_MINUTES = (60, 120, 240, 480)
+
+# 損切りの置き方の軸。(基準, 固定pips, A倍率) の組で表す。
+# max_top 基準の固定pipsが現行v1。ネックライン基準はRR下限を満たすために
+# 追加した候補で、A倍率バッファは高さHが小さい局面で固定pipsが相対的に
+# 重くなる問題（RRを0.13ほど押し下げていた）への対処。
+STOP_RULES = (
+    (double_top_core.STOP_REFERENCE_MAX_TOP, 1.0, 0.0),
+    (double_top_core.STOP_REFERENCE_MAX_TOP, 3.0, 0.0),
+    (double_top_core.STOP_REFERENCE_MAX_TOP, 0.0, 0.5),
+    (double_top_core.STOP_REFERENCE_T2, 1.0, 0.0),
+    (double_top_core.STOP_REFERENCE_T2, 0.0, 0.5),
+    (double_top_core.STOP_REFERENCE_NECKLINE, 1.0, 0.0),
+    (double_top_core.STOP_REFERENCE_NECKLINE, 0.0, 0.5),
+    (double_top_core.STOP_REFERENCE_NECKLINE, 0.0, 1.0),
+    (double_top_core.STOP_REFERENCE_NECKLINE, 0.0, 1.5),
+)
+
+# 実効RRの下限。利確幅より損切り幅が広い取引は取らない方針のため、
+# 判断時刻に確定しているTP/LC距離だけで足切りする（値動きは見ない）。
+MINIMUM_EFFECTIVE_RR = 1.2
 
 # 高速走査の候補母集団だけを決める固定条件。本番ポリシーとは完全に分離する。
 GRID_DISCOVERY_POLICY_V1 = double_top_core.DoubleTopPolicyV1(
@@ -91,8 +119,19 @@ CORE_INTERACTION_FAMILIES = (
 class ExecutionCombo:
     combo_id: str
     tp_height_multiplier: float
+    stop_reference: str
     stop_buffer_pips: float
+    stop_buffer_a: float
     trade_timeout_minutes: int
+
+    @property
+    def stop_key(self) -> tuple[str, float, float]:
+        """同じ損切り価格になる組をまとめるための鍵。"""
+        return (
+            self.stop_reference,
+            float(self.stop_buffer_pips),
+            float(self.stop_buffer_a),
+        )
 
 
 @dataclass(frozen=True)
@@ -205,7 +244,7 @@ def _archive_existing(path: Path) -> Path | None:
             f"{path.stem}_{stamp}_{sequence}{path.suffix}"
         )
         sequence += 1
-    path.replace(destination)
+    gene.replace_with_retry(path, destination)
     return destination
 
 
@@ -214,7 +253,7 @@ def _atomic_csv(path: Path, frame: pd.DataFrame) -> None:
     _archive_existing(path)
     temporary = path.with_suffix(path.suffix + ".tmp")
     frame.to_csv(temporary, index=False, encoding="utf-8-sig")
-    temporary.replace(path)
+    gene.replace_with_retry(temporary, path)
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
@@ -231,7 +270,7 @@ def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
         ),
         encoding="utf-8",
     )
-    temporary.replace(path)
+    gene.replace_with_retry(temporary, path)
 
 
 def _archive_residual_temp_and_logs(output_dir: Path) -> list[str]:
@@ -266,7 +305,12 @@ def _output_paths(
     oos_start: dt.datetime,
     oos_end: dt.datetime,
 ) -> dict[str, Path]:
-    prefix = f"{VERSION}_{_period_stem(pair, train_start, train_end, oos_start, oos_end)}"
+    # 足の長さを出力名に入れて、M5の結果とM30の結果が混ざらないようにする。
+    granularity = f"m{BAR_MINUTES}"
+    prefix = (
+        f"{VERSION}_{granularity}_"
+        f"{_period_stem(pair, train_start, train_end, oos_start, oos_end)}"
+    )
     return {
         "train_events": output_dir / f"{prefix}_train_events.csv",
         "train_outcomes": output_dir / f"{prefix}_train_outcomes.csv",
@@ -357,6 +401,66 @@ def _read_candles(path: Path, label: str) -> pd.DataFrame:
         frame["direction"] = np.sign(frame["body"])
     frame.attrs["duplicate_count"] = duplicate_count
     return frame
+
+
+def resample_candles(frame: pd.DataFrame, bar_minutes: int) -> pd.DataFrame:
+    """M5を束ねて、より長い足のOHLCを作る。
+
+    束ねるだけなので新しい情報は入らず、値も丸めていない（高値は含まれる
+    M5高値の最大、安値は最小、始値は先頭、終値は末尾）。境界は時刻を
+    bar_minutes で切り下げて決める。取引が無く歯抜けの区間は行そのものが
+    生まれないので、後段の欠損チェックがそのまま働く。
+
+    RSIは束ねられないため、終値から作り直す。RSIを持たない足は
+    条件側でNaNとして扱われ、その条件が選ばれなくなるだけで害はない。
+    """
+    minutes = int(bar_minutes)
+    if minutes == BASE_BAR_MINUTES:
+        return frame
+    if minutes <= 0 or minutes % BASE_BAR_MINUTES:
+        raise ValueError(
+            f"bar_minutes must be a positive multiple of {BASE_BAR_MINUTES}"
+        )
+    work = frame.copy()
+    work["_bucket"] = work["time_jp_dt"].dt.floor(f"{minutes}min")
+    grouped = work.groupby("_bucket", sort=True)
+    resampled = pd.DataFrame(
+        {
+            "time_jp_dt": grouped["time_jp_dt"].first().index,
+            "open": grouped["open"].first().to_numpy(),
+            "high": grouped["high"].max().to_numpy(),
+            "low": grouped["low"].min().to_numpy(),
+            "close": grouped["close"].last().to_numpy(),
+        }
+    )
+    resampled["time_jp_dt"] = pd.to_datetime(resampled["time_jp_dt"])
+    resampled["time_jp"] = resampled["time_jp_dt"].dt.strftime(TIME_FORMAT)
+    resampled["middle_price"] = (resampled["open"] + resampled["close"]) / 2.0
+    resampled["inner_high"] = resampled[["open", "close"]].max(axis=1)
+    resampled["inner_low"] = resampled[["open", "close"]].min(axis=1)
+    resampled["body"] = resampled["close"] - resampled["open"]
+    resampled["body_abs"] = resampled["body"].abs()
+    resampled["moves"] = resampled["high"] - resampled["low"]
+    resampled["direction"] = np.sign(resampled["body"])
+    resampled["RSI"] = _relative_strength_index(resampled["close"])
+    resampled.attrs["duplicate_count"] = 0
+    resampled.attrs["bar_minutes"] = minutes
+    return resampled
+
+
+def _relative_strength_index(closes: pd.Series, period: int = 14) -> pd.Series:
+    """終値からRSIを作る。束ね直した足でも同じ尺度で条件を引けるようにする。"""
+    change = closes.diff()
+    gain = change.clip(lower=0.0)
+    loss = (-change).clip(lower=0.0)
+    average_gain = gain.ewm(alpha=1.0 / period, adjust=False).mean()
+    average_loss = loss.ewm(alpha=1.0 / period, adjust=False).mean()
+    strength = average_gain / average_loss.replace(0.0, np.nan)
+    rsi = 100.0 - (100.0 / (1.0 + strength))
+    rsi[average_loss.eq(0.0) & average_gain.gt(0.0)] = 100.0
+    rsi[average_gain.eq(0.0) & average_loss.gt(0.0)] = 0.0
+    rsi.iloc[:period] = np.nan
+    return rsi
 
 
 def _tilt_direction(newer_middle: float, older_middle: float) -> int:
@@ -557,7 +661,7 @@ def generate_events(
     )
     start_decision = np.datetime64(pd.Timestamp(period_start), "ns")
     end_decision = np.datetime64(pd.Timestamp(period_end), "ns")
-    decision_times = times + np.timedelta64(5, "m")
+    decision_times = times + np.timedelta64(BAR_MINUTES, "m")
     candidate_indices = np.flatnonzero(
         (decision_times >= start_decision)
         & (decision_times < end_decision)
@@ -629,7 +733,7 @@ def generate_events(
         history_times = [pd.Timestamp(value) for value in times[history_floor:index + 1]]
         quality = analysis_missing_bar_stats(
             history_times,
-            pd.Timedelta(minutes=5),
+            pd.Timedelta(minutes=BAR_MINUTES),
             expected_end=decision_time,
         )
         if float(quality["missing_ratio"]) >= MAX_MISSING_RATIO:
@@ -723,6 +827,24 @@ def generate_events(
     if frame["event_id"].duplicated().any():
         raise ValueError("DoubleTop event_idが重複しています")
     return frame, diagnostics
+
+
+def _production_context_check_skipped() -> dict[str, Any]:
+    """本番context照合を行わなかったことを、結果に残す形で返す。
+
+    照合は本番のCandleAnalysis（M5の完成足でPeaksを組む）と突き合わせる
+    ものなので、束ね直した足には適用できない。本番にM30のダブルトップ経路
+    が無い以上、ここで照合できる相手がいない。黙って飛ばすと「照合済み」と
+    誤読されるため、理由を明示して残す。
+    """
+    return {
+        "checked": 0,
+        "mismatches": 0,
+        "skipped_reason": (
+            f"bar_minutes={BAR_MINUTES} has no production CandleAnalysis path "
+            "to compare against; the check only applies to M5"
+        ),
+    }
 
 
 def validate_production_context_equivalence(
@@ -855,46 +977,75 @@ def validate_production_context_equivalence(
     }
 
 
+_STOP_REFERENCE_LABELS = {
+    double_top_core.STOP_REFERENCE_MAX_TOP: "top",
+    double_top_core.STOP_REFERENCE_T2: "t2",
+    double_top_core.STOP_REFERENCE_NECKLINE: "neck",
+}
+
+
 def _execution_combo_id(
         tp_height_multiplier: float,
+        stop_reference: str,
         stop_buffer_pips: float,
+        stop_buffer_a: float,
         trade_timeout_minutes: int,
 ) -> str:
+    label = _STOP_REFERENCE_LABELS[stop_reference]
+    if float(stop_buffer_a) > 0.0:
+        buffer_text = f"{float(stop_buffer_a):g}A"
+    else:
+        buffer_text = f"{float(stop_buffer_pips):g}p"
     return (
         f"TP{float(tp_height_multiplier):g}H_"
-        f"LCtop{float(stop_buffer_pips):g}p_"
+        f"LC{label}{buffer_text}_"
         f"T{int(trade_timeout_minutes)}m"
     )
 
 
 def live_trial_execution_combo() -> ExecutionCombo:
+    """本番の固定ポリシーと同じ執行。RR下限の比較対象（ベースライン）。"""
     policy = live_double_top.LIVE_TRIAL_POLICY_V1
+    reference = double_top_core.STOP_REFERENCE_MAX_TOP
     return ExecutionCombo(
         combo_id=_execution_combo_id(
             policy.target_height_multiplier,
+            reference,
             policy.stop_buffer_pips,
+            0.0,
             policy.trade_timeout_min,
         ),
         tp_height_multiplier=float(policy.target_height_multiplier),
+        stop_reference=reference,
         stop_buffer_pips=float(policy.stop_buffer_pips),
+        stop_buffer_a=0.0,
         trade_timeout_minutes=int(policy.trade_timeout_min),
     )
 
 
 def execution_combos() -> list[ExecutionCombo]:
     combos: list[ExecutionCombo] = []
+    seen: set[str] = set()
     for tp_multiplier in TP_HEIGHT_MULTIPLIERS:
-        for stop_buffer in STOP_BUFFER_PIPS:
+        for reference, buffer_pips, buffer_a in STOP_RULES:
             for timeout in TRADE_TIMEOUT_MINUTES:
+                combo_id = _execution_combo_id(
+                    tp_multiplier,
+                    reference,
+                    buffer_pips,
+                    buffer_a,
+                    timeout,
+                )
+                if combo_id in seen:
+                    continue
+                seen.add(combo_id)
                 combos.append(
                     ExecutionCombo(
-                        combo_id=_execution_combo_id(
-                            tp_multiplier,
-                            stop_buffer,
-                            timeout,
-                        ),
+                        combo_id=combo_id,
                         tp_height_multiplier=float(tp_multiplier),
-                        stop_buffer_pips=float(stop_buffer),
+                        stop_reference=reference,
+                        stop_buffer_pips=float(buffer_pips),
+                        stop_buffer_a=float(buffer_a),
                         trade_timeout_minutes=int(timeout),
                     )
                 )
@@ -1182,31 +1333,37 @@ class MarketPathInspector:
             )
             for multiplier in {combo.tp_height_multiplier for combo in combos}
         }
+        average_range_pips = float(event["recent_m5_average_range_pips"])
         stops = {
-            buffer_pips: double_top_core.stop_price_v1(
+            stop_key: double_top_core.stop_price_v2(
                 self.pair,
+                stop_key[0],
                 float(event["t1_price"]),
                 float(event["t2_price"]),
-                buffer_pips,
+                float(event["neckline_price"]),
+                buffer_pips=stop_key[1],
+                buffer_a_multiple=stop_key[2],
+                average_range_pips=average_range_pips,
             )
-            for buffer_pips in {combo.stop_buffer_pips for combo in combos}
+            for stop_key in {combo.stop_key for combo in combos}
         }
 
         target_first: dict[float, int | None] = {}
         for multiplier, target in targets.items():
             reached = np.flatnonzero(prepared.lows_ask <= target)
             target_first[multiplier] = int(reached[0]) if reached.size else None
-        stop_first: dict[float, int | None] = {}
-        for buffer, stop in stops.items():
+        stop_first: dict[tuple[str, float, float], int | None] = {}
+        for stop_key, stop in stops.items():
             reached = np.flatnonzero(prepared.highs_ask >= stop)
-            stop_first[buffer] = int(reached[0]) if reached.size else None
+            stop_first[stop_key] = int(reached[0]) if reached.size else None
 
         results: list[dict[str, Any]] = []
         for combo in combos:
             target = targets[combo.tp_height_multiplier]
-            stop = stops[combo.stop_buffer_pips]
+            stop = stops[combo.stop_key]
             tp_pips = float(self.pair.price_to_pips(entry - target))
             lc_pips = float(self.pair.price_to_pips(stop - entry))
+            effective_rr = tp_pips / lc_pips if lc_pips > 0 else np.nan
             common = {
                 **base_row,
                 **asdict(combo),
@@ -1214,13 +1371,32 @@ class MarketPathInspector:
                 "stop_price": stop,
                 "tp_pips": tp_pips,
                 "lc_pips": lc_pips,
-                "effective_rr": tp_pips / lc_pips if lc_pips > 0 else np.nan,
+                "effective_rr": effective_rr,
             }
             if tp_pips < 1.0 or lc_pips < 1.0:
                 results.append(
                     {
                         **common,
                         "status": "invalid_order_width",
+                        "result": "invalid",
+                        "exit_time": pd.NaT,
+                        "result_pips": np.nan,
+                        "result_yen": np.nan,
+                        "path_missing_ratio": np.nan,
+                        "both_same_s5": False,
+                    }
+                )
+                continue
+            if (
+                    not math.isfinite(effective_rr)
+                    or effective_rr < MINIMUM_EFFECTIVE_RR
+            ):
+                # 損切りが利確より広い取引は取らない方針。TP/LC距離は判断時刻に
+                # 確定しているので、値動きを見ずにここで落とせる。
+                results.append(
+                    {
+                        **common,
+                        "status": "below_minimum_rr",
                         "result": "invalid",
                         "exit_time": pd.NaT,
                         "result_pips": np.nan,
@@ -1246,7 +1422,7 @@ class MarketPathInspector:
                 )
                 continue
             tp_index = target_first[combo.tp_height_multiplier]
-            stop_index = stop_first[combo.stop_buffer_pips]
+            stop_index = stop_first[combo.stop_key]
             hit_candidates = [
                 index
                 for index in (tp_index, stop_index)
@@ -1782,7 +1958,10 @@ def run_pair(
         oos_h1_source = _source_path(output_dir, "H1", pair_name, oos_start, oos_end)
         oos_s5_source = _source_path(output_dir, "S5", pair_name, oos_start, oos_end)
 
-        train_m5 = _read_candles(train_m5_source, "train M5")
+        train_m5 = resample_candles(
+            _read_candles(train_m5_source, "train M5"),
+            BAR_MINUTES,
+        )
         train_h1 = _read_candles(train_h1_source, "train H1")
         _write_progress(paths["progress"], pair_name, "running", "train_event_scan", started)
         train_events, train_diagnostics = generate_events(
@@ -1795,11 +1974,15 @@ def run_pair(
         )
         if train_events.empty:
             raise ValueError(f"{pair_name}の探索期間にDoubleTop候補がありません")
-        train_context_check = validate_production_context_equivalence(
-            pair_name,
-            train_m5,
-            train_h1,
-            train_events,
+        train_context_check = (
+            validate_production_context_equivalence(
+                pair_name,
+                train_m5,
+                train_h1,
+                train_events,
+            )
+            if BAR_MINUTES == BASE_BAR_MINUTES
+            else _production_context_check_skipped()
         )
         _atomic_csv(paths["train_events"], train_events)
 
@@ -1827,7 +2010,10 @@ def run_pair(
         del train_outcomes, train_matrices, grid, train_h1
         gc.collect()
 
-        oos_m5 = _read_candles(oos_m5_source, "oos M5")
+        oos_m5 = resample_candles(
+            _read_candles(oos_m5_source, "oos M5"),
+            BAR_MINUTES,
+        )
         oos_h1 = _read_candles(oos_h1_source, "oos H1")
         _write_progress(paths["progress"], pair_name, "running", "oos_event_scan", started)
         oos_events, oos_diagnostics = generate_events(
@@ -1840,11 +2026,15 @@ def run_pair(
         )
         if oos_events.empty:
             raise ValueError(f"{pair_name}のリプレイ期間にDoubleTop候補がありません")
-        oos_context_check = validate_production_context_equivalence(
-            pair_name,
-            oos_m5,
-            oos_h1,
-            oos_events,
+        oos_context_check = (
+            validate_production_context_equivalence(
+                pair_name,
+                oos_m5,
+                oos_h1,
+                oos_events,
+            )
+            if BAR_MINUTES == BASE_BAR_MINUTES
+            else _production_context_check_skipped()
         )
         _atomic_csv(paths["oos_events"], oos_events)
 
@@ -1931,6 +2121,22 @@ def run_pair(
                 "top_count": len(top15),
                 "risk_yen": RISK_YEN,
                 "spread_pips": SPREAD_PIPS,
+                "minimum_effective_rr": MINIMUM_EFFECTIVE_RR,
+                "minimum_effective_rr_note": (
+                    "trades whose take-profit distance is under "
+                    f"{MINIMUM_EFFECTIVE_RR} times the stop distance are not "
+                    "taken; both distances are known at decision time, so this "
+                    "filter uses no future price path"
+                ),
+                "stop_rules": [
+                    {
+                        "reference": reference,
+                        "buffer_pips": buffer_pips,
+                        "buffer_a_multiple": buffer_a,
+                    }
+                    for reference, buffer_pips, buffer_a in STOP_RULES
+                ],
+                "tp_height_multipliers": list(TP_HEIGHT_MULTIPLIERS),
             },
             "train": {
                 "event_count": len(train_events),

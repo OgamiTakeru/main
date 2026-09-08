@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-09-08 11:05 JST
 """Select robust count2 policies without a forced Top15.
 
 This inspection-only stage consumes one completed entry/TP/LC grid for the
@@ -219,14 +220,14 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
         json.dumps(_json_safe(payload), ensure_ascii=False, indent=2, allow_nan=False),
         encoding="utf-8",
     )
-    temporary.replace(path)
+    gene.replace_with_retry(temporary, path)
 
 
 def _write_csv_atomic(frame: pd.DataFrame, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     frame.to_csv(temporary, index=False, encoding="utf-8-sig")
-    temporary.replace(path)
+    gene.replace_with_retry(temporary, path)
 
 
 def _archive_paths(paths: Iterable[Path]) -> list[Path]:

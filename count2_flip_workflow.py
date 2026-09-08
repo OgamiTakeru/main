@@ -197,7 +197,7 @@ def archive_file(path: Path) -> Path | None:
             f"{path.stem}_{stamp}_{sequence}{path.suffix}"
         )
         sequence += 1
-    path.replace(destination)
+    gene.replace_with_retry(path, destination)
     return destination
 
 
@@ -248,7 +248,7 @@ def _replace_with_retry(
     last_error: OSError | None = None
     for _attempt in range(attempts):
         try:
-            source.replace(destination)
+            gene.replace_with_retry(source, destination)
             return
         except OSError as error:
             last_error = error

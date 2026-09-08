@@ -1,3 +1,4 @@
+# 最新更新日時: 2026-09-03 06:54 JST
 """AUD_USD の「勝てる折り返し地点」を先に探す検証。
 
 注文ロジックは使わず、M5 の最新ピーク (peaks[0]) の count が 2 の地点で
@@ -148,7 +149,7 @@ def fetch_candles(
     start: dt.datetime,
     end: dt.datetime,
 ) -> pd.DataFrame:
-    seconds = {"S5": 5, "M5": 300, "H1": 3600}[granularity]
+    seconds = {"S5": 5, "M5": 300, "M30": 1800, "H1": 3600}[granularity]
     rows = math.ceil((end - start).total_seconds() / seconds) + 5
     count = min(rows, 5000)
     loops = max(1, math.ceil(rows / count))

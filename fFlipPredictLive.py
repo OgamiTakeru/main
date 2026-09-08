@@ -330,7 +330,7 @@ class StateStore:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, self.path)
+        gene.replace_with_retry(temporary, self.path)
 
 
 class LiveNotifier:
@@ -758,21 +758,36 @@ def _build_signal_from_prepared_frames(
     decision_jst: pd.Timestamp,
     decision_context: Any | None = None,
 ) -> dict[str, Any] | None:
-    m5 = _assert_history_coverage(
-        m5,
-        180,
-        pd.Timedelta(minutes=5),
-        "M5",
-        expected_end=pd.Timestamp(decision_jst).floor("5min"),
+    continue_with_live_warning = bool(
+        decision_context is not None
+        and str(getattr(decision_context, "mode", "")) == "live"
+        and getattr(decision_context, "data_quality_warnings", ())
     )
+    if continue_with_live_warning:
+        # CandleAnalysisで完成足・判断時刻境界を確認済み。ライブの品質警告時は
+        # その因果的な取得済み足を使い、同じ品質異常でflipだけを再停止しない。
+        m5 = decision_context.m5_completed_df_r.iloc[::-1].reset_index(
+            drop=True
+        )
+        h1 = decision_context.h1_completed_df_r.iloc[::-1].reset_index(
+            drop=True
+        )
+    else:
+        m5 = _assert_history_coverage(
+            m5,
+            180,
+            pd.Timedelta(minutes=5),
+            "M5",
+            expected_end=pd.Timestamp(decision_jst).floor("5min"),
+        )
+        h1 = _assert_history_coverage(
+            h1,
+            240,
+            pd.Timedelta(hours=1),
+            "H1",
+            expected_end=pd.Timestamp(decision_jst).floor("h"),
+        )
     _assert_latest_m5_boundary(m5, decision_jst)
-    h1 = _assert_history_coverage(
-        h1,
-        240,
-        pd.Timedelta(hours=1),
-        "H1",
-        expected_end=pd.Timestamp(decision_jst).floor("h"),
-    )
     _assert_latest_h1_boundary(h1, decision_jst)
     try:
         rows = _candidate_rows(

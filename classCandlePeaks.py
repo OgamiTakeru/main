@@ -25,6 +25,7 @@ class PeaksClass:
             completed_df_r=None,
             decision_time,
             source_granularity=None,
+            analysis_num=None,
     ):
         """
         処理解説
@@ -171,6 +172,11 @@ class PeaksClass:
             self.decision_time,
             self.source_granularity,
         )
+        # 足ごとの既定本数を、呼び出し側から上書きできるようにする。
+        # 抵抗線を長い時間窓で作りたいとき、ここが上限になって
+        # 古いピークが一切生まれない（M5の既定は180本＝15時間）。
+        if analysis_num is not None:
+            self.analysis_num = int(analysis_num)
         self.analysis_df_r = self.completed_df_r.iloc[
             :self.analysis_num
         ].copy()

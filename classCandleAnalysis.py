@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-29 21:21 JST
+# 最新更新日時: 2026-09-08 10:52 JST
 
 import contextlib
 import datetime
@@ -27,7 +27,25 @@ from pympler import asizeof
 
 JST = ZoneInfo("Asia/Tokyo")
 M5_ANALYSIS_BARS = 180
+M30_ANALYSIS_BARS = 240
 H1_ANALYSIS_BARS = 240
+
+
+@dataclass(frozen=True)
+class CandleTimeframeBundle:
+    """One timeframe's causal candles and their shared Peaks result."""
+
+    timeframe: str
+    duration: pd.Timedelta
+    original_df_r: pd.DataFrame
+    completed_df_r: pd.DataFrame
+    peaks_class: Any
+    source_granularity: str
+    candle_meta_class: Any = None
+
+    @property
+    def is_native(self) -> bool:
+        return str(self.source_granularity).upper() == str(self.timeframe).upper()
 
 
 @dataclass
@@ -58,6 +76,7 @@ class CandleDecisionContext:
     h1_missing_ratio: float
     m5_last_end: pd.Timestamp
     h1_last_end: pd.Timestamp | None
+    data_quality_warnings: tuple[str, ...]
 
     @property
     def peak_direction(self) -> int:
@@ -124,6 +143,7 @@ class candleAnalysis:
     latest_decision_context_error_type = None
     latest_decision_context_not_ready = False
     latest_pair = None
+    latest_data_quality_warning_key = None
 
     def __init__(
             self,
@@ -171,6 +191,7 @@ class candleAnalysis:
         self.decision_context_error = None
         self.decision_context_error_type = None
         self.decision_context_not_ready = False
+        self.data_quality_warnings = ()
 
         # 命名契約:
         # original_df_r = 判断時刻以前の取得範囲（形成中の0行目を含み得る）
@@ -296,6 +317,9 @@ class candleAnalysis:
                 self.current_price_source = candleAnalysis.latest_current_price_source
                 self.decision_context = candleAnalysis.latest_decision_context
                 self.basic_analysis = self.decision_context
+                self.data_quality_warnings = tuple(
+                    getattr(self.decision_context, "data_quality_warnings", ())
+                )
                 self.decision_context_error = (
                     candleAnalysis.latest_decision_context_error
                 )
@@ -375,6 +399,7 @@ class candleAnalysis:
                 gene.currency_pair(self.pair),
                 completed_df_r=self.m30_completed_df_r,
                 decision_time=self.decision_time,
+                analysis_num=M30_ANALYSIS_BARS,
                 source_granularity=(
                     "H1" if self.m30_uses_h1_fallback else "M30"
                 ),
@@ -762,19 +787,82 @@ class candleAnalysis:
             allow_latest_known_closure=False,
             stale_is_integrity=False,
             require_market_open=False,
+            allow_integrity_warning=False,
     ):
         """全解析共通の鮮度・必要本数・既知休場込み欠損検査。"""
-        return candle_quality.validate_completed_history(
-            completed_df_r,
-            decision_time,
-            candle_duration,
-            required_bars,
-            label,
-            latest_boundary=latest_boundary,
-            allow_latest_known_closure=allow_latest_known_closure,
-            stale_is_integrity=stale_is_integrity,
-            require_market_open=require_market_open,
-        )
+        try:
+            return candle_quality.validate_completed_history(
+                completed_df_r,
+                decision_time,
+                candle_duration,
+                required_bars,
+                label,
+                latest_boundary=latest_boundary,
+                allow_latest_known_closure=allow_latest_known_closure,
+                stale_is_integrity=stale_is_integrity,
+                require_market_open=require_market_open,
+            )
+        except candle_quality.CandleHistoryIntegrityError as error:
+            if not allow_integrity_warning:
+                raise
+
+            # ライブ中は履歴の本数不足・途中欠損を警告扱いにする。
+            # ここへ来る completed_df_r は select_completed_df_r を通過済みで、
+            # complete=True かつ判断時刻までに終了した足だけで構成される。
+            # 念のため境界を再確認し、未来足だけは警告扱いにしない。
+            work = completed_df_r.copy().reset_index(drop=True)
+            if work.empty:
+                raise
+            decision = cls.normalize_decision_time(decision_time)
+            duration = pd.Timedelta(candle_duration)
+            expected_end_by_timeframe = {
+                "M5": decision.floor("5min"),
+                "M30": decision.floor("30min"),
+                "H1": decision.floor("h"),
+            }
+            if latest_boundary not in expected_end_by_timeframe:
+                raise ValueError("latest_boundary must be M5, M30 or H1")
+            expected_end = expected_end_by_timeframe[latest_boundary]
+            times = cls._frame_times(work)
+            if bool(((times + duration) > expected_end).any()):
+                raise candle_quality.CandleHistoryIntegrityError(
+                    label + " warning fallback contains a future candle"
+                ) from error
+
+            # 解析本体が必要とする向きと最大本数だけを揃える。
+            work["_warning_time"] = times
+            work.sort_values(
+                "_warning_time",
+                ascending=False,
+                kind="stable",
+                inplace=True,
+            )
+            work = work.head(int(required_bars)).copy()
+            work.drop(columns="_warning_time", inplace=True)
+            work.reset_index(drop=True, inplace=True)
+
+            stats = {
+                "actual_bars": len(work),
+                "missing_bars": 0,
+                "latest_missing_bars": 0,
+                "missing_ratio": 0.0,
+                "closure_gap_count": 0,
+            }
+            try:
+                measured = candle_quality.analysis_missing_bar_stats(
+                    cls._frame_times(work).tolist(),
+                    duration,
+                    expected_end=expected_end,
+                )
+                stats.update(measured)
+            except candle_quality.CandleHistoryError:
+                # off-grid等で本数を安全に数えられなくても、元の警告内容を
+                # 残して取得済み完成足による解析は続ける。
+                pass
+            stats["strict_validated"] = False
+            stats["integrity_warning"] = str(error)
+            work.attrs["candle_quality"] = stats
+            return work
 
     @classmethod
     def build_decision_context_from_frames(
@@ -823,6 +911,7 @@ class candleAnalysis:
             latest_boundary="M5",
             stale_is_integrity=str(mode) == "inspection",
             require_market_open=True,
+            allow_integrity_warning=str(mode) == "live",
         )
         m5_quality = dict(
             m5_completed_df_r.attrs.get("candle_quality") or {}
@@ -880,6 +969,7 @@ class candleAnalysis:
                 latest_boundary="H1",
                 allow_latest_known_closure=True,
                 stale_is_integrity=str(mode) == "inspection",
+                allow_integrity_warning=str(mode) == "live",
             )
             h1_quality = dict(
                 h1_completed_df_r.attrs.get("candle_quality") or {}
@@ -961,6 +1051,22 @@ class candleAnalysis:
                 + pd.Timedelta(minutes=5)
             ),
             h1_last_end=h1_last_end,
+            data_quality_warnings=tuple(
+                warning
+                for warning in (
+                    (
+                        "M5: " + str(m5_quality["integrity_warning"])
+                        if m5_quality.get("integrity_warning")
+                        else ""
+                    ),
+                    (
+                        "H1: " + str(h1_quality["integrity_warning"])
+                        if h1_quality.get("integrity_warning")
+                        else ""
+                    ),
+                )
+                if warning
+            ),
         )
 
     def build_basic_analysis(self):
@@ -983,6 +1089,10 @@ class candleAnalysis:
             self.decision_context_error = None
             self.decision_context_error_type = None
             self.decision_context_not_ready = False
+            self.data_quality_warnings = tuple(
+                self.decision_context.data_quality_warnings
+            )
+            self.notify_live_data_quality_warning()
         except (KeyError, TypeError, ValueError) as error:
             # 因果contextを作れない場合は、旧Peaksへフォールバックさせない。
             self.decision_context = None
@@ -997,7 +1107,33 @@ class candleAnalysis:
                     )
                 )
             )
+            self.data_quality_warnings = ()
         return self.decision_context
+
+    def notify_live_data_quality_warning(self):
+        """ライブの品質異常を一判断時刻につき一度だけ通知する。"""
+        if self.analysis_mode != "live" or not self.data_quality_warnings:
+            return
+        warning_key = (
+            str(self.pair).upper(),
+            self.normalize_decision_time(self.decision_time).isoformat(),
+            self.data_quality_warnings,
+        )
+        if candleAnalysis.latest_data_quality_warning_key == warning_key:
+            return
+        candleAnalysis.latest_data_quality_warning_key = warning_key
+        lines = [
+            "【ローソク足データ警告】",
+            "- 通貨: " + str(self.pair).upper(),
+            "- 判断時刻: "
+            + self.normalize_decision_time(self.decision_time).isoformat(),
+        ]
+        lines.extend(
+            "- 内容: " + warning
+            for warning in self.data_quality_warnings
+        )
+        lines.append("- 対応: (現在は解析を継続)")
+        notice.line_send("\n".join(lines))
 
     def sync_peaks_from_basic_analysis(self):
         """因果contextをM5/H1 Peaksの正本として互換参照も同期する。"""
@@ -1083,6 +1219,67 @@ class candleAnalysis:
             raise RuntimeError("basic_analysis Peaks identity mismatch")
         return context
 
+    def get_timeframe_bundle(self, timeframe, require_native=False):
+        """Return one timeframe without exposing another timeframe's data."""
+        requested = str(timeframe).strip().upper()
+        durations = {
+            "M5": pd.Timedelta(minutes=5),
+            "M30": pd.Timedelta(minutes=30),
+            "H1": pd.Timedelta(hours=1),
+        }
+        if requested not in durations:
+            raise ValueError("timeframe must be M5, M30 or H1")
+
+        if requested == "M5":
+            context = self.require_basic_analysis()
+            original_df_r = context.m5_original_df_r
+            completed_df_r = context.m5_completed_df_r
+            peaks_class = context.m5_peaks_class
+            candle_meta_class = self.candle_meta_class
+        elif requested == "H1":
+            context = self.require_basic_analysis()
+            original_df_r = context.h1_original_df_r
+            completed_df_r = context.h1_completed_df_r
+            peaks_class = context.h1_peaks_class
+            candle_meta_class = self.candle_meta_class_hour
+        else:
+            original_df_r = getattr(self, "m30_original_df_r", None)
+            completed_df_r = getattr(self, "m30_completed_df_r", None)
+            peaks_class = getattr(self, "peaks_class_m30", None)
+            candle_meta_class = getattr(self, "candle_meta_class_m30", None)
+
+        if (
+                original_df_r is None
+                or completed_df_r is None
+                or peaks_class is None
+        ):
+            raise ValueError(requested + " timeframe analysis is unavailable")
+
+        source_granularity = str(
+            getattr(peaks_class, "source_granularity", requested) or requested
+        ).upper()
+        if requested == "M30" and bool(
+                getattr(self, "m30_uses_h1_fallback", False)
+        ):
+            source_granularity = "H1"
+
+        bundle = CandleTimeframeBundle(
+            timeframe=requested,
+            duration=durations[requested],
+            original_df_r=original_df_r,
+            completed_df_r=completed_df_r,
+            peaks_class=peaks_class,
+            source_granularity=source_granularity,
+            candle_meta_class=candle_meta_class,
+        )
+        if require_native and not bundle.is_native:
+            raise ValueError(
+                requested
+                + " requires native candles; source_granularity="
+                + source_granularity
+            )
+        return bundle
+
     @staticmethod
     def refresh_cached_peak_price(peaks_class, current_price):
         """Refresh the only peak fields that depend on the current M5 price."""
@@ -1136,6 +1333,31 @@ class candleAnalysis:
             require_complete_flag=target_time_jp == 0,
         )
 
+    def cached_live_frame_after_fetch_failure(self, cache_attribute, timeframe):
+        """ライブ取得失敗時に、同じ通貨の直前フレームを返す。"""
+        cached = None
+        if candleAnalysis.latest_pair == self.pair:
+            candidate = getattr(candleAnalysis, cache_attribute, None)
+            if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                cached = candidate.copy()
+
+        lines = [
+            "【ローソク足取得警告】",
+            "- 通貨: " + str(self.pair).upper(),
+            "- 時間足: " + str(timeframe).upper(),
+            "- 内容: OANDAからのデータ取得に失敗",
+        ]
+        if cached is not None:
+            lines.extend((
+                "- 使用データ: 同じ通貨の直前取得データ",
+                "- 対応: (現在は解析を継続)",
+            ))
+        else:
+            # 起動直後など、直前データが存在しない場合だけは解析材料がない。
+            lines.append("- 対応: 継続用データなし（今回のみ解析不可）")
+        notice.line_send("\n".join(lines))
+        return cached
+
     def get_date_df(self, target_time_jp):
         # データを取得する
         if target_time_jp == 0:
@@ -1146,8 +1368,12 @@ class candleAnalysis:
                                                                   1)  # 時間昇順(直近が最後尾）
             if d5_df_res['error'] == -1:
                 print("error Candle")
-                notice.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
-                return -1
+                d5_df_latest_bottom = self.cached_live_frame_after_fetch_failure(
+                    "latest_m5_original_df_r",
+                    "M5",
+                )
+                if d5_df_latest_bottom is None:
+                    return -1
             else:
                 d5_df_latest_bottom = d5_df_res['data']
             self.m5_original_df_r = self.normalize_original_df_r(
@@ -1162,8 +1388,12 @@ class candleAnalysis:
                                                                    1)  # 時間昇順(直近が最後尾）
             if h1_df_res['error'] == -1:
                 print("error Candle")
-                notice.line_send("60分ごと調査最初のデータフレーム取得に失敗（エラー）")
-                return -1
+                h1_df_latest_bottom = self.cached_live_frame_after_fetch_failure(
+                    "latest_h1_original_df_r",
+                    "H1",
+                )
+                if h1_df_latest_bottom is None:
+                    return -1
             else:
                 h1_df_latest_bottom = h1_df_res['data']
             self.h1_original_df_r = self.normalize_original_df_r(
@@ -1172,14 +1402,27 @@ class candleAnalysis:
                 "h1_original_df_r",
             ).head(self.need_df_num).copy()
 
-            # 5秒足で
-            s5_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
-                                                                  {"granularity": "S5", "count": 5},
-                                                                  1)  # 時間昇順(直近が最後尾）
+            # 初回解析用のS5も、M5/H1と同じ判断時刻までのスナップショットにする。
+            # 「現在から直近5本」では起動が分の後半だった場合、全5本が
+            # decision_timeより新しくなり、因果フィルタ後に0本となるため。
+            s5_to_utc = self.decision_time - datetime.timedelta(hours=9)
+            s5_param = {
+                "granularity": "S5",
+                "count": 5,
+                "to": f"{s5_to_utc.isoformat()}.000000000Z",
+            }
+            s5_df_res = self.base_oa.InstrumentsCandles_exe(
+                self.pair,
+                s5_param,
+            )  # 時間昇順(直近が最後尾）
             if s5_df_res['error'] == -1:
                 print("error Candle")
-                notice.line_send("5分ごと調査最初のデータフレーム取得に失敗（エラー）")
-                return -1
+                s5_df_latest_bottom = self.cached_live_frame_after_fetch_failure(
+                    "latest_s5_original_df_r",
+                    "S5",
+                )
+                if s5_df_latest_bottom is None:
+                    return -1
             else:
                 s5_df_latest_bottom = s5_df_res['data']
             self.s5_original_df_r = self.normalize_original_df_r(
@@ -1194,8 +1437,12 @@ class candleAnalysis:
                                                                    1)  # 時間昇順(直近が最後尾）
             if d30_df_res['error'] == -1:
                 print("error Candle")
-                notice.line_send("30分ごと調査最初のデータフレーム取得に失敗（エラー）")
-                return -1
+                m30_df_latest_bottom = self.cached_live_frame_after_fetch_failure(
+                    "latest_m30_original_df_r",
+                    "M30",
+                )
+                if m30_df_latest_bottom is None:
+                    return -1
             else:
                 m30_df_latest_bottom = d30_df_res['data']
             self.m30_original_df_r = self.normalize_original_df_r(
