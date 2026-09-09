@@ -2777,6 +2777,11 @@ def _line_columns(line: dict[str, Any]) -> dict[str, Any]:
         "line_peaks_count": line.get("count"),
         "line_count": line.get("count"),
         "line_average_strength": line.get("ave_strength"),
+        # 線の値幅（構成ピークの最高と最安の差、pips）。
+        # 同じ peaks 数でも、狭く集まった線と散らばった線では意味が違う。
+        # A に対する比は line_average_range_pips 列と割って解析時に出せる。
+        # グループ化幅が 0.5A なので、比の上限は 0.5 になる。
+        "line_price_gap_pips": line.get("price_gap"),
         "line_core_price": line.get("core_median_price"),
         "line_core_peak_count": line.get("core_count"),
         "line_core_count": line.get("core_count"),

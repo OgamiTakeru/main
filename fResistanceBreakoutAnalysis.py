@@ -28,8 +28,13 @@ FALLBACK_USD_JPY_RATE = 160.0
 
 # 監視コードと同じ条件を固定。検証結果から自動で書き換えない。
 LIVE_TRIAL_POLICY_V1 = breakout_core.ResistanceBreakoutPolicy(
-    policy_id="live_trial_m5_m30_v1",
-    timeframes=("M5", "M30"),
+    policy_id="live_m30_v1",
+    # 2026-09-09: M5 を外した。2年検証で M5 は R −0.042/回と有意にマイナス、
+    # M30 は R −0.001 でゼロ。M5 はどの軸（時間帯・A帯・向きの比率・距離・
+    # 強度・peaks数）で切っても不利で、逆張りに反転しても悪化した。
+    # M30 が良いと確認できたわけではない（一度も有意になっていない）が、
+    # 負けると分かっている側を外す判断。
+    timeframes=("M30",),
     trigger_foot_count=2,
     target_lookback=6,
     target_multiplier=3.0,
@@ -197,6 +202,10 @@ def _line_metadata(
         "core_count": int(line.get("core_count") or 0),
         "line_total_strength": line.get("total_strength"),
         "line_ave_strength": line.get("ave_strength"),
+        # 線の値幅（構成ピークの最高と最安の差、pips）。
+        # 同じ peaks 数でも、狭く集まった線と散らばった線では意味が違う。
+        # グループ化幅が 0.5A なので上限は 0.5A。
+        "line_price_gap_pips": line.get("price_gap"),
         "line_core_total_strength": line.get("core_total_strength"),
         "core_total_strength": line.get("core_total_strength"),
         "line_is_flipped": line.get("is_flipped_line"),

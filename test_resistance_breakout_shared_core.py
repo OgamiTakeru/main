@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -320,6 +321,15 @@ class ResistanceBreakoutProductionEquivalenceTest(unittest.TestCase):
             patch.object(sweep, "detect_h1_stair_trend", return_value={}),
         )
 
+    # このテストは「検証と本番が同じ注文を作るか」を確かめるもので、
+    # 運用でどのライン足を使うかとは別の話。LIVE_TRIAL_POLICY_V1 の
+    # timeframes を運用都合で変えてもテストが壊れないよう、
+    # ここでは M5・M30 の両方を明示したポリシーを使う。
+    EQUIVALENCE_POLICY = replace(
+        live_breakout.LIVE_TRIAL_POLICY_V1,
+        timeframes=("M5", "M30"),
+    )
+
     def _validate(self, require_candidates=True):
         patches = self._common_patches()
         with (
@@ -339,6 +349,7 @@ class ResistanceBreakoutProductionEquivalenceTest(unittest.TestCase):
                 self.h1,
                 [self.decision_index],
                 sample_count=1,
+                policy=self.EQUIVALENCE_POLICY,
                 require_candidates=require_candidates,
             )
 
@@ -357,7 +368,9 @@ class ResistanceBreakoutProductionEquivalenceTest(unittest.TestCase):
             result["peak_history_bars_by_timeframe"],
             {"M5": 180, "M30": 240},
         )
-        self.assertEqual(result["policy_id"], "live_trial_m5_m30_v1")
+        self.assertEqual(
+            result["policy_id"], self.EQUIVALENCE_POLICY.policy_id
+        )
         self.assertEqual(len(self.line_calls), 4)
         for call in self.line_calls:
             self.assertEqual(call["line_history_bars"], 60)
