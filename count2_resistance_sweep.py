@@ -29,6 +29,11 @@ import numpy as np
 import pandas as pd
 
 import classOanda
+import fCandleDataQuality as candle_quality
+from fInspectionEquivalence import (
+    collect_equivalence_report,
+    make_unavailable_equivalence_report,
+)
 from classCandleAnalysis import (
     CandleTimeframeBundle,
     H1_ANALYSIS_BARS as PRODUCTION_H1_PEAK_HISTORY_BARS,
@@ -648,13 +653,44 @@ def load_pair_data(
             fetch_from,
             fetch_to,
         )
-        paths[frame].parent.mkdir(parents=True, exist_ok=True)
-        fetched.drop(columns="time_jp_dt").to_csv(
-            paths[frame],
-            index=False,
-            encoding="utf-8",
+        # Validate a private view before replacing the usable cache. S5
+        # preparation mutates its input and omits completion-audit columns,
+        # so the original fetched frame remains the CSV source.
+        prepared = (
+            prepare_s5(
+                fetched.loc[:, [
+                    column for column in ("time_jp", "open", "close", "high", "low")
+                    if column in fetched.columns
+                ]].copy()
+            )
+            if frame == "S5"
+            else prepare_analysis_candles(fetched)
         )
-        return fetched.drop(columns="time_jp_dt")
+        if prepared.empty or prepared["time_jp_dt"].isna().any():
+            raise ValueError(f"Fetched {frame} data has no usable candle times")
+        if any(
+            not np.isfinite(prepared[column].to_numpy(dtype=float)).all()
+            for column in ("open", "close", "high", "low")
+        ):
+            raise ValueError(f"Fetched {frame} data contains invalid OHLC values")
+        del prepared
+        raw = fetched.drop(columns="time_jp_dt")
+        paths[frame].parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = paths[frame].with_suffix(paths[frame].suffix + ".tmp")
+        _archive_existing_output(temporary_path)
+        try:
+            raw.to_csv(temporary_path, index=False, encoding="utf-8")
+            gene.replace_with_retry(temporary_path, paths[frame], required=True)
+        except Exception:
+            try:
+                _archive_existing_output(temporary_path)
+            except Exception as archive_error:
+                print(
+                    f"[CACHE WARNING] {pair_name} {frame}: "
+                    f"could not archive temporary cache: {archive_error}"
+                )
+            raise
+        return raw
 
     refresh_frames = list(dict.fromkeys([*missing, *incompatible]))
     if refresh_frames:
@@ -676,25 +712,37 @@ def load_pair_data(
         h1=h1,
         m30=m30,
     )
-    if coverage_errors and existing_only:
-        details = "; ".join(
-            f"{frame}: {', '.join(values)}"
-            for frame, values in coverage_errors.items()
-        )
-        raise ValueError(f"Cached data coverage is incomplete: {details}")
-    if coverage_errors:
+    frames = {"M5": m5, "M30": m30, "H1": h1, "S5": s5}
+    refresh_errors: dict[str, list[str]] = {frame: [] for frame in frames}
+    if coverage_errors and not existing_only:
         print(f"[CACHE REFRESH] {pair_name}: {coverage_errors}")
         for frame in coverage_errors:
-            refreshed = fetch_frame(frame)
-            if frame == "M5":
-                m5 = prepare_analysis_candles(refreshed)
-            elif frame == "M30":
-                m30 = prepare_analysis_candles(refreshed)
-            elif frame == "H1":
-                h1 = prepare_analysis_candles(refreshed)
-            else:
-                s5 = prepare_s5(refreshed)
-        remaining_errors = data_coverage_errors(
+            try:
+                refreshed = fetch_frame(frame)
+                prepared = (
+                    prepare_s5(refreshed)
+                    if frame == "S5"
+                    else prepare_analysis_candles(refreshed)
+                )
+                if prepared.empty:
+                    raise ValueError("refreshed frame is empty")
+            except Exception as error:
+                if frames[frame].empty:
+                    raise ValueError(
+                        f"No usable {frame} data after refresh failure"
+                    ) from error
+                detail = f"{type(error).__name__}: {error}"
+                refresh_errors[frame].append(detail)
+                print(
+                    f"[CACHE WARNING] {pair_name} {frame}: "
+                    f"refresh failed ({detail}); continuing with cached rows"
+                )
+                continue
+            frames[frame] = prepared
+        m5, m30, h1, s5 = (
+            frames["M5"], frames["M30"], frames["H1"], frames["S5"]
+        )
+        coverage_errors = data_coverage_errors(
             m5,
             s5,
             start,
@@ -703,14 +751,21 @@ def load_pair_data(
             h1=h1,
             m30=m30,
         )
-        if remaining_errors:
-            raise ValueError(
-                "Fetched data coverage is incomplete: "
-                + "; ".join(
-                    f"{frame}: {', '.join(values)}"
-                    for frame, values in remaining_errors.items()
-                )
-            )
+    empty_frames = [frame for frame, values in frames.items() if values.empty]
+    if empty_frames:
+        raise ValueError(
+            "No usable data for required frames: " + ", ".join(empty_frames)
+        )
+    if coverage_errors:
+        print(
+            f"[CACHE WARNING] {pair_name}: incomplete coverage; "
+            f"continuing with available rows: {coverage_errors}"
+        )
+    # Keep the four-frame return contract. The sweep reports these warnings
+    # alongside results; per-event history/path checks still reject unsafe rows.
+    for frame, values in frames.items():
+        values.attrs["coverage_errors"] = list(coverage_errors.get(frame, []))
+        values.attrs["coverage_refresh_errors"] = list(refresh_errors[frame])
     return m5, m30, h1, s5
 
 
@@ -2061,6 +2116,113 @@ def validate_production_context_equivalence(
     }
 
 
+def report_production_context_equivalence(
+    pair_name: str,
+    m5: pd.DataFrame,
+    m30: pd.DataFrame,
+    h1: pd.DataFrame,
+    decision_indices,
+    sample_count: int = PRODUCTION_EQUIVALENCE_SAMPLE_COUNT,
+) -> dict[str, Any]:
+    """Record preflight failures without aborting the historical sweep.
+
+    The strict comparator remains available to contract tests. Only the
+    inspection runner uses this reporting wrapper; no live guard is relaxed.
+    """
+    timeframes = ()
+    try:
+        import fResistanceBreakoutAnalysis as live_breakout
+
+        policy = live_breakout.LIVE_TRIAL_POLICY_V1
+        timeframes = tuple(policy.timeframes)
+        source_indices = list(dict.fromkeys(int(value) for value in decision_indices))
+        decisions = {
+            index: CandleAnalysis.normalize_decision_time(m5.iloc[index]["time_jp_dt"])
+            for index in source_indices
+        }
+        open_flags = candle_quality.oanda_market_open_mask(
+            pd.DatetimeIndex([decisions[index] for index in source_indices])
+        )
+        open_indices = [
+            index for index, is_open in zip(source_indices, open_flags) if is_open
+        ]
+        with_history = _eligible_production_equivalence_indices(
+            m5, m30, h1, open_indices,
+        )
+        frequencies = {"M5": "5min", "M30": "30min", "H1": "h"}
+        eligible = [
+            index for index in with_history
+            if any(
+                decisions[index] == decisions[index].floor(frequencies[timeframe])
+                for timeframe in timeframes
+            )
+        ]
+        report = collect_equivalence_report(
+            eligible,
+            lambda index: validate_production_context_equivalence(
+                pair_name, m5, m30, h1, [index], sample_count=1,
+                policy=policy, require_candidates=False,
+            ),
+            sample_count=sample_count,
+            timeframes=timeframes,
+            describe_index=lambda index: str(decisions[index]),
+        )
+        report["excluded_before_sampling"] = {
+            "market_closed": len(source_indices) - len(open_indices),
+            "insufficient_history": len(open_indices) - len(with_history),
+            "not_decision_boundary": len(with_history) - len(eligible),
+        }
+        report["policy_id"] = policy.policy_id
+        report["core_version"] = breakout_core.CORE_VERSION
+    except Exception as error:
+        report = make_unavailable_equivalence_report(
+            error, sample_count=sample_count, timeframes=timeframes,
+        )
+    return report
+
+
+def _equivalence_summary_lines(report: dict[str, Any]) -> list[str]:
+    label = {
+        "passed": "抽出点で一致確認",
+        "mismatch": "本番と不一致あり（参考結果）",
+        "incomplete": "本番同等性未確認（参考結果）",
+    }.get(report["status"], "本番同等性未確認（参考結果）")
+    excluded = report.get("excluded_before_sampling", {})
+    lines = [
+        f"本番等価性: {label}",
+        (
+            f"一致確認={report['checked_decisions']}/{report['requested_samples']}点, "
+            f"照合試行={report['attempted_decisions']}点, "
+            f"不一致={report['mismatches']}点, 比較不能={report['errors']}点"
+        ),
+        (
+            f"事前抽出除外: 閉場={excluded.get('market_closed', 0)}件, "
+            f"履歴不足={excluded.get('insufficient_history', 0)}件, "
+            f"判断対象外時刻={excluded.get('not_decision_boundary', 0)}件"
+        ),
+        (
+            f"照合候補={report['checked_candidates']}件, 候補比較なしの足="
+            + (", ".join(report["missing_candidate_timeframes"]) or "なし")
+        ),
+    ]
+    for issue in report.get("issues", [])[:3]:
+        message = str(issue["message"]).replace("\n", " ").replace("\r", " ")
+        lines.append(
+            f"照合記録: {issue.get('decision_time', '')} "
+            f"{issue['kind']}: {message[:180]}"
+        )
+    return lines
+
+
+def _write_inspection_quality(path: Path, report: dict[str, Any]) -> None:
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+    gene.replace_with_retry(temporary_path, path)
+
+
 def _parse_time(value: Any) -> pd.Timestamp:
     if value is None or value == "":
         return pd.NaT
@@ -3374,11 +3536,31 @@ def output_paths(
         "h1_stair_analysis": folder / f"resistance_sweep_h1_stair_analysis_{stem}.csv",
         "stair_policy_analysis": folder / f"resistance_sweep_stair_policy_{stem}.csv",
         "progress": folder / f"resistance_sweep_progress_{stem}.json",
+        "quality": folder / f"resistance_sweep_quality_{stem}.json",
     }
 
 
 def _notify(message: str) -> None:
-    win_point.send_inspection_notice(message)
+    # Keep the outcome and warnings visible within Discord's message limit.
+    chunks: list[str] = []
+    current = ""
+    for line in message.splitlines():
+        if len(current) + len(line) + 1 > 1800 and current:
+            chunks.append(current)
+            current = ""
+        for offset in range(0, max(len(line), 1), 1700):
+            part = line[offset:offset + 1700]
+            if len(current) + len(part) + 1 > 1800 and current:
+                chunks.append(current)
+                current = ""
+            current += ("\n" if current else "") + part
+    if current:
+        chunks.append(current)
+    for chunk in chunks:
+        try:
+            win_point.send_inspection_notice(chunk)
+        except Exception as error:
+            print(f"[NOTICE WARNING] {type(error).__name__}: {error}")
 
 
 def _write_progress(
@@ -3396,6 +3578,8 @@ def _write_progress(
     candidate_rows: int = 0,
     decision_time: pd.Timestamp | None = None,
     error: str | None = None,
+    quality_status: str | None = None,
+    equivalence_status: str | None = None,
 ) -> dict[str, Any]:
     elapsed_seconds = max(time.monotonic() - process_started, 0.0)
     progress_percent = (
@@ -3440,6 +3624,8 @@ def _write_progress(
             else None
         ),
         "error": error,
+        "quality_status": quality_status,
+        "equivalence_status": equivalence_status,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_suffix(path.suffix + ".tmp")
@@ -3653,31 +3839,56 @@ def run_sweep(
         )
     )
 
-    # 総当たりの広い保存条件とは別に、本番Trial固定条件で実CandleAnalysis、
-    # 実Peaks、実LineStrengthCalを通す。ここが不一致なら集計へ進めない。
-    production_equivalence = validate_production_context_equivalence(
+    # 等価性は記録して続行する。未確認・不一致を成績の合格扱いにはしない。
+    production_equivalence = report_production_context_equivalence(
         pair_name,
         m5,
         m30,
         h1,
         indices,
         sample_count=PRODUCTION_EQUIVALENCE_SAMPLE_COUNT,
-        require_candidates=True,
     )
     equivalence_by_timeframe = production_equivalence[
         "checked_candidates_by_timeframe"
     ]
+    input_quality = {
+        label: {
+            "coverage_errors": list(frame.attrs.get("coverage_errors", [])),
+            "refresh_errors": list(frame.attrs.get("coverage_refresh_errors", [])),
+        }
+        for label, frame in (("M5", m5), ("M30", m30), ("H1", h1), ("S5", s5))
+    }
+    has_input_warnings = any(
+        item["coverage_errors"] or item["refresh_errors"]
+        for item in input_quality.values()
+    )
+    quality_status = (
+        "sample_checked"
+        if production_equivalence["status"] == "passed" and not has_input_warnings
+        else "reference_only"
+    )
+    quality_report = {
+        "pair": pair_name,
+        "requested_start": args.start.isoformat(" "),
+        "requested_end": args.end.isoformat(" "),
+        "status": "running",
+        "quality_status": quality_status,
+        "production_equivalence": production_equivalence,
+        "input_quality": input_quality,
+    }
+    _archive_existing_output(paths["quality"])
+    _write_inspection_quality(paths["quality"], quality_report)
+    equivalence_summary = _equivalence_summary_lines(production_equivalence)
+    input_warning_lines = [
+        f"入力警告 {frame}: " + "; ".join(
+            details["coverage_errors"] + details["refresh_errors"]
+        )[:220]
+        for frame, details in input_quality.items()
+        if details["coverage_errors"] or details["refresh_errors"]
+    ]
     _notify(
-        (
-            f"{pair_name} 抵抗線ブレイク 本番等価性確認完了\n"
-            f"- 判断時刻: {production_equivalence['checked_decisions']}件\n"
-            f"- 候補: {production_equivalence['checked_candidates']}件\n"
-            + "\n".join(
-                f"- {timeframe}: {count}件"
-                for timeframe, count in equivalence_by_timeframe.items()
-            )
-            + "\n- 不一致: 0件"
-        )
+        f"{pair_name} 抵抗線ブレイク 事前照合終了（現在は検証を継続）\n"
+        + "\n".join(f"- {line}" for line in [*equivalence_summary, *input_warning_lines])
     )
     _write_progress(
         paths["progress"],
@@ -3685,6 +3896,8 @@ def run_sweep(
         args=args,
         status="running",
         phase="processing",
+        quality_status=quality_status,
+        equivalence_status=production_equivalence["status"],
         wall_started=wall_started,
         process_started=process_started,
         total_positions=total_positions,
@@ -3702,6 +3915,8 @@ def run_sweep(
                 args=args,
                 status="running",
                 phase="processing",
+                quality_status=quality_status,
+                equivalence_status=production_equivalence["status"],
                 wall_started=wall_started,
                 process_started=process_started,
                 total_positions=total_positions,
@@ -3710,6 +3925,39 @@ def run_sweep(
                 candidate_rows=len(candidate_rows),
                 decision_time=decision_time,
             )
+        while decision_time >= next_notice:
+            elapsed_minutes = (time.monotonic() - process_started) / 60
+            progress_percent = (
+                100.0 * current_position / total_positions
+                if total_positions
+                else 0.0
+            )
+            remaining_minutes = (
+                elapsed_minutes
+                * (total_positions - current_position)
+                / current_position
+                if current_position > 0
+                else None
+            )
+            _notify(
+                (
+                    f"{pair_name} count2 resistance inspection 進捗\n"
+                    f"- 到達時刻: {next_notice:%Y-%m-%d %H:%M}\n"
+                    f"- 処理位置: {current_position}/{total_positions} "
+                    f"({progress_percent:.1f}%)\n"
+                    f"- 評価イベント: {evaluated_events}\n"
+                    f"- 候補行: {len(candidate_rows)}\n"
+                    f"- 経過時間: {elapsed_minutes:.1f}分\n"
+                    f"- 推定残り時間: "
+                    + (
+                        f"{remaining_minutes:.1f}分"
+                        if remaining_minutes is not None
+                        else "算出中"
+                    )
+                )
+            )
+            next_notice = next_notice + pd.DateOffset(months=2)
+
         event_base: dict[str, Any] = {
             "event_id": _event_id(pair_name, decision_time),
             "pair": pair_name,
@@ -3738,14 +3986,20 @@ def run_sweep(
             (next_count2_time - decision_time).total_seconds() / 60
         )
 
-        target = target_parameters(
-            m5,
-            index,
-            pair,
-            args.tp_lookback,
-            args.tp_multiplier,
-            args.rr,
-        )
+        try:
+            target = target_parameters(
+                m5,
+                index,
+                pair,
+                args.tp_lookback,
+                args.tp_multiplier,
+                args.rr,
+            )
+        except Exception as error:
+            target = {
+                "target_valid": False,
+                "target_skip_reason": f"target_calculation_error:{type(error).__name__}:{error}",
+            }
         if not target["target_valid"]:
             for line_timeframe in LINE_TIMEFRAMES:
                 event_rows.append(
@@ -4044,19 +4298,33 @@ def run_sweep(
                 )
             # 変数名は path_results にする。paths は出力ファイルの辞書で、
             # ここで上書きすると後段の書き出しが壊れる。
-            path_results = inspector.inspect_targets(
-                decision_time=decision_time,
-                expiry_time=next_count2_time,
-                direction=candidate["trade_direction"],
-                line_price=candidate["line_price"],
-                targets=targets,
-                horizon_minutes=args.horizon_minutes,
-                spread_pips=args.spread_pips,
-                approach_side=candidate["approach_side"],
-                entry_mode=args.entry_mode,
-                stop_offset_pips=args.stop_offset_pips,
-                stop_slippage_pips=args.stop_slippage_pips,
-            )
+            try:
+                path_results = inspector.inspect_targets(
+                    decision_time=decision_time,
+                    expiry_time=next_count2_time,
+                    direction=candidate["trade_direction"],
+                    line_price=candidate["line_price"],
+                    targets=targets,
+                    horizon_minutes=args.horizon_minutes,
+                    spread_pips=args.spread_pips,
+                    approach_side=candidate["approach_side"],
+                    entry_mode=args.entry_mode,
+                    stop_offset_pips=args.stop_offset_pips,
+                    stop_slippage_pips=args.stop_slippage_pips,
+                )
+            except Exception as error:
+                # No price/P&L is invented for a candidate that cannot be evaluated.
+                path_results = [{
+                    "candidate_result": "calculation_error",
+                    "trade_result": "calculation_error",
+                    "filled": np.nan,
+                    "path_complete": False,
+                    "path_skip_reason": f"path_calculation_error:{type(error).__name__}:{error}",
+                    "trade_result_pips": np.nan,
+                    "result_r": np.nan,
+                    "max_favorable_pips_before_exit": np.nan,
+                    "max_adverse_pips_before_exit": np.nan,
+                }]
             path = path_results[0]
             result_r = path.get("result_r")
             path["result_yen"] = (
@@ -4260,39 +4528,6 @@ def run_sweep(
             )
         evaluated_events += 1
 
-        while decision_time >= next_notice:
-            elapsed_minutes = (time.monotonic() - process_started) / 60
-            progress_percent = (
-                100.0 * current_position / total_positions
-                if total_positions
-                else 0.0
-            )
-            remaining_minutes = (
-                elapsed_minutes
-                * (total_positions - current_position)
-                / current_position
-                if current_position > 0
-                else None
-            )
-            _notify(
-                (
-                    f"{pair_name} count2 resistance inspection 進捗\n"
-                    f"- 到達時刻: {next_notice:%Y-%m-%d %H:%M}\n"
-                    f"- 処理位置: {current_position}/{total_positions} "
-                    f"({progress_percent:.1f}%)\n"
-                    f"- 評価イベント: {evaluated_events}\n"
-                    f"- 候補行: {len(candidate_rows)}\n"
-                    f"- 経過時間: {elapsed_minutes:.1f}分\n"
-                    f"- 推定残り時間: "
-                    + (
-                        f"{remaining_minutes:.1f}分"
-                        if remaining_minutes is not None
-                        else "算出中"
-                    )
-                )
-            )
-            next_notice = next_notice + pd.DateOffset(months=2)
-
         if evaluated_events % 250 == 0:
             progress_percent = (
                 100.0 * current_position / total_positions
@@ -4314,6 +4549,8 @@ def run_sweep(
         args=args,
         status="running",
         phase="writing_results",
+        quality_status=quality_status,
+        equivalence_status=production_equivalence["status"],
         wall_started=wall_started,
         process_started=process_started,
         total_positions=total_positions,
@@ -4325,6 +4562,35 @@ def run_sweep(
 
     candidates = pd.DataFrame(candidate_rows)
     events = pd.DataFrame(event_rows)
+    event_status_counts = events.get("event_status", pd.Series(dtype=str)).value_counts()
+    skip_reasons = events.get("event_skip_reason", pd.Series(dtype=str)).fillna("")
+    excluded_event_count = int(event_status_counts.get("skipped", 0)) + int(
+        event_status_counts.get("no_next_count2", 0)
+    )
+    excluded_event_ratio = excluded_event_count / len(events) if len(events) else 0.0
+    candidate_states = candidates.get("candidate_result", pd.Series(dtype=str)).value_counts()
+    has_event_errors = bool(skip_reasons.str.contains("error:", regex=False).any())
+    has_incomplete_paths = any(
+        int(candidate_states.get(state, 0)) > 0
+        for state in ("incomplete_pending", "incomplete_horizon", "calculation_error")
+    )
+    if has_event_errors or has_incomplete_paths or not len(candidates):
+        quality_status = "reference_only"
+    quality_report.update({
+        "quality_status": quality_status,
+        "event_summary": {
+            "processed_positions": processed_positions,
+            "total_positions": total_positions,
+            "event_rows": len(events),
+            "excluded_events": excluded_event_count,
+            "excluded_event_ratio": excluded_event_ratio,
+            "event_status_counts": {str(k): int(v) for k, v in event_status_counts.items()},
+            "exclusion_reasons": {
+                str(k): int(v) for k, v in skip_reasons.loc[skip_reasons.ne("")].value_counts().items()
+            },
+            "candidate_status_counts": {str(k): int(v) for k, v in candidate_states.items()},
+        },
+    })
     wins = (
         candidates[candidates["candidate_result"].eq("tp")].copy()
         if not candidates.empty
@@ -4337,16 +4603,25 @@ def run_sweep(
         args.min_group_size,
     )
     stair_policy_analysis = make_stair_policy_analysis(candidates)
+    result_frames = (
+        candidates, wins, events, ranking, stair_analysis,
+        h1_stair_analysis, stair_policy_analysis,
+    )
+    for result_frame in result_frames:
+        result_frame["quality_status"] = quality_status
+        result_frame["equivalence_status"] = production_equivalence["status"]
     paths = output_paths(pair_name, args)
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     for key, path in paths.items():
-        if key != "progress":
+        if key not in ("progress", "quality"):
             _archive_existing_output(path)
     candidates.to_csv(paths["candidates"], index=False, encoding="utf-8-sig")
     if grid_accumulators is not None:
         target_grid_frames = []
         for line_timeframe, accumulator in grid_accumulators.items():
             timeframe_grid = accumulator.to_frame()
+            timeframe_grid["quality_status"] = quality_status
+            timeframe_grid["equivalence_status"] = production_equivalence["status"]
             timeframe_grid.insert(0, "line_timeframe", line_timeframe)
             timeframe_grid.insert(
                 1,
@@ -4410,7 +4685,11 @@ def run_sweep(
         (
             events.get("event_status", pd.Series(dtype=object)).eq("skipped")
             & ~event_skip_reason.str.startswith("line_rebuild_error:")
+            & ~event_skip_reason.str.startswith("decision_context_error:")
         ).sum()
+    )
+    context_error_count = int(
+        event_skip_reason.str.startswith("decision_context_error:").sum()
     )
     candidate_result_counts = (
         candidates.get("candidate_result", pd.Series(dtype=object))
@@ -4485,18 +4764,21 @@ def run_sweep(
         )
     summary_lines = [
         f"期間: {args.start:%Y-%m-%d} ～ {args.end:%Y-%m-%d}",
-        (
-            "本番等価性: "
-            f"判断={production_equivalence['checked_decisions']}件, "
-            f"候補={production_equivalence['checked_candidates']}件, "
-            "不一致=0件"
+        "結果区分: " + (
+            "抽出点で本番照合済み"
+            if quality_status == "sample_checked"
+            else "参考結果（照合・入力警告・除外理由はquality JSON参照）"
         ),
+        *equivalence_summary,
+        *input_warning_lines,
         *(
             f"本番等価性 {timeframe}: 候補={count}件"
             for timeframe, count in equivalence_by_timeframe.items()
         ),
         f"検出count2: {len(indices)}",
         f"評価イベント: {evaluated_events}",
+        f"処理位置: {processed_positions}/{total_positions}",
+        f"除外: {excluded_event_count}/{len(events)}時間足イベント ({excluded_event_ratio:.1%})",
         (
             "候補なし時間足イベント: "
             f"{int(event_status.get('no_candidates', 0))}"
@@ -4505,6 +4787,7 @@ def run_sweep(
             "除外時間足イベント: "
             f"次count2なし={int(event_status.get('no_next_count2', 0))}, "
             f"ライン再構築エラー={line_error_count}, "
+            f"判断データエラー={context_error_count}, "
             f"TP算出不可等={target_skip_count}"
         ),
         f"候補行: {len(candidates)}",
@@ -4513,7 +4796,8 @@ def run_sweep(
             "候補状態: "
             f"未約定={int(candidate_result_counts.get('not_filled', 0))}, "
             f"注文期間S5不完全={int(candidate_result_counts.get('incomplete_pending', 0))}, "
-            f"約定後S5不完全={int(candidate_result_counts.get('incomplete_horizon', 0))}"
+            f"約定後S5不完全={int(candidate_result_counts.get('incomplete_horizon', 0))}, "
+            f"価格経路計算エラー={int(candidate_result_counts.get('calculation_error', 0))}"
         ),
         (
             f"勝ち候補: {win_count}"
@@ -4527,7 +4811,14 @@ def run_sweep(
         *timeframe_summary_lines,
         f"経過時間: {elapsed_minutes:.1f}分",
         "注意: 候補行は同時注文ではなく、イベント内の独立した反実仮想",
+        "注意: 除外・未完了は勝敗集計対象外。欠損による成績の偏りは解消していない",
     ]
+    quality_report.update({
+        "status": "complete",
+        "summary_lines": summary_lines,
+        "updated_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+    })
+    _write_inspection_quality(paths["quality"], quality_report)
     print(f"{pair_name} count2 resistance inspection 完了")
     for line in summary_lines:
         print(f"- {line}")
@@ -4550,6 +4841,8 @@ def run_sweep(
         evaluated_events=evaluated_events,
         candidate_rows=len(candidate_rows),
         decision_time=last_decision_time,
+        quality_status=quality_status,
+        equivalence_status=production_equivalence["status"],
     )
     paths["progress"] = _archive_progress(paths["progress"])
     return paths
