@@ -27,6 +27,7 @@ No live strategy profile is mutated by this module.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import csv

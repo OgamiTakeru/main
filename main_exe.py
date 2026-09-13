@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-08-30 13:44 JST
+# 最新更新日時: 2026-09-09 16:04 JST
 """USD/JPY live launcher and shared execution loop.
 
 EUR/USD・AUD/USDと同じく、解析の有効条件はfAnalysis_order_Main、
@@ -11,6 +11,8 @@ LIVE = True
 import threading  # 定時実行用
 import time
 import datetime
+import hashlib
+from pathlib import Path
 
 # 自作ファイルインポート
 import tokens as tk  # Token等、各自環境の設定ファイル（git対象外）
@@ -23,6 +25,7 @@ import fAnalysis_order_Main as am
 import classCandleAnalysis as ca
 import classPositionControl as classPositionControl
 import copy
+from fAnalysisSchedule import AnalysisRunLedger, live_decision_time
 
 
 class main():
@@ -34,6 +37,16 @@ class main():
         # ■変数の宣言
         self.pair_info = pair_info or f.currentPair
         self.pair = self.pair_info.name  # 通貨ペア
+        # 口座/環境/通貨を分離し、再起動後も同じ確定足を再発注しない。
+        # 口座番号やトークンそのものをファイル名・ログには出さない。
+        schedule_namespace = hashlib.sha256(
+            (str(self.base_oa.environment) + ":" + str(self.base_oa.accountID)).encode("utf-8")
+        ).hexdigest()[:16]
+        self.analysis_run_ledger = AnalysisRunLedger(
+            Path(__file__).resolve().parent / "runtime_state"
+            / ("analysis_" + self.pair + "_" + schedule_namespace + ".json")
+        )
+        self.latest_analysis_slot_utc = None
         # 変更なし群
         self.ARROW_SPREAD_PIPS = self.pair_info.spread_limit_pips
         self.ARROW_SPREAD = self.pair_info.pips_to_price(self.ARROW_SPREAD_PIPS)  # 実行を許容するスプレッド
@@ -66,6 +79,7 @@ class main():
         # ■■■処理の開始
         # ■ポジションクラスの生成
         self.positions_control_class = classPositionControl.position_control(True, self.pair)  # ポジションリストの用意
+        self.positions_control_class.analysis_run_ledger = self.analysis_run_ledger
         # self.positions_control_class.reset_all_position()  # 開始時は全てのオーダーを解消し、初期アップデートを行う
         self.positions_control_class.reset_all_position()
         self.positions_control_class.catch_up_position_and_del_order()
@@ -206,13 +220,20 @@ class main():
     #     self.d60_df = d60_df_latest_bottom.sort_index(ascending=False)  # 直近が上の方にある＝時間降順に変更
     #     self.d60_df.to_csv(tk.folder_path + self.pair + '_main_data60.csv', index=False, encoding="utf-8")  # 直近保存用
 
-    def mode1(self):
+    def mode1(self, *, analysis_time_utc=None, allow_orders=True):
         """
         5分に一度行わる処理
         """
         # データ取得や各解析が長引いても、全て同じ5分境界で判断する。
-        analysis_started_utc = datetime.datetime.now(datetime.timezone.utc)
-        decision_time_utc = analysis_started_utc.replace(second=0, microsecond=0)
+        analysis_started_utc = analysis_time_utc or datetime.datetime.now(datetime.timezone.utc)
+        scheduled_slot = live_decision_time(analysis_started_utc, "M5")
+        # 初回のデータ準備も直前の完成M5境界へ揃える。途中起動では発注しない。
+        decision_time_utc = analysis_started_utc.replace(
+            minute=(analysis_started_utc.minute // 5) * 5, second=0, microsecond=0
+        )
+        allow_orders = allow_orders and scheduled_slot is not None
+        if allow_orders and self.latest_analysis_slot_utc == scheduled_slot:
+            return
         print("■■■■■■5分ごと調査■■■■", self.now, self.past_time_from_latest_mode1_exe)  # 表示用（実行時）
         self.positions_control_class.refresh_startup_safety_state()
 
@@ -238,14 +259,25 @@ class main():
 
         # ■調査実行
         # 解析の選択・注文集約・PositionControlへの登録はwrap側が管理する。
-        analysis_result_instance = am.wrap_all_analysis(
-            self.candleAnalysisClass,
-            self.positions_control_class,
-            "live",
-            analysis_time_utc=analysis_started_utc,
-            decision_time_utc=decision_time_utc,
+        # データ準備成功後に進める。初回取得失敗で未生成のままmode2へ入らない。
+        if allow_orders:
+            self.latest_analysis_slot_utc = scheduled_slot
+        exe_res = 0
+        # データ取得が次の5分枠まで遅れた場合、古い枠の新規注文は追い掛けない。
+        current_time_utc = datetime.datetime.now(datetime.timezone.utc)
+        current_slot = current_time_utc.replace(
+            minute=(current_time_utc.minute // 5) * 5, second=0, microsecond=0
         )
-        exe_res = analysis_result_instance.position_control_result
+        if allow_orders and current_slot == decision_time_utc:
+            analysis_result_instance = am.wrap_all_analysis(
+                self.candleAnalysisClass,
+                self.positions_control_class,
+                "live",
+                analysis_time_utc=analysis_started_utc,
+                decision_time_utc=decision_time_utc,
+                run_ledger=self.analysis_run_ledger,
+            )
+            exe_res = analysis_result_instance.position_control_result
         if not exe_res:
             # 発注がない場合は、終了 (ポケ除け的な部分）
             pass
@@ -357,10 +389,13 @@ class main():
             else:
                 # ↓秒指定だと飛ぶので、前回から●秒経過&秒数に余裕を追加
                 # print("　　　　", "通常の実行")
-                if self.time_min % 5 == 0 and 6 <= self.time_sec < 30 and self.past_time_from_latest_mode1_exe > 60:
+                # 価格APIの応答後の時刻で判定。6秒を飛び越えても窓内なら一度実行。
+                analysis_time_utc = datetime.datetime.now(datetime.timezone.utc)
+                scheduled_slot = live_decision_time(analysis_time_utc, "M5")
+                if scheduled_slot is not None and scheduled_slot != self.latest_analysis_slot_utc:
                     print("  ")
                     print("  ")
-                    self.mode1()  # ★★Mode1の実行
+                    self.mode1(analysis_time_utc=analysis_time_utc)  # ★★Mode1の実行
 
                 if self.time_min % 1 == 0 and self.time_sec % 2 == 0:  # 高頻度での確認事項（キャンドル調査時のみ飛ぶ）
                     self.mode2()  #
@@ -371,7 +406,7 @@ class main():
             notice.line_send("start")
 
             # CandleAnalysis生成も含め、判断時刻はmode1内で一度だけ固定する。
-            self.mode1()
+            self.mode1(allow_orders=not is_only_update_mode)
 
             # 強制オーダーを入れる場合は、以下コメントイン
             # self.force_order()

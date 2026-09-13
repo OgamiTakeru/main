@@ -16,6 +16,7 @@ audited completion rule as the target-grid engine.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import datetime as dt

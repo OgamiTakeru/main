@@ -1,12 +1,13 @@
-# 最新更新日時: 2026-09-08 04:21 JST
+# 最新更新日時: 2026-09-09 16:11 JST
 
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import fFlipWatch  # noqa: F401  登録済みflipの出自ハンドラを起動時に登録する
 import classOrderCreate as OCreate
 import fGeneric as gene
 import send_notice as notice
+from fAnalysisSchedule import live_decision_time
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ ANALYSIS_REGISTRY = (
         # 2年検証（2023-2025）では M5 が R −0.042/回で有意にマイナス、
         # M30 は R −0.001/回でゼロ。期待値がプラスと確認できたわけではなく、
         # 実際の値動きと突き合わせるための実運用という位置づけ。
+        # 2026-09-09: M30/H1を自身のFC2へ変更。上記は旧M5 FC2方式の成績。
         live_order_mode="execute",
     ),
     AnalysisRegistration(
@@ -56,6 +58,7 @@ class wrap_all_analysis():
         *,
         analysis_time_utc=None,
         decision_time_utc=None,
+        run_ledger=None,
     ):
         # 調査に必要な変数
         self.ca = candle_analysis_class  # CandleAnalysisインスタンスの生成
@@ -64,6 +67,9 @@ class wrap_all_analysis():
         self.strategy_regime = strategy_regime
         self.analysis_time_utc = analysis_time_utc
         self.decision_time_utc = decision_time_utc
+        self.run_ledger = run_ledger
+        if self.run_ledger is None and position_control_class is not None:
+            self.run_ledger = getattr(position_control_class, "analysis_run_ledger", None)
 
         # 結果を格納するための変数（大事）
         self.take_position_flag = False
@@ -205,6 +211,14 @@ class wrap_all_analysis():
         if not self.exe_order_classes:
             self.position_control_result = 0
             return
+        # 解析が長引いても古い判断枠の注文を後追いしない。
+        if (
+            self.decision_time_utc is None
+            or datetime.datetime.now(datetime.timezone.utc)
+            >= self.decision_time_utc + datetime.timedelta(minutes=5)
+        ):
+            self.position_control_result = 0
+            return
         self.position_control_result = (
             self.position_control_class.order_class_add(
                 self.exe_order_classes
@@ -246,13 +260,34 @@ class wrap_all_analysis():
 
     def m5_analysis_is_due(self):
         """完成M5を使う解析の本番実行窓。検証では毎判断時刻を処理する。"""
+        return self.timeframe_analysis_is_due("M5")
+
+    def timeframe_analysis_is_due(self, timeframe):
+        """実行予定とデータの判断境界が一致した時間足だけを呼ぶ。"""
         if self.mode != "live":
             return True
-        if self.analysis_time_utc is None:
+        if self.analysis_time_utc is None or self.decision_time_utc is None:
             return False
-        return (
-            self.analysis_time_utc.minute % 5 == 0
-            and 6 <= self.analysis_time_utc.second < 30
+        slot = live_decision_time(self.analysis_time_utc, timeframe)
+        return slot is not None and slot == self.decision_time_utc
+
+    def analysis_slot_is_processed(self, analysis_name, timeframe):
+        if self.mode != "live":
+            return False
+        if self.run_ledger is None:
+            raise ValueError("live analysis requires a persistent run ledger")
+        return self.run_ledger.is_processed(
+            analysis_name, timeframe, self.decision_time_utc
+        )
+
+    def claim_analysis_slot(self, analysis_name, timeframe):
+        """注文登録より前に永続化。送信結果不明でも同じ足は再送しない。"""
+        if self.mode != "live":
+            return True
+        if self.run_ledger is None:
+            raise ValueError("live analysis requires a persistent run ledger")
+        return self.run_ledger.claim(
+            analysis_name, timeframe, self.decision_time_utc
         )
 
     def flip_analysis_is_due(self):
@@ -260,19 +295,42 @@ class wrap_all_analysis():
         return self.m5_analysis_is_due()
 
     def resistance_breakout_analysis_is_due(self):
-        """抵抗線ブレイクを共通のM5実行窓で起動する。"""
-        return self.m5_analysis_is_due()
+        """有効なライン足自身の実行窓。M5の停止設定は勝手に戻さない。"""
+        import fResistanceBreakoutAnalysis as resistance_breakout
+
+        return any(
+            self.timeframe_analysis_is_due(timeframe)
+            for timeframe in resistance_breakout.LIVE_TRIAL_POLICY_V1.timeframes
+        )
 
     def wrap_resistance_breakout_analysis(self):
         """共有CandleAnalysisからブレイクのtrial注文を組み立てる。"""
         import fResistanceBreakoutAnalysis as resistance_breakout
 
-        self.resistance_breakout_order_classes = (
-            resistance_breakout.build_orders_for_decision(
-                self.ca,
-                mode=self.mode,
-            )
-        )
+        policy = resistance_breakout.LIVE_TRIAL_POLICY_V1
+        for timeframe in policy.timeframes:
+            trigger_timeframe = timeframe
+            if not self.timeframe_analysis_is_due(trigger_timeframe):
+                continue
+            # 時間足ごとに独立。毎時00分はM5/M30/H1をそれぞれ一度処理する。
+            analysis_name = "resistance_breakout_" + timeframe
+            try:
+                if self.analysis_slot_is_processed(analysis_name, trigger_timeframe):
+                    continue
+                orders = resistance_breakout.build_orders_for_decision(
+                    self.ca,
+                    mode=self.mode,
+                    policy=replace(policy, timeframes=(timeframe,)),
+                )
+                # シグナルなしも処理済み。複数候補はこの一回にまとめて登録する。
+                if not self.claim_analysis_slot(analysis_name, trigger_timeframe):
+                    continue
+            except Exception as error:
+                if self.mode != "live":
+                    raise
+                self.notify_analysis_failure(analysis_name, error)
+                continue
+            self.resistance_breakout_order_classes.extend(orders)
         if self.resistance_breakout_order_classes:
             self.orders_add_from_analysis(
                 "resistance_breakout",
@@ -295,6 +353,8 @@ class wrap_all_analysis():
             return
         if self.decision_time_utc is None:
             raise ValueError("flip analysis requires decision_time_utc")
+        if self.analysis_slot_is_processed("flip", "M5"):
+            return
 
         self.flip_order_classes = fFlipOrder.build_orders_for_decision(
             getattr(self.ca, "base_oa", None),
@@ -302,6 +362,9 @@ class wrap_all_analysis():
             self.decision_time_utc,
             self.ca,
         )
+        if not self.claim_analysis_slot("flip", "M5"):
+            self.flip_order_classes = []
+            return
         if self.flip_order_classes:
             self.orders_add_from_analysis("flip", self.flip_order_classes)
 

@@ -18,6 +18,7 @@ portfolio lifecycle engine.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import csv

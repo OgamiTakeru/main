@@ -12,6 +12,7 @@ and overlap use decision-time ``conditions_json`` and ``event_id`` only.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import csv

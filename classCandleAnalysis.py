@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-09-08 10:52 JST
+# 最新更新日時: 2026-09-09 16:13 JST
 
 import contextlib
 import datetime
@@ -46,6 +46,21 @@ class CandleTimeframeBundle:
     @property
     def is_native(self) -> bool:
         return str(self.source_granularity).upper() == str(self.timeframe).upper()
+
+
+@dataclass(frozen=True)
+class _LiveTimeframeAnalysisCache:
+    """One native, completed snapshot; never shared across live clients."""
+
+    timeframe: str
+    pair_name: str
+    source_client: Any
+    source_account_id: Any
+    source_environment: Any
+    completed_boundary: pd.Timestamp
+    original_df_r: pd.DataFrame
+    peaks_class: Any
+    candle_meta_class: Any
 
 
 @dataclass
@@ -143,6 +158,11 @@ class candleAnalysis:
     latest_decision_context_error_type = None
     latest_decision_context_not_ready = False
     latest_pair = None
+    latest_source_client = None
+    latest_source_account_id = None
+    latest_source_environment = None
+    latest_live_m30_cache = None
+    latest_live_h1_cache = None
     latest_data_quality_warning_key = None
 
     def __init__(
@@ -182,6 +202,8 @@ class candleAnalysis:
             target_time_jp,
             m5_original_df_r,
         )
+        self._live_m30_cache_entry = None
+        self._live_h1_cache_entry = None
 
         self.current_price = 0  # 後に価格として入る(本番の場合[=時間指定なし]API、検証の場合はdfの先頭）
         self.current_price_by_df = 0  # 判断時刻までの最新完成M5終値
@@ -261,6 +283,9 @@ class candleAnalysis:
                     candleAnalysis.latest_pair is not None
                     and candleAnalysis.latest_pair != self.pair
                 )
+                or candleAnalysis.latest_source_client is not self.base_oa
+                or candleAnalysis.latest_source_account_id != getattr(self.base_oa, "accountID", None)
+                or candleAnalysis.latest_source_environment != getattr(self.base_oa, "environment", None)
         ):
             print("データ取得（同じデータがないため、新規で取得）")
             t1 = 0
@@ -287,6 +312,8 @@ class candleAnalysis:
                 and cached_context.h1_last_end is not None
                 and pd.Timestamp(cached_context.h1_last_end)
                 == self.decision_time.floor("h")
+                and self.cached_live_m30_analysis() is not None
+                and self.cached_live_h1_analysis() is not None
             )
             print(
                 "既存のデータのfrom",
@@ -334,6 +361,8 @@ class candleAnalysis:
 
         # ■■データ取得
         if m5_original_df_r is None:
+            self._live_m30_cache_entry = self.cached_live_m30_analysis()
+            self._live_h1_cache_entry = self.cached_live_h1_analysis()
             self.get_date_df(target_time_jp)
         if self.m5_original_df_r is None:
             print("データ取得＆Peaks生成 失敗？？")
@@ -369,6 +398,11 @@ class candleAnalysis:
 
         # データを取得する（60分足）
         granularity = "H1"
+        if h1_analysis_cache is None and self._live_h1_cache_entry is not None:
+            h1_analysis_cache = (
+                self._live_h1_cache_entry.peaks_class,
+                self._live_h1_cache_entry.candle_meta_class,
+            )
         if h1_analysis_cache is None:
             self.peaks_class_hour = peaksClass.PeaksClass(
                 self.h1_original_df_r,
@@ -391,6 +425,11 @@ class candleAnalysis:
 
         # データを取得する（30分足）
         granularity = "M30"
+        if m30_analysis_cache is None and self._live_m30_cache_entry is not None:
+            m30_analysis_cache = (
+                self._live_m30_cache_entry.peaks_class,
+                self._live_m30_cache_entry.candle_meta_class,
+            )
         if m30_analysis_cache is None:
             self.peaks_class_m30 = peaksClass.PeaksClass(
                 self.m30_original_df_r,
@@ -414,9 +453,13 @@ class candleAnalysis:
                 self.peaks_class_m30,
                 self.current_price,
             )
+        if self._live_m30_cache_entry is None:
+            self.remember_live_m30_analysis()
 
         # 戦略共通の完成足・Peaks・ローソク形状はここで一度だけ作る。
         self.build_basic_analysis()
+        if self._live_h1_cache_entry is None:
+            self.remember_live_h1_analysis()
 
         if m5_original_df_r is not None:
             return
@@ -459,6 +502,9 @@ class candleAnalysis:
                 self.decision_context_not_ready
             )
             candleAnalysis.latest_pair = self.pair
+            candleAnalysis.latest_source_client = self.base_oa
+            candleAnalysis.latest_source_account_id = getattr(self.base_oa, "accountID", None)
+            candleAnalysis.latest_source_environment = getattr(self.base_oa, "environment", None)
 
     @staticmethod
     def normalize_decision_time(value):
@@ -1333,10 +1379,116 @@ class candleAnalysis:
             require_complete_flag=target_time_jp == 0,
         )
 
+    def cached_live_m30_analysis(self):
+        return self.cached_live_timeframe_analysis("M30")
+
+    def cached_live_h1_analysis(self):
+        return self.cached_live_timeframe_analysis("H1")
+
+    @staticmethod
+    def live_timeframe_cache_spec(timeframe):
+        if timeframe == "M30":
+            return "30min", pd.Timedelta(minutes=30), M30_ANALYSIS_BARS
+        if timeframe == "H1":
+            return "h", pd.Timedelta(hours=1), H1_ANALYSIS_BARS
+        raise ValueError("live timeframe cache supports M30 or H1 only")
+
+    def cached_live_timeframe_analysis(self, timeframe):
+        """Reuse native history only within its completed boundary and source."""
+        frequency, _, _ = self.live_timeframe_cache_spec(timeframe)
+        cached = getattr(candleAnalysis, "latest_live_" + timeframe.lower() + "_cache")
+        if self.analysis_mode != "live" or cached is None:
+            return None
+        if (
+                cached.timeframe != timeframe
+                or cached.source_client is not self.base_oa
+                or cached.pair_name != str(self.pair).upper()
+                or cached.source_account_id != getattr(self.base_oa, "accountID", None)
+                or cached.source_environment != getattr(self.base_oa, "environment", None)
+                or cached.completed_boundary != self.decision_time.floor(frequency)
+                or str(getattr(cached.peaks_class, "source_granularity", "")).upper()
+                != timeframe
+        ):
+            return None
+        return cached
+
+    def remember_live_m30_analysis(self):
+        self.remember_live_timeframe_analysis("M30")
+
+    def remember_live_h1_analysis(self):
+        self.remember_live_timeframe_analysis("H1")
+
+    def remember_live_timeframe_analysis(self, timeframe):
+        """Cache healthy native history, not a stale fetch/market-close fallback."""
+        frequency, duration, history_bars = self.live_timeframe_cache_spec(timeframe)
+        if timeframe == "M30":
+            original_frame = self.m30_original_df_r
+            peak_analysis = self.peaks_class_m30
+            candle_meta = self.candle_meta_class_m30
+        else:
+            original_frame = self.h1_original_df_r
+            peak_analysis = self.peaks_class_hour
+            candle_meta = self.candle_meta_class_hour
+        if (
+                self.analysis_mode != "live"
+                or self.base_oa is None
+                or (timeframe == "M30" and self.m30_uses_h1_fallback)
+                or str(getattr(peak_analysis, "source_granularity", "")).upper()
+                != timeframe
+        ):
+            return
+        boundary = self.decision_time.floor(frequency)
+        try:
+            completed = self.select_completed_df_r(
+                original_frame,
+                boundary,
+                duration,
+                require_complete_flag=True,
+            )
+            # Quality checks allow some latest-bar delay; caching does not.
+            # Incomplete/new-boundary data must be fetched again, not frozen.
+            if self._frame_times(completed).max() + duration != boundary:
+                return
+            if not self.peaks_match_completed(
+                    peak_analysis,
+                    completed.head(history_bars),
+                    self.current_price,
+                    gene.currency_pair(self.pair),
+            ):
+                return
+            self.validate_completed_history_for_context(
+                completed,
+                boundary,
+                duration,
+                history_bars,
+                timeframe + " cache",
+                latest_boundary=timeframe,
+                allow_latest_known_closure=timeframe == "H1",
+            )
+        except (candle_quality.CandleHistoryError, TypeError, ValueError):
+            return
+        cached = _LiveTimeframeAnalysisCache(
+            timeframe=timeframe,
+            pair_name=str(self.pair).upper(),
+            source_client=self.base_oa,
+            source_account_id=getattr(self.base_oa, "accountID", None),
+            source_environment=getattr(self.base_oa, "environment", None),
+            completed_boundary=boundary,
+            original_df_r=original_frame.copy(deep=True),
+            peaks_class=peak_analysis,
+            candle_meta_class=candle_meta,
+        )
+        setattr(candleAnalysis, "latest_live_" + timeframe.lower() + "_cache", cached)
+
     def cached_live_frame_after_fetch_failure(self, cache_attribute, timeframe):
         """ライブ取得失敗時に、同じ通貨の直前フレームを返す。"""
         cached = None
-        if candleAnalysis.latest_pair == self.pair:
+        if (
+                candleAnalysis.latest_pair == self.pair
+                and candleAnalysis.latest_source_client is self.base_oa
+                and candleAnalysis.latest_source_account_id == getattr(self.base_oa, "accountID", None)
+                and candleAnalysis.latest_source_environment == getattr(self.base_oa, "environment", None)
+        ):
             candidate = getattr(candleAnalysis, cache_attribute, None)
             if isinstance(candidate, pd.DataFrame) and not candidate.empty:
                 cached = candidate.copy()
@@ -1383,19 +1535,22 @@ class candleAnalysis:
             ).head(self.need_df_num).copy()
 
             # 60分足のデータ
-            h1_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
-                                                                   {"granularity": "H1", "count": self.h1_need_df_num},
-                                                                   1)  # 時間昇順(直近が最後尾）
-            if h1_df_res['error'] == -1:
-                print("error Candle")
-                h1_df_latest_bottom = self.cached_live_frame_after_fetch_failure(
-                    "latest_h1_original_df_r",
-                    "H1",
-                )
-                if h1_df_latest_bottom is None:
-                    return -1
+            if self._live_h1_cache_entry is not None:
+                h1_df_latest_bottom = self._live_h1_cache_entry.original_df_r
             else:
-                h1_df_latest_bottom = h1_df_res['data']
+                h1_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
+                                                                       {"granularity": "H1", "count": self.h1_need_df_num},
+                                                                       1)  # 時間昇順(直近が最後尾）
+                if h1_df_res['error'] == -1:
+                    print("error Candle")
+                    h1_df_latest_bottom = self.cached_live_frame_after_fetch_failure(
+                        "latest_h1_original_df_r",
+                        "H1",
+                    )
+                    if h1_df_latest_bottom is None:
+                        return -1
+                else:
+                    h1_df_latest_bottom = h1_df_res['data']
             self.h1_original_df_r = self.normalize_original_df_r(
                 h1_df_latest_bottom,
                 self.decision_time,
@@ -1432,19 +1587,22 @@ class candleAnalysis:
             )
 
             # 30分足のデータ
-            d30_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
-                                                                   {"granularity": "M30", "count": self.need_df_num},
-                                                                   1)  # 時間昇順(直近が最後尾）
-            if d30_df_res['error'] == -1:
-                print("error Candle")
-                m30_df_latest_bottom = self.cached_live_frame_after_fetch_failure(
-                    "latest_m30_original_df_r",
-                    "M30",
-                )
-                if m30_df_latest_bottom is None:
-                    return -1
+            if self._live_m30_cache_entry is not None:
+                m30_df_latest_bottom = self._live_m30_cache_entry.original_df_r
             else:
-                m30_df_latest_bottom = d30_df_res['data']
+                d30_df_res = self.base_oa.InstrumentsCandles_multi_exe(self.pair,
+                                                                       {"granularity": "M30", "count": self.need_df_num},
+                                                                       1)  # 時間昇順(直近が最後尾）
+                if d30_df_res['error'] == -1:
+                    print("error Candle")
+                    m30_df_latest_bottom = self.cached_live_frame_after_fetch_failure(
+                        "latest_m30_original_df_r",
+                        "M30",
+                    )
+                    if m30_df_latest_bottom is None:
+                        return -1
+                else:
+                    m30_df_latest_bottom = d30_df_res['data']
             self.m30_original_df_r = self.normalize_original_df_r(
                 m30_df_latest_bottom,
                 self.decision_time,

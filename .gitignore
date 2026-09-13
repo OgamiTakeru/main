@@ -15,3 +15,10 @@ runtime_state/*.lock
 runtime_state/*.tmp
 runtime_state/archive/
 archive/pycache_*/
+
+# Local FX research: RR1 / 2A / cost-after win rate 53% goal
+/_test/goal53*
+/_test/test_goal53*
+/research/fx53_*/
+/runtime_state/fx53_*/
+/goal_copy/

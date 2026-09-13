@@ -1,16 +1,16 @@
-# 最新更新日時: 2026-09-08 08:20 JST
+# 最新更新日時: 2026-09-09 16:10 JST
 """Count-2 resistance-line exhaustive validation.
 
-At every M5 decision point where the newest peak has count == 2, this module
-rebuilds M5/M30/H1 resistance/support candidates from each timeframe's native
-completed candles.  Every line ahead of the M5 peak direction is then tested
-as an independent, counterfactual order.
+STOP-mode decisions use each native timeframe's foot-count-2 at its boundary.
+Legacy reversal decisions retain their M5 trigger. Each line ahead
+of its own trigger direction is tested as an independent counterfactual order.
 
 The candidate rows are opportunities, not simultaneously executable orders.
 Use ``event_id`` when comparing alternatives within the same decision.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import contextlib
@@ -43,14 +43,18 @@ from classCandleAnalysis import (
 )
 from classCandlePeaks import PeaksClass
 from fCandleDataQuality import (
+    CandleHistoryError,
+    CandleHistoryNotReady,
     is_expected_market_closed_gap as candle_gap_is_expected_closed,
     oanda_coverage_open_mask,
+    oanda_market_open_mask,
 )
 import fGeneric as gene
 import fResistanceBreakoutCore as breakout_core
 from fFootCountShape import (
     attach_line_wick_context,
     flatten_foot_count2_shape,
+    foot_count2_shape_context,
 )
 import send_notice as notice
 from fLineAnalysis import (
@@ -72,6 +76,7 @@ H1_PREHISTORY_CALENDAR_HOURS = 24 * 21
 M30_PREHISTORY_CALENDAR_HOURS = 24 * 21
 LINE_TIMEFRAMES = ("M5", "M30", "H1")
 TIMEFRAME_MINUTES = {"M5": 5, "M30": 30, "H1": 60}
+NATIVE_TRIGGER_VERSION = "native_m30_h1_fc2_v2"
 TP_LOOKBACK = 6
 TP_MULTIPLIER = 3.0
 RR = 1.2
@@ -95,8 +100,8 @@ def parse_args(
     default_end = default_end or DEFAULT_END
     parser = argparse.ArgumentParser(
         description=(
-            f"{pair_name}: M5 count2時点の進行方向先にある"
-            "M5/M30/H1抵抗線候補を総当たり検証する"
+            f"{pair_name}: FC2進行方向先のM5/M30/H1線を総当たりする。"
+            "STOPは各時間足のnative FC2、limitは従来のM5 FC2"
         )
     )
     parser.add_argument("--start", default=default_start.isoformat(" "))
@@ -1011,6 +1016,72 @@ def _decision_context_bundle(
     )
 
 
+def _native_timeframe_bundle(
+    source_frame: pd.DataFrame | None,
+    decision_time: pd.Timestamp,
+    current_price: float,
+    pair: gene.CurrencyPair,
+    peak_history_bars: int,
+    timeframe: str,
+) -> CandleTimeframeBundle:
+    """Build independent native Peaks from candles completed by decision time."""
+    timeframe = str(timeframe).upper()
+    duration = pd.Timedelta(minutes=TIMEFRAME_MINUTES[timeframe])
+    label = timeframe.lower()
+    if source_frame is None:
+        raise ValueError("native_" + label + "_frame_is_required")
+    original_df_r = CandleAnalysis.normalize_original_df_r(
+        source_frame,
+        decision_time,
+        label + "_original_df_r",
+    )
+    completed_df_r = CandleAnalysis.select_completed_df_r(
+        original_df_r,
+        decision_time,
+        duration,
+        limit=peak_history_bars,
+        require_complete_flag=False,
+    )
+    # nativeと名付けただけの別時間足データを通さない。共通品質検査は
+    # 対象足間隔・判断境界・必要本数を確認し、営業時間内欠損が50%未満なら
+    # 取得済みの完成足で続行する。
+    completed_df_r = CandleAnalysis.validate_completed_history_for_context(
+        completed_df_r,
+        decision_time,
+        duration,
+        peak_history_bars,
+        timeframe,
+        latest_boundary=timeframe,
+        stale_is_integrity=True,
+    )
+    if (
+        completed_df_r["time_jp_dt"] + duration
+        > decision_time
+    ).any():
+        raise ValueError("future_" + label + "_in_line_snapshot")
+    with contextlib.redirect_stdout(io.StringIO()):
+        peaks = PeaksClass(
+            original_df_r,
+            timeframe,
+            current_price,
+            pair,
+            completed_df_r=completed_df_r,
+            decision_time=decision_time,
+            source_granularity=timeframe,
+            analysis_num=peak_history_bars,
+        )
+    if not peaks.peaks_original:
+        raise ValueError("no_" + timeframe + "_peak")
+    return CandleTimeframeBundle(
+        timeframe=timeframe,
+        duration=duration,
+        original_df_r=original_df_r,
+        completed_df_r=completed_df_r,
+        peaks_class=peaks,
+        source_granularity=timeframe,
+    )
+
+
 def _native_m30_bundle(
     m30: pd.DataFrame | None,
     decision_time: pd.Timestamp,
@@ -1018,58 +1089,20 @@ def _native_m30_bundle(
     pair: gene.CurrencyPair,
     peak_history_bars: int,
 ) -> CandleTimeframeBundle:
-    """Build M30 Peaks from native M30 candles completed by decision time."""
-    if m30 is None:
-        raise ValueError("native_m30_frame_is_required")
-    original_df_r = CandleAnalysis.normalize_original_df_r(
-        m30,
-        decision_time,
-        "m30_original_df_r",
+    return _native_timeframe_bundle(
+        m30, decision_time, current_price, pair, peak_history_bars, "M30",
     )
-    completed_df_r = CandleAnalysis.select_completed_df_r(
-        original_df_r,
-        decision_time,
-        pd.Timedelta(minutes=30),
-        limit=peak_history_bars,
-        require_complete_flag=False,
-    )
-    # native M30 と名付けただけのM5データを通さない。共通品質検査は
-    # 30分間隔・判断境界・必要本数を確認し、営業時間内欠損が50%未満なら
-    # 取得済みの完成足で続行する。
-    completed_df_r = CandleAnalysis.validate_completed_history_for_context(
-        completed_df_r,
-        decision_time,
-        pd.Timedelta(minutes=30),
-        peak_history_bars,
-        "M30",
-        latest_boundary="M30",
-        stale_is_integrity=True,
-    )
-    if (
-        completed_df_r["time_jp_dt"] + pd.Timedelta(minutes=30)
-        > decision_time
-    ).any():
-        raise ValueError("future_m30_in_line_snapshot")
-    with contextlib.redirect_stdout(io.StringIO()):
-        peaks = PeaksClass(
-            original_df_r,
-            "M30",
-            current_price,
-            pair,
-            completed_df_r=completed_df_r,
-            decision_time=decision_time,
-            source_granularity="M30",
-            analysis_num=peak_history_bars,
-        )
-    if not peaks.peaks_original:
-        raise ValueError("no_M30_peak")
-    return CandleTimeframeBundle(
-        timeframe="M30",
-        duration=pd.Timedelta(minutes=30),
-        original_df_r=original_df_r,
-        completed_df_r=completed_df_r,
-        peaks_class=peaks,
-        source_granularity="M30",
+
+
+def _native_h1_bundle(
+    h1: pd.DataFrame | None,
+    decision_time: pd.Timestamp,
+    current_price: float,
+    pair: gene.CurrencyPair,
+    peak_history_bars: int,
+) -> CandleTimeframeBundle:
+    return _native_timeframe_bundle(
+        h1, decision_time, current_price, pair, peak_history_bars, "H1",
     )
 
 
@@ -1128,7 +1161,7 @@ def rebuild_candidates_at(
     peak_history_bars: int = PEAK_HISTORY_BARS,
     line_timeframe: str = "M5",
 ) -> dict[str, Any]:
-    """Recreate one timeframe's lines at an M5 count-2 decision."""
+    """Recreate lines using each native FC2 for STOP, legacy M5 otherwise."""
     pair = gene.currency_pair(pair_name)
     line_timeframe = str(line_timeframe).strip().upper()
     if line_timeframe not in LINE_TIMEFRAMES:
@@ -1154,14 +1187,6 @@ def rebuild_candidates_at(
     m5_peaks = decision_context.m5_peaks_class
     if not m5_peaks.peaks_original:
         raise ValueError("no_M5_peak")
-    newest_peak = m5_peaks.peaks_original[0]
-    if int(newest_peak.get("count", 0)) != 2:
-        raise ValueError(
-            "count2_prefilter_mismatch:"
-            + str(newest_peak.get("count"))
-        )
-    peak_direction = int(newest_peak["direction"])
-
     if line_timeframe == "M30":
         line_bundle = _native_m30_bundle(
             m30,
@@ -1169,6 +1194,10 @@ def rebuild_candidates_at(
             current_price,
             pair,
             peak_history_bars,
+        )
+    elif line_timeframe == "H1" and entry_mode == "stop":
+        line_bundle = _native_h1_bundle(
+            h1, decision_time, current_price, pair, peak_history_bars,
         )
     else:
         line_bundle = _decision_context_bundle(
@@ -1193,6 +1222,26 @@ def rebuild_candidates_at(
     line_peaks = line_bundle.peaks_class
     if not line_peaks.peaks_original:
         raise ValueError("no_" + line_timeframe + "_peak")
+    trigger_timeframe = (
+        line_timeframe if entry_mode == "stop" else "M5"
+    )
+    if not breakout_core.is_timeframe_decision_due(trigger_timeframe, decision_time):
+        raise ValueError(trigger_timeframe + "_decision_not_due")
+    if trigger_timeframe in ("M30", "H1") and not breakout_core.has_current_completed_candle(
+        line_bundle.completed_df_r, decision_time, trigger_timeframe,
+    ):
+        raise CandleHistoryNotReady(trigger_timeframe + " current completed candle is unavailable")
+    newest_peak = (
+        line_peaks.peaks_original[0]
+        if trigger_timeframe in ("M30", "H1")
+        else m5_peaks.peaks_original[0]
+    )
+    if int(newest_peak.get("count", 0)) != 2:
+        raise ValueError(
+            "count2_prefilter_mismatch:"
+            + trigger_timeframe + ":" + str(newest_peak.get("count"))
+        )
+    peak_direction = int(newest_peak["direction"])
     completed = line_bundle.completed_df_r.iloc[::-1].reset_index(drop=True)
 
     h1_completed_df_r = decision_context.h1_completed_df_r
@@ -1387,6 +1436,11 @@ def rebuild_candidates_at(
         "decision_time": decision_time,
         "current_price": current_price,
         "newest_peak": newest_peak,
+        "trigger_timeframe": trigger_timeframe,
+        "trigger_completed_df_r": (
+            line_bundle.completed_df_r
+            if trigger_timeframe in ("M30", "H1") else m5_completed_df_r
+        ),
         "m5_peaks": m5_peaks.peaks_original,
         "line_peaks": line_peaks.peaks_original,
         "line_timeframe": line_timeframe,
@@ -1451,6 +1505,9 @@ _PRODUCTION_EQUIVALENCE_FIELDS = (
     "trigger_foot_count",
     "trigger_peak_direction",
     "trigger_peak_time",
+    "trigger_peak_origin_time",
+    "trigger_timeframe",
+    "target_timeframe",
     "m5_average_range_pips",
     "entry_mode",
     "type",
@@ -1473,6 +1530,7 @@ _PRODUCTION_EQUIVALENCE_TIME_FIELDS = {
     "line_newest_peak_time",
     "line_oldest_peak_time",
     "trigger_peak_time",
+    "trigger_peak_origin_time",
 }
 
 _PRODUCTION_EQUIVALENCE_PRICE_FIELDS = {
@@ -1612,6 +1670,14 @@ def _eligible_production_equivalence_indices(
         decision_time = CandleAnalysis.normalize_decision_time(
             m5.iloc[index]["time_jp_dt"]
         )
+        # 本番は閉場時刻に判定そのものを行わない。日次ロールオーバー
+        # （06:00・07:00 JST）の足は全て分ちょうどなので、30分境界だけに
+        # 絞ると濃度が約6倍になり、等間隔抽出が高確率でここを引く。
+        # 照合しても意味がないので、抽出候補の段階で外す。
+        if not bool(oanda_market_open_mask(
+            pd.DatetimeIndex([decision_time])
+        )[0]):
+            continue
         if completed_count(
             m5_times,
             decision_time - pd.Timedelta(minutes=5),
@@ -1767,6 +1833,9 @@ def _sweep_candidate_as_production_plan(
         "trigger_foot_count": trigger["trigger_foot_count"],
         "trigger_peak_direction": trigger["peak_direction"],
         "trigger_peak_time": trigger["peak_time"],
+        "trigger_peak_origin_time": trigger.get("peak_origin_time"),
+        "trigger_timeframe": trigger["trigger_timeframe"],
+        "target_timeframe": "M5",
         "m5_average_range_pips": float(
             target["recent_m5_avg_range_pips"]
         ),
@@ -1803,7 +1872,7 @@ def validate_production_context_equivalence(
     """Fail fast unless sweep candidates equal production trial orders.
 
     The ordinary sweep deliberately stores broad candidates.  This check does
-    not compare those broad defaults.  It rebuilds a separate M5/M30 baseline
+    not compare those broad defaults. It rebuilds a native M5/M30/H1 baseline
     from the fixed live policy, then compares it with
     ``fResistanceBreakoutAnalysis.build_orders_for_decision``.  Current price
     is fixed to the latest completed M5 close on both paths; live quote drift is
@@ -1822,6 +1891,16 @@ def validate_production_context_equivalence(
         h1,
         decision_indices,
     )
+    eligible_indices = [
+        index for index in eligible_indices
+        if any(
+            breakout_core.is_timeframe_decision_due(
+                timeframe,
+                m5.iloc[index]["time_jp_dt"],
+            )
+            for timeframe in active_policy.timeframes
+        )
+    ]
     if not eligible_indices:
         raise ValueError(
             "no decision has enough M5/M30/H1 history for production equivalence"
@@ -1840,24 +1919,33 @@ def validate_production_context_equivalence(
         timeframe: 0 for timeframe in active_policy.timeframes
     }
     peak_history_by_timeframe: dict[str, int] = {}
+    skipped_decisions: list[str] = []
 
     for sample_position in sample_positions:
         index = eligible_indices[int(sample_position)]
         decision_time = CandleAnalysis.normalize_decision_time(
             m5.iloc[index]["time_jp_dt"]
         )
-        production_ca = _build_equivalence_candle_analysis(
-            pair_name,
-            decision_time,
-            m5,
-            m30,
-            h1,
-        )
-        production_context = production_ca.require_basic_analysis()
-        production_m5_bundle = production_ca.get_timeframe_bundle(
-            "M5",
-            require_native=True,
-        )
+        # 「その時刻では本番が judgement を組み立てられない」種類の不都合は、
+        # 検証と本番の乖離ではない。抽出した1点を捨てて次へ進む。
+        # 値そのものが食い違う場合だけは、下の _assert_equivalence_value が
+        # 従来どおり走行を止める。
+        try:
+            production_ca = _build_equivalence_candle_analysis(
+                pair_name,
+                decision_time,
+                m5,
+                m30,
+                h1,
+            )
+            production_context = production_ca.require_basic_analysis()
+            production_m5_bundle = production_ca.get_timeframe_bundle(
+                "M5",
+                require_native=True,
+            )
+        except CandleHistoryError as error:
+            skipped_decisions.append(f"{decision_time}: {error}")
+            continue
         m5_peak_history = int(getattr(
             production_m5_bundle.peaks_class,
             "analysis_num",
@@ -1898,32 +1986,6 @@ def validate_production_context_equivalence(
             "production M5",
         )
 
-        sweep_trigger = breakout_core.evaluate_breakout_trigger(
-            sweep_context.newest_m5_peak,
-            active_policy.trigger_foot_count,
-        )
-        production_trigger = breakout_core.evaluate_breakout_trigger(
-            production_context.newest_m5_peak,
-            active_policy.trigger_foot_count,
-        )
-        for field in (
-            "trigger_valid",
-            "trigger_skip_reason",
-            "trigger_foot_count",
-            "peak_direction",
-            "peak_time",
-        ):
-            compare_field = (
-                "trigger_peak_time" if field == "peak_time" else field
-            )
-            _assert_equivalence_value(
-                field=compare_field,
-                expected=sweep_trigger.get(field),
-                actual=production_trigger.get(field),
-                pair=pair,
-                decision_time=decision_time,
-            )
-
         sweep_target = target_parameters(
             m5,
             index,
@@ -1957,8 +2019,7 @@ def validate_production_context_equivalence(
 
         expected_plans: list[dict[str, Any]] = []
         target_is_executable = bool(
-            sweep_trigger["trigger_valid"]
-            and sweep_target["target_valid"]
+            sweep_target["target_valid"]
             and breakout_core.live_target_is_wide_enough(
                 sweep_target["tp_pips"],
                 active_policy.spread_pips,
@@ -1967,6 +2028,11 @@ def validate_production_context_equivalence(
         )
         if target_is_executable:
             for timeframe in active_policy.timeframes:
+                trigger_timeframe = timeframe
+                if not breakout_core.is_timeframe_decision_due(
+                    trigger_timeframe, decision_time,
+                ):
+                    continue
                 production_bundle = production_ca.get_timeframe_bundle(
                     timeframe,
                     require_native=True,
@@ -1976,6 +2042,54 @@ def validate_production_context_equivalence(
                     "analysis_num",
                     active_policy.peak_history_bars,
                 ))
+                if trigger_timeframe in ("M30", "H1"):
+                    native_builder, native_frame = (
+                        (_native_m30_bundle, m30) if timeframe == "M30"
+                        else (_native_h1_bundle, h1)
+                    )
+                    sweep_bundle = native_builder(
+                        native_frame, decision_time, sweep_context.current_price,
+                        pair, actual_peak_history,
+                    )
+                    for label, checked_bundle in (
+                        ("sweep", sweep_bundle), ("production", production_bundle),
+                    ):
+                        if not breakout_core.has_current_completed_candle(
+                            checked_bundle.completed_df_r, decision_time, timeframe,
+                        ):
+                            raise CandleHistoryNotReady(
+                                label + " " + timeframe + " current completed candle is unavailable"
+                            )
+                    sweep_peak = sweep_bundle.peaks_class.peaks_original[0]
+                    production_peak = production_bundle.peaks_class.peaks_original[0]
+                else:
+                    sweep_peak = sweep_context.newest_m5_peak
+                    production_peak = production_context.newest_m5_peak
+                sweep_trigger = breakout_core.evaluate_breakout_trigger(
+                    sweep_peak, active_policy.trigger_foot_count,
+                    timeframe=trigger_timeframe,
+                )
+                production_trigger = breakout_core.evaluate_breakout_trigger(
+                    production_peak, active_policy.trigger_foot_count,
+                    timeframe=trigger_timeframe,
+                )
+                for field in (
+                    "trigger_valid", "trigger_skip_reason", "trigger_foot_count",
+                    "peak_direction", "peak_time", "peak_origin_time",
+                    "trigger_timeframe",
+                ):
+                    compare_field = {
+                        "peak_time": "trigger_peak_time",
+                        "peak_origin_time": "trigger_peak_origin_time",
+                    }.get(field, field)
+                    _assert_equivalence_value(
+                        field=compare_field,
+                        expected=sweep_trigger.get(field),
+                        actual=production_trigger.get(field),
+                        pair=pair, decision_time=decision_time, timeframe=timeframe,
+                    )
+                if not sweep_trigger["trigger_valid"]:
+                    continue
                 peak_history_contract = {
                     "M5": PRODUCTION_M5_PEAK_HISTORY_BARS,
                     "M30": PRODUCTION_M30_PEAK_HISTORY_BARS,
@@ -2080,6 +2194,13 @@ def validate_production_context_equivalence(
         checked_decisions += 1
         checked_candidates += len(expected_plans)
 
+    if checked_decisions < 1:
+        raise ValueError(
+            "production equivalence compared no decision at all; "
+            f"skipped {len(skipped_decisions)} sample(s): "
+            + " / ".join(skipped_decisions[:3])
+        )
+
     missing_candidate_timeframes = [
         timeframe
         for timeframe, count in checked_candidates_by_timeframe.items()
@@ -2092,6 +2213,8 @@ def validate_production_context_equivalence(
         )
     return {
         "checked_decisions": checked_decisions,
+        "skipped_decisions": len(skipped_decisions),
+        "skipped_decision_reasons": skipped_decisions,
         "checked_candidates": checked_candidates,
         "checked_candidates_by_timeframe": (
             checked_candidates_by_timeframe
@@ -2968,6 +3091,7 @@ def _peak_columns(peak: dict[str, Any], pair: gene.CurrencyPair) -> dict[str, An
     return {
         # foot count = この1ピークを構成するローソク足の本数。
         "trigger_foot_count": peak.get("count"),
+        "trigger_peak_origin_time": peak.get("oldest_time_jp"),
         "peak_count": peak.get("count"),
         "peak_direction": peak.get("direction"),
         "peak_latest_time": peak.get("latest_time_jp"),
@@ -3088,6 +3212,121 @@ def stair_analysis_columns(
 
 def _event_id(pair_name: str, decision_time: pd.Timestamp) -> str:
     return f"{pair_name}_{decision_time:%Y%m%d%H%M%S}"
+
+
+def native_count2_indices(
+    m5: pd.DataFrame,
+    native_frame: pd.DataFrame | None,
+    start: dt.datetime,
+    end: dt.datetime,
+    timeframe: str,
+) -> list[int]:
+    """Map native FC2 boundaries onto the M5 decision clock.
+
+    Only the three completed native candles before each decision determine FC2.
+    No forming row, nor any future price, is needed for the prefilter.
+    The full native Peaks check in rebuild_candidates_at remains authoritative.
+    """
+    timeframe = str(timeframe).upper()
+    if timeframe not in ("M30", "H1"):
+        raise ValueError("native FC2 prefilter expects M30 or H1")
+    duration = pd.Timedelta(minutes=TIMEFRAME_MINUTES[timeframe])
+    if native_frame is None or len(native_frame) < 3:
+        return []
+    native = native_frame.sort_values("time_jp_dt", kind="stable")
+    completion_column = next(
+        (name for name in ("is_complete", "complete") if name in native), None,
+    )
+    if completion_column is not None:
+        native = native.loc[native[completion_column].eq(True)]
+    middle = pd.to_numeric(native["middle_price"], errors="coerce").to_numpy()
+    direction = np.sign(np.diff(middle))
+    direction[direction == 0] = 1
+    times = pd.to_datetime(native["time_jp_dt"])
+    m5_positions = {
+        pd.Timestamp(timestamp): index
+        for index, timestamp in enumerate(m5["time_jp_dt"])
+    }
+    result = []
+    for latest in range(2, len(native)):
+        # 週末・祝日を跨ぐnative Peaksも同じ定義で候補にする。
+        # 未知欠損の可否は後続の共通履歴検査で判断し、ここで休場を除外しない。
+        if not np.isfinite(middle[latest - 2:latest + 1]).all():
+            continue
+        if direction[latest - 1] == direction[latest - 2]:
+            continue
+        decision = pd.Timestamp(times.iloc[latest]) + duration
+        if not (pd.Timestamp(start) <= decision < pd.Timestamp(end)):
+            continue
+        if not breakout_core.is_timeframe_decision_due(timeframe, decision):
+            continue
+        if decision in m5_positions:
+            result.append(m5_positions[decision])
+    return sorted(set(result))
+
+
+def native_m30_count2_indices(
+    m5: pd.DataFrame,
+    m30: pd.DataFrame | None,
+    start: dt.datetime,
+    end: dt.datetime,
+) -> list[int]:
+    """Compatibility wrapper for the native M30 FC2 prefilter."""
+    return native_count2_indices(m5, m30, start, end, "M30")
+
+
+def native_h1_count2_indices(
+    m5: pd.DataFrame,
+    h1: pd.DataFrame | None,
+    start: dt.datetime,
+    end: dt.datetime,
+) -> list[int]:
+    return native_count2_indices(m5, h1, start, end, "H1")
+
+
+def build_sweep_event_schedule(
+    m5: pd.DataFrame,
+    m30: pd.DataFrame,
+    start: dt.datetime,
+    end: dt.datetime,
+    entry_mode: str,
+    *,
+    h1: pd.DataFrame | None = None,
+) -> list[dict[str, Any]]:
+    """Keep each timeframe's FC2 sequence and pending expiry independent."""
+    legacy_indices = win_point.candidate_indices(m5, start, end).tolist()
+    m30_indices = (
+        native_m30_count2_indices(m5, m30, start, end)
+        if entry_mode == "stop" else legacy_indices
+    )
+    h1_indices = (
+        native_h1_count2_indices(m5, h1, start, end)
+        if entry_mode == "stop" else legacy_indices
+    )
+    indices_by_timeframe = {
+        "M5": legacy_indices, "M30": m30_indices, "H1": h1_indices,
+    }
+    result = []
+    for timeframe in LINE_TIMEFRAMES:
+        indices = indices_by_timeframe[timeframe]
+        trigger_timeframe = (
+            timeframe if entry_mode == "stop" else "M5"
+        )
+        for position, index in enumerate(indices):
+            next_time = (
+                pd.Timestamp(m5.iloc[indices[position + 1]]["time_jp_dt"])
+                if position + 1 < len(indices) else None
+            )
+            result.append({
+                "index": index,
+                "line_timeframe": timeframe,
+                "trigger_timeframe": trigger_timeframe,
+                "next_count2_time": next_time,
+            })
+    return sorted(result, key=lambda event: (
+        pd.Timestamp(m5.iloc[event["index"]]["time_jp_dt"]),
+        LINE_TIMEFRAMES.index(event["line_timeframe"]),
+    ))
 
 
 def _distance_bin(values: pd.Series) -> pd.Series:
@@ -3523,6 +3762,7 @@ def output_paths(
             f"{config}_break"
             f"off{args.stop_offset_pips:g}"
             f"slip{args.stop_slippage_pips:g}"
+            f"_{NATIVE_TRIGGER_VERSION}"
         )
     stem = f"{pair_name}_{period}_{config}"
     folder = Path(args.output_dir)
@@ -3798,8 +4038,16 @@ def run_sweep(
         args.existing_data,
         args.horizon_minutes,
     )
-    indices = win_point.candidate_indices(m5, args.start, args.end).tolist()
-    total_positions = len(indices)
+    event_schedule = build_sweep_event_schedule(
+        m5, m30, args.start, args.end, args.entry_mode, h1=h1,
+    )
+    indices = sorted({event["index"] for event in event_schedule})
+    # 本番等価性はnative M30/H1を必ず含める。従来limitのイベントとは独立。
+    equivalence_indices = sorted(set(indices).union(
+        native_m30_count2_indices(m5, m30, args.start, args.end),
+        native_h1_count2_indices(m5, h1, args.start, args.end),
+    ))
+    total_positions = len(event_schedule)
     _write_progress(
         paths["progress"],
         pair_name=pair_name,
@@ -3833,7 +4081,9 @@ def run_sweep(
             f"- 期間: {args.start:%Y-%m-%d %H:%M} ～ {args.end:%Y-%m-%d %H:%M}\n"
             f"- 条件: 直近{args.tp_lookback}本平均×{args.tp_multiplier:g}, "
             f"RR={args.rr:g}, spread={args.spread_pips:g}pips\n"
-            f"- トリガー: M5 count2\n"
+            f"- トリガー: "
+            + ("M5/M30/H1各足のnative FC2（各足の確定境界）" if args.entry_mode == "stop" else "全線M5 FC2")
+            + "\n"
             f"- ライン足: M5 / M30 / H1（それぞれnative完成足）\n"
             f"- 評価: 全候補を独立した反実仮想注文として検証"
         )
@@ -3845,7 +4095,7 @@ def run_sweep(
         m5,
         m30,
         h1,
-        indices,
+        equivalence_indices,
         sample_count=PRODUCTION_EQUIVALENCE_SAMPLE_COUNT,
     )
     equivalence_by_timeframe = production_equivalence[
@@ -3903,7 +4153,10 @@ def run_sweep(
         total_positions=total_positions,
     )
 
-    for position, index in enumerate(indices):
+    for position, event in enumerate(event_schedule):
+        index = event["index"]
+        event_timeframes = (event["line_timeframe"],)
+        trigger_timeframe = event["trigger_timeframe"]
         decision_time = pd.Timestamp(m5.iloc[index]["time_jp_dt"])
         last_decision_time = decision_time
         current_position = position + 1
@@ -3959,14 +4212,24 @@ def run_sweep(
             next_notice = next_notice + pd.DateOffset(months=2)
 
         event_base: dict[str, Any] = {
-            "event_id": _event_id(pair_name, decision_time),
+            "event_id": (
+                _event_id(pair_name, decision_time)
+                + ("_" + trigger_timeframe if trigger_timeframe in ("M30", "H1") else "")
+            ),
             "pair": pair_name,
             "decision_time": decision_time,
-            "decision_trigger_timeframe": "M5",
+            "decision_trigger_timeframe": trigger_timeframe,
+            "trigger_timeframe": trigger_timeframe,
+            "trigger_mode_version": (
+                NATIVE_TRIGGER_VERSION if args.entry_mode == "stop" else "legacy_m5_fc2"
+            ),
+            "target_timeframe": "M5",
+            "pending_expiry_trigger_timeframe": trigger_timeframe,
             "counterfactual_candidates": True,
         }
-        if position + 1 >= len(indices):
-            for line_timeframe in LINE_TIMEFRAMES:
+        next_count2_time = event["next_count2_time"]
+        if next_count2_time is None:
+            for line_timeframe in event_timeframes:
                 event_rows.append(
                     {
                         **event_base,
@@ -3978,9 +4241,7 @@ def run_sweep(
                         "candidate_count": 0,
                     }
                 )
-            break
-        next_index = indices[position + 1]
-        next_count2_time = pd.Timestamp(m5.iloc[next_index]["time_jp_dt"])
+            continue
         event_base["next_count2_time"] = next_count2_time
         event_base["pending_minutes"] = float(
             (next_count2_time - decision_time).total_seconds() / 60
@@ -4001,7 +4262,7 @@ def run_sweep(
                 "target_skip_reason": f"target_calculation_error:{type(error).__name__}:{error}",
             }
         if not target["target_valid"]:
-            for line_timeframe in LINE_TIMEFRAMES:
+            for line_timeframe in event_timeframes:
                 event_rows.append(
                     {
                         **event_base,
@@ -4023,7 +4284,7 @@ def run_sweep(
                 peak_history_bars=args.peak_history_bars,
             )
         except Exception as error:
-            for line_timeframe in LINE_TIMEFRAMES:
+            for line_timeframe in event_timeframes:
                 event_rows.append(
                     {
                         **event_base,
@@ -4040,7 +4301,7 @@ def run_sweep(
             continue
 
         rebuilt_by_timeframe: dict[str, dict[str, Any]] = {}
-        for line_timeframe in LINE_TIMEFRAMES:
+        for line_timeframe in event_timeframes:
             try:
                 rebuilt_frame = rebuild_candidates_at(
                     m5,
@@ -4115,10 +4376,17 @@ def run_sweep(
                 rebuilt["candidates"].append(candidate)
 
         peak = rebuilt["newest_peak"]
-        fc2_shape = rebuilt["decision_context"].shape_for_peak(
+        fc2_shape = foot_count2_shape_context(
+            rebuilt["trigger_completed_df_r"],
             peak,
-            "M5",
-            average_range_pips=target["recent_m5_avg_range_pips"],
+            decision_time,
+            pair,
+            average_range_pips=(
+                rebuilt["line_average_range_pips"]
+                if trigger_timeframe in ("M30", "H1")
+                else target["recent_m5_avg_range_pips"]
+            ),
+            timeframe_minutes=TIMEFRAME_MINUTES[trigger_timeframe],
         )
         if not fc2_shape.get("valid"):
             for line_timeframe in rebuilt_by_timeframe:
@@ -4469,7 +4737,7 @@ def run_sweep(
                     + "_line_groups_ahead"
                 ),
                 "candidate_pruning_applied": False,
-                "decision_trigger_timeframe": "M5",
+                "decision_trigger_timeframe": trigger_timeframe,
                 "line_timeframe": line_timeframe,
                 "line_source_granularity": candidate[
                     "line_source_granularity"
@@ -4775,7 +5043,13 @@ def run_sweep(
             f"本番等価性 {timeframe}: 候補={count}件"
             for timeframe, count in equivalence_by_timeframe.items()
         ),
-        f"検出count2: {len(indices)}",
+        f"検出FC2時刻（時刻重複除外）: {len(indices)}",
+        f"時間足別FC2イベント: {len(event_schedule)}",
+        (
+            "M30/H1トリガー: 各足のnative FC2 / 30分・1時間境界 / " + NATIVE_TRIGGER_VERSION
+            if args.entry_mode == "stop" else "M30/H1トリガー: 従来のM5 FC2"
+        ),
+        "TP/LCの平均レンジ基準: M5（変更なし）",
         f"評価イベント: {evaluated_events}",
         f"処理位置: {processed_positions}/{total_positions}",
         f"除外: {excluded_event_count}/{len(events)}時間足イベント ({excluded_event_ratio:.1%})",

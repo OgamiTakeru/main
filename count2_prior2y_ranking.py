@@ -10,6 +10,7 @@ both lists receives the ``BOTH_`` order-name prefix.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import datetime as dt

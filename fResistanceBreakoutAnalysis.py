@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-09-08 08:09 JST
+# 最新更新日時: 2026-09-09 16:11 JST
 """共有CandleAnalysisから抵抗線ブレイクのtrial注文を作る。
 
 ここはCandleAnalysisと純粋関数コアをOrderへつなぐ薄いアダプタ。
@@ -28,7 +28,10 @@ FALLBACK_USD_JPY_RATE = 160.0
 
 # 監視コードと同じ条件を固定。検証結果から自動で書き換えない。
 LIVE_TRIAL_POLICY_V1 = breakout_core.ResistanceBreakoutPolicy(
-    policy_id="live_m30_v1",
+    policy_id="live_m30_native_fc2_v2",
+    # 2026-09-09: 各ライン足自身のFC2を、その足の確定境界で判断する。
+    # TP/LCは従来のM5平均幅のまま。旧M5 FC2由来の成績とは別方式。
+    # H1も毎時のnative FC2に対応するが、実運用の有効足はM30のみを維持。
     # 2026-09-09: M5 を外した。2年検証で M5 は R −0.042/回と有意にマイナス、
     # M30 は R −0.001 でゼロ。M5 はどの軸（時間帯・A帯・向きの比率・距離・
     # 強度・peaks数）で切っても不利で、逆張りに反転しても悪化した。
@@ -171,10 +174,12 @@ def _line_metadata(
             getattr(line_class.peaks_class, "analysis_num", policy.peak_history_bars)
         ),
         "configured_peak_history_bars": int(policy.peak_history_bars),
-        "trigger_timeframe": "M5",
+        "trigger_timeframe": trigger["trigger_timeframe"],
+        "target_timeframe": "M5",
         "trigger_foot_count": trigger["trigger_foot_count"],
         "trigger_peak_direction": trigger["peak_direction"],
         "trigger_peak_time": trigger["peak_time"],
+        "trigger_peak_origin_time": trigger["peak_origin_time"],
         "entry_mode": "stop",
         "line_side": candidate["line_side"],
         "line_price": levels.line_price,
@@ -332,11 +337,15 @@ def build_orders_for_decision(
             raise
         return []
 
-    trigger = breakout_core.evaluate_breakout_trigger(
-        context.newest_m5_peak,
-        active_policy.trigger_foot_count,
+    # 各足のFC2は独立。その時間足の確定境界以外ではbundle/線も解析しない。
+    due_timeframes = tuple(
+        timeframe for timeframe in active_policy.timeframes
+        if breakout_core.is_timeframe_decision_due(
+            timeframe,
+            context.decision_time,
+        )
     )
-    if not trigger["trigger_valid"]:
+    if not due_timeframes:
         return []
     target = breakout_core.target_parameters(
         context.m5_completed_df_r,
@@ -361,7 +370,7 @@ def build_orders_for_decision(
         return []
 
     orders: list[OCreate.Order] = []
-    for timeframe in active_policy.timeframes:
+    for timeframe in due_timeframes:
         try:
             bundle = candle_analysis_class.get_timeframe_bundle(
                 timeframe,
@@ -414,6 +423,16 @@ def build_orders_for_decision(
             bundle,
             completed_df_r=validated_completed_df_r,
         )
+        if timeframe in ("M30", "H1") and not breakout_core.has_current_completed_candle(
+            bundle.completed_df_r, context.decision_time, timeframe
+        ):
+            # 履歴の一般品質が許容する遅れでも、前の確定足のFC2を再発行しない。
+            if normalized_mode == "inspection":
+                raise candle_quality.CandleHistoryNotReady(
+                    "latest completed " + timeframe
+                    + " candle has not reached the decision boundary"
+                )
+            continue
         if not getattr(bundle.peaks_class, "peaks_original", None):
             if normalized_mode == "inspection":
                 raise candle_quality.CandleHistoryIntegrityError(
@@ -421,6 +440,13 @@ def build_orders_for_decision(
                 )
             if timeframe == "M5":
                 return []
+            continue
+        trigger = breakout_core.evaluate_breakout_trigger(
+            bundle.peaks_class.peaks_original[0],
+            active_policy.trigger_foot_count,
+            timeframe=timeframe,
+        )
+        if not trigger["trigger_valid"]:
             continue
         line_average_range = (
             breakout_core.average_range_pips_from_completed_df_r(

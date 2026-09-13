@@ -7,6 +7,7 @@ variant is replayed on the same following-year causal inputs.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import datetime as dt

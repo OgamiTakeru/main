@@ -14,6 +14,7 @@ has no following-period data-path arguments and never reads following data.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import csv

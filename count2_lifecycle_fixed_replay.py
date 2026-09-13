@@ -14,6 +14,7 @@ boundaries in the thin launcher.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import datetime as dt

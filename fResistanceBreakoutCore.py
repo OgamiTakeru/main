@@ -1,4 +1,4 @@
-# 最新更新日時: 2026-09-08 08:09 JST
+# 最新更新日時: 2026-09-09 16:11 JST
 """抵抗線ブレイクの共通判定・価格計算。
 
 OANDA通信、Discord通知、注文生成は行わない。検証と本番はこの
@@ -17,7 +17,7 @@ import pandas as pd
 import fGeneric as gene
 
 
-CORE_VERSION = "resistance_breakout_v1"
+CORE_VERSION = "resistance_breakout_v3_native_tf_fc2"
 TIME_FORMAT = "%Y/%m/%d %H:%M:%S"
 # OANDA の clientExtensions に付く出自タグ。実注文・建玉の身元になり、
 # 再起動後の復元にも使われる。検証側（count2_resistance_sweep）と
@@ -26,7 +26,7 @@ TIME_FORMAT = "%Y/%m/%d %H:%M:%S"
 OWNER_TAG = "resistance_breakout"
 # 注文の記録に残す版数。これも検証と本番で同じでなければ同等性テストが落ちる。
 # 2026-09-08: trial を外して実発注に切り替えたため trial_v1 から改称。
-ADAPTER_VERSION = "live_v1"
+ADAPTER_VERSION = "live_v3_native_tf_fc2"
 # 注文をそのまま発注してよいか。flip は「タッチ→観測」の見張りがあるので
 # False で待機させるが、抵抗線ブレイクに見張りは無く、検証も「判断時刻に
 # 逆指値を置いて次の count2 まで待つ」形だった。True が検証と同じ挙動。
@@ -257,12 +257,65 @@ def average_range_pips_from_completed_df_r(
     return average if math.isfinite(average) and average > 0 else None
 
 
+def is_timeframe_decision_due(timeframe: str, decision_time: Any) -> bool:
+    """確定足の判断境界。ライブの実行遅延6秒とは分け、検証でも共用する。"""
+    normalized = str(timeframe).strip().upper()
+    minutes = {"M5": 5, "M30": 30, "H1": 60}.get(normalized)
+    if minutes is None:
+        raise ValueError("unsupported decision timeframe: " + normalized)
+    if decision_time is None:
+        return False
+    timestamp = pd.Timestamp(decision_time)
+    if pd.isna(timestamp):
+        return False
+    return (
+        timestamp.minute % minutes == 0
+        and timestamp.second == 0
+        and timestamp.microsecond == 0
+        and timestamp.nanosecond == 0
+    )
+
+
+def has_current_completed_candle(
+    completed_df_r: pd.DataFrame,
+    decision_time: Any,
+    timeframe: str,
+) -> bool:
+    """遅れた前のFC2を新しい枠で再発行しないため、最新足の終端を確認。
+
+    time_jp系のnaive時刻は日本時間。aware時刻は日本時間へ揃える。
+    一般の履歴品質検査は最新足の多少の遅れを許すが、FC2発行は別に絞る。
+    """
+    timeframe = str(timeframe).strip().upper()
+    if not is_timeframe_decision_due(timeframe, decision_time):
+        return False
+    if completed_df_r is None or completed_df_r.empty:
+        return False
+    times = _time_series(completed_df_r)
+    if times is None or times.isna().any():
+        return False
+    if times.dt.tz is not None:
+        times = times.dt.tz_convert("Asia/Tokyo").dt.tz_localize(None)
+    decision = pd.Timestamp(decision_time)
+    if decision.tzinfo is not None:
+        decision = decision.tz_convert("Asia/Tokyo").tz_localize(None)
+    minutes = {"M5": 5, "M30": 30, "H1": 60}[timeframe]
+    return bool(times.max() + pd.Timedelta(minutes=minutes) == decision)
+
+
 def evaluate_breakout_trigger(
     newest_m5_peak: Mapping[str, Any] | None,
     required_foot_count: int = 2,
+    *,
+    timeframe: str = "M5",
 ) -> dict[str, Any]:
-    """最新M5ピークだけでブレイク解析の起動可否を決める。"""
+    """渡された時間足の最新ピークで起動判定。旧引数名は互換性のため維持。"""
+    timeframe = str(timeframe).strip().upper()
+    if timeframe not in ("M5", "M30", "H1"):
+        raise ValueError("unsupported trigger timeframe: " + timeframe)
+    label = timeframe.lower()
     result = {
+        "trigger_timeframe": timeframe,
         "trigger_valid": False,
         "trigger_skip_reason": None,
         "trigger_foot_count": None,
@@ -271,29 +324,31 @@ def evaluate_breakout_trigger(
         "trade_direction": None,
         "trade_side": None,
         "peak_time": None,
+        "peak_origin_time": None,
     }
     if not newest_m5_peak:
-        result["trigger_skip_reason"] = "no_m5_peak"
+        result["trigger_skip_reason"] = "no_" + label + "_peak"
         return result
     try:
         foot_count = int(newest_m5_peak.get("count", 0))
     except (TypeError, ValueError):
-        result["trigger_skip_reason"] = "invalid_m5_peak_foot_count"
+        result["trigger_skip_reason"] = "invalid_" + label + "_peak_foot_count"
         return result
     result["trigger_foot_count"] = foot_count
     result["peak_time"] = (
         newest_m5_peak.get("latest_time_jp")
         or newest_m5_peak.get("time_jp")
     )
+    result["peak_origin_time"] = newest_m5_peak.get("oldest_time_jp")
     if foot_count != int(required_foot_count):
-        result["trigger_skip_reason"] = "m5_peak_foot_count_not_target"
+        result["trigger_skip_reason"] = label + "_peak_foot_count_not_target"
         return result
     try:
         peak_direction = int(newest_m5_peak.get("direction", 0))
     except (TypeError, ValueError):
         peak_direction = 0
     if peak_direction not in (-1, 1):
-        result["trigger_skip_reason"] = "invalid_m5_peak_direction"
+        result["trigger_skip_reason"] = "invalid_" + label + "_peak_direction"
         return result
     result.update({
         "trigger_valid": True,

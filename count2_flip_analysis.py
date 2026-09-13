@@ -2,6 +2,7 @@
 """Prior-two-year exhaustive analysis and frozen policy for flip_predict."""
 
 from __future__ import annotations
+import _test
 
 import datetime as dt
 import time

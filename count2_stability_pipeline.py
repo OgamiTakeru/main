@@ -14,6 +14,7 @@ stage instead of fetching data implicitly.  All date windows are half-open.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import datetime as dt

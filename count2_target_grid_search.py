@@ -33,6 +33,7 @@ three orders that may be executed simultaneously.
 """
 
 from __future__ import annotations
+import _test
 
 import argparse
 import csv

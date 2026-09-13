@@ -2,6 +2,7 @@
 """One launcher for separated flip_predict analysis and fixed replay."""
 
 from __future__ import annotations
+import _test
 
 import argparse
 import datetime as dt

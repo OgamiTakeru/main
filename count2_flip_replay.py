@@ -2,6 +2,7 @@
 """Replay one frozen flip_predict artifact on the following one-year period."""
 
 from __future__ import annotations
+import _test
 
 import datetime as dt
 import json
